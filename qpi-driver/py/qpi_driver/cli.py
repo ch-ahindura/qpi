@@ -2,7 +2,7 @@ import importlib.metadata
 from pathlib import Path
 from typing import Annotated
 
-from qpi_driver.builtins import MONITOR_DRIVERS, PROCESS_DRIVERS, DriverRunner
+from qpi_driver.builtins import Operation, resolve
 from qpi_driver.compat import typer
 from qpi_driver.paths import validate_safe_path
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS
@@ -106,9 +106,8 @@ if typer.IS_TYPER_INSTALLED:
         Executor runtime settings are passed as -o options: data_dir, is_dummy,
         job_timeout, quantify_hardware_config, quantify_device_config.
         """
-        _run_operation(
-            PROCESS_DRIVERS,
-            "process",
+        _start(
+            Operation.PROCESS,
             device=device,
             qpi_addr=qpi_addr,
             token=token,
@@ -137,9 +136,8 @@ if typer.IS_TYPER_INSTALLED:
         The device's settings are passed as -o options, e.g. for bluefors_gen1:
         -o base_url=... -o channels=path:unit,... -o api_key=...
         """
-        _run_operation(
-            MONITOR_DRIVERS,
-            "monitor",
+        _start(
+            Operation.MONITOR,
             device=device,
             qpi_addr=qpi_addr,
             token=token,
@@ -150,9 +148,8 @@ if typer.IS_TYPER_INSTALLED:
             recv_timeout_ms=recv_timeout_ms,
         )
 
-    def _run_operation(
-        registry: dict[str, DriverRunner],
-        operation: str,
+    def _start(
+        operation: Operation,
         *,
         device: str,
         qpi_addr: str,
@@ -163,11 +160,13 @@ if typer.IS_TYPER_INSTALLED:
         options: list[str] | None,
         recv_timeout_ms: int,
     ) -> None:
-        """Look up a device's runner in *registry* and run it, or exit with an error.
+        """Build the driver for *device* within *operation* and run it.
 
-        Shared by every operation subcommand: the operation is the command name,
-        the device selects the backend, and the runner reads its own config from
-        the parsed -o options.
+        Shared by every operation: the device selects the backend, its spec's
+        builder reads that device's own config from the parsed -o options, and
+        the driver it returns is what gets started here. Anything the device
+        rejects — an unknown name, a missing or bad option — surfaces as a
+        ``ValueError`` and becomes a one-line CLI error rather than a traceback.
         """
         if not token:
             typer.echo(
@@ -177,21 +176,17 @@ if typer.IS_TYPER_INSTALLED:
             )
             raise typer.Exit(code=1)
 
-        runner = registry.get(device)
-        if runner is None:
-            typer.echo(
-                f"Error: unknown {operation} device {device!r}. "
-                f"Known devices: {', '.join(sorted(registry))}.",
-                err=True,
-            )
+        try:
+            spec = resolve(operation, device)
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
 
         _validate_safe_path(ca_file, "--ca-file")
         typer.rich_print(_banner())
 
         try:
-            runner(
-                device=device,
+            driver = spec.build(
                 options=_parse_options(options or []),
                 qpi_addr=qpi_addr,
                 token=token,
@@ -203,6 +198,8 @@ if typer.IS_TYPER_INSTALLED:
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
+
+        driver.run()
 
     @app.command()
     def version():

@@ -168,36 +168,40 @@ If you prefer to configure it manually, follow these steps:
 ### Python API
 
 ```python
-from qpi_driver import run_driver
+from pathlib import Path
 
-run_driver(
+from qpi_driver import QpuDriver
+
+QpuDriver(
     qpi_addr="http://localhost:8090",
     token="<qpu-access-token>",
     ca_fingerprint="<fingerprint>",
     name="qpu_sim_01",
     executor="mock",
-    data_dir="./data",
-)
+    data_dir=Path("./data"),
+).run()
 ```
 
 ### Custom executor
 
+An executor the SDK does not ship needs no registration — pass the class or an
+instance of it as `executor`:
+
 ```python
-from qpi_driver import Executor, run_driver
+from qpi_driver import Executor, QpuDriver
 
 class MyCustomExecutor(Executor):
     def execute(self, payload):
         # Your QPU-specific execution logic
         ...
 
-run_driver(
+QpuDriver(
     qpi_addr="http://localhost:8090",
     token="<token>",
     ca_fingerprint="<fingerprint>",
     name="my_qpu",
-    executor="custom",
-    custom_executor=MyCustomExecutor(),
-)
+    executor=MyCustomExecutor(),
+).run()
 ```
 
 ---

@@ -20,7 +20,6 @@ BUILTIN_EXECUTORS: dict[str, type[Executor]] = {
 
 def resolve_executor(
     executor: str | type[Executor] | Executor,
-    custom_executors: dict[str, type[Executor]] | None = None,
     **kwargs: Any,
 ) -> Executor:
     """
@@ -28,9 +27,9 @@ def resolve_executor(
 
     Args:
         executor: Can be one of the following:
-            - A string key corresponding to a built-in or custom executor
-            - A subclass of Executor
-        custom_executors: Optional dictionary of custom executors to consider when resolving string keys
+            - A string key corresponding to a built-in executor
+            - A subclass of Executor, or an instance of one — which is how an
+              executor the SDK does not ship gets used
         **kwargs: Additional keyword arguments to pass to the executor constructor
             if instantiation is needed
 
@@ -52,10 +51,7 @@ def resolve_executor(
         return executor(**kwargs)
 
     if isinstance(executor, str):
-        registry = BUILTIN_EXECUTORS.copy()
-        if isinstance(custom_executors, dict):
-            registry.update(custom_executors)
-
+        registry = BUILTIN_EXECUTORS
         cls = None
         try:
             cls = registry[executor]

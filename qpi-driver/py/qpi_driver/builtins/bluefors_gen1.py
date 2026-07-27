@@ -27,6 +27,7 @@ from typing import Any
 import requests
 
 from qpi_driver.builtins.qpu import _normalize_qpi_addr
+from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec
 from qpi_driver.events import Event, EventType
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
@@ -50,8 +51,6 @@ class BlueforsGen1Driver(QpiDriver):
         poll_interval: Seconds between polls.
         timeout: HTTP timeout per channel read, in seconds.
     """
-
-    OPERATION = "monitor"
 
     def __init__(
         self,
@@ -210,28 +209,41 @@ def build_from_options(
     )
 
 
-def run_monitor(
-    *,
-    device: str,
-    options: dict[str, str],
-    qpi_addr: str,
-    token: str,
-    name: str,
-    ca_fingerprint: str,
-    ca_file_path: str,
-    recv_timeout_ms: int,
-) -> None:
-    """Run the Bluefors Gen. 1 monitor, config from -o options.
-
-    The uniform runner the `monitor` operation registry dispatches to; *device*
-    is always ``bluefors_gen1`` here. See :func:`build_from_options` for the keys.
-    """
-    build_from_options(
-        qpi_addr=qpi_addr,
-        token=token,
-        name=name,
-        ca_fingerprint=ca_fingerprint,
-        ca_file_path=ca_file_path,
-        recv_timeout_ms=recv_timeout_ms,
-        options=options,
-    ).run()
+DEVICE_SPEC = DeviceSpec(
+    name="bluefors_gen1",
+    operation=Operation.MONITOR,
+    build=build_from_options,
+    extra="qpi-driver[cli,bluefors_gen1]",
+    summary="Cryostat monitor for Bluefors Control Software Gen. 1.",
+    options=(
+        OptionSpec(
+            key="channels",
+            help="Value-tree channels to poll, as path[:unit] pairs.",
+            required=True,
+            example="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
+        ),
+        OptionSpec(
+            key="base_url",
+            help="Base URL of the Bluefors Control API.",
+            default="http://127.0.0.1:49099",
+            example="http://localhost:49099",
+        ),
+        OptionSpec(
+            key="api_key",
+            help="Bluefors API access key, if the API requires one.",
+            example="<bluefors-api-key>",
+        ),
+        OptionSpec(
+            key="poll_interval",
+            help="Seconds between polls of every channel.",
+            default=str(DEFAULT_POLL_INTERVAL),
+            example="5",
+        ),
+        OptionSpec(
+            key="timeout",
+            help="HTTP timeout per channel read, in seconds.",
+            default=str(DEFAULT_TIMEOUT),
+            example="5",
+        ),
+    ),
+)

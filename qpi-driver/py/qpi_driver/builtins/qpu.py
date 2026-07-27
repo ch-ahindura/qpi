@@ -5,6 +5,7 @@ and emitting :attr:`EventType.JOB_RESULT` with the outcome. Execution happens in
 subprocess so a heavy or crashing executor never blocks or takes down the receive loop.
 """
 
+import functools
 import json
 import logging
 import multiprocessing
@@ -13,6 +14,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec
 from qpi_driver.events import Event, EventType
 from qpi_driver.executors import Executor, JobPayload
 from qpi_driver.paths import validate_safe_path
@@ -20,15 +22,35 @@ from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
 log = logging.getLogger(__name__)
 
-# The executor devices the `process` operation can run. Each maps to run_process
-# in the builtins registry (RFC 0001 §4).
+# The worker subprocess logs under its own name, configured in `job_worker`.
+_worker_log = logging.getLogger("worker")
+
+# The executor devices the `process` operation can run. Every one of them is the
+# same driver over a different executor, so they share one builder and differ
+# only in their spec (RFC 0003 §5).
 PROCESS_DEVICES = ("mock", "qiskit_aer", "quantify", "qblox", "presto")
+
+# Which install target ships each executor. Empty means the base `[cli]` extra
+# is enough; kept in step with qpi-ui/internal/drivers/catalog.go.
+_DEVICE_EXTRAS = {
+    "mock": "",
+    "presto": "",
+    "qiskit_aer": "qpi-driver[cli,aer]",
+    "quantify": "qpi-driver[cli,quantify]",
+    "qblox": "qpi-driver[cli,qblox]",
+}
+
+_DEVICE_SUMMARIES = {
+    "mock": "Qiskit BasicSimulator — the default, needs no hardware.",
+    "presto": "Presto control system (not yet implemented).",
+    "qiskit_aer": "Qiskit Aer simulator.",
+    "quantify": "Quantify-scheduler over Qblox instruments.",
+    "qblox": "Qblox scheduler (legacy).",
+}
 
 
 class QpuDriver(QpiDriver):
     """A QPI driver that runs quantum jobs on an executor."""
-
-    OPERATION = "process"
 
     def __init__(
         self,
@@ -36,7 +58,6 @@ class QpuDriver(QpiDriver):
         token: str = "",
         name: str = "qpu_sim_01",
         executor: str | type[Executor] | Executor = "mock",
-        custom_executors: dict[str, type[Executor]] | None = None,
         data_dir: Path = Path("bin/data"),
         ca_fingerprint: str = "",
         ca_file_path: Path = Path("./bin/qpi.ca.pem"),
@@ -52,7 +73,6 @@ class QpuDriver(QpiDriver):
             recv_timeout_ms=recv_timeout_ms,
         )
         self.executor = executor
-        self.custom_executors = custom_executors
         self.data_dir = data_dir
         self.executor_options = executor_options
 
@@ -83,12 +103,11 @@ class QpuDriver(QpiDriver):
 
         worker_options = {**self.executor_options, "name": self.name}
         self._worker = multiprocessing.Process(
-            target=execute_job,
+            target=job_worker,
             kwargs={
                 "job_queue": self._job_queue,
                 "result_queue": self._result_queue,
                 "executor": self.executor,
-                "custom_executors": self.custom_executors,
                 "data_dir": self.data_dir,
                 **worker_options,
             },
@@ -135,36 +154,9 @@ class QpuDriver(QpiDriver):
                 self._worker.join()
 
 
-def run_driver(
-    qpi_addr: str = "http://127.0.0.1:8090",
-    token: str = "",
-    name: str = "qpu_sim_01",
-    executor: str | type[Executor] | Executor = "mock",
-    custom_executors: dict[str, type[Executor]] | None = None,
-    data_dir: Path = Path("bin/data"),
-    ca_fingerprint: str = "",
-    ca_file_path: Path = Path("./bin/qpi.ca.pem"),
-    recv_timeout_ms: int = DEFAULT_RECV_TIMEOUT_MS,
-    **executor_options: Any,
-) -> None:
-    """Run a QPU on the event-based driver framework."""
-    QpuDriver(
-        qpi_addr=qpi_addr,
-        token=token,
-        name=name,
-        executor=executor,
-        custom_executors=custom_executors,
-        data_dir=data_dir,
-        ca_fingerprint=ca_fingerprint,
-        ca_file_path=ca_file_path,
-        recv_timeout_ms=recv_timeout_ms,
-        **executor_options,
-    ).run()
-
-
-def run_process(
+def build_from_options(
     *,
-    device: str,
+    executor: str | type[Executor] | Executor,
     options: dict[str, str],
     qpi_addr: str,
     token: str,
@@ -172,53 +164,128 @@ def run_process(
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
-) -> None:
-    """Run a QPU (process) driver on executor *device*, config from -o options."""
+) -> QpuDriver:
+    """Build an unstarted QPU driver over *executor* from ``-o key=value`` options.
+
+    Recognised keys are the ones in :data:`OPTIONS`. Raising ``ValueError`` lets
+    the CLI report a bad option uniformly, without knowing anything QPU-specific.
+    The driver is returned rather than started so a caller — including a test —
+    decides when, and whether, to connect (RFC 0003 §7).
+    """
     data_dir = Path(options.get("data_dir", "./bin/data"))
     validate_safe_path(data_dir, "data_dir")
 
-    executor_kwargs: dict[str, Any] = {
-        "qpi_addr": qpi_addr,
-        "token": token,
-        "name": name,
-        "executor": device,
-        "data_dir": data_dir,
-        "ca_fingerprint": ca_fingerprint,
-        "ca_file_path": Path(ca_file_path),
-        "is_dummy": _as_bool(options.get("is_dummy")),
-        "quantify_hardware_config": Path(
+    return QpuDriver(
+        qpi_addr=qpi_addr,
+        token=token,
+        name=name,
+        executor=executor,
+        data_dir=data_dir,
+        ca_fingerprint=ca_fingerprint,
+        ca_file_path=Path(ca_file_path),
+        recv_timeout_ms=recv_timeout_ms,
+        is_dummy=_as_bool(options.get("is_dummy")),
+        quantify_hardware_config=Path(
             options.get("quantify_hardware_config", "./quantify.hardware.json")
         ),
-        "quantify_device_config": Path(
+        quantify_device_config=Path(
             options.get("quantify_device_config", "./quantify.device.yml")
         ),
-        "job_timeout": int(options.get("job_timeout", 10)),
-        "recv_timeout_ms": recv_timeout_ms,
-    }
-
-    run_driver(**executor_kwargs)
+        job_timeout=int(options.get("job_timeout", 10)),
+    )
 
 
-def execute_job(
+# The runtime settings every process device reads, whichever executor it runs.
+# All of them have working defaults, so a QPU needs no -o options at all.
+OPTIONS = (
+    OptionSpec(
+        key="data_dir",
+        help="Directory the executor writes datasets and artefacts to.",
+        default="./bin/data",
+        example="./bin/data",
+    ),
+    OptionSpec(
+        key="job_timeout",
+        help="Seconds a single job may run before it is abandoned.",
+        default="10",
+        example="30",
+    ),
+    OptionSpec(
+        key="is_dummy",
+        help="Run against the vendor's dummy instruments instead of real hardware.",
+        default="false",
+        example="true",
+    ),
+    OptionSpec(
+        key="quantify_hardware_config",
+        help="Path to the quantify hardware configuration JSON.",
+        default="./quantify.hardware.json",
+        example="./quantify.hardware.json",
+    ),
+    OptionSpec(
+        key="quantify_device_config",
+        help="Path to the quantify device configuration YAML.",
+        default="./quantify.device.yml",
+        example="./quantify.device.yml",
+    ),
+)
+
+
+def device_spec(
+    name: str,
+    executor: str | type[Executor] | Executor | None = None,
+    *,
+    extra: str = "",
+    summary: str = "",
+) -> DeviceSpec:
+    """Describe a ``process`` device that runs *executor* on the QPU driver.
+
+    Every process device is this one driver over a different executor, so they
+    all share :func:`build_from_options` with the executor bound. *executor*
+    defaults to *name*, which is how the built-in executors register; pass a
+    class or instance to wrap one the SDK does not ship.
+    """
+    return DeviceSpec(
+        name=name,
+        operation=Operation.PROCESS,
+        build=functools.partial(
+            build_from_options, executor=name if executor is None else executor
+        ),
+        options=OPTIONS,
+        extra=extra,
+        summary=summary,
+    )
+
+
+DEVICE_SPECS = tuple(
+    device_spec(
+        name,
+        extra=_DEVICE_EXTRAS[name],
+        summary=_DEVICE_SUMMARIES[name],
+    )
+    for name in PROCESS_DEVICES
+)
+
+
+def job_worker(
     job_queue: multiprocessing.Queue,
     result_queue: multiprocessing.Queue,
     executor: str | type[Executor] | Executor,
-    custom_executors: dict[str, type[Executor]] | None,
     data_dir: Path,
     **executor_options: Any,
 ) -> None:
-    """
-    Worker process: pulls job dicts from job_queue, executes them using the resolved
-    executor, converts results to Qiskit-format dicts via ``executor.process_result()``,
-    and pushes the result dicts to result_queue.
+    """Worker process: resolve the executor, then run queued jobs until told to stop.
+
+    Runs in its own subprocess so a heavy or crashing executor never blocks or
+    takes down the receive loop. A failure to resolve the executor at all is
+    reported as an ``init_error`` result rather than a silent exit.
     """
     logging.basicConfig(
         level=logging.INFO,
         format="[WorkerProcess] %(levelname)s %(message)s",
         force=True,
     )
-    w_log = logging.getLogger("worker")
-    w_log.info("Worker process started")
+    _worker_log.info("Worker process started")
 
     from qpi_driver.executors import resolve_executor
 
@@ -226,9 +293,9 @@ def execute_job(
         options = executor_options.copy()
         if "data_dir" not in options:
             options["data_dir"] = data_dir
-        executor_instance = resolve_executor(executor, custom_executors, **options)
+        executor_instance = resolve_executor(executor, **options)
     except Exception as exc:
-        w_log.exception("Failed to resolve executor")
+        _worker_log.exception("Failed to resolve executor")
         result_queue.put(
             {
                 "job_id": "init_error",
@@ -243,37 +310,48 @@ def execute_job(
         try:
             job = job_queue.get()
             if job is None:  # Poison pill
-                w_log.info("Worker process received shutdown signal")
+                _worker_log.info("Worker process received shutdown signal")
                 break
 
-            job_id = job.get("job_id", "unknown")
-            w_log.info("Worker process executing job %s", job_id)
-
-            try:
-                payload_dict = job.get("payload", {})
-                if isinstance(payload_dict, str):
-                    try:
-                        payload_dict = json.loads(payload_dict)
-                    except Exception:
-                        payload_dict = {}
-
-                payload_dict.update(dict(id=job_id))
-                payload = JobPayload.from_dict(payload_dict)
-                dataset = executor_instance.execute(payload)
-                result_dict = executor_instance.process_result(dataset, job_id)
-                result_queue.put({"job_id": job_id, "results": result_dict})
-                w_log.info("Worker process completed job %s", job_id)
-            except Exception as exc:
-                w_log.exception("Worker process failed job %s", job_id)
-                result_queue.put(
-                    {"job_id": job_id, "error": _sanitize_exception_msg(exc)}
-                )
+            _execute_job(job, executor_instance, result_queue)
         except KeyboardInterrupt:
             break
         except Exception:
-            w_log.exception("Worker loop exception")
+            _worker_log.exception("Worker loop exception")
 
     executor_instance.close()
+
+
+def _execute_job(
+    job: dict[str, Any],
+    executor: Executor,
+    result_queue: multiprocessing.Queue,
+) -> None:
+    """Run one job, pushing either its results or its error onto *result_queue*.
+
+    Results are converted to Qiskit-format dicts via ``executor.process_result()``.
+    A job that raises is reported and the worker carries on with the next one.
+    """
+    job_id = job.get("job_id", "unknown")
+    _worker_log.info("Worker process executing job %s", job_id)
+
+    try:
+        payload_dict = job.get("payload", {})
+        if isinstance(payload_dict, str):
+            try:
+                payload_dict = json.loads(payload_dict)
+            except Exception:
+                payload_dict = {}
+
+        payload_dict.update(dict(id=job_id))
+        payload = JobPayload.from_dict(payload_dict)
+        dataset = executor.execute(payload)
+        result_dict = executor.process_result(dataset, job_id)
+        result_queue.put({"job_id": job_id, "results": result_dict})
+        _worker_log.info("Worker process completed job %s", job_id)
+    except Exception as exc:
+        _worker_log.exception("Worker process failed job %s", job_id)
+        result_queue.put({"job_id": job_id, "error": _sanitize_exception_msg(exc)})
 
 
 def _normalize_qpi_addr(qpi_addr: str) -> str:

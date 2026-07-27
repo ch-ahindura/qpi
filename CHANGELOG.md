@@ -7,6 +7,33 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- `qpi-driver/py`: Added the device catalog (RFC 0003 §5) — `Operation`, `OperationSpec`, `DeviceSpec`, `OptionSpec` and `DeviceBuilder` in `qpi_driver.builtins.registry`, with `register()`, `operations()`, `devices()` and `resolve()`. A device now describes itself as data next to its own code, so `--device` accepts it without any change to the CLI.
+- `qpi-driver/py`: Added `qpi_driver.builtins.qpu.device_spec()` for describing a `process` device that runs a given executor, including one the SDK does not ship.
+
+### Changed
+
+- `qpi-driver/py`: [BREAKING] A device builder now returns an *unstarted* driver and the caller starts it, matching the TypeScript SDK (RFC 0003 §7). A driver can therefore be built and asserted on with no server running.
+
+  | Removed | Replacement |
+  |---------|-------------|
+  | `run_driver(...)` | `QpuDriver(...).run()` |
+  | `qpu.run_process(device=..., ...)` | `qpu.build_from_options(executor=..., ...).run()` |
+  | `bluefors_gen1.run_monitor(...)` | `bluefors_gen1.build_from_options(...).run()` |
+  | `builtins.PROCESS_DRIVERS`, `builtins.MONITOR_DRIVERS` | `builtins.devices(operation)` / `builtins.resolve(operation, device)` |
+  | `builtins.DriverRunner` | `builtins.DeviceBuilder` (returns a driver rather than blocking) |
+  | `resolve_executor(executor, custom_executors, ...)` | `resolve_executor(executor, ...)` — pass the class or instance itself |
+  | `QpuDriver(custom_executors={"name": Cls})` | `QpuDriver(executor=Cls)` |
+  | `QpuDriver.OPERATION`, `BlueforsGen1Driver.OPERATION` | `DeviceSpec.operation` |
+  | `qpu.execute_job()` | `qpu.job_worker()` |
+
+- `qpi-driver/py`: The driver-authoring surface is unchanged — `QpiDriver`, `handle_event()`, `emit()`, `every()`, `Event`, `EventType` and `Executor` keep their names and signatures. Only how a driver is registered and launched moved.
+
+### Fixed
+
+- `qpi-driver/py`: Fixed the custom-executor example in `qpi-driver/py/README.md`, which passed a `custom_executor=` keyword that no function accepted and would have failed with `Unknown executor name 'custom'`.
+
 ## [0.1.2] - 2026-07-24
 
 ### Added

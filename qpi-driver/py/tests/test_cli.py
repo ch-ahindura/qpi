@@ -1,5 +1,6 @@
 import importlib.metadata
 import importlib.util
+from unittest.mock import patch
 
 import pytest
 
@@ -60,6 +61,112 @@ def test_every_command_builds():
             if line.strip().startswith("Usage:")
         )
         assert usage.endswith("[OPTIONS]"), usage
+
+
+class Recorder:
+    """A fake device that logs how the CLI used it, connecting to nothing."""
+
+    def __init__(self):
+        self.build_calls: list[dict] = []
+        self.log: list[str] = []
+
+    def build(self, **kwargs):
+        self.build_calls.append(kwargs)
+        self.log.append("build")
+        return self
+
+    def run(self) -> None:
+        self.log.append("run")
+
+
+def _fake_device(operation, name="fake", build=None):
+    """Register *name* as the only device of *operation*, for the test's duration.
+
+    Lets the CLI's own behaviour be asserted without a real device's options,
+    dependencies or connection attempts in the way. Returns the patcher to enter
+    and the recorder to assert on.
+    """
+    from qpi_driver.builtins import registry
+
+    recorder = Recorder()
+    spec = registry.DeviceSpec(
+        name=name, operation=operation, build=build or recorder.build
+    )
+    table = {op: {} for op in registry.Operation}
+    table[operation][name] = spec
+    return patch.dict(registry._DEVICES, table, clear=True), recorder
+
+
+def test_cli_start_builds_then_runs():
+    """The CLI builds a driver from the spec, then starts it — in that order.
+
+    The builder returns an unstarted driver and the CLI calls ``run()`` on it, so
+    a device never decides when to connect (RFC 0003 §7).
+    """
+    from pathlib import Path
+
+    from qpi_driver.builtins import Operation
+    from qpi_driver.cli import _start
+
+    patcher, recorder = _fake_device(Operation.MONITOR)
+    with patcher:
+        _start(
+            Operation.MONITOR,
+            device="fake",
+            qpi_addr="http://qpi:8090",
+            token="tok",
+            name="cryostat-1",
+            ca_file=Path("./bin/qpi.ca.pem"),
+            ca_fingerprint="fp",
+            options=["a=1", "b=two"],
+            recv_timeout_ms=250,
+        )
+
+    assert recorder.log == ["build", "run"]
+    assert recorder.build_calls == [
+        {
+            "options": {"a": "1", "b": "two"},
+            "qpi_addr": "http://qpi:8090",
+            "token": "tok",
+            "name": "cryostat-1",
+            "ca_fingerprint": "fp",
+            "ca_file_path": "bin/qpi.ca.pem",
+            "recv_timeout_ms": 250,
+        }
+    ]
+
+
+def test_cli_start_takes_no_registry():
+    """The operation alone selects the device table; callers pass no registry.
+
+    Removing that parameter is the point of the change — a caller that could
+    supply its own table could route ``process`` at a monitor.
+    """
+    import inspect
+
+    from qpi_driver.cli import _start
+
+    parameters = list(inspect.signature(_start).parameters)
+    assert parameters[0] == "operation"
+    assert "registry" not in parameters
+
+
+def test_cli_start_reports_a_builder_error():
+    """A ValueError from a device's builder becomes a one-line CLI error."""
+    from qpi_driver.builtins import Operation
+
+    def refuse(**_):
+        raise ValueError("fake needs a 'widget' option")
+
+    patcher, _recorder = _fake_device(Operation.MONITOR, build=refuse)
+    with patcher:
+        result = runner.invoke(
+            app,
+            ["monitor", "--token", "t", "--ca-fingerprint", "fp", "--device", "fake"],
+        )
+
+    assert result.exit_code == 1
+    assert "Error: fake needs a 'widget' option" in _output(result)
 
 
 def test_cli_process_requires_token():
