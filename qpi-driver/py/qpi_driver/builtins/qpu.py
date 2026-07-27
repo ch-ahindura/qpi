@@ -13,6 +13,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from pydantic import ImportString, TypeAdapter
+
 from qpi_driver.events import Event, EventType
 from qpi_driver.executors import Executor, JobPayload
 from qpi_driver.paths import validate_safe_path
@@ -23,6 +25,7 @@ log = logging.getLogger(__name__)
 # The executor devices the `process` operation can run. Each maps to run_process
 # in the builtins registry (RFC 0001 §4).
 PROCESS_DEVICES = ("mock", "qiskit_aer", "quantify", "qblox", "presto")
+_IMPORT = TypeAdapter(ImportString)
 
 
 class QpuDriver(QpiDriver):
@@ -193,9 +196,11 @@ def run_process(
             options.get("quantify_device_config", "./quantify.device.yml")
         ),
         "job_timeout": int(options.get("job_timeout", 10)),
+        "recv_timeout_ms": recv_timeout_ms,
+        "custom_executors": _parse_executors(options.get("executors")),
     }
 
-    run_driver(recv_timeout_ms=recv_timeout_ms, **executor_kwargs)
+    run_driver(**executor_kwargs)
 
 
 def execute_job(
@@ -300,3 +305,23 @@ def _safe_put(queue: multiprocessing.Queue, item: Any) -> None:
         queue.put(item)
     except Exception:
         pass
+
+
+def _parse_executors(executors: str | None) -> dict[str, type[Executor]] | None:
+    """Parses a JSON dictionary of executor names and their import paths into Executors
+
+    Args:
+        executors: dict of executor names and their import paths
+
+    Returns:
+        the dict of executor names and their classes
+    """
+    if isinstance(executors, str):
+        try:
+            executors = json.loads(executors)
+        except json.decoder.JSONDecodeError as exc:
+            raise ValueError("invalid executors JSON") from exc
+
+    if isinstance(executors, dict):
+        return {k: _IMPORT(v) for k, v in executors.items()}
+    return executors

@@ -184,7 +184,6 @@ run_driver(
 
 ```python
 from qpi_driver import Executor, run_driver
-from qpi_driver.executors.mock import MockExecutor
 
 class MyCustomExecutor(Executor):
     def execute(self, payload):

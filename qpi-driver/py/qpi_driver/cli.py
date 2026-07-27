@@ -1,6 +1,8 @@
 import importlib.metadata
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Callable
+
+from pydantic import ImportString
 
 from qpi_driver.builtins import MONITOR_DRIVERS, PROCESS_DRIVERS, DriverRunner
 from qpi_driver.compat import typer
@@ -70,6 +72,7 @@ if typer.IS_TYPER_INSTALLED:
             help="Operation-specific config as key=value, repeatable — e.g. "
             "-o data_dir=./bin/data (process) or "
             "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar (monitor). "
+            '-o executors={"quantify":"quantify_driver.CustomExecutor","qblox":"qblox_driver.CustomExecutor"}'
             "See the chosen device for the keys it reads.",
         ),
     ]
@@ -81,8 +84,17 @@ if typer.IS_TYPER_INSTALLED:
             "for a shutdown signal, in milliseconds.",
         ),
     ]
+    RunnerOpt = Annotated[
+        ImportString | None,
+        typer.Option(
+            "--runner",
+            "-r",
+            envvar="QPI_OPERATION_RUNNER",
+            help="The custom import path to the callable to run this driver",
+        ),
+    ]
 
-    def _ca_fingerprint_option() -> str:
+    def _ca_fingerprint_option() -> typer.Option:
         return typer.Option(
             default=...,
             envvar="QPI_CA_FINGERPRINT",
@@ -99,6 +111,8 @@ if typer.IS_TYPER_INSTALLED:
         ca_fingerprint: str = _ca_fingerprint_option(),
         options: OptionsOpt = None,
         recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
+        runner: RunnerOpt = None,
+        **kwargs,
     ):
         """
         Run a process driver — a QPU that executes jobs pushed to it (RFC 0001 §4).
@@ -117,6 +131,8 @@ if typer.IS_TYPER_INSTALLED:
             ca_fingerprint=ca_fingerprint,
             options=options,
             recv_timeout_ms=recv_timeout_ms,
+            runner=runner,
+            **kwargs,
         )
 
     @app.command()
@@ -129,6 +145,7 @@ if typer.IS_TYPER_INSTALLED:
         ca_fingerprint: str = _ca_fingerprint_option(),
         options: OptionsOpt = None,
         recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
+        **kwargs,
     ):
         """
         Run a monitor driver — one that only reports upward on its own schedule
@@ -148,6 +165,7 @@ if typer.IS_TYPER_INSTALLED:
             ca_fingerprint=ca_fingerprint,
             options=options,
             recv_timeout_ms=recv_timeout_ms,
+            **kwargs,
         )
 
     def _run_operation(
@@ -162,6 +180,8 @@ if typer.IS_TYPER_INSTALLED:
         ca_fingerprint: str,
         options: list[str] | None,
         recv_timeout_ms: int,
+        runner: Callable[..., None] | None,
+        **kwargs,
     ) -> None:
         """Look up a device's runner in *registry* and run it, or exit with an error.
 
@@ -177,7 +197,7 @@ if typer.IS_TYPER_INSTALLED:
             )
             raise typer.Exit(code=1)
 
-        runner = registry.get(device)
+        runner = runner or registry.get(device)
         if runner is None:
             typer.echo(
                 f"Error: unknown {operation} device {device!r}. "
@@ -188,8 +208,6 @@ if typer.IS_TYPER_INSTALLED:
 
         _validate_safe_path(ca_file, "--ca-file")
         typer.rich_print(_banner())
-        # import logging
-        # logging.basicConfig(level=logging.INFO)
 
         try:
             runner(
@@ -201,6 +219,7 @@ if typer.IS_TYPER_INSTALLED:
                 ca_fingerprint=ca_fingerprint,
                 ca_file_path=ca_file.as_posix(),
                 recv_timeout_ms=recv_timeout_ms,
+                **kwargs,
             )
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
