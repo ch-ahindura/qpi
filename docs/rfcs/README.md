@@ -8,8 +8,9 @@ holds both the system design and its phased implementation plan, so a contributo
 
 | RFC | Title | Status |
 | --- | --- | --- |
-| [0001](./0001-driver-framework.md) | Driver Framework | Draft |
-| [0002](./0002-dashboard-theming.md) | Dashboard Theming | Draft |
+| [0001](./0001-driver-framework.md) | Driver Framework | Implemented |
+| [0002](./0002-dashboard-theming.md) | Dashboard Theming | Implemented |
+| [0003](./0003-driver-extensibility.md) | Driver Extensibility | Draft |
 
 ## Conventions
 

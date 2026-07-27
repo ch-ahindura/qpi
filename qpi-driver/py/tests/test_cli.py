@@ -37,6 +37,31 @@ def test_cli_version():
     assert expected_version in result.stdout
 
 
+def test_every_command_builds():
+    """Every command is constructible and takes no positional arguments.
+
+    Typer builds the whole command tree up front, so a single option annotated
+    with a type it cannot render takes down every command — `version` and bare
+    `--help` included — and a `**kwargs` parameter silently becomes a required
+    positional argument. Neither failure is visible to a test that exercises one
+    command's happy path, so assert the tree itself here.
+    """
+    import typer.main
+
+    typer.main.get_command(app)
+
+    for command in ("process", "monitor", "version"):
+        result = runner.invoke(app, [command, "--help"])
+        assert result.exit_code == 0, _output(result)
+        # Rich pads its help output, so strip before matching.
+        usage = next(
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip().startswith("Usage:")
+        )
+        assert usage.endswith("[OPTIONS]"), usage
+
+
 def test_cli_process_requires_token():
     """process fails if the access token is not supplied."""
     result = runner.invoke(app, ["process", "--ca-fingerprint", "fp"])
