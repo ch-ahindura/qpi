@@ -1,15 +1,34 @@
 import importlib.metadata
+import json
 from pathlib import Path
 from typing import Annotated
 
 from qpi_driver.builtins import Operation, resolve
+from qpi_driver.builtins.catalog import catalog_dict, device_lines, render_catalog
 from qpi_driver.compat import typer
 from qpi_driver.paths import validate_safe_path
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS
 
 app = None
 if typer.IS_TYPER_INSTALLED:
-    app = typer.Typer(help="Quantum Processing Interface (QPI) Driver CLI")
+    # Rich mode explicitly, because _epilog() is written for how it renders:
+    # blank line for a line break, and square brackets escaped.
+    app = typer.Typer(
+        help="Quantum Processing Interface (QPI) Driver CLI",
+        rich_markup_mode="rich",
+    )
+
+    def _epilog(operation: Operation) -> str:
+        """Render the device catalog as an epilog for *operation*'s command.
+
+        Built once, at import, from the registry — so a new device shows up in
+        ``--help`` with no CLI change at all. Written for Typer's rich renderer,
+        which joins the lines of a paragraph with spaces and keeps a break only
+        where it finds a blank line, and which reads ``[...]`` as markup
+        (``typer.rich_utils.rich_format_help``): hence one paragraph per line,
+        and escaped brackets so ``qpi-driver[cli,qblox]`` survives.
+        """
+        return "\n\n".join(line.replace("[", r"\[") for line in device_lines(operation))
 
     # Universal options shared by every operation subcommand, defined once so a
     # new operation reuses them rather than redeclaring their flags/env/help. An
@@ -67,10 +86,9 @@ if typer.IS_TYPER_INSTALLED:
         typer.Option(
             "--option",
             "-o",
-            help="Operation-specific config as key=value, repeatable — e.g. "
-            "-o data_dir=./bin/data (process) or "
-            "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar (monitor). "
-            "See the chosen device for the keys it reads.",
+            help="A setting of the chosen device, as key=value, repeatable — "
+            "e.g. -o data_dir=./bin/data. The keys each device reads are "
+            "listed below, and by `qpi-driver devices`.",
         ),
     ]
     RecvTimeoutOpt = Annotated[
@@ -89,7 +107,7 @@ if typer.IS_TYPER_INSTALLED:
             help="SHA-256 fingerprint pinning the automatically downloaded root CA of the QPI server.",
         )
 
-    @app.command()
+    @app.command(epilog=_epilog(Operation.PROCESS))
     def process(
         device: DeviceOpt = "mock",
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
@@ -103,8 +121,7 @@ if typer.IS_TYPER_INSTALLED:
         """
         Run a process driver — a QPU that executes jobs pushed to it (RFC 0001 §4).
 
-        Executor runtime settings are passed as -o options: data_dir, is_dummy,
-        job_timeout, quantify_hardware_config, quantify_device_config.
+        The devices it can run and the -o options each one reads are listed below.
         """
         _start(
             Operation.PROCESS,
@@ -118,7 +135,7 @@ if typer.IS_TYPER_INSTALLED:
             recv_timeout_ms=recv_timeout_ms,
         )
 
-    @app.command()
+    @app.command(epilog=_epilog(Operation.MONITOR))
     def monitor(
         device: DeviceOpt = "bluefors_gen1",
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
@@ -133,8 +150,7 @@ if typer.IS_TYPER_INSTALLED:
         Run a monitor driver — one that only reports upward on its own schedule
         and never handles JobDispatch (RFC 0001 §4, §7).
 
-        The device's settings are passed as -o options, e.g. for bluefors_gen1:
-        -o base_url=... -o channels=path:unit,... -o api_key=...
+        The devices it can run and the -o options each one reads are listed below.
         """
         _start(
             Operation.MONITOR,
@@ -162,10 +178,10 @@ if typer.IS_TYPER_INSTALLED:
     ) -> None:
         """Build the driver for *device* within *operation* and run it.
 
-        Shared by every operation: the device selects the backend, its spec's
-        builder reads that device's own config from the parsed -o options, and
-        the driver it returns is what gets started here. Anything the device
-        rejects — an unknown name, a missing or bad option — surfaces as a
+        Shared by every operation: the device selects the backend, its own option
+        schema checks and coerces the -o values, and its builder turns those into
+        the unstarted driver that gets started here. Anything rejected along the
+        way — an unknown device or option, a missing or bad value — surfaces as a
         ``ValueError`` and becomes a one-line CLI error rather than a traceback.
         """
         if not token:
@@ -176,8 +192,11 @@ if typer.IS_TYPER_INSTALLED:
             )
             raise typer.Exit(code=1)
 
+        # Usage errors, reported before the banner so they are the first thing on
+        # screen: which device, and whether its options make sense at all.
         try:
             spec = resolve(operation, device)
+            parsed = spec.parse_options(_split_options(options or []))
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
@@ -187,7 +206,7 @@ if typer.IS_TYPER_INSTALLED:
 
         try:
             driver = spec.build(
-                options=_parse_options(options or []),
+                options=parsed,
                 qpi_addr=qpi_addr,
                 token=token,
                 name=name,
@@ -200,6 +219,46 @@ if typer.IS_TYPER_INSTALLED:
             raise typer.Exit(code=1)
 
         driver.run()
+
+    @app.command()
+    def devices(
+        operation: Annotated[
+            Operation | None,
+            typer.Option(
+                "--operation",
+                help="Show only this operation's devices, instead of all of them.",
+            ),
+        ] = None,
+    ):
+        """
+        List the operations, the devices each one can run, and their -o options.
+
+        The same catalog `process --help` and `monitor --help` show, in one place;
+        `catalog --json` is the machine-readable form.
+        """
+        typer.echo(render_catalog(operation))
+
+    @app.command()
+    def catalog(
+        as_json: Annotated[
+            bool,
+            typer.Option(
+                "--json/--text",
+                help="Print the catalog as JSON, or as the same text `devices` shows.",
+            ),
+        ] = True,
+    ):
+        """
+        Print the whole device catalog for another program to read.
+
+        The JSON shape is a contract — QPI-UI checks its own catalog against it,
+        and the Go and TypeScript SDKs mirror it — and is documented in full on
+        `qpi_driver.builtins.catalog.catalog_dict` (RFC 0003 §9).
+        """
+        if not as_json:
+            typer.echo(render_catalog())
+            return
+        typer.echo(json.dumps(catalog_dict(), indent=2))
 
     @app.command()
     def version():
@@ -235,11 +294,12 @@ if typer.IS_TYPER_INSTALLED:
             padding=(1, 2),
         )
 
-    def _parse_options(pairs: list[str]) -> dict[str, str]:
-        """Turn repeatable ``-o key=value`` options into a dict.
+    def _split_options(pairs: list[str]) -> dict[str, str]:
+        """Turn repeatable ``-o key=value`` options into a dict of raw strings.
 
-        Each device reads the keys it cares about from the result, so the CLI
-        stays generic across operations and devices.
+        Only the syntax is the CLI's business; what the keys mean, whether they
+        exist and what type each value is belong to the chosen device's schema
+        (:meth:`DeviceSpec.parse_options`), which runs on the result.
         """
         options: dict[str, str] = {}
         for pair in pairs:

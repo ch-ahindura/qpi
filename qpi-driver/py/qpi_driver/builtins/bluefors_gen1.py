@@ -180,34 +180,66 @@ def build_from_options(
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
-    options: dict[str, str],
+    options: dict[str, Any],
 ) -> BlueforsGen1Driver:
-    """Build a driver from the CLI's generic ``-o key=value`` options.
+    """Build an unstarted driver from parsed ``-o`` options.
 
-    Recognised keys: ``channels`` (required, ``path[:unit],...``), ``base_url``,
-    ``api_key``, ``poll_interval``, ``timeout``. Raising ``ValueError`` lets the
-    CLI report a bad option uniformly, without knowing anything Bluefors-specific.
+    *options* is what :meth:`DeviceSpec.parse_options` returns for :data:`OPTIONS`
+    — every key present and already coerced, ``channels`` included — so a missing
+    or malformed option has already become a clean CLI error by the time this runs.
     """
-    channels = options.get("channels", "")
-    if not channels:
-        raise ValueError(
-            "bluefors_gen1 needs a 'channels' option, e.g. "
-            "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar"
-        )
     return BlueforsGen1Driver(
         qpi_addr=qpi_addr,
         token=token,
         name=name,
-        bluefors_base_url=options.get("base_url", "http://127.0.0.1:49099"),
-        channels=parse_channels(channels),
-        api_key=options.get("api_key", ""),
-        poll_interval=float(options.get("poll_interval", DEFAULT_POLL_INTERVAL)),
-        timeout=float(options.get("timeout", DEFAULT_TIMEOUT)),
+        bluefors_base_url=options["base_url"],
+        channels=options["channels"],
+        api_key=options["api_key"],
+        poll_interval=options["poll_interval"],
+        timeout=options["timeout"],
         ca_fingerprint=ca_fingerprint,
         ca_file_path=ca_file_path,
         recv_timeout_ms=recv_timeout_ms,
     )
 
+
+# What this monitor reads from -o. Only the channels are unknowable in advance,
+# so they are the one required option (see the module docstring on mappers).
+OPTIONS = (
+    OptionSpec(
+        key="channels",
+        help="Value-tree channels to poll, as path[:unit] pairs.",
+        parse=parse_channels,
+        required=True,
+        example="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
+    ),
+    OptionSpec(
+        key="base_url",
+        help="Base URL of the Bluefors Control API.",
+        default="http://127.0.0.1:49099",
+        example="http://localhost:49099",
+    ),
+    OptionSpec(
+        key="api_key",
+        help="Bluefors API access key, if the API requires one.",
+        default="",
+        example="<bluefors-api-key>",
+    ),
+    OptionSpec(
+        key="poll_interval",
+        help="Seconds between polls of every channel.",
+        parse=float,
+        default=str(DEFAULT_POLL_INTERVAL),
+        example="5",
+    ),
+    OptionSpec(
+        key="timeout",
+        help="HTTP timeout per channel read, in seconds.",
+        parse=float,
+        default=str(DEFAULT_TIMEOUT),
+        example="5",
+    ),
+)
 
 DEVICE_SPEC = DeviceSpec(
     name="bluefors_gen1",
@@ -215,35 +247,5 @@ DEVICE_SPEC = DeviceSpec(
     build=build_from_options,
     extra="qpi-driver[cli,bluefors_gen1]",
     summary="Cryostat monitor for Bluefors Control Software Gen. 1.",
-    options=(
-        OptionSpec(
-            key="channels",
-            help="Value-tree channels to poll, as path[:unit] pairs.",
-            required=True,
-            example="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
-        ),
-        OptionSpec(
-            key="base_url",
-            help="Base URL of the Bluefors Control API.",
-            default="http://127.0.0.1:49099",
-            example="http://localhost:49099",
-        ),
-        OptionSpec(
-            key="api_key",
-            help="Bluefors API access key, if the API requires one.",
-            example="<bluefors-api-key>",
-        ),
-        OptionSpec(
-            key="poll_interval",
-            help="Seconds between polls of every channel.",
-            default=str(DEFAULT_POLL_INTERVAL),
-            example="5",
-        ),
-        OptionSpec(
-            key="timeout",
-            help="HTTP timeout per channel read, in seconds.",
-            default=str(DEFAULT_TIMEOUT),
-            example="5",
-        ),
-    ),
+    options=OPTIONS,
 )

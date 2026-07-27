@@ -18,13 +18,22 @@ one source. Specs live beside the code they describe — ``qpu.py`` owns the
 the package imports them.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 from qpi_driver.events import EventType
 from qpi_driver.sdk import QpiDriver
+
+
+def as_bool(raw: str) -> bool:
+    """Parse a boolean-ish option value.
+
+    ``1``, ``true``, ``yes`` and ``on`` are true, in any case; anything else,
+    including the empty string, is false.
+    """
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 class Operation(str, Enum):
@@ -55,9 +64,12 @@ class OptionSpec:
         help: One line for ``--help``, in the imperative or descriptive voice
             used by the CLI's own option help.
         parse: Turns the raw string into the value the builder wants. Defaults to
-            ``str``, i.e. no coercion.
-        default: What the device uses when the option is absent. ``None`` means
-            the device decides.
+            ``str``, i.e. no coercion. The one place an option value is coerced,
+            so no builder hand-rolls ``int(...)`` or path validation.
+        default: The value used when the option is absent, written the way it
+            would be typed on the command line — it goes through :attr:`parse`
+            like any other value, and is what ``catalog --json`` reports.
+            ``None`` means the option has no default.
         required: Whether omitting the option is an error.
         example: A ready-to-paste value for the generated help and snippets.
     """
@@ -65,9 +77,20 @@ class OptionSpec:
     key: str
     help: str
     parse: Callable[[str], Any] = str
-    default: Any = None
+    default: str | None = None
     required: bool = False
     example: str = ""
+
+    @property
+    def type_name(self) -> str:
+        """The parser's name, for generated help and ``catalog --json``.
+
+        An ``as_``/``parse_`` prefix is dropped so what is left reads as the kind
+        of value expected: ``str``, ``int``, ``float``, ``Path``, ``bool``,
+        ``safe_dir``, ``channels``.
+        """
+        name = getattr(self.parse, "__name__", type(self.parse).__name__)
+        return name.removeprefix("as_").removeprefix("parse_")
 
 
 @dataclass(frozen=True)
@@ -82,7 +105,9 @@ class DeviceSpec:
         name: How ``--device`` names it, e.g. ``qblox``. A plain identifier —
             values containing ``.`` or ``:`` are import paths, not names.
         operation: Which operation this device implements.
-        build: Returns an unstarted driver; see :data:`DeviceBuilder`.
+        build: Returns an unstarted driver; see :data:`DeviceBuilder`. Its
+            ``options`` argument is the output of :meth:`parse_options`, never
+            raw strings.
         options: The ``-o`` keys this device reads.
         extra: The install target that ships it, e.g. ``qpi-driver[cli,qblox]``.
             Empty means the base ``[cli]`` extra is enough.
@@ -95,6 +120,52 @@ class DeviceSpec:
     options: tuple[OptionSpec, ...] = ()
     extra: str = ""
     summary: str = ""
+
+    def parse_options(self, raw: Mapping[str, str]) -> dict[str, Any]:
+        """Check *raw* ``-o`` values against this device's schema and coerce them.
+
+        The result is what :attr:`build` is called with, and carries every option
+        that has a value — the ones given, plus the parsed :attr:`~OptionSpec.default`
+        of each one left out — so a builder reads its keys without repeating their
+        defaults, and coercion happens here rather than in five builders.
+
+        Raises:
+            ValueError: on a key this device does not read, a missing required
+                key, or a value its own parser rejects. The CLI turns any of the
+                three into one clean line.
+        """
+        declared = {option.key: option for option in self.options}
+
+        unknown = sorted(set(raw) - set(declared))
+        if unknown:
+            label = "options" if len(unknown) > 1 else "option"
+            raise ValueError(
+                f"unknown {label} {', '.join(repr(key) for key in unknown)} for "
+                f"{self.operation.value} device {self.name!r}. Valid options: "
+                f"{', '.join(sorted(declared)) or 'none'}."
+            )
+
+        parsed: dict[str, Any] = {}
+        for key, option in declared.items():
+            if key in raw:
+                value = raw[key]
+            elif option.required:
+                example = f", e.g. -o {key}={option.example}" if option.example else ""
+                raise ValueError(
+                    f"{self.operation.value} device {self.name!r} needs a "
+                    f"{key!r} option{example}"
+                )
+            elif option.default is None:
+                continue
+            else:
+                value = option.default
+
+            try:
+                parsed[key] = option.parse(value)
+            except ValueError as exc:
+                raise ValueError(f"bad value for -o {key}: {exc}") from exc
+
+        return parsed
 
 
 @dataclass(frozen=True)

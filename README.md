@@ -345,11 +345,17 @@ Universal options (shared by every operation):
 * `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1` (env: `QPI_DEVICE`).
 * `--ca-file`: Path to the downloaded root CA certificate of the server (env: `QPI_CA_FILE`, default: `./bin/qpi.ca.pem`).
 * `--ca-fingerprint`: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: `QPI_CA_FINGERPRINT`, required).
-* `-o`, `--option`: Operation-specific config as `key=value`, repeatable.
+* `-o`, `--option`: A setting of the chosen device as `key=value`, repeatable.
 
-`process` options (`-o`): `data_dir` (default `./bin/data`), `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`, `use_sdk` (run on the experimental driver framework).
+`process` options (`-o`): `data_dir` (default `./bin/data`), `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`.
 
 `monitor` options (`-o`) for `bluefors_gen1`: `channels` (required, `path[:unit],…`), `base_url`, `api_key`, `poll_interval`, `timeout`.
+
+Each device declares the keys it reads, so rather than trusting this list, ask the
+CLI: `process --help` and `monitor --help` list every device and option with its
+type and default, `qpi-driver devices` shows all operations at once, and
+`qpi-driver catalog --json` is the same thing for another program to read. An `-o`
+key no device reads is an error naming the ones that exist.
 
 ---
 

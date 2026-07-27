@@ -270,16 +270,33 @@ Universal options:
   -t, --token TEXT        Access token identifying the driver [env: QPI_ACCESS_TOKEN]
   -n, --name TEXT         Human-readable driver name [env: QPI_DRIVER_NAME]
   -d, --device TEXT       Backend within the operation, e.g. mock, qblox, bluefors_gen1 [env: QPI_DEVICE]
-  -o, --option KEY=VALUE  Operation-specific config, repeatable
+  -o, --option KEY=VALUE  A setting of the chosen device, repeatable
   --ca-file PATH          Path to the CA root certificate [env: QPI_CA_FILE]
   --ca-fingerprint TEXT   Fingerprint pinning the CA root certificate [env: QPI_CA_FINGERPRINT]
   --help                  Show this message and exit.
-
-process -o options: data_dir, is_dummy, job_timeout, quantify_hardware_config,
-                     quantify_device_config, use_sdk
-monitor -o options (bluefors_gen1): channels (required), base_url, api_key,
-                     poll_interval, timeout
 ```
+
+Each device declares the `-o` keys it reads, so `--help` lists them with their
+types, defaults and examples rather than the list being maintained by hand — and
+a key no device reads is an error naming the ones that exist, not a silent no-op.
+
+```bash
+# Every operation, its devices, and each device's -o options
+qpi-driver devices
+
+# Just one operation
+qpi-driver devices --operation monitor
+
+# The same catalog for another program to read
+qpi-driver catalog --json
+```
+
+Today's catalog:
+
+| Operation | Device | `-o` options |
+|-----------|--------|--------------|
+| `process` | `mock`, `presto`, `qiskit_aer`, `quantify`, `qblox` | `data_dir`, `job_timeout`, `is_dummy`, `quantify_hardware_config`, `quantify_device_config` |
+| `monitor` | `bluefors_gen1` | `channels` (required), `base_url`, `api_key`, `poll_interval`, `timeout` |
 
 ---
 

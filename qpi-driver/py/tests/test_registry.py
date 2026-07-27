@@ -8,6 +8,7 @@ from qpi_driver.builtins.registry import (
     DeviceSpec,
     Operation,
     OptionSpec,
+    as_bool,
     devices,
     operations,
     register,
@@ -132,3 +133,99 @@ def test_option_spec_defaults():
     assert option.default is None
     assert option.required is False
     assert option.example == ""
+    assert option.type_name == "str"
+
+
+def test_type_name_reads_as_the_kind_of_value():
+    """The parser's name, less its as_/parse_ prefix, is what help and JSON show."""
+
+    def as_bool(raw: str) -> bool:
+        return raw == "yes"
+
+    def parse_channels(raw: str) -> dict:
+        return {raw: ""}
+
+    assert OptionSpec(key="k", help="h", parse=as_bool).type_name == "bool"
+    assert OptionSpec(key="k", help="h", parse=parse_channels).type_name == "channels"
+    assert OptionSpec(key="k", help="h", parse=int).type_name == "int"
+
+
+def test_as_bool_accepts_the_usual_spellings():
+    """A boolean-ish option value, however an operator felt like writing it."""
+    for true in ("1", "true", "TRUE", " yes ", "On"):
+        assert as_bool(true) is True
+    for false in ("0", "false", "no", "off", "", "  ", "maybe"):
+        assert as_bool(false) is False
+
+
+def _schema_spec() -> DeviceSpec:
+    """A device with one required and two optional options, of three types."""
+    return DeviceSpec(
+        name="fake",
+        operation=Operation.MONITOR,
+        build=lambda **_: None,
+        options=(
+            OptionSpec(
+                key="channels", help="What to poll.", required=True, example="a:K"
+            ),
+            OptionSpec(key="ticks", help="How many.", parse=int, default="3"),
+            OptionSpec(key="label", help="What to call it."),
+        ),
+    )
+
+
+def test_parse_options_coerces_and_fills_defaults():
+    """Given options are coerced; omitted ones arrive as their parsed default."""
+    parsed = _schema_spec().parse_options({"channels": "a:K", "ticks": "9"})
+
+    assert parsed == {"channels": "a:K", "ticks": 9}
+
+
+def test_parse_options_omits_an_option_with_no_default():
+    """An option with neither a value nor a default is absent, not None.
+
+    A builder can then tell "not set" from "set to nothing" with ``in``.
+    """
+    parsed = _schema_spec().parse_options({"channels": "a:K"})
+
+    assert "label" not in parsed
+    assert parsed["ticks"] == 3
+
+
+def test_parse_options_rejects_an_unknown_key():
+    """A key the device does not read is an error listing the ones it does."""
+    with pytest.raises(ValueError) as excinfo:
+        _schema_spec().parse_options({"channels": "a:K", "tickz": "9"})
+
+    message = str(excinfo.value)
+    assert "unknown option 'tickz' for monitor device 'fake'" in message
+    assert "Valid options: channels, label, ticks." in message
+
+
+def test_parse_options_reports_every_unknown_key_at_once():
+    """Several typos are one error, so they are fixed in one go rather than three."""
+    with pytest.raises(ValueError, match="unknown options 'x', 'y'"):
+        _schema_spec().parse_options({"channels": "a:K", "y": "1", "x": "2"})
+
+
+def test_parse_options_reports_a_missing_required_key_with_its_example():
+    """The error is the fix: it shows the -o line the operator should have typed."""
+    with pytest.raises(ValueError) as excinfo:
+        _schema_spec().parse_options({})
+
+    assert "needs a 'channels' option, e.g. -o channels=a:K" in str(excinfo.value)
+
+
+def test_parse_options_names_the_option_a_bad_value_belongs_to():
+    """A parser's complaint is useless without knowing which option raised it."""
+    with pytest.raises(ValueError, match="bad value for -o ticks"):
+        _schema_spec().parse_options({"channels": "a:K", "ticks": "many"})
+
+
+def test_parse_options_accepts_a_device_that_reads_nothing():
+    """A device with no schema takes no options — and says so if given one."""
+    spec = DeviceSpec(name="bare", operation=Operation.PROCESS, build=lambda **_: None)
+
+    assert spec.parse_options({}) == {}
+    with pytest.raises(ValueError, match="Valid options: none."):
+        spec.parse_options({"anything": "1"})

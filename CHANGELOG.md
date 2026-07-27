@@ -11,8 +11,15 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - `qpi-driver/py`: Added the device catalog (RFC 0003 §5) — `Operation`, `OperationSpec`, `DeviceSpec`, `OptionSpec` and `DeviceBuilder` in `qpi_driver.builtins.registry`, with `register()`, `operations()`, `devices()` and `resolve()`. A device now describes itself as data next to its own code, so `--device` accepts it without any change to the CLI.
 - `qpi-driver/py`: Added `qpi_driver.builtins.qpu.device_spec()` for describing a `process` device that runs a given executor, including one the SDK does not ship.
+- `qpi-driver/py`: `process --help` and `monitor --help` now list every device the operation can run and every `-o` key each one reads, with its type, default, example and whether it is required — generated from the device specs, so a new device appears with no CLI change. A device whose install target is not fully installed is listed as `qblox — unavailable: pip install "qpi-driver[cli,qblox]"`, read from package metadata without importing anything, so `--help` works when a device does not.
+- `qpi-driver/py`: Added `qpi-driver devices [--operation OP]`, the same catalog as readable text for every operation at once.
+- `qpi-driver/py`: Added `qpi-driver catalog --json`, the whole catalog as JSON for another program to read. The shape is a contract — QPI-UI checks its own catalog against it, and the Go and TypeScript SDKs mirror it — carries a `schema_version`, and is documented in full on `qpi_driver.builtins.catalog.catalog_dict` (RFC 0003 §9).
+- `qpi-driver/py`: Added `DeviceSpec.parse_options()`, `OptionSpec.parse`/`OptionSpec.type_name` and `qpi_driver.paths.as_safe_dir()` — an option's value is checked and converted by its own schema, in one place, instead of each builder hand-rolling `int(...)`, boolean-ish string parsing and path validation.
 
 ### Changed
+
+- `qpi-driver/py`: [BREAKING] An `-o` key the chosen device does not read is now an error naming the keys it does, where before it was silently ignored. A typo such as `-o data_dirr=/data` used to mean a driver running with a default nobody chose; it now exits 1. Anything that passed an unrecognised `-o` key deliberately, expecting it to reach the executor, must declare it in a `DeviceSpec` (see `qpu.device_spec()`).
+- `qpi-driver/py`: [BREAKING] A device builder is now handed options that have already been checked and coerced against its own `DeviceSpec` — `build_from_options(options=spec.parse_options(raw))` — rather than raw strings. Calling a builder directly with `{"job_timeout": "30"}` no longer coerces it, and an omitted key is no longer defaulted by the builder.
 
 - `qpi-driver/py`: [BREAKING] A device builder now returns an *unstarted* driver and the caller starts it, matching the TypeScript SDK (RFC 0003 §7). A driver can therefore be built and asserted on with no server running.
 

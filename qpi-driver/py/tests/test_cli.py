@@ -79,18 +79,21 @@ class Recorder:
         self.log.append("run")
 
 
-def _fake_device(operation, name="fake", build=None):
+def _fake_device(operation, name="fake", build=None, options=None):
     """Register *name* as the only device of *operation*, for the test's duration.
 
-    Lets the CLI's own behaviour be asserted without a real device's options,
-    dependencies or connection attempts in the way. Returns the patcher to enter
-    and the recorder to assert on.
+    Lets the CLI's own behaviour be asserted without a real device's dependencies
+    or connection attempts in the way. Returns the patcher to enter and the
+    recorder to assert on.
     """
     from qpi_driver.builtins import registry
 
     recorder = Recorder()
     spec = registry.DeviceSpec(
-        name=name, operation=operation, build=build or recorder.build
+        name=name,
+        operation=operation,
+        build=build or recorder.build,
+        options=options if options is not None else (),
     )
     table = {op: {} for op in registry.Operation}
     table[operation][name] = spec
@@ -101,14 +104,21 @@ def test_cli_start_builds_then_runs():
     """The CLI builds a driver from the spec, then starts it — in that order.
 
     The builder returns an unstarted driver and the CLI calls ``run()`` on it, so
-    a device never decides when to connect (RFC 0003 §7).
+    a device never decides when to connect (RFC 0003 §7). The options it is handed
+    have been through the device's own schema, so ``ticks`` arrives as an int.
     """
     from pathlib import Path
 
-    from qpi_driver.builtins import Operation
+    from qpi_driver.builtins import Operation, OptionSpec
     from qpi_driver.cli import _start
 
-    patcher, recorder = _fake_device(Operation.MONITOR)
+    patcher, recorder = _fake_device(
+        Operation.MONITOR,
+        options=(
+            OptionSpec(key="ticks", help="How many.", parse=int),
+            OptionSpec(key="label", help="What to call it.", default="unnamed"),
+        ),
+    )
     with patcher:
         _start(
             Operation.MONITOR,
@@ -118,14 +128,14 @@ def test_cli_start_builds_then_runs():
             name="cryostat-1",
             ca_file=Path("./bin/qpi.ca.pem"),
             ca_fingerprint="fp",
-            options=["a=1", "b=two"],
+            options=["ticks=3"],
             recv_timeout_ms=250,
         )
 
     assert recorder.log == ["build", "run"]
     assert recorder.build_calls == [
         {
-            "options": {"a": "1", "b": "two"},
+            "options": {"ticks": 3, "label": "unnamed"},
             "qpi_addr": "http://qpi:8090",
             "token": "tok",
             "name": "cryostat-1",
@@ -255,16 +265,153 @@ def test_cli_monitor_reports_missing_required_option():
     assert "channels" in _output(result)
 
 
-def test_parse_options_parses_and_validates():
-    """-o key=value pairs parse into a dict; a pair without '=' is rejected."""
-    from qpi_driver.cli import _parse_options
+def test_split_options_reads_the_syntax_only():
+    """-o key=value pairs split into raw strings; a pair without '=' is rejected.
 
-    assert _parse_options(["base_url=http://x", "channels=a:K,b"]) == {
+    Splitting is all the CLI does — which keys exist and what type each value has
+    is the chosen device's schema's business, not this function's, so an unknown
+    key passes through here untouched.
+    """
+    from qpi_driver.cli import _split_options
+
+    assert _split_options(["base_url=http://x", "channels=a:K,b", "nonsense=1"]) == {
         "base_url": "http://x",
         "channels": "a:K,b",
+        "nonsense": "1",
     }
     with pytest.raises(ValueError):
-        _parse_options(["not-a-pair"])
+        _split_options(["not-a-pair"])
+
+
+def test_cli_rejects_an_unknown_option():
+    """A misspelt -o key is an error naming the valid ones, not a silent no-op.
+
+    Silently ignoring it is the behaviour this replaced: a typo in a systemd unit
+    used to mean a driver running with a default nobody chose.
+    """
+    result = runner.invoke(
+        app,
+        ["process", "--token", "t", "--ca-fingerprint", "fp", "-o", "data_dirr=/tmp/x"],
+    )
+
+    output = _output(result)
+    assert result.exit_code == 1
+    assert "unknown option 'data_dirr'" in output
+    assert "data_dir" in output  # the valid keys are listed
+
+
+def test_cli_rejects_an_uncoercible_option_value():
+    """A value its parser refuses names the option, not the parser's internals."""
+    result = runner.invoke(
+        app,
+        ["process", "--token", "t", "--ca-fingerprint", "fp", "-o", "job_timeout=soon"],
+    )
+
+    assert result.exit_code == 1
+    assert "bad value for -o job_timeout" in _output(result)
+
+
+@pytest.mark.parametrize("operation", ["process", "monitor"])
+def test_help_lists_every_device_and_its_options(operation):
+    """--help answers "what can I pass to -o?" from the registry, not by hand.
+
+    Rich rewraps the epilog, so match on substrings rather than whole lines.
+    """
+    from qpi_driver.builtins import Operation, devices
+
+    result = runner.invoke(app, [operation, "--help"], env={"COLUMNS": "200"})
+    output = _output(result)
+
+    assert result.exit_code == 0, output
+    for spec in devices(Operation(operation)):
+        assert spec.name in output
+        for option in spec.options:
+            assert f"{option.key}=<{option.type_name}>" in output
+
+
+def test_help_marks_a_required_option():
+    """A device with a required option says so, so it is not learnt by crashing."""
+    result = runner.invoke(app, ["monitor", "--help"], env={"COLUMNS": "200"})
+
+    assert "channels=<channels> (required" in _output(result)
+
+
+def test_help_survives_a_device_it_cannot_describe():
+    """One unusable device must not take --help down for the others.
+
+    An installed device whose module half-imports is the case this guards: help
+    is the command someone runs *because* something is wrong, so it has to work
+    when a device does not.
+    """
+    from qpi_driver.builtins import Operation, registry
+    from qpi_driver.cli import _epilog
+
+    class Unimportable:
+        """A registered device whose description cannot be read."""
+
+        name = "broken"
+
+        def __getattr__(self, attribute):
+            raise ImportError("no module named 'vendor_sdk'")
+
+    table = {op: {} for op in registry.Operation}
+    table[Operation.MONITOR]["broken"] = Unimportable()
+    table[Operation.MONITOR]["bluefors_gen1"] = registry.resolve(
+        Operation.MONITOR, "bluefors_gen1"
+    )
+
+    with patch.dict(registry._DEVICES, table, clear=True):
+        epilog = _epilog(Operation.MONITOR)
+
+    assert "broken — cannot be described: ImportError" in epilog
+    assert "bluefors_gen1" in epilog
+
+
+def test_devices_command_lists_every_operation():
+    """`devices` is the readable view of the same catalog --help generates."""
+    result = runner.invoke(app, ["devices"])
+    output = _output(result)
+
+    assert result.exit_code == 0, output
+    assert "process" in output and "monitor" in output
+    assert "mock" in output and "bluefors_gen1" in output
+
+
+def test_devices_command_narrows_to_one_operation():
+    result = runner.invoke(app, ["devices", "--operation", "monitor"])
+    output = _output(result)
+
+    assert result.exit_code == 0, output
+    assert "bluefors_gen1" in output
+    assert "mock" not in output
+
+
+def test_catalog_command_round_trips_as_json():
+    """`catalog --json` is what QPI-UI and the other SDKs read (RFC 0003 §9)."""
+    import json
+
+    from qpi_driver.builtins import Operation, devices
+
+    result = runner.invoke(app, ["catalog", "--json"])
+    assert result.exit_code == 0, _output(result)
+
+    document = json.loads(result.stdout)
+    assert document["schema_version"] == 1
+
+    operations = {entry["name"]: entry for entry in document["operations"]}
+    assert set(operations) == {"process", "monitor"}
+
+    for name, entry in operations.items():
+        listed = {device["name"] for device in entry["devices"]}
+        assert listed == {spec.name for spec in devices(Operation(name))}
+
+    qblox = next(
+        device
+        for device in operations["process"]["devices"]
+        if device["name"] == "qblox"
+    )
+    assert qblox["extra"] == "qpi-driver[cli,qblox]"
+    assert {option["key"] for option in qblox["options"]} >= {"data_dir", "job_timeout"}
 
 
 def test_validate_safe_path():

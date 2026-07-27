@@ -14,10 +14,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec
+from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec, as_bool
 from qpi_driver.events import Event, EventType
 from qpi_driver.executors import Executor, JobPayload
-from qpi_driver.paths import validate_safe_path
+from qpi_driver.paths import as_safe_dir
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
 log = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ class QpuDriver(QpiDriver):
 def build_from_options(
     *,
     executor: str | type[Executor] | Executor,
-    options: dict[str, str],
+    options: dict[str, Any],
     qpi_addr: str,
     token: str,
     name: str,
@@ -165,33 +165,31 @@ def build_from_options(
     ca_file_path: str,
     recv_timeout_ms: int,
 ) -> QpuDriver:
-    """Build an unstarted QPU driver over *executor* from ``-o key=value`` options.
+    """Build an unstarted QPU driver over *executor* from parsed ``-o`` options.
 
-    Recognised keys are the ones in :data:`OPTIONS`. Raising ``ValueError`` lets
-    the CLI report a bad option uniformly, without knowing anything QPU-specific.
+    *options* is what :meth:`DeviceSpec.parse_options` returns for a process
+    device — already checked and coerced against :data:`OPTIONS`, so there is
+    nothing to validate or convert here. Everything but ``data_dir``, which the
+    driver takes in its own right, goes to the executor untouched, so a new entry
+    in :data:`OPTIONS` reaches the executor without editing this function.
+
     The driver is returned rather than started so a caller — including a test —
     decides when, and whether, to connect (RFC 0003 §7).
     """
-    data_dir = Path(options.get("data_dir", "./bin/data"))
-    validate_safe_path(data_dir, "data_dir")
+    executor_options = {
+        key: value for key, value in options.items() if key != "data_dir"
+    }
 
     return QpuDriver(
         qpi_addr=qpi_addr,
         token=token,
         name=name,
         executor=executor,
-        data_dir=data_dir,
+        data_dir=options["data_dir"],
         ca_fingerprint=ca_fingerprint,
         ca_file_path=Path(ca_file_path),
         recv_timeout_ms=recv_timeout_ms,
-        is_dummy=_as_bool(options.get("is_dummy")),
-        quantify_hardware_config=Path(
-            options.get("quantify_hardware_config", "./quantify.hardware.json")
-        ),
-        quantify_device_config=Path(
-            options.get("quantify_device_config", "./quantify.device.yml")
-        ),
-        job_timeout=int(options.get("job_timeout", 10)),
+        **executor_options,
     )
 
 
@@ -201,30 +199,35 @@ OPTIONS = (
     OptionSpec(
         key="data_dir",
         help="Directory the executor writes datasets and artefacts to.",
+        parse=as_safe_dir,
         default="./bin/data",
         example="./bin/data",
     ),
     OptionSpec(
         key="job_timeout",
         help="Seconds a single job may run before it is abandoned.",
+        parse=int,
         default="10",
         example="30",
     ),
     OptionSpec(
         key="is_dummy",
         help="Run against the vendor's dummy instruments instead of real hardware.",
+        parse=as_bool,
         default="false",
         example="true",
     ),
     OptionSpec(
         key="quantify_hardware_config",
         help="Path to the quantify hardware configuration JSON.",
+        parse=Path,
         default="./quantify.hardware.json",
         example="./quantify.hardware.json",
     ),
     OptionSpec(
         key="quantify_device_config",
         help="Path to the quantify device configuration YAML.",
+        parse=Path,
         default="./quantify.device.yml",
         example="./quantify.device.yml",
     ),
@@ -368,10 +371,6 @@ def _sanitize_exception_msg(exc: Exception) -> str:
     if isinstance(exc, ValueError):
         return str(exc)
     return f"{type(exc).__name__}: job execution failed, see driver logs for details"
-
-
-def _as_bool(value: str | None) -> bool:
-    return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _safe_put(queue: multiprocessing.Queue, item: Any) -> None:
