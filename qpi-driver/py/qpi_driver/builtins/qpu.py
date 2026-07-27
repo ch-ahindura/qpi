@@ -240,6 +240,8 @@ def device_spec(
     *,
     extra: str = "",
     summary: str = "",
+    options: tuple[OptionSpec, ...] = (),
+    accepts_any_option: bool = False,
 ) -> DeviceSpec:
     """Describe a ``process`` device that runs *executor* on the QPU driver.
 
@@ -247,6 +249,13 @@ def device_spec(
     all share :func:`build_from_options` with the executor bound. *executor*
     defaults to *name*, which is how the built-in executors register; pass a
     class or instance to wrap one the SDK does not ship.
+
+    *options* are this executor's own settings, added to the :data:`OPTIONS` every
+    process device reads. Declaring them is what gets them into ``--help`` and gets
+    their values checked and converted; *accepts_any_option* is the alternative,
+    letting undeclared options through to the executor's constructor as strings —
+    which is all a device named by import path can do, its executor being one this
+    module has never seen.
     """
     return DeviceSpec(
         name=name,
@@ -254,9 +263,10 @@ def device_spec(
         build=functools.partial(
             build_from_options, executor=name if executor is None else executor
         ),
-        options=OPTIONS,
+        options=OPTIONS + tuple(options),
         extra=extra,
         summary=summary,
+        accepts_any_option=accepts_any_option,
     )
 
 

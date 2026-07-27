@@ -140,7 +140,22 @@ def device_lines(operation: Operation) -> tuple[str, ...]:
         lines.append(f"Options (-o key=value) for {_device_list(names, specs)}:")
         lines.extend(_option_line(option) for option in options)
 
+    lines.append(_import_route_line(operation))
     return tuple(lines)
+
+
+def _import_route_line(operation: Operation) -> str:
+    """How to name a device that is not in the catalog at all (RFC 0003 §6)."""
+    expected = {
+        Operation.PROCESS: "an Executor subclass or instance",
+        Operation.MONITOR: "a device builder",
+    }.get(operation, "a device builder")
+    return (
+        f"Any other {operation.value} device can be named by import path — "
+        f"-d mylab.devices:MyThing, which must import to {expected} or to a "
+        "DeviceSpec. Having no declared schema, its -o options are passed to it "
+        "as typed, unchecked."
+    )
 
 
 def render_catalog(operation: Operation | None = None) -> str:

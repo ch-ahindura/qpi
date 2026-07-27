@@ -18,7 +18,7 @@ from qpi_driver.builtins import (
 )
 from qpi_driver.builtins.qpu import QpuDriver
 from qpi_driver.events import Event, EventType
-from qpi_driver.executors.base import Executor
+from qpi_driver.executors.base import CircuitPayload, Executor, JobPayload
 from qpi_driver.executors.mock import MockExecutor
 from qpi_driver.executors.presto import PrestoExecutor
 from qpi_driver.executors.qblox import QbloxExecutor
@@ -43,7 +43,9 @@ __all__ = [
     "OperationSpec",
     "OptionSpec",
     "register",
+    "CircuitPayload",
     "Executor",
+    "JobPayload",
     "MockExecutor",
     "QiskitAerExecutor",
     "QuantifyExecutor",

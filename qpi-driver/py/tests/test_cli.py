@@ -179,6 +179,73 @@ def test_cli_start_reports_a_builder_error():
     assert "Error: fake needs a 'widget' option" in _output(result)
 
 
+def test_cli_reports_a_bad_import_path_in_one_line():
+    """A device that will not import exits 1 with a sentence, not a traceback.
+
+    An operator gets a traceback for a bug, not for a typo — and a traceback here
+    would carry filesystem paths into the journal (RFC 0003 §10).
+    """
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--token",
+            "t",
+            "--ca-fingerprint",
+            "fp",
+            "--device",
+            "no_such_module:Thing",
+        ],
+    )
+    output = _output(result)
+
+    assert result.exit_code == 1
+    assert "Error: could not import device 'no_such_module:Thing'" in output
+    assert "Traceback" not in output
+
+
+def test_cli_runs_a_device_named_by_import_path():
+    """`--device mod:Cls` builds the built-in QPU driver over that executor.
+
+    No registration, no packaging — the route for "I have a class in a file".
+    """
+    from pathlib import Path
+
+    from qpi_driver.builtins import Operation
+    from qpi_driver.builtins.qpu import QpuDriver
+    from qpi_driver.cli import _start
+
+    built: list[QpuDriver] = []
+
+    with patch.object(QpuDriver, "run", lambda self: built.append(self)):
+        _start(
+            Operation.PROCESS,
+            device="tests.test_discovery:FakeExecutor",
+            qpi_addr="http://qpi:8090",
+            token="tok",
+            name="lab-qpu",
+            ca_file=Path("./bin/qpi.ca.pem"),
+            ca_fingerprint="fp",
+            options=["probe_count=4"],
+            recv_timeout_ms=200,
+        )
+
+    from tests.test_discovery import FakeExecutor
+
+    assert len(built) == 1
+    assert built[0].executor is FakeExecutor
+    assert built[0].executor_options["probe_count"] == "4"
+
+
+def test_help_documents_the_import_path_route():
+    """--help says the catalog is not the limit, and that -o is unchecked there."""
+    result = runner.invoke(app, ["process", "--help"], env={"COLUMNS": "200"})
+    output = _output(result)
+
+    assert "named by import path" in output
+    assert "unchecked" in output
+
+
 def test_cli_process_requires_token():
     """process fails if the access token is not supplied."""
     result = runner.invoke(app, ["process", "--ca-fingerprint", "fp"])

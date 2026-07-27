@@ -112,6 +112,11 @@ class DeviceSpec:
         extra: The install target that ships it, e.g. ``qpi-driver[cli,qblox]``.
             Empty means the base ``[cli]`` extra is enough.
         summary: One line describing the device, for generated help.
+        accepts_any_option: Whether an ``-o`` key this device does not declare is
+            passed through as a raw string instead of rejected. For a device
+            named by import path, which has no declared schema to check against
+            (RFC 0003 §6) — a device in the catalog declares its options, and
+            leaves this alone so a typo stays an error.
     """
 
     name: str
@@ -120,6 +125,7 @@ class DeviceSpec:
     options: tuple[OptionSpec, ...] = ()
     extra: str = ""
     summary: str = ""
+    accepts_any_option: bool = False
 
     def parse_options(self, raw: Mapping[str, str]) -> dict[str, Any]:
         """Check *raw* ``-o`` values against this device's schema and coerce them.
@@ -127,7 +133,9 @@ class DeviceSpec:
         The result is what :attr:`build` is called with, and carries every option
         that has a value — the ones given, plus the parsed :attr:`~OptionSpec.default`
         of each one left out — so a builder reads its keys without repeating their
-        defaults, and coercion happens here rather than in five builders.
+        defaults, and coercion happens here rather than in five builders. A key
+        this device does not declare is an error, unless
+        :attr:`accepts_any_option` says to pass it through unconverted.
 
         Raises:
             ValueError: on a key this device does not read, a missing required
@@ -137,7 +145,7 @@ class DeviceSpec:
         declared = {option.key: option for option in self.options}
 
         unknown = sorted(set(raw) - set(declared))
-        if unknown:
+        if unknown and not self.accepts_any_option:
             label = "options" if len(unknown) > 1 else "option"
             raise ValueError(
                 f"unknown {label} {', '.join(repr(key) for key in unknown)} for "
@@ -145,7 +153,9 @@ class DeviceSpec:
                 f"{', '.join(sorted(declared)) or 'none'}."
             )
 
-        parsed: dict[str, Any] = {}
+        # Undeclared options on a device that takes them go through as typed: with
+        # no schema there is nothing to convert them to, and guessing would be worse.
+        parsed: dict[str, Any] = {key: raw[key] for key in unknown}
         for key, option in declared.items():
             if key in raw:
                 value = raw[key]

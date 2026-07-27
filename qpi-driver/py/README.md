@@ -204,6 +204,24 @@ QpuDriver(
 ).run()
 ```
 
+To run that same executor from the CLI, either name it by import path or ship it
+as a device. [`examples/custom_device/`](examples/custom_device/) is a worked
+example of both:
+
+```bash
+# A class in a file, with no packaging at all
+qpi-driver process --device mylab_devices:ThermometerExecutor -o probe_count=4 ...
+
+# Or, after `pip install` of a distribution declaring the qpi_driver.devices
+# entry point — now it is in --help and catalog --json like any built-in
+qpi-driver process --device thermometer -o probe_count=4 ...
+```
+
+For `monitor`, a device is the driver rather than an executor, so the import path
+points at a builder returning one, or at a `DeviceSpec` naming it. There is no
+separate "custom driver" mechanism: an operation is a contract QPI-UI implements,
+so a custom driver is always a custom device of an existing operation.
+
 ---
 
 ## Executor Backends

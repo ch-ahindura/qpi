@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mylab-devices"
+version = "0.1.0"
+description = "An example QPI driver device that the SDK does not ship"
+requires-python = ">=3.12,<3.13"
+dependencies = ["qpi-driver"]
+
+# This stanza is the whole of it. `pip install mylab-devices` and `thermometer`
+# appears in `qpi-driver process --help`, in `qpi-driver catalog --json` and to
+# `--device thermometer` — no change to the SDK or the CLI. The key is the entry
+# point's name (only used in log messages); the value imports a DeviceSpec, or an
+# iterable of them if you ship several.
+[project.entry-points."qpi_driver.devices"]
+thermometer = "mylab_devices:THERMOMETER"
+
+[tool.setuptools]
+py-modules = ["mylab_devices"]

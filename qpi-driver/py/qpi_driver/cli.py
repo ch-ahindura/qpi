@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from qpi_driver.builtins import Operation, resolve
+from qpi_driver.builtins import Operation, resolve_device
 from qpi_driver.builtins.catalog import catalog_dict, device_lines, render_catalog
 from qpi_driver.compat import typer
 from qpi_driver.paths import validate_safe_path
@@ -195,7 +195,7 @@ if typer.IS_TYPER_INSTALLED:
         # Usage errors, reported before the banner so they are the first thing on
         # screen: which device, and whether its options make sense at all.
         try:
-            spec = resolve(operation, device)
+            spec = resolve_device(operation, device)
             parsed = spec.parse_options(_split_options(options or []))
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
