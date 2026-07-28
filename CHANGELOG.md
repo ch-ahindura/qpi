@@ -20,6 +20,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: Added `qpu.device_spec(options=...)` for a custom process device that wants to declare its executor's own `-o` options, and `DeviceSpec.accepts_any_option` for one that cannot.
 - `qpi-driver/py`: Added `qpi-driver/py/examples/custom_device/` — an `Executor`, a `DeviceSpec`, and the `pyproject.toml` entry-point stanza, with a README covering all three ways to run it.
 - `qpi-driver/py`: `JobPayload` and `CircuitPayload` are now exported from `qpi_driver` itself, which is what writing an executor needs.
+- `qpi-driver/go`: Added the importable `devices` package — `Operation`, `OperationSpec`, `OptionSpec`, `DeviceSpec`, `DeviceBuilder`, `Options`, `Registry`, `Register`, `Devices`, `Resolve`, `Catalog` — the Go counterpart of the Python SDK's device catalog (RFC 0003 §5, §8). The device table was an unexported `map[string]deviceRunner` in `package main`, so nothing downstream could extend it.
+- `qpi-driver/go`: Added the importable `cli` package with `NewRootCmd` and `Execute`. Go has no runtime import by name, so extension is compile-time: a build of your own calls `devices.Register` and then `cli.Execute`, and gets the same `start`/`devices`/`catalog` commands, the same generated help and the same option validation as the shipped binary. `qpi-driver/go/qpi-driver/main.go` is now exactly that — register the built-ins, hand off. The README documents it with an example that is compiled as part of verifying it.
+- `qpi-driver/go`: Added `qpi-driver devices [--operation OP]` and `qpi-driver catalog --json`, emitting the same document as the Python SDK — byte-identical for the shared `bluefors_gen1` device, apart from `extra`, which names a Python install target and is empty where a device is compiled in.
+- `qpi-driver/go`: The `bluefors_gen1` monitor now describes itself as a `DeviceSpec` beside its own code, with its five `-o` options typed. `qpi-driver/go/cli` and `qpi-driver/go/devices` have tests where `qpi-driver/go/qpi-driver` had none at all.
 
 ### Changed
 
@@ -34,7 +38,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/go`, `qpi-driver/js`: [BREAKING] `start --operation process` now says that the SDK ships no process devices and where to find one, instead of `unknown process device "mock"; known devices: ` with an empty list and a default device that never existed there (RFC 0003 §8).
 - `qpi-driver/py`: [BREAKING] An `-o` key the chosen device does not read is now an error naming the keys it does, where before it was silently ignored. A typo such as `-o data_dirr=/data` used to mean a driver running with a default nobody chose; it now exits 1. Anything that passed an unrecognised `-o` key deliberately, expecting it to reach the executor, must declare it in a `DeviceSpec` (see `qpu.device_spec()`).
 - `qpi-driver/py`: [BREAKING] A device builder is now handed options that have already been checked and coerced against its own `DeviceSpec` — `build_from_options(options=spec.parse_options(raw))` — rather than raw strings. Calling a builder directly with `{"job_timeout": "30"}` no longer coerces it, and an omitted key is no longer defaulted by the builder.
-
 - `qpi-driver/py`: [BREAKING] A device builder now returns an *unstarted* driver and the caller starts it, matching the TypeScript SDK (RFC 0003 §7). A driver can therefore be built and asserted on with no server running.
 
   | Removed | Replacement |
@@ -53,6 +56,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/go`: `--help` and `devices` no longer advertise an operation's default device in a build that does not have it, and omitting `--device` in such a build now asks for one, naming what is registered, instead of failing over a device the operator never typed. Which devices a Go binary has is decided when it is compiled.
 - `qpi-driver/py`: Fixed the custom-executor example in `qpi-driver/py/README.md`, which passed a `custom_executor=` keyword that no function accepted and would have failed with `Unknown executor name 'custom'`.
 
 ## [0.1.2] - 2026-07-24

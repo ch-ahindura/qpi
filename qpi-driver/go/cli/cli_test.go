@@ -1,0 +1,284 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/sopherapps/qpi/qpi-driver/go/devices"
+	"github.com/sopherapps/qpi/qpi-driver/go/qpi-driver/bluefors"
+)
+
+// TestMain registers the devices the shipped CLI registers, since that is what
+// these tests are about: the command tree over a populated registry. It is also
+// the whole of what a downstream main does (RFC 0003 §6).
+func TestMain(m *testing.M) {
+	if err := devices.Register(bluefors.DeviceSpec); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+// run executes the CLI with args and returns what it wrote plus the error it
+// returned, without ever starting a driver — every case here fails, or only
+// prints, before a driver would be run.
+func run(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	root := NewRootCmd()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs(args)
+	err := root.Execute()
+	return out.String(), err
+}
+
+func TestOperationIsRequired(t *testing.T) {
+	// `start` alone cannot know what to run: the operation is the one thing that
+	// is not defaultable.
+	_, err := run(t, "start", "--token", "t", "--ca-fingerprint", "fp")
+	if err == nil {
+		t.Fatal("expected start without --operation to fail")
+	}
+	for _, want := range []string{"--operation is required", "monitor", "process"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("expected the error to mention %q, got %q", want, err)
+		}
+	}
+}
+
+func TestUnknownOperationListsTheValidOnes(t *testing.T) {
+	// Operations are a closed set — QPI-UI must have a handler for each — so the
+	// error can name all of them (RFC 0003 §13.1).
+	_, err := run(t, "start", "--operation", "procces", "--token", "t")
+	if err == nil {
+		t.Fatal("expected an unknown operation to fail")
+	}
+	if !strings.Contains(err.Error(), `unknown operation "procces"`) {
+		t.Errorf("expected the operation named, got %q", err)
+	}
+	if !strings.Contains(err.Error(), "process, monitor") {
+		t.Errorf("expected the valid operations listed, got %q", err)
+	}
+}
+
+func TestOperationComesFromTheEnvironment(t *testing.T) {
+	// Flags are registered with the environment already read, so a unit file can
+	// be nothing but Environment= lines.
+	t.Setenv("QPI_OPERATION", "monitor")
+	t.Setenv("QPI_ACCESS_TOKEN", "t")
+
+	_, err := run(t, "start", "--device", "nope")
+	if err == nil || !strings.Contains(err.Error(), "unknown monitor device") {
+		t.Fatalf("expected QPI_OPERATION to select monitor, got %v", err)
+	}
+}
+
+func TestEmptyOperationSaysSoHonestly(t *testing.T) {
+	// This build registers no process devices. With one verb, `--operation
+	// process` has to say that plainly rather than reporting an unknown device
+	// with an empty list of known ones (RFC 0003 §8).
+	_, err := run(t, "start", "--operation", "process", "--token", "t")
+	if err == nil {
+		t.Fatal("expected an operation with no devices to fail")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "ships no process devices") {
+		t.Errorf("expected an honest message, got %q", message)
+	}
+	if strings.Contains(message, "known devices") {
+		t.Errorf("expected no empty device list, got %q", message)
+	}
+	if !strings.Contains(message, "qpi-driver[cli]") {
+		t.Errorf("expected the message to say where to find one, got %q", message)
+	}
+}
+
+func TestTokenIsRequired(t *testing.T) {
+	_, err := run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1")
+	if err == nil || !strings.Contains(err.Error(), "access token is required") {
+		t.Fatalf("expected a missing token to be reported, got %v", err)
+	}
+}
+
+func TestUnknownOptionKeyIsRejected(t *testing.T) {
+	// Silently ignoring it is what this replaced: a typo in a unit file used to
+	// mean a driver running with a default nobody chose.
+	_, err := run(t, "start", "--operation", "monitor", "--token", "t",
+		"-o", "channels=mapper.bf.tmc:K", "-o", "base_urll=http://x")
+	if err == nil {
+		t.Fatal("expected an unknown -o key to fail")
+	}
+	if !strings.Contains(err.Error(), `unknown option "base_urll"`) {
+		t.Errorf("expected the bad key named, got %q", err)
+	}
+	if !strings.Contains(err.Error(), "base_url") {
+		t.Errorf("expected the valid keys listed, got %q", err)
+	}
+}
+
+func TestMissingRequiredOptionIsReported(t *testing.T) {
+	_, err := run(t, "start", "--operation", "monitor", "--token", "t")
+	if err == nil || !strings.Contains(err.Error(), `needs a "channels" option`) {
+		t.Fatalf("expected the required option to be named, got %v", err)
+	}
+}
+
+func TestTheOldSubcommandsAreGone(t *testing.T) {
+	// The grammar broke once, deliberately (RFC 0003 §11). A subcommand that
+	// still worked would make the migration optional and the docs wrong.
+	for _, operation := range []string{"process", "monitor"} {
+		if _, err := run(t, operation, "--token", "t"); err == nil {
+			t.Errorf("expected %q to no longer be a subcommand", operation)
+		}
+	}
+}
+
+func TestStartHelpListsOperationsAndDevices(t *testing.T) {
+	// Generated from the registry, so a new device appears with no change to any
+	// help string.
+	out, err := run(t, "start", "--help")
+	if err != nil {
+		t.Fatalf("expected --help to succeed, got %v", err)
+	}
+	for _, want := range []string{
+		"--operation process", "--operation monitor", "bluefors_gen1",
+		"channels=<channels> (required", "poll_interval=<float>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected --help to mention %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestDevicesCommandNarrowsToOneOperation(t *testing.T) {
+	out, err := run(t, "devices", "--operation", "monitor")
+	if err != nil {
+		t.Fatalf("expected devices to succeed, got %v", err)
+	}
+	if !strings.Contains(out, "bluefors_gen1") {
+		t.Errorf("expected the monitor device listed, got:\n%s", out)
+	}
+	if strings.Contains(out, "--operation process") {
+		t.Errorf("expected process to be left out, got:\n%s", out)
+	}
+
+	if _, err := run(t, "devices", "--operation", "nope"); err == nil {
+		t.Error("expected an unknown operation to fail")
+	}
+}
+
+func TestCatalogCommandEmitsTheFrozenShape(t *testing.T) {
+	// The document Go, Python, TypeScript and qpi-ui all agree on (RFC 0003 §9).
+	out, err := run(t, "catalog", "--json")
+	if err != nil {
+		t.Fatalf("expected catalog to succeed, got %v", err)
+	}
+
+	var document map[string]any
+	if err := json.Unmarshal([]byte(out), &document); err != nil {
+		t.Fatalf("expected valid JSON, got %v in:\n%s", err, out)
+	}
+	if document["schema_version"] != float64(devices.SchemaVersion) {
+		t.Errorf("expected schema_version %d, got %v", devices.SchemaVersion, document["schema_version"])
+	}
+
+	operations, ok := document["operations"].([]any)
+	if !ok || len(operations) != 2 {
+		t.Fatalf("expected two operations, got %v", document["operations"])
+	}
+	for _, entry := range operations {
+		operation := entry.(map[string]any)
+		for _, key := range []string{"name", "summary", "default_device", "events", "devices"} {
+			if _, ok := operation[key]; !ok {
+				t.Errorf("expected operation key %q, got %v", key, operation)
+			}
+		}
+	}
+}
+
+func TestCatalogTextMatchesDevices(t *testing.T) {
+	asText, err := run(t, "catalog", "--text")
+	if err != nil {
+		t.Fatalf("expected catalog --text to succeed, got %v", err)
+	}
+	listed, err := run(t, "devices")
+	if err != nil {
+		t.Fatalf("expected devices to succeed, got %v", err)
+	}
+	if asText != listed {
+		t.Errorf("expected one renderer behind both, got:\n%s\nvs\n%s", asText, listed)
+	}
+}
+
+func TestParseOptionsReadsTheSyntaxOnly(t *testing.T) {
+	// Splitting is all this does; an unknown key passes through for the device's
+	// own schema to reject.
+	opts, err := parseOptions([]string{"channels=a:K", " base_url = http://x ", "nonsense=1"})
+	if err != nil {
+		t.Fatalf("expected valid pairs to parse, got %v", err)
+	}
+	if opts["channels"] != "a:K" || opts["base_url"] != "http://x" || opts["nonsense"] != "1" {
+		t.Errorf("expected trimmed key/value pairs, got %v", opts)
+	}
+	if _, err := parseOptions([]string{"not-a-pair"}); err == nil {
+		t.Error("expected a pair without '=' to be rejected")
+	}
+}
+
+func TestEnvFallbacks(t *testing.T) {
+	t.Setenv("QPI_ADDR", "")
+	if got := envOr("QPI_ADDR", "fallback"); got != "fallback" {
+		t.Errorf("expected the fallback for an empty env var, got %q", got)
+	}
+	t.Setenv("QPI_ADDR", "https://qpi.example.com")
+	if got := envOr("QPI_ADDR", "fallback"); got != "https://qpi.example.com" {
+		t.Errorf("expected the env var to win, got %q", got)
+	}
+
+	t.Setenv("QPI_RECV_TIMEOUT_MS", "not-a-number")
+	if got := envIntOr("QPI_RECV_TIMEOUT_MS", 200); got != 200 {
+		t.Errorf("expected an unparseable value to fall back, got %d", got)
+	}
+	t.Setenv("QPI_RECV_TIMEOUT_MS", "350")
+	if got := envIntOr("QPI_RECV_TIMEOUT_MS", 200); got != 350 {
+		t.Errorf("expected the env var to win, got %d", got)
+	}
+}
+
+func TestFlagDefaultsComeFromTheOperation(t *testing.T) {
+	// --device and --name are blank by default and filled in from the operation,
+	// since one verb serves every operation and their defaults differ.
+	cmd := newStartCmd()
+	for _, flag := range []string{"device", "name", "operation"} {
+		if got := cmd.Flags().Lookup(flag).DefValue; got != "" {
+			t.Errorf("expected --%s to default to empty, got %q", flag, got)
+		}
+	}
+	if cmd.Flags().ShorthandLookup("O") != nil {
+		t.Error("expected no -O shorthand beside -o (RFC 0003 §13.7)")
+	}
+	if cmd.Flags().Lookup("operation").Shorthand != "" {
+		t.Error("expected --operation to have no short form")
+	}
+}
+
+func TestConfigOfCarriesTheTransportFlags(t *testing.T) {
+	cfg := configOf(&commonFlags{
+		qpiAddr:       "https://qpi.example.com",
+		token:         "tok",
+		name:          "cryostat-1",
+		caFingerprint: "fp",
+		caFile:        "./bin/qpi.ca.pem",
+		recvTimeoutMs: 350,
+	})
+
+	if cfg.QpiAddr != "https://qpi.example.com" || cfg.Token != "tok" || cfg.Name != "cryostat-1" {
+		t.Errorf("expected the transport flags to land, got %+v", cfg)
+	}
+	if cfg.RecvTimeout.Milliseconds() != 350 {
+		t.Errorf("expected 350ms, got %v", cfg.RecvTimeout)
+	}
+}

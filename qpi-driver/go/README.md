@@ -96,9 +96,9 @@ func main() {
 ## Running a built-in from the CLI
 
 The officially maintained built-ins also ship as a `qpi-driver` CLI (cobra),
-mirroring the Python CLI: the operation is the subcommand, the device selects
-the backend, and a device's own settings are passed as repeatable `-o
-key=value`.
+mirroring the Python CLI: one `start` verb, `--operation` saying what the driver
+does, `--device` selecting the backend within it, and a device's own settings
+passed as repeatable `-o key=value`.
 
 ```
 go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver@latest
@@ -114,3 +114,75 @@ Universal flags (`--qpi-addr/-a`, `--token/-t`, `--name/-n`, `--device/-d`,
 `--ca-file`, `--ca-fingerprint`, `--recv-timeout-ms`) also read the matching
 `QPI_*` environment variables, so `install-systemd.sh` can pass the token as
 `QPI_ACCESS_TOKEN`.
+
+`qpi-driver devices` lists the operations, their devices and every `-o` key each
+one reads, with its type and default; `qpi-driver catalog --json` is the same
+catalog for another program to read. Both are generated from the device specs, so
+they cannot fall behind the code — including for a device of your own.
+
+## Adding a device of your own
+
+Go has no runtime import by name, so extension is compile-time — and the SDK makes
+that the whole story rather than pretending otherwise. Describe your device as a
+`devices.DeviceSpec`, register it, and hand off to the SDK's CLI: your binary then
+has the same `start`/`devices`/`catalog` commands, the same generated help, and the
+same option validation the built-in devices get.
+
+```go
+package main
+
+import (
+	"log"
+
+	qpidriver "github.com/sopherapps/qpi/qpi-driver/go"
+	"github.com/sopherapps/qpi/qpi-driver/go/cli"
+	"github.com/sopherapps/qpi/qpi-driver/go/devices"
+)
+
+// ThermometerDriver is your driver: embed Base, implement HandleEvent.
+type ThermometerDriver struct {
+	qpidriver.Base
+	probes int
+}
+
+func (d *ThermometerDriver) HandleEvent(qpidriver.Event) {}
+
+// Spec describes it as data — which is what earns it a line in `--help`, an entry
+// in `catalog --json`, and `-o` values that are checked and converted for you.
+var Spec = devices.DeviceSpec{
+	Name:      "thermometer",
+	Operation: devices.Monitor,
+	Summary:   "Reads a made-up thermometer.",
+	Options: []devices.OptionSpec{{
+		Key: "probes", Help: "How many probes to read.",
+		Type: "int", Parse: devices.AsInt, Default: "1", Example: "4",
+	}},
+	Build: func(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
+		return &ThermometerDriver{probes: opts.Int("probes")}, nil
+	},
+}
+
+func main() {
+	if err := devices.Register(Spec); err != nil {
+		log.Fatal(err)
+	}
+	cli.Execute() // the SDK's own CLI, now including your device
+}
+```
+
+Two things worth knowing:
+
+- **`Build` returns a driver; it does not run one.** `qpidriver.Run` is the only
+  thing that starts anything, which is what lets a device be built and asserted on
+  in a test with no server (RFC 0003 §7). `Driver` is sealed by an unexported
+  method, so `Build` can only return something embedding `Base` — deliberately, so
+  `Run` can always reach the transport.
+- **Declaring an option is what gets it checked.** `Parse` runs in one place, so no
+  builder hand-rolls `strconv`; an `-o` key no device declares is an error naming
+  the ones that exist, rather than being silently ignored. Set
+  `AcceptsAnyOption: true` only for a device that genuinely has no schema.
+
+There is no import-path device in Go, as there is in Python (`--device
+mylab.devices:PrestoV2`): Go resolves imports at compile time, so naming a type in
+a string could only work by building a plugin, and `devices.Register` in your own
+`main` is both simpler and type-checked.

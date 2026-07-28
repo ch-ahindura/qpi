@@ -194,7 +194,8 @@ def build_from_options(
         name=name,
         bluefors_base_url=options["base_url"],
         channels=options["channels"],
-        api_key=options["api_key"],
+        # The one option with no default, so the one read with a fallback.
+        api_key=options.get("api_key", ""),
         poll_interval=options["poll_interval"],
         timeout=options["timeout"],
         ca_fingerprint=ca_fingerprint,
@@ -221,8 +222,9 @@ OPTIONS = (
     ),
     OptionSpec(
         key="api_key",
+        # No default: an API key has no sensible one, and saying "defaults to
+        # empty" would report a default the Go and TypeScript SDKs do not.
         help="Bluefors API access key, if the API requires one.",
-        default="",
         example="<bluefors-api-key>",
     ),
     OptionSpec(
