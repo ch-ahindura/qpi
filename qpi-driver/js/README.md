@@ -4,7 +4,9 @@ The TypeScript/JavaScript SDK for building [QPI](https://github.com/sopherapps/q
 drivers — the external processes that exchange typed events with QPI-UI
 (RFC 0001). It mirrors the Python SDK (`qpi-driver/py`) and the Go SDK
 (`qpi-driver/go`): the same event envelope, the same `drivers/connect`
-handshake, and TLS with the pinned root CA.
+handshake, and TLS with a *pinned* root CA — the driver fetches the server's root
+certificate and refuses it unless its SHA-256 matches the `--ca-fingerprint` the
+operator was handed out of band.
 
 It has **zero runtime dependencies** — the NNG (nanomsg SP) pipeline is
 implemented over Node's built-in `tls`, and the handshake uses the global
@@ -14,9 +16,9 @@ implemented over Node's built-in `tls`, and the handshake uses the global
 npm install qpi-driver
 ```
 
-> **Upgrading?** This release changes the CLI grammar and some SDK APIs. The full
-> before/after migration table is in the
-> [CHANGELOG](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md#migration).
+> **Upgrading from a pre-RFC-0003 release?** The CLI grammar and some SDK APIs
+> changed, and every removal is listed with its replacement in the
+> [change log](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md).
 > **What this SDK ships:** one `monitor` device, `bluefors_gen1`. It ships no
 > `process` (QPU) device — running a QPU means the Python SDK
 > (`pip install "qpi-driver[cli]"`) or a device of your own, registered as below.
@@ -108,10 +110,112 @@ variables, so `install-systemd.sh` can pass the token as `QPI_ACCESS_TOKEN`.
 verifying the pinned root CA, because an opt-out reachable by leaving an argument
 out is one a copy-pasted command hits by accident.
 
-`qpi-driver devices` lists the operations, their devices and every `-o` key each one
-reads, with its type and default; `qpi-driver catalog --json` is the same catalog for
-another program to read. Both are generated from the device specs, so they cannot
-fall behind the code — including for a device of your own.
+`qpi-driver devices` prints what this build can run: each operation, the devices
+under it, and every `-o` key each device reads with its type and default.
+
+That table is the SDK's **catalog** — the list of operations, devices and options a
+build knows about, which the `DeviceSpec`s themselves are the source of.
+`qpi-driver catalog --json` is the same document for another program to read;
+QPI-UI's dashboard builds its setup snippets from it, and a test fails if the
+server's idea of the catalog and the SDKs' ever disagree. Because both come from
+the specs, neither can fall behind the code — including for a device of your own.
+
+## Running a built-in as a systemd service (Linux)
+
+### Using the `install-systemd.sh` script
+
+To keep a driver running on a Linux node, register it with `systemd`. The installer
+does the whole job — install Node if it is missing, `npm install -g qpi-driver`,
+prompt for the token, address and fingerprint, write the unit file, then enable and
+start it:
+
+```bash
+sudo bash -c "$(curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/js/install-systemd.sh)"
+```
+
+Or non-interactively, with every answer supplied up front:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/js/install-systemd.sh | sudo \
+  QPI_DRIVER_VERSION="" \
+  QPI_TOKEN="<your-qpi-access-token>" \
+  QPI_ADDR="https://qpi.example.com" \
+  CA_FINGERPRINT="<fingerprint>" \
+  QPU_NAME="cryostat-1" \
+  OPERATION="monitor" \
+  DEVICE="bluefors_gen1" \
+  DRIVER_OPTIONS="base_url=http://localhost:49099;channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar" \
+  bash
+```
+
+An empty `QPI_DRIVER_VERSION` installs `qpi-driver@latest`. `DRIVER_OPTIONS` carries
+the device's own `-o` settings as `key=value;key=value`. This SDK ships only
+`monitor` devices, so that is what `OPERATION` and `DEVICE` default to.
+`QPI_SKIP_INSTALL=1` uses a `qpi-driver` already on `PATH` (or `QPI_DRIVER_BIN`)
+instead of installing one.
+
+### Doing it by hand
+
+1. **Install Node.js**:
+
+   ```bash
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash
+   source "$HOME/.nvm/nvm.sh"
+   nvm install 24
+   ```
+
+2. **Install the CLI**:
+
+   ```bash
+   npm install -g qpi-driver
+   ```
+
+3. **Write the unit file**, replacing every `<value>`. `ExecStart` needs absolute
+   paths, so point at the `node` and `qpi-driver` that `which` reports:
+
+   ```bash
+   sudo bash -c 'cat > /etc/systemd/system/cryostat-1.qpi-driver.service <<EOF
+   [Unit]
+   Description=QPI Driver Service (cryostat-1)
+   After=network.target
+
+   [Service]
+   Type=simple
+
+   Environment="QPI_ACCESS_TOKEN=<your-qpi-access-token>"
+   Environment="QPI_CA_FILE=/var/qpi-driver/cryostat-1/qpi.ca.pem"
+
+   ExecStart=<path-to>/qpi-driver start \
+           --operation monitor \
+           --device bluefors_gen1 \
+           --ca-fingerprint <your-fingerprint> \
+           --qpi-addr <your-qpi-server-address> \
+           --name "cryostat-1" \
+           -o base_url=http://localhost:49099 \
+           -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
+
+   Restart=on-failure
+   User=<user>
+
+   StandardOutput=journal
+   StandardError=journal
+   SyslogIdentifier=cryostat-1.qpi-driver
+
+   [Install]
+   WantedBy=multi-user.target
+   EOF'
+   ```
+
+4. **Enable and start it**:
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable cryostat-1.qpi-driver.service
+   sudo systemctl start cryostat-1.qpi-driver.service
+   sudo systemctl status cryostat-1.qpi-driver.service
+   ```
+
+Logs go to the journal: `journalctl -u cryostat-1.qpi-driver.service -f`.
 
 ## Adding a device of your own
 

@@ -1,35 +1,15 @@
-<pre align="center">
- ██████╗ ██████╗ ██╗
-██╔═══██╗██╔══██╗██║
-██║   ██║██████╔╝██║
-██║▄▄ ██║██╔═══╝ ██║
-╚██████╔╝██║     ██║
- ╚══▀▀═╝ ╚═╝     ╚═╝
-</pre>
+# qpi-driver (Python SDK)
 
-<h1 align="center">QPI QPU Driver</h1>
+The Python SDK for building [QPI](https://github.com/sopherapps/qpi) drivers — the
+external processes that exchange typed events with QPI-UI (RFC 0001). It mirrors
+the Go SDK (`qpi-driver/go`) and the TypeScript SDK (`qpi-driver/js`): the
+same event envelope, the same `drivers/connect` handshake, and TLS with a *pinned*
+root CA — the driver fetches the server's root certificate and refuses it unless
+its SHA-256 matches the `--ca-fingerprint` the operator was handed out of band.
 
-<p align="center">
-  <a href="https://badge.fury.io/py/qpi-driver"><img src="https://badge.fury.io/py/qpi-driver.svg" alt="PyPI version"></a>
-  <a href="https://github.com/sopherapps/qpi/actions/workflows/ci.yml"><img src="https://github.com/sopherapps/qpi/actions/workflows/ci.yml/badge.svg" alt="CI/CD Workflow"></a>
-  <a href="https://github.com/sopherapps/qpi/releases"><img src="https://img.shields.io/github/v/tag/sopherapps/qpi?label=version" alt="GitHub Tag"></a>
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License">
-</p>
-
-<p align="center">
-  Python driver SDK and CLI for the <a href="https://github.com/sopherapps/qpi">QPI</a> quantum computing platform.
-  Runs on isolated hardware nodes: a QPU over one of several executor backends, or a monitor reporting readings upward.
-</p>
-
-<p align="center">
-  <strong><a href="https://sopherapps.github.io/qpi/driver/">📚 Read the Documentation</a></strong>
-</p>
-
----
-
-> **Upgrading?** This release changes the CLI grammar and some SDK APIs. The full
-> before/after migration table is in the
-> [CHANGELOG](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md#migration).
+> **Upgrading from a pre-RFC-0003 release?** The CLI grammar and some SDK APIs
+> changed, and every removal is listed with its replacement in the
+> [change log](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md).
 > **What this SDK ships:** five `process` (QPU) devices — `mock`, `presto`,
 > `qiskit_aer`, `quantify`, `qblox` — and one `monitor` device, `bluefors_gen1`. It is
 > the only SDK of the three with a `process` device, and the only one where a device
@@ -100,12 +80,13 @@ We have provided a standalone interactive bash installer that automates the enti
 
 ```bash
 # Run the interactive systemd installer script directly via curl
-sudo bash -c "$(curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/install-systemd.sh)"
+sudo bash -c "$(curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh)"
 ```
 
 Alternatively, you can run the installer non-interactively by specifying all environment variables:
 ```bash
-curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/install-systemd.sh | sudo \
+curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh | sudo \
+  QPI_DRIVER_VERSION="" \
   QPI_TOKEN="<your-qpi-access-token>" \
   QPI_ADDR="http://127.0.0.1:8090" \
   CA_FINGERPRINT="<fingerprint>" \
@@ -191,6 +172,9 @@ QpuDriver(
 ).run()
 ```
 
+<!-- FIXME: Maybe for uniformity, we should get rid of passing an executor and instead just have the custom drivers we had so that the executor itself is in the custom driver.
+It seems like when one has multiple options, it becomes confusing when to use what. The descriptions in the go/js README's were good and simple and straight forward.
+ -->
 ### Custom executor
 
 An executor the SDK does not ship needs no registration — pass the class or an
@@ -317,6 +301,12 @@ Universal options:
 Each device declares the `-o` keys it reads, so `--help` lists them with their
 types, defaults and examples rather than the list being maintained by hand — and
 a key no device reads is an error naming the ones that exist, not a silent no-op.
+
+The whole of that — which operations exist, which devices each one can run, and
+which `-o` keys each device reads — is the SDK's **catalog**, and the `DeviceSpec`s
+are its only source. `devices` prints it for a person; `catalog --json` hands it to
+another program, which is how the dashboard builds its setup snippets and how
+QPI-UI's own drift test notices when server and SDK disagree.
 
 ```bash
 # Every operation, its devices, and each device's -o options

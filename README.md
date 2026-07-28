@@ -315,7 +315,7 @@ A QPU is a `process` driver; pick the backend with the `--device` / `-d` option.
 Runs simulated measurements without external physics dependencies.
 ```bash
 # Install the package with cli extra
-pip install ./qpi-driver[cli]
+pip install "./qpi-driver/py[cli]"
 
 # Start the driver using the mock device
 qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "mock"
@@ -325,7 +325,7 @@ qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-
 Runs realistic circuit simulations using Qiskit Aer.
 ```bash
 # Install the package with simulator extras
-pip install ./qpi-driver[cli,aer]
+pip install "./qpi-driver/py[cli,aer]"
 
 # Start the driver using the qiskit_aer device
 qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qiskit_aer"
@@ -336,15 +336,15 @@ Compiles and runs circuits using `quantify-scheduler`.
 * **Dummy/Simulation Mode**: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
   ```bash
   # Install the package with quantify extra
-  pip install ./qpi-driver[cli,quantify]
+  pip install "./qpi-driver/py[cli,quantify]"
 
   # Start driver in dummy mode
-  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 
 #### 4. Qblox Executor (Qblox Cluster)
@@ -352,15 +352,15 @@ Compiles and runs circuits using `qblox-scheduler`.
 * **Dummy/Simulation Mode**: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
   ```bash
   # Install the package with qblox extra
-  pip install ./qpi-driver[cli,qblox]
+  pip install "./qpi-driver/py[cli,qblox]"
 
   # Start driver in dummy mode
-  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 
 ### CLI Usage

@@ -177,5 +177,5 @@ supplied via config reload — otherwise restart the server after changing it.
 
 ```
 make test-go                               # config, index, prune, rate-limit tests
-make test-e2e-driver-framework EXECUTOR=mock
+make test-e2e-driver EXECUTOR=mock            # the driver framework end to end
 ```
