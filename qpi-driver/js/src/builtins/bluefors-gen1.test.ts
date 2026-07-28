@@ -28,6 +28,7 @@ function makeDriver(baseUrl: string, channels: Record<string, string>) {
     qpiAddr: "http://127.0.0.1:1",
     token: "t",
     name: "cryostat-1",
+    caFingerprint: "unused: this driver never connects in these tests",
     blueforsBaseUrl: baseUrl,
     channels,
   });

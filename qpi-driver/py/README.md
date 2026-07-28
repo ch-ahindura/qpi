@@ -222,6 +222,11 @@ points at a builder returning one, or at a `DeviceSpec` naming it. There is no
 separate "custom driver" mechanism: an operation is a contract QPI-UI implements,
 so a custom driver is always a custom device of an existing operation.
 
+The TypeScript SDK has the same import-path route with a different separator —
+`--device ./dist/my-device.js#MyExport` — because `:` is a URL scheme separator in a
+JavaScript module specifier. The Go SDK has no import-path route at all: Go resolves
+imports at compile time, so a device there is registered in your own `main`.
+
 ---
 
 ## Executor Backends

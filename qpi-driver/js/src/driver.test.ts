@@ -91,6 +91,7 @@ describe("QpiDriver", () => {
       qpiAddr: "http://127.0.0.1:1",
       token: "t",
       name: "qpu_1",
+      caFingerprint: FINGERPRINT,
     });
     expect(() => driver.emit(new Event(EventType.JobResult))).toThrow(
       /before the driver is running/,
@@ -196,6 +197,7 @@ describe("QpiDriver", () => {
       qpiAddr: `http://127.0.0.1:${httpPort}`,
       token: "tok",
       name: "qpu_1",
+      caFingerprint: FINGERPRINT,
     });
     await expect(driver.run()).rejects.toThrow(/connect rejected \(403\)/);
     httpServer.close();

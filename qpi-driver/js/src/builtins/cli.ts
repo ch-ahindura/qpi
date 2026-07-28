@@ -12,90 +12,101 @@
  *   qpi-driver start --operation monitor --device bluefors_gen1 \
  *     --qpi-addr https://qpi.example.com --token … --ca-fingerprint … \
  *     -o base_url=http://localhost:49099 -o channels=mapper.bf.tmc:K
+ *
+ * Everything it knows about devices comes from `qpi-driver/devices`, so a device of
+ * your own — registered with `registerDevice`, or named by import path — gets the
+ * same help, the same option validation and the same `catalog --json` entry. This
+ * file is only wiring.
  */
 
 import { Command } from "commander";
 
-import type { QpiDriver } from "../driver.js";
-import { BlueforsGen1Driver, parseChannels } from "./bluefors-gen1.js";
+import { catalog, renderCatalog } from "../catalog.js";
 import {
-  type CommonOpts,
-  operationHelp,
+  type DeviceConfig,
+  lookupOperation,
+  type Operation,
   operationNames,
-  operations,
-  resolveDevice,
-} from "./catalog.js";
+  parseOptions,
+  registerDevice,
+  resolve,
+} from "../devices.js";
+import { DEVICE_SPEC as BLUEFORS_GEN1 } from "./bluefors-gen1.device.js";
 
 const VERSION = "0.1.2";
 
-// The devices this SDK ships, registered into the catalog. Declared here rather
-// than in the catalog itself so that module stays free of driver imports.
-operations.monitor.devices.bluefors_gen1 = buildBlueforsGen1;
+// The devices this build ships. One line per device, and the same line a bundle of
+// your own writes for a device of its own (RFC 0003 §6).
+registerDevice(BLUEFORS_GEN1);
 
-/**
- * Builds the Bluefors Gen. 1 monitor from the -o options. Recognised keys
- * mirror the Python and Go drivers: channels (required), base_url, api_key,
- * poll_interval (seconds), timeout (seconds).
- */
-function buildBlueforsGen1(
-  common: CommonOpts,
-  opts: Record<string, string>,
-): QpiDriver {
-  const channels = opts.channels;
-  if (!channels) {
-    throw new Error(
-      "bluefors_gen1 needs a 'channels' option, e.g. " +
-        "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar",
-    );
-  }
-  return new BlueforsGen1Driver({
-    qpiAddr: common.qpiAddr,
-    token: common.token,
-    name: common.name,
-    caFingerprint: common.caFingerprint,
-    blueforsBaseUrl: opts.base_url,
-    channels: parseChannels(channels),
-    apiKey: opts.api_key,
-    pollIntervalMs: opts.poll_interval
-      ? Number(opts.poll_interval) * 1000
-      : undefined,
-    timeoutMs: opts.timeout ? Number(opts.timeout) * 1000 : undefined,
-  });
+/** The universal options `start` shares across every operation. */
+interface CommonOpts {
+  operation: string;
+  qpiAddr: string;
+  token: string;
+  name: string;
+  device: string;
+  caFile: string;
+  caFingerprint: string;
+  option: string[];
 }
 
 /**
- * Runs the chosen device within the chosen operation, mirroring the Python CLI's
- * shared handler: the catalog decides which device it is and fills in the
- * operation's defaults, the device's builder returns an unstarted driver, and this
- * is what starts it.
+ * Resolves the device within the chosen operation, lets that device's own schema
+ * check the `-o` options, and runs the driver its builder returns.
  */
-async function runOperation(common: CommonOpts): Promise<void> {
+async function runStart(common: CommonOpts): Promise<void> {
+  if (!common.operation) {
+    fail(
+      `--operation is required; one of ${operationNames().join(", ")} (or set QPI_OPERATION)`,
+    );
+  }
+  const operation = common.operation as Operation;
+  const spec = lookupOperation(operation);
+  if (!spec) {
+    fail(
+      `unknown operation '${common.operation}'; valid operations: ${operationNames().join(", ")}`,
+    );
+  }
   if (!common.token) {
     fail(
       "access token is required; set --token/-t or the QPI_ACCESS_TOKEN environment variable",
     );
   }
+  // Required, and with no way to opt out: an unpinned CA reachable by omitting an
+  // argument is one a copy-pasted command hits by accident (RFC 0003 §10).
+  if (!common.caFingerprint) {
+    fail(
+      "a CA fingerprint is required; set --ca-fingerprint or the QPI_CA_FINGERPRINT " +
+        "environment variable. It is shown when the driver is registered in the dashboard",
+    );
+  }
 
-  let resolved;
+  const device = common.device || spec.defaultDevice;
+  const name = common.name || spec.defaultName;
+
   try {
-    resolved = resolveDevice(common.operation, common.device, common.name);
+    const resolved = await resolve(operation, device);
+    const options = parseOptions(resolved, splitOptions(common.option));
+    const config: DeviceConfig = {
+      qpiAddr: common.qpiAddr,
+      token: common.token,
+      name,
+      caFingerprint: common.caFingerprint,
+      caFilePath: common.caFile,
+    };
+    await resolved.build(config, options).run();
   } catch (err) {
     fail((err as Error).message);
   }
-  common.device = resolved.device;
-  common.name = resolved.name;
-
-  let driver: QpiDriver;
-  try {
-    driver = resolved.build(common, parseOptions(common.option));
-  } catch (err) {
-    fail((err as Error).message);
-  }
-  await driver.run();
 }
 
-/** Turns repeatable `-o key=value` flags into a dict. */
-function parseOptions(pairs: string[]): Record<string, string> {
+/**
+ * Turns repeatable `-o key=value` flags into raw strings. Only the syntax is the
+ * CLI's business; which keys exist and what type each value has belong to the
+ * chosen device's schema, which runs on the result.
+ */
+export function splitOptions(pairs: string[]): Record<string, string> {
   const opts: Record<string, string> = {};
   for (const pair of pairs) {
     const eq = pair.indexOf("=");
@@ -132,12 +143,12 @@ function addStart(program: Command): void {
     .description(
       "Run a driver: one --operation, on one --device within it (RFC 0001 §4).",
     )
-    .addHelpText("after", `\n${operationHelp()}`)
+    .addHelpText("after", `\n${renderCatalog()}`)
     // No short form for --operation: -o is --option, and -O beside it would be a
     // hazard in a command usually written once into a unit file (RFC 0003 §13.7).
     .option(
       "--operation <operation>",
-      `What this driver does: ${operationNames()}`,
+      `What this driver does: ${operationNames().join(" | ")}`,
       process.env.QPI_OPERATION || "",
     )
     .option(
@@ -157,7 +168,7 @@ function addStart(program: Command): void {
     )
     .option(
       "-d, --device <device>",
-      "Which backend to run within the operation; defaults to the operation's own",
+      "Which backend to run within the operation, or an import path; defaults to the operation's own",
       process.env.QPI_DEVICE || "",
     )
     .option(
@@ -167,38 +178,76 @@ function addStart(program: Command): void {
     )
     .option(
       "--ca-fingerprint <hex>",
-      "SHA-256 fingerprint pinning the downloaded root CA",
-      process.env.QPI_CA_FINGERPRINT,
+      "SHA-256 fingerprint pinning the downloaded root CA (required)",
+      process.env.QPI_CA_FINGERPRINT || "",
     )
     .option(
       "-o, --option <keyvalue>",
-      "Operation config as key=value, repeatable",
+      "A setting of the chosen device as key=value, repeatable",
       collect,
       [],
     )
-    .option(
-      "--recv-timeout-ms <ms>",
-      "Receive loop timeout in ms",
-      (v) => parseInt(v, 10),
-      Number(process.env.QPI_RECV_TIMEOUT_MS) || 200,
-    )
-    .action((opts: CommonOpts) => runOperation(opts));
+    .action((opts: CommonOpts) => runStart(opts));
 }
 
-const program = new Command();
-program
-  .name("qpi-driver")
-  .description("Quantum Processing Interface (QPI) Driver CLI")
-  .version(VERSION);
+/**
+ * Build the whole command tree. Exported so it can be asserted on without spawning
+ * a process; the bin below is the only thing that runs it.
+ */
+export function buildProgram(): Command {
+  const program = new Command();
+  program
+    .name("qpi-driver")
+    .description("Quantum Processing Interface (QPI) Driver CLI")
+    .version(VERSION)
+    .exitOverride();
 
-addStart(program);
+  addStart(program);
 
-program
-  .command("version")
-  .description("Show the version of the QPI driver CLI")
-  .action(() => console.log(VERSION));
+  program
+    .command("devices")
+    .description(
+      "List the operations, the devices each one can run, and their -o options",
+    )
+    .option(
+      "--operation <operation>",
+      "Show only this operation's devices, instead of all of them",
+    )
+    .action((opts: { operation?: string }) => {
+      if (opts.operation && !operationNames().includes(opts.operation)) {
+        fail(
+          `unknown operation '${opts.operation}'; valid operations: ${operationNames().join(", ")}`,
+        );
+      }
+      console.log(renderCatalog(opts.operation as Operation | undefined));
+    });
 
-program.parseAsync(process.argv).catch((err) => {
-  console.error("Error:", err);
-  process.exit(1);
-});
+  program
+    .command("catalog")
+    .description("Print the whole device catalog for another program to read")
+    .option("--text", "Print the same text `devices` shows, instead of JSON")
+    .action((opts: { text?: boolean }) => {
+      console.log(
+        opts.text ? renderCatalog() : JSON.stringify(catalog(), null, 2),
+      );
+    });
+
+  program
+    .command("version")
+    .description("Show the version of the QPI driver CLI")
+    .action(() => console.log(VERSION));
+
+  return program;
+}
+
+// Run only when this file is the process entry point. Importing it — which the
+// tests do — must not execute a command; `process.argv[1]` under jest is the test
+// runner, not this bin.
+if (process.argv[1]?.endsWith("cli.js")) {
+  buildProgram()
+    .parseAsync(process.argv)
+    .catch((err) => {
+      console.error("Error:", err);
+      process.exit(1);
+    });
+}

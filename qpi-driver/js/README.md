@@ -77,9 +77,9 @@ await new BlueforsGen1Driver({
 ## Running a built-in from the CLI
 
 The officially maintained built-ins also ship as a `qpi-driver` CLI (commander),
-exposed as the package's `bin`. It mirrors the Python CLI: the operation is the
-subcommand, the device selects the backend, and a device's own settings are
-passed as repeatable `-o key=value`.
+exposed as the package's `bin`. It mirrors the Python CLI: one `start` verb,
+`--operation` saying what the driver does, `--device` selecting the backend within
+it, and a device's own settings passed as repeatable `-o key=value`.
 
 ```
 npm install -g qpi-driver          # or: npx -y qpi-driver …
@@ -92,6 +92,69 @@ qpi-driver start --operation monitor --device bluefors_gen1 \
 ```
 
 Universal flags (`--qpi-addr/-a`, `--token/-t`, `--name/-n`, `--device/-d`,
-`--ca-file`, `--ca-fingerprint`, `--recv-timeout-ms`) also read the matching
-`QPI_*` environment variables, so `install-systemd.sh` can pass the token as
-`QPI_ACCESS_TOKEN`.
+`--ca-file`, `--ca-fingerprint`) also read the matching `QPI_*` environment
+variables, so `install-systemd.sh` can pass the token as `QPI_ACCESS_TOKEN`.
+`--ca-fingerprint` is **required**: there is no code path that connects without
+verifying the pinned root CA, because an opt-out reachable by leaving an argument
+out is one a copy-pasted command hits by accident.
+
+`qpi-driver devices` lists the operations, their devices and every `-o` key each one
+reads, with its type and default; `qpi-driver catalog --json` is the same catalog for
+another program to read. Both are generated from the device specs, so they cannot
+fall behind the code — including for a device of your own.
+
+## Adding a device of your own
+
+A driver becomes runnable by the CLI by being described as a device. Either register
+it, or name it by import path — the same two routes the Python SDK has, minus
+entry points, which npm has no equivalent of.
+
+**Register it.** Describe the device as data, and the CLI gains it: a line in
+`--help`, an entry in `catalog --json`, and `-o` values that are checked and
+converted for you.
+
+```typescript
+import { QpiDriver } from "qpi-driver";
+import { asInt, Operation, registerDevice } from "qpi-driver/devices";
+
+class ThermometerDriver extends QpiDriver {
+  handleEvent(): void {}
+}
+
+export const THERMOMETER = {
+  name: "thermometer",
+  operation: Operation.Monitor,
+  summary: "Reads a made-up thermometer.",
+  options: [
+    { key: "probes", help: "How many probes to read.", type: "int",
+      parse: asInt, default: "1", example: "4" },
+  ],
+  build: (config, options) =>
+    new ThermometerDriver({ ...config, probes: options.int("probes") }),
+};
+
+registerDevice(THERMOMETER);
+```
+
+**Or name it by import path**, with nothing to register:
+
+```bash
+qpi-driver start --operation monitor --device ./dist/my-device.js#THERMOMETER \
+  --token … --ca-fingerprint … -o probes=4
+```
+
+The separator is `#`, where the Python SDK uses `:` (`--device mylab.devices:Presto`).
+That is not gratuitous: `:` is a URL scheme separator in a JavaScript module
+specifier, so `./m.js:X` could not be told from a URL. `#` cannot appear in a bare
+identifier either, so a plain `--device bluefors` is still read as a name and a typo
+still gets the known-devices error rather than an import failure.
+
+The export may be a `DeviceSpec` — which is how it gets a declared option schema and
+a `--help` entry — or a builder, in which case the operation comes from
+`--operation` and its `-o` options are passed through as typed, unchecked. The path
+is resolved relative to the working directory, and must be a module Node can import,
+so point at built `.js`, not `.ts`.
+
+`build` returns a driver; it does not run one. `driver.run()` is the only thing that
+starts anything, which is what lets a device be built and asserted on with no
+server.

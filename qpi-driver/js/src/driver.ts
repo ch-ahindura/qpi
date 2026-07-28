@@ -14,6 +14,9 @@
  * pinned root CA.
  */
 
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { verifyFingerprint } from "./ca.js";
 import { Event } from "./events.js";
 import { PipelineSocket } from "./nng.js";
@@ -27,10 +30,18 @@ export interface QpiDriverOptions {
   /** Human-readable name for this driver. */
   name: string;
   /**
-   * Expected SHA-256 (hex) of the server root CA, pinned over TLS. When
-   * omitted, the fingerprint check is skipped.
+   * Expected SHA-256 (hex) of the server root CA, pinned over TLS. Required:
+   * there is no path that connects without verifying the pin, because an opt-out
+   * reachable by leaving an argument out is one a copy-pasted command hits by
+   * accident (RFC 0003 §10).
    */
-  caFingerprint?: string;
+  caFingerprint: string;
+  /**
+   * Where to write the downloaded root CA certificate, for an operator to inspect.
+   * Omitted means it is kept in memory only. Matches the Python and Go SDKs'
+   * `--ca-file`.
+   */
+  caFilePath?: string;
 }
 
 interface Connection {
@@ -54,6 +65,7 @@ export abstract class QpiDriver {
   protected readonly qpiAddr: string;
   protected readonly token: string;
   protected readonly caFingerprint: string;
+  protected readonly caFilePath?: string;
 
   private pushSocket?: PipelineSocket;
   private pullSocket?: PipelineSocket;
@@ -67,7 +79,8 @@ export abstract class QpiDriver {
     this.qpiAddr = normalizeQpiAddr(options.qpiAddr);
     this.token = options.token;
     this.name = options.name;
-    this.caFingerprint = options.caFingerprint ?? "";
+    this.caFingerprint = options.caFingerprint;
+    this.caFilePath = options.caFilePath;
   }
 
   /**
@@ -229,8 +242,14 @@ export abstract class QpiDriver {
   /**
    * Download the server root CA and verify its SHA-256 fingerprint against the
    * pinned value. The fingerprint is the hex SHA-256 of the certificate's DER
-   * bytes, matching the Python and Go SDKs. An empty fingerprint skips the
-   * check.
+   * bytes, matching the Python and Go SDKs, and there is no way to skip the
+   * check (RFC 0003 §10).
+   *
+   * The certificate is written to `caFilePath` when one was given — after
+   * verification, so a certificate that failed the pin is never left on disk
+   * looking legitimate. A write that fails is reported and does not stop the
+   * driver: the copy on disk is for an operator to look at, not something the
+   * transport reads back.
    */
   private async downloadRootCa(): Promise<string> {
     const resp = await fetch(`${this.qpiAddr}/api/pub/root-ca.pem`);
@@ -239,6 +258,18 @@ export abstract class QpiDriver {
     }
     const pem = await resp.text();
     verifyFingerprint(pem, this.caFingerprint);
+
+    if (this.caFilePath) {
+      try {
+        await mkdir(dirname(this.caFilePath), { recursive: true });
+        await writeFile(this.caFilePath, pem, "utf8");
+      } catch (err) {
+        console.error(
+          `[qpi-driver] could not write the root CA to ${this.caFilePath}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     return pem;
   }
 }
