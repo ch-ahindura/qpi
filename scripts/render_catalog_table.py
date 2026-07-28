@@ -1,16 +1,23 @@
 #!/usr/bin/env python3
 """Regenerate the `-o` option tables in the driver READMEs from `catalog --json`.
 
+Documentation tooling for this repository, not part of any published package —
+which is why it lives in ``scripts/`` rather than beside the SDK it reads from.
+
 The tables say what every device accepts, which is exactly the information the SDKs
 already carry as data (RFC 0003 §5) — so they are generated rather than typed, and
-cannot fall behind the code the way a hand-written list does.
+cannot fall behind the code the way a hand-written list does. The table in
+``qpi-driver/py/README.md`` is the one that exists today; the marked block is the
+whole contract, so a second README can opt in by adding one.
 
 Reads the catalog on stdin and rewrites the block between::
 
     <!-- catalog:begin -->
     <!-- catalog:end -->
 
-in each file named on the command line. Run it through ``make sync-driver-catalog``.
+in each file named on the command line. Nothing calls it directly — run
+``make sync-driver-catalog``, which produces the catalog it reads and then runs it
+over every README that has the markers.
 """
 
 import json

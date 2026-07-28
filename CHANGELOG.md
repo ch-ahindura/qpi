@@ -144,6 +144,7 @@ names and signatures. What moved is how a driver is registered and launched:
 - `docs`: `qpi-driver/py/README.md` introduced itself as "The Go SDK".
 - `docs`: The root `README.md` told the reader to `pip install ./qpi-driver[cli]`, a directory with no `pyproject.toml` in it, and pointed `-o quantify_device_config` at a `quantify.device.example.json` that has never existed — the file is YAML, and both example configs live under `qpi-driver/py/`.
 - `docs`: `docs/driver/operations.md` closed with `make test-e2e-driver-framework`, a target that existed only in the Makefile's `.PHONY` list. Removed the phantom from `.PHONY` and named the real target.
+- `repo`: `render_catalog_table.py` moved from `qpi-driver/` to a new top-level `scripts/`. It is documentation tooling for this repository — `make sync-driver-catalog` runs it — and sitting at the root of `qpi-driver/` it read as part of a published SDK. `qpi-driver/py/tests/half_imported_device.py` moved to `tests/fixtures/` for the same reason: it is not a test module but an input to one, a module that raises `ImportError` on purpose.
 - `qpi-driver/py`: Fixed the custom-executor example in `qpi-driver/py/README.md`, which passed a `custom_executor=` keyword that no function accepted and would have failed with `Unknown executor name 'custom'`.
 
 ## [0.1.2] - 2026-07-24
