@@ -42,13 +42,12 @@ OPERATION=${OPERATION:-process}
 [ -z "$DEVICE" ] && read -p "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: " DEVICE
 DEVICE=${DEVICE:-mock}
 
-# FIXME: this may not only be for monitor operations
-# A monitor's config (e.g. bluefors_gen1's base_url/channels) is passed as
-# generic DRIVER_OPTIONS ("key=value;key=value"). A process auto-fills its own
-# runtime options (data dir, quantify configs) below, so it is not prompted.
-if [ "$OPERATION" = "monitor" ]; then
-    [ -z "$DRIVER_OPTIONS" ] && read -p "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K): " DRIVER_OPTIONS
-fi
+# A driver's device settings (e.g. bluefors_gen1's base_url/channels, or a process
+# device's job_timeout) are passed as generic DRIVER_OPTIONS ("key=value;key=value"),
+# rendered as -o flags below. This applies to any operation — a process device reads
+# -o keys too, and only the ones this installer manages itself (the data dir and the
+# quantify configs) are filled in for it. Leave blank for a device that needs none.
+[ -z "$DRIVER_OPTIONS" ] && read -p "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K), or leave blank: " DRIVER_OPTIONS
 
 # The version of qpi-driver to install.
 # This should match the qpi-ui version if provided via environment variable.

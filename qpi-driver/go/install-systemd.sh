@@ -33,14 +33,19 @@ while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi
 while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
 while [ -z "$QPU_NAME" ]; do read -p "Enter QPU Name (e.g. rigetti-aspen-1): " QPU_NAME; done
 
-# A driver is run by its OPERATION (the --operation flag: process | monitor) on a
-# specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
-# presto); a monitor reports upward (bluefors_gen1). Both are launched the same
-# way: `qpi-driver start --operation <operation> --device <device> … -o key=value`.
-[ -z "$OPERATION" ] && read -p "Enter Operation (process, monitor) [process]: " OPERATION
-OPERATION=${OPERATION:-process}
-[ -z "$DEVICE" ] && read -p "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: " DEVICE
-DEVICE=${DEVICE:-mock}
+# A driver is run by its OPERATION (the --operation flag) on a specific DEVICE,
+# and both are launched the same way: `qpi-driver start --operation <operation>
+# --device <device> … -o key=value`.
+#
+# These are the operations and devices *this* SDK ships, and they must stay in
+# step with its own catalog (`qpi-driver devices`). The Go SDK ships one monitor
+# device and no process device, so offering `process` here would write a unit whose
+# ExecStart can never succeed — and with Restart=on-failure below, crash-loop.
+# Running a QPU means the Python SDK, or a device of your own.
+[ -z "$OPERATION" ] && read -p "Enter Operation (monitor) [monitor]: " OPERATION
+OPERATION=${OPERATION:-monitor}
+[ -z "$DEVICE" ] && read -p "Enter Device (bluefors_gen1) [bluefors_gen1]: " DEVICE
+DEVICE=${DEVICE:-bluefors_gen1}
 
 # A driver's device settings (e.g. bluefors_gen1's base_url/channels) are passed
 # as generic DRIVER_OPTIONS ("key=value;key=value"), rendered as -o flags below.
@@ -53,8 +58,11 @@ QPI_DRIVER_VERSION="${QPI_DRIVER_VERSION:-}"
 QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${QPU_NAME}"}"
 QPI_CA_FILE="${QPI_CA_FILE:-"${QPI_DATA_DIR}/qpi.ca.pem"}"
 
-# Ensure data directory exists and is owned by the real user
-echo "Creating data directory at $QPI_DATA_DIR..."
+# The driver writes the root CA it downloaded to QPI_CA_FILE, so its directory has
+# to exist and be writable by the user the unit runs as. Nothing else in this SDK
+# writes to disk — the `data_dir` option is a process-device thing, and this SDK
+# ships none.
+echo "Creating $QPI_DATA_DIR for the downloaded root CA..."
 mkdir -p "$QPI_DATA_DIR"
 chown -R "$REAL_USER" "$QPI_DATA_DIR"
 

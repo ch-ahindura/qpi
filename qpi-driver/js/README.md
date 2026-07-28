@@ -170,8 +170,11 @@ instead of installing one.
    npm install -g qpi-driver
    ```
 
-3. **Write the unit file**, replacing every `<value>`. `ExecStart` needs absolute
-   paths, so point at the `node` and `qpi-driver` that `which` reports:
+3. **Write the unit file**, replacing every `<value>`. `ExecStart` needs an absolute
+   path, so use the one `which qpi-driver` reports — and because `qpi-driver` is a
+   Node script with a `#!/usr/bin/env node` shebang, the unit's `PATH` has to
+   contain that `node` too. systemd's default `PATH` does not include an nvm
+   install, so name it: `dirname "$(which node)"`.
 
    ```bash
    sudo bash -c 'cat > /etc/systemd/system/cryostat-1.qpi-driver.service <<EOF
@@ -184,6 +187,7 @@ instead of installing one.
 
    Environment="QPI_ACCESS_TOKEN=<your-qpi-access-token>"
    Environment="QPI_CA_FILE=/var/qpi-driver/cryostat-1/qpi.ca.pem"
+   Environment="PATH=<node-bin-dir>:/usr/local/bin:/usr/bin:/bin"
 
    ExecStart=<path-to>/qpi-driver start \
            --operation monitor \

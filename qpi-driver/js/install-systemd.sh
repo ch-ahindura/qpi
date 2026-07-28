@@ -33,14 +33,19 @@ while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi
 while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
 while [ -z "$QPU_NAME" ]; do read -p "Enter QPU Name (e.g. rigetti-aspen-1): " QPU_NAME; done
 
-# A driver is run by its OPERATION (the --operation flag: process | monitor) on a
-# specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
-# presto); a monitor reports upward (bluefors_gen1). Both are launched the same
-# way: `qpi-driver start --operation <operation> --device <device> … -o key=value`.
-[ -z "$OPERATION" ] && read -p "Enter Operation (process, monitor) [process]: " OPERATION
-OPERATION=${OPERATION:-process}
-[ -z "$DEVICE" ] && read -p "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: " DEVICE
-DEVICE=${DEVICE:-mock}
+# A driver is run by its OPERATION (the --operation flag) on a specific DEVICE,
+# and both are launched the same way: `qpi-driver start --operation <operation>
+# --device <device> … -o key=value`.
+#
+# These are the operations and devices *this* SDK ships, and they must stay in
+# step with its own catalog (`qpi-driver devices`). The TypeScript SDK ships one
+# monitor device and no process device, so offering `process` here would write a
+# unit whose ExecStart can never succeed — and with Restart=on-failure below,
+# crash-loop. Running a QPU means the Python SDK, or a device of your own.
+[ -z "$OPERATION" ] && read -p "Enter Operation (monitor) [monitor]: " OPERATION
+OPERATION=${OPERATION:-monitor}
+[ -z "$DEVICE" ] && read -p "Enter Device (bluefors_gen1) [bluefors_gen1]: " DEVICE
+DEVICE=${DEVICE:-bluefors_gen1}
 
 # A driver's device settings (e.g. bluefors_gen1's base_url/channels) are passed
 # as generic DRIVER_OPTIONS ("key=value;key=value"), rendered as -o flags below.
@@ -53,8 +58,11 @@ QPI_DRIVER_VERSION="${QPI_DRIVER_VERSION:-}"
 QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${QPU_NAME}"}"
 QPI_CA_FILE="${QPI_CA_FILE:-"${QPI_DATA_DIR}/qpi.ca.pem"}"
 
-# Ensure data directory exists and is owned by the real user
-echo "Creating data directory at $QPI_DATA_DIR..."
+# The driver writes the root CA it downloaded to QPI_CA_FILE, so its directory has
+# to exist and be writable by the user the unit runs as. Nothing else in this SDK
+# writes to disk — the `data_dir` option is a process-device thing, and this SDK
+# ships none.
+echo "Creating $QPI_DATA_DIR for the downloaded root CA..."
 mkdir -p "$QPI_DATA_DIR"
 chown -R "$REAL_USER" "$QPI_DATA_DIR"
 
@@ -65,17 +73,36 @@ if [ "${QPI_SKIP_INSTALL:-0}" = "1" ]; then
     echo "QPI_SKIP_INSTALL=1: skipping install; using an already-installed qpi-driver."
     QPI_DRIVER_BIN="${QPI_DRIVER_BIN:-qpi-driver}"
 else
-    # Locate npm (required to install the driver CLI)
+    # Locate or install Node. An installer that stops halfway to tell the operator
+    # to go and install a runtime is not an installer, so bring our own — via nvm,
+    # as $REAL_USER, the same way the README's by-hand instructions do. A Node
+    # installed by root is one they cannot upgrade.
+    #
+    # Everything below runs npm through `node_env`, because npm is itself a script
+    # with a `#!/usr/bin/env node` shebang: an nvm-installed npm only works with
+    # its own node on PATH.
+    node_env() { sudo -u "$REAL_USER" env PATH="${NODE_BIN_DIR}:$PATH" "$@"; }
+
     if sudo -u "$REAL_USER" command -v npm >/dev/null 2>&1; then
-        NPM_BIN=$(sudo -u "$REAL_USER" command -v npm)
+        NODE_BIN_DIR=$(dirname "$(sudo -u "$REAL_USER" command -v npm)")
+    elif [ -s "$REAL_HOME/.nvm/nvm.sh" ] &&
+        NODE_BIN_DIR=$(sudo -u "$REAL_USER" bash -lc ". '$REAL_HOME/.nvm/nvm.sh' && dirname \"\$(command -v npm)\"" 2>/dev/null) &&
+        [ -x "${NODE_BIN_DIR}/npm" ]; then
+        echo "Using the Node.js nvm already installed for $REAL_USER (${NODE_BIN_DIR})."
     else
-        echo "Error: Node.js/npm is required but was not found for $REAL_USER."
-        echo "Install Node.js (https://nodejs.org/) and re-run this script."
-        exit 1
+        echo "Node.js was not found for $REAL_USER; installing it with nvm..."
+        sudo -u "$REAL_USER" bash -c "curl -LsSf https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION:-v0.40.6}/install.sh | bash"
+        sudo -u "$REAL_USER" bash -c ". '$REAL_HOME/.nvm/nvm.sh' && nvm install ${NODE_VERSION:-24}"
+        NODE_BIN_DIR=$(sudo -u "$REAL_USER" bash -c ". '$REAL_HOME/.nvm/nvm.sh' && dirname \"\$(command -v npm)\"")
+        if [ ! -x "${NODE_BIN_DIR}/npm" ]; then
+            echo "Error: installing Node.js with nvm did not produce an npm for $REAL_USER."
+            echo "Install Node.js yourself (https://nodejs.org/) and re-run with QPI_SKIP_INSTALL=1."
+            exit 1
+        fi
     fi
 
     # Where 'npm install -g' drops the CLI binary.
-    NPM_PREFIX=$(sudo -u "$REAL_USER" "$NPM_BIN" prefix -g)
+    NPM_PREFIX=$(node_env npm prefix -g)
     GLOBAL_BIN_DIR="${NPM_PREFIX}/bin"
 
     if [ -z "$QPI_DRIVER_VERSION" ]; then
@@ -84,7 +111,7 @@ else
         PKG_SPEC="qpi-driver@${QPI_DRIVER_VERSION#v}"
     fi
     echo "Installing ${PKG_SPEC} via npm install -g..."
-    sudo -u "$REAL_USER" "$NPM_BIN" install -g "$PKG_SPEC"
+    node_env npm install -g "$PKG_SPEC"
 
     QPI_DRIVER_BIN="${QPI_DRIVER_BIN:-${GLOBAL_BIN_DIR}/qpi-driver}"
 fi
@@ -115,6 +142,14 @@ EXEC_START_CMD="$QPI_DRIVER_BIN start \\
         --qpi-addr $QPI_ADDR \\
         --name \"$QPU_NAME\"$OPT_ARGS"
 
+# `qpi-driver` is a Node script with a `#!/usr/bin/env node` shebang, so the unit
+# needs a PATH that has that node on it. systemd's default PATH does not include
+# an nvm install, which is where the node above almost certainly is.
+NODE_PATH_ENV=""
+if [ -n "${NODE_BIN_DIR:-}" ]; then
+    NODE_PATH_ENV="Environment=\"PATH=${NODE_BIN_DIR}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\""
+fi
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=QPI Driver Service ($QPU_NAME)
@@ -125,6 +160,7 @@ Type=simple
 
 Environment="QPI_ACCESS_TOKEN=$QPI_TOKEN"
 Environment="QPI_CA_FILE=$QPI_CA_FILE"
+$NODE_PATH_ENV
 
 ExecStart=$EXEC_START_CMD
 
