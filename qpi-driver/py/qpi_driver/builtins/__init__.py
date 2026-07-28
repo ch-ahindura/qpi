@@ -40,14 +40,21 @@ for _spec in (*qpu.DEVICE_SPECS, bluefors_gen1.DEVICE_SPEC):
 
 # Imported last, and after registration: discovery reaches back into `qpu` for the
 # process builder, so it cannot be imported while this module is still setting up.
+#
+# `load_installed_devices()` is *not* called here. An installed device imports the
+# SDK — the documented way to write one is `from qpi_driver import Executor,
+# JobPayload, OptionSpec` — and this module is imported by `qpi_driver/__init__.py`
+# on its way to binding those names, so loading here means loading a third party's
+# module against a half-initialised `qpi_driver`. Every such device was skipped with
+# "cannot import name 'Executor' from partially initialized module". The call moved
+# to the end of `qpi_driver/__init__.py`, which is the first moment the package a
+# device imports is actually complete.
 from qpi_driver.builtins.discovery import (  # noqa: E402
     ENTRY_POINT_GROUP,
     import_object,
     load_installed_devices,
     resolve_device,
 )
-
-load_installed_devices()
 
 __all__ = [
     "QpuDriver",

@@ -163,64 +163,109 @@ QpuDriver(
     qpi_addr="http://localhost:8090",
     token="<qpu-access-token>",
     ca_fingerprint="<fingerprint>",
-    name="qpu_sim_01",
     executor="mock",
     data_dir=Path("./data"),
 ).run()
 ```
 
-<!-- FIXME: Maybe for uniformity, we should get rid of passing an executor and instead just have the custom drivers we had so that the executor itself is in the custom driver.
-It seems like when one has multiple options, it becomes confusing when to use what. The descriptions in the go/js README's were good and simple and straight forward.
- -->
-### Custom executor
+## Adding a device of your own
 
-An executor the SDK does not ship needs no registration — pass the class or an
-instance of it as `executor`:
+There is one thing to write, and it is the same thing whichever operation you are
+extending: a **device**. Describe it as data, and the CLI gains it — a line in
+`--help`, an entry in `catalog --json`, and `-o` values that are checked and
+converted for you, exactly as the built-in devices get.
 
-`Executor` asks for two methods: `execute()` runs the job on your hardware and
-returns whatever it produced, and `process_result()` turns that into the
-Qiskit-shaped counts QPI-UI stores.
+For `process` — a QPU — a device is an **executor**, because every process device is
+the one built-in QPU driver over a different executor. `Executor` asks for two
+methods: `execute()` runs the job on your hardware and returns an `xr.Dataset`, and
+`process_result()` turns that into the Qiskit-shaped counts QPI-UI stores.
 
 ```python
+import numpy as np
 import xarray as xr
 
-from qpi_driver import Executor, JobPayload, QpuDriver
+from qpi_driver import Executor, JobPayload, OptionSpec
+from qpi_driver.builtins.qpu import device_spec
 
-class MyCustomExecutor(Executor):
+
+class QuantumXExecutor(Executor):
+    def __init__(self, name: str = "quantum_x", qubit_count: int = 1, **options):
+        super().__init__(name=name)
+        self.qubit_count = int(qubit_count)
+
     def execute(self, payload: JobPayload) -> xr.Dataset:
-        # Your QPU-specific execution logic
-        return xr.Dataset({"counts": ("state", [payload.shots])}, coords={"state": ["0"]})
+        # Your QPU-specific execution logic; here every shot reads as the ground state.
+        memory = np.full(payload.shots, "0" * self.qubit_count)
+        return xr.Dataset({"memory": ("shot", memory)}, attrs={"shots": payload.shots})
 
     def process_result(self, dataset: xr.Dataset, job_id: str) -> dict:
-        counts = {str(s): int(c) for s, c in zip(dataset.state.values, dataset.counts.values)}
-        return {"job_id": job_id, "counts": counts}
+        states, counts = np.unique(dataset["memory"].values, return_counts=True)
+        return {
+            "job_id": job_id,
+            "counts": {str(s): int(c) for s, c in zip(states, counts)},
+        }
 
-QpuDriver(
-    qpi_addr="http://localhost:8090",
-    token="<token>",
-    ca_fingerprint="<fingerprint>",
-    name="my_qpu",
-    executor=MyCustomExecutor(),
-).run()
+
+# The executor, described as data. This is what earns it a --help entry and gets
+# `-o qubit_count=4` converted to an int rather than passed through as "4".
+QUANTUM_X = device_spec(
+    "quantum_x",
+    executor=QuantumXExecutor,
+    summary="MyLab's QuantumX control system.",
+    options=(
+        OptionSpec(key="qubit_count", help="How many qubits the chip has.",
+                   parse=int, default="1", example="4"),
+    ),
+)
 ```
 
-To run that same executor from the CLI, either name it by import path or ship it
-as a device. [`examples/custom_device/`](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/examples/custom_device/) is a worked
-example of both:
+**Ship it** by advertising the spec under the `qpi_driver.devices` entry-point group
+in your own `pyproject.toml` — this is the whole of the packaging:
+
+```toml
+[project.entry-points."qpi_driver.devices"]
+quantum_x = "mylab_devices:QUANTUM_X"
+```
 
 ```bash
-# A class in a file, with no packaging at all
-qpi-driver start --operation process --device mylab_devices:ThermometerExecutor -o probe_count=4 ...
-
-# Or, after `pip install` of a distribution declaring the qpi_driver.devices
-# entry point — now it is in --help and catalog --json like any built-in
-qpi-driver start --operation process --device thermometer -o probe_count=4 ...
+pip install .    # your distribution, depending on qpi-driver[cli]
+qpi-driver start --operation process --device quantum_x -o qubit_count=4 ...
 ```
 
-For `monitor`, a device is the driver rather than an executor, so the import path
-points at a builder returning one, or at a `DeviceSpec` naming it. There is no
-separate "custom driver" mechanism: an operation is a contract QPI-UI implements,
-so a custom driver is always a custom device of an existing operation.
+`quantum_x` is now indistinguishable from a built-in: in `qpi-driver devices`, in
+`--help` with its own options, and in `catalog --json`. An entry point that will not
+import, or resolves to something other than a `DeviceSpec`, is logged and skipped —
+it cannot stop the CLI from starting.
+
+**Or name it by import path**, with nothing to install and nothing to register:
+
+```bash
+qpi-driver start --operation process --device mylab_devices:QuantumXExecutor \
+  -o qubit_count=4 ...
+```
+
+`module.attr` works as well as `module:attr`. There is no declared schema behind an
+import path, so `qubit_count` arrives at the constructor as the string `"4"` and a
+typo in it is not caught; the `-o` options the SDK *does* declare, `data_dir`
+included, are still validated. Use it to try a device out, and the entry point to
+deploy one.
+
+[`examples/custom_device/`](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/examples/custom_device/)
+is this worked all the way through, as two files you can run.
+
+For `monitor`, a device is the driver itself rather than an executor, so the spec's
+builder returns a `QpiDriver` and the import path points at that builder — or at a
+`DeviceSpec` naming it. There is no separate "custom driver" mechanism: an operation
+is a contract QPI-UI implements server-side, so a custom driver is always a custom
+device of an existing operation (RFC 0003 §6, §13.4).
+
+> **You can also pass an executor directly.** `QpuDriver(executor=…)` takes a class
+> or an instance as well as a name, so `QpuDriver(executor=QuantumXExecutor(qubit_count=4))`
+> runs your backend from Python with no spec and no packaging. It is the same
+> mechanism — `device_spec` above binds an executor to the QPU driver in exactly this
+> way — and it is what the `--device mylab:Cls` route does for you. Reach for it when
+> you are driving the SDK from your own Python and want no CLI at all; reach for a
+> device when anything else has to *launch* the driver.
 
 The TypeScript SDK has the same import-path route with a different separator —
 `--device ./dist/my-device.js#MyExport` — because `:` is a URL scheme separator in a

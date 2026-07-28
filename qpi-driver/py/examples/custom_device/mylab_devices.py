@@ -2,43 +2,46 @@
 
 Two things are defined here, and either one is enough on its own:
 
-``ThermometerExecutor``
+``QuantumXExecutor``
     An :class:`~qpi_driver.executors.Executor`. Nothing registers it — for a
     ``process`` device, being an executor *is* being a device, so it can be run
     straight away by import path::
 
-        qpi-driver start --operation process --device mylab_devices:ThermometerExecutor \\
+        qpi-driver start --operation process --device mylab_devices:QuantumXExecutor \\
           --token "$QPI_ACCESS_TOKEN" --ca-fingerprint "$QPI_CA_FINGERPRINT" \\
-          -o data_dir=./bin/data -o probe_count=4
+          -o data_dir=./bin/data -o qubit_count=4
 
-    ``probe_count`` is not an option this SDK has heard of. A device named by
+    ``qubit_count`` is not an option this SDK has heard of. A device named by
     import path has no declared schema, so undeclared options are passed to the
     executor's constructor as the strings they were typed as.
 
-``THERMOMETER``
+``QUANTUM_X``
     A :class:`~qpi_driver.builtins.DeviceSpec`, which is the same executor plus a
     name, a summary and a declared option schema. Being described as data is what
     earns it a line in ``--help``, an entry in ``catalog --json``, and checked and
-    converted ``-o`` values — ``probe_count`` arrives as an ``int``, and a typo in
+    converted ``-o`` values — ``qubit_count`` arrives as an ``int``, and a typo in
     it is an error rather than a surprise.
 
 Ship the spec by advertising it in your own ``pyproject.toml``::
 
     [project.entry-points."qpi_driver.devices"]
-    thermometer = "mylab_devices:THERMOMETER"
+    quantum_x = "mylab_devices:QUANTUM_X"
 
 Then ``pip install mylab-devices`` and it is simply there: in ``--help``, in
-``catalog --json``, and to ``--device thermometer``, with nothing to change in the
+``catalog --json``, and to ``--device quantum_x``, with nothing to change in the
 SDK or the CLI.
 """
 
 from typing import Any
 
+import numpy as np
+import xarray as xr
+
 from qpi_driver import Executor, JobPayload, OptionSpec
 from qpi_driver.builtins.qpu import device_spec
 
 
-class ThermometerExecutor(Executor):
+class QuantumXExecutor(Executor):
     """Stands in for whatever your lab actually runs a job on.
 
     Every keyword argument the QPU driver was given reaches this constructor, so
@@ -48,32 +51,55 @@ class ThermometerExecutor(Executor):
 
     def __init__(
         self,
-        name: str = "thermometer",
-        probe_count: int = 1,
+        name: str = "quantum_x",
+        qubit_count: int = 1,
         **options: Any,
     ) -> None:
         super().__init__(name=name)
-        self.probe_count = int(probe_count)
+        self.qubit_count = int(qubit_count)
 
-    def execute(self, payload: JobPayload) -> Any:
-        """Run one job and return whatever your hardware produced."""
-        return {"probes": self.probe_count, "job": payload.id}
+    def execute(self, payload: JobPayload) -> xr.Dataset:
+        """Run one job and return what the hardware produced, as an ``xr.Dataset``.
 
-    def process_result(self, dataset: Any, job_id: str) -> dict[str, Any]:
+        The dataset is the contract between this method and
+        :meth:`process_result`, and it is the shape the built-in executors return
+        too — so it is a dataset rather than a convenient dict even for a machine
+        as imaginary as this one. Here every shot lands in the ground state; a real
+        executor returns its own measurement record.
+        """
+        ground_state = "0" * self.qubit_count
+        return xr.Dataset(
+            {"memory": ("shot", np.full(payload.shots, ground_state))},
+            coords={"shot": np.arange(payload.shots)},
+            attrs={
+                "shots": payload.shots,
+                "n_qubits": self.qubit_count,
+                "backend": self.name,
+            },
+        )
+
+    def process_result(self, dataset: xr.Dataset, job_id: str) -> dict[str, Any]:
         """Turn that into the Qiskit-shaped counts QPI-UI stores."""
-        return {"counts": {"0": dataset["probes"]}, "job_id": job_id}
+        states, counts = np.unique(dataset["memory"].values, return_counts=True)
+        return {
+            "job_id": job_id,
+            "counts": {str(state): int(count) for state, count in zip(states, counts)},
+            "shots": int(dataset.attrs["shots"]),
+            "backend": dataset.attrs["backend"],
+            "success": True,
+        }
 
 
 # The same executor, described as data. `device_spec` is the QPU module's helper:
 # every process device is the one built-in QPU driver over a different executor.
-THERMOMETER = device_spec(
-    "thermometer",
-    executor=ThermometerExecutor,
-    summary="Reads a made-up thermometer, as an example of a custom device.",
+QUANTUM_X = device_spec(
+    "quantum_x",
+    executor=QuantumXExecutor,
+    summary="MyLab's QuantumX control system, as an example of a custom device.",
     options=(
         OptionSpec(
-            key="probe_count",
-            help="How many probes to read per job.",
+            key="qubit_count",
+            help="How many qubits the chip has.",
             parse=int,
             default="1",
             example="4",

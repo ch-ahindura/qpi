@@ -7,15 +7,26 @@ name = "mylab-devices"
 version = "0.1.0"
 description = "An example QPI driver device that the SDK does not ship"
 requires-python = ">=3.12,<3.13"
-dependencies = ["qpi-driver"]
+# The `cli` extra, not the bare SDK: without it there is no `typer` and no
+# `qpi-driver` console script, so the very next command in the README — the one
+# that runs this device — would not exist.
+dependencies = ["qpi-driver[cli]"]
 
-# This stanza is the whole of it. `pip install mylab-devices` and `thermometer`
-# appears in `qpi-driver process --help`, in `qpi-driver catalog --json` and to
-# `--device thermometer` — no change to the SDK or the CLI. The key is the entry
-# point's name (only used in log messages); the value imports a DeviceSpec, or an
-# iterable of them if you ship several.
+# This stanza is the whole of it. `pip install mylab-devices` and `quantum_x`
+# appears in `qpi-driver start --operation process --help`, in
+# `qpi-driver catalog --json` and to `--device quantum_x` — no change to the SDK or
+# the CLI. The key is the entry point's name (only used in log messages); the value
+# imports a DeviceSpec, or an iterable of them if you ship several.
 [project.entry-points."qpi_driver.devices"]
-thermometer = "mylab_devices:THERMOMETER"
+quantum_x = "mylab_devices:QUANTUM_X"
+
+# Your own project would resolve `qpi-driver` from PyPI. This example is inside the
+# SDK's own repository, and `make test-docs` installs it to check that the entry
+# point route still works — so it points at the sibling source tree instead. Against
+# a published wheel the test would pass while the code in this checkout was broken.
+# Delete this stanza when copying the example.
+[tool.uv.sources]
+qpi-driver = { path = "../..", editable = true }
 
 [tool.setuptools]
 py-modules = ["mylab_devices"]

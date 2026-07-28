@@ -3,6 +3,12 @@
 Two files, and three ways to run the same device. Which one you want depends on
 whether the device is a thing you are trying out or a thing you are deploying.
 
+[pyproject.toml](pyproject.toml) points `qpi-driver` at the sibling source tree with
+a `[tool.uv.sources]` stanza, because this example lives inside the SDK's own
+repository and `make test-docs` installs it to check that the entry-point route still
+works. Your own project would resolve `qpi-driver[cli]` from PyPI; delete that stanza
+when you copy this.
+
 ## 1. Name it by import path — nothing to install
 
 The device is any importable `Executor`, so if `mylab_devices.py` is on your
@@ -10,16 +16,16 @@ The device is any importable `Executor`, so if `mylab_devices.py` is on your
 
 ```bash
 qpi-driver start --operation process \
-  --device mylab_devices:ThermometerExecutor \
+  --device mylab_devices:QuantumXExecutor \
   --qpi-addr http://localhost:8090 \
   --token "$QPI_ACCESS_TOKEN" \
   --ca-fingerprint "$QPI_CA_FINGERPRINT" \
   -o data_dir=./bin/data \
-  -o probe_count=4
+  -o qubit_count=4
 ```
 
 `module.attr` works as well as `module:attr`. There is no schema behind an import
-path, so `probe_count` reaches the executor's constructor as the string `"4"`,
+path, so `qubit_count` reaches the executor's constructor as the string `"4"`,
 unchecked — the executor converts it. The `-o` options the SDK does declare, such
 as `data_dir`, are still validated, so a `data_dir` outside a driver's safe roots
 is refused on this route exactly as on any other.
@@ -31,18 +37,18 @@ Ship the `DeviceSpec` under the `qpi_driver.devices` entry-point group, as
 
 ```toml
 [project.entry-points."qpi_driver.devices"]
-thermometer = "mylab_devices:THERMOMETER"
+quantum_x = "mylab_devices:QUANTUM_X"
 ```
 
 ```bash
 pip install .
-qpi-driver start --operation process --device thermometer -o probe_count=4 ...
+qpi-driver start --operation process --device quantum_x -o qubit_count=4 ...
 ```
 
 Now it is indistinguishable from a built-in: it appears in `qpi-driver devices`,
 in `qpi-driver start --operation process --help` with its own options, and in
-`qpi-driver catalog --json`. Because the spec *declares* `probe_count`, it arrives
-as an `int` and `-o probe_counr=4` is an error naming the valid keys instead of a
+`qpi-driver catalog --json`. Because the spec *declares* `qubit_count`, it arrives
+as an `int` and `-o qubit_counr=4` is an error naming the valid keys instead of a
 setting silently ignored.
 
 An entry point that will not import, or resolves to something other than a
@@ -54,14 +60,13 @@ Nothing above is required to use a custom executor from Python:
 
 ```python
 from qpi_driver import QpuDriver
-from mylab_devices import ThermometerExecutor
+from mylab_devices import QuantumXExecutor
 
 QpuDriver(
     qpi_addr="http://localhost:8090",
     token="<token>",
     ca_fingerprint="<fingerprint>",
-    name="lab-thermometer",
-    executor=ThermometerExecutor(probe_count=4),
+    executor=QuantumXExecutor(qubit_count=4),
 ).run()
 ```
 
