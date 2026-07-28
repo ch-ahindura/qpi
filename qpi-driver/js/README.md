@@ -14,6 +14,16 @@ implemented over Node's built-in `tls`, and the handshake uses the global
 npm install qpi-driver
 ```
 
+> **Upgrading?** This release changes the CLI grammar and some SDK APIs. The full
+> before/after migration table is in the
+> [CHANGELOG](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md#migration).
+> **What this SDK ships:** one `monitor` device, `bluefors_gen1`. It ships no
+> `process` (QPU) device — running a QPU means the Python SDK
+> (`pip install "qpi-driver[cli]"`) or a device of your own, registered as below.
+> `qpi-driver start --operation process` says so rather than offering a device it
+> does not have.
+
+
 ## Writing a driver
 
 Subclass `QpiDriver`, implement `handleEvent`, and call `run`:

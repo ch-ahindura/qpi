@@ -17,8 +17,8 @@
 </p>
 
 <p align="center">
-  Python QPU driver for the <a href="https://github.com/sopherapps/qpi">QPI</a> quantum computing platform.
-  Runs on isolated hardware nodes controlling the QPU via multiple executor backends.
+  Python driver SDK and CLI for the <a href="https://github.com/sopherapps/qpi">QPI</a> quantum computing platform.
+  Runs on isolated hardware nodes: a QPU over one of several executor backends, or a monitor reporting readings upward.
 </p>
 
 <p align="center">
@@ -26,6 +26,15 @@
 </p>
 
 ---
+
+> **Upgrading?** This release changes the CLI grammar and some SDK APIs. The full
+> before/after migration table is in the
+> [CHANGELOG](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md#migration).
+> **What this SDK ships:** five `process` (QPU) devices — `mock`, `presto`,
+> `qiskit_aer`, `quantify`, `qblox` — and one `monitor` device, `bluefors_gen1`. It is
+> the only SDK of the three with a `process` device, and the only one where a device
+> can be added without recompiling or rebundling.
+
 
 ## Install
 
@@ -187,13 +196,23 @@ QpuDriver(
 An executor the SDK does not ship needs no registration — pass the class or an
 instance of it as `executor`:
 
+`Executor` asks for two methods: `execute()` runs the job on your hardware and
+returns whatever it produced, and `process_result()` turns that into the
+Qiskit-shaped counts QPI-UI stores.
+
 ```python
-from qpi_driver import Executor, QpuDriver
+import xarray as xr
+
+from qpi_driver import Executor, JobPayload, QpuDriver
 
 class MyCustomExecutor(Executor):
-    def execute(self, payload):
+    def execute(self, payload: JobPayload) -> xr.Dataset:
         # Your QPU-specific execution logic
-        ...
+        return xr.Dataset({"counts": ("state", [payload.shots])}, coords={"state": ["0"]})
+
+    def process_result(self, dataset: xr.Dataset, job_id: str) -> dict:
+        counts = {str(s): int(c) for s, c in zip(dataset.state.values, dataset.counts.values)}
+        return {"job_id": job_id, "counts": counts}
 
 QpuDriver(
     qpi_addr="http://localhost:8090",
@@ -205,7 +224,7 @@ QpuDriver(
 ```
 
 To run that same executor from the CLI, either name it by import path or ship it
-as a device. [`examples/custom_device/`](examples/custom_device/) is a worked
+as a device. [`examples/custom_device/`](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/examples/custom_device/) is a worked
 example of both:
 
 ```bash
@@ -242,39 +261,33 @@ imports at compile time, so a device there is registered in your own `main`.
 
 ## Architecture
 
-The driver uses Python's `multiprocessing` library to isolate responsibilities:
+This is the `process` operation's architecture — a QPU driver. A `monitor` needs
+none of it: it has no worker, because it runs no jobs, and just polls on a timer.
 
-- **Main Process**: NNG PULL listener, receives commands from server
-- **Worker Process**: Executes quantum circuits via the configured executor
-- **Result Sender Process**: NNG PUSH, sends results back to server
+Execution happens in a *subprocess* so a heavy or crashing executor can never block
+or take down the receive loop. Results come back over a queue and are emitted by a
+*thread* in the main process, which is all that is needed to drain a queue.
+
+- **Main process**: the NNG PULL receive loop, plus the result-pump thread that emits
+  `JobResult` events on the PUSH socket.
+- **Worker subprocess** (`qpu.job_worker`): resolves the executor once, then runs
+  queued jobs until told to stop.
 
 ```
-┌─────────────┐     NNG PUSH      ┌─────────────────┐
-│ Server│ ────────────────> │  Main Process   │
-│  Dispatcher │                   │  (PULL listener)│
-└─────────────┘                   └────────┬────────┘
-                                           │
-                              multiprocessing.Queue
-                                           │
-                                           ▼
-                                   ┌───────────────┐
-                                   │ Worker Process│
-                                   │  (Executor)   │
-                                   └───────┬───────┘
-                                           │
-                              multiprocessing.Queue
-                                           │
-                                           ▼
-                                   ┌───────────────┐
-                                   │Result Sender  │
-                                   │  (PUSH)       │
-                                   └───────┬───────┘
-                                           │ NNG PUSH
-                                           ▼
-                                   ┌───────────────┐
-                                   │  Server │
-                                   │   Listener    │
-                                   └───────────────┘
+┌─────────────┐     NNG PUSH      ┌──────────────────────────────┐
+│   Server    │ ────────────────> │ Main process                 │
+│  Dispatcher │                   │  · PULL receive loop         │
+└─────────────┘                   │  · result-pump thread ──┐    │
+       ▲                          └───────────┬─────────────│────┘
+       │ NNG PUSH                             │             │
+       │ (JobResult)                 job queue│             │result queue
+       └──────────────────────────────────────│─────────────┘
+                                              ▼             ▲
+                                   ┌──────────────────────────────┐
+                                   │ Worker subprocess            │
+                                   │  · resolve_executor()        │
+                                   │  · executor.execute(job)     │
+                                   └──────────────────────────────┘
 ```
 
 ---
@@ -316,12 +329,43 @@ qpi-driver devices --operation monitor
 qpi-driver catalog --json
 ```
 
-Today's catalog:
+Today's catalog — generated from `qpi-driver catalog --json`, so it cannot fall
+behind the code:
 
-| Operation | Device | `-o` options |
-|-----------|--------|--------------|
-| `process` | `mock`, `presto`, `qiskit_aer`, `quantify`, `qblox` | `data_dir`, `job_timeout`, `is_dummy`, `quantify_hardware_config`, `quantify_device_config` |
-| `monitor` | `bluefors_gen1` | `channels` (required), `base_url`, `api_key`, `poll_interval`, `timeout` |
+<!-- catalog:begin -->
+
+<!-- Generated by `make sync-driver-catalog`. Do not edit by hand. -->
+
+| Operation | Device | Ships with |
+|-----------|--------|------------|
+| `process` | `mock` | base `[cli]` |
+| `process` | `presto` | base `[cli]` |
+| `process` | `qblox` | `qpi-driver[cli,qblox]` |
+| `process` | `qiskit_aer` | `qpi-driver[cli,aer]` |
+| `process` | `quantify` | `qpi-driver[cli,quantify]` |
+| `monitor` | `bluefors_gen1` | `qpi-driver[cli,bluefors_gen1]` |
+
+`-o` options for `mock`, `presto`, `qblox`, `qiskit_aer`, `quantify`:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `data_dir` | `safe_dir` | `./bin/data` | Directory the executor writes datasets and artefacts to. |
+| `job_timeout` | `int` | `10` | Seconds a single job may run before it is abandoned. |
+| `is_dummy` | `bool` | `false` | Run against the vendor's dummy instruments instead of real hardware. |
+| `quantify_hardware_config` | `Path` | `./quantify.hardware.json` | Path to the quantify hardware configuration JSON. |
+| `quantify_device_config` | `Path` | `./quantify.device.yml` | Path to the quantify device configuration YAML. |
+
+`-o` options for `bluefors_gen1`:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `channels` | `channels` | **required** | Value-tree channels to poll, as path[:unit] pairs. |
+| `base_url` | `str` | `http://127.0.0.1:49099` | Base URL of the Bluefors Control API. |
+| `api_key` | `str` | — | Bluefors API access key, if the API requires one. |
+| `poll_interval` | `float` | `5.0` | Seconds between polls of every channel. |
+| `timeout` | `float` | `5.0` | HTTP timeout per channel read, in seconds. |
+
+<!-- catalog:end -->
 
 ---
 

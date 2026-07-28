@@ -206,6 +206,9 @@ sync-driver-catalog:
 	$(UV) sync --project qpi-driver/py --extra cli
 	$(UV) run --project qpi-driver/py python -m qpi_driver.cli catalog --json \
 		> qpi-ui/internal/drivers/testdata/catalog.json
+	@echo "Regenerating the -o option tables in the driver READMEs..."
+	python3 qpi-driver/render_catalog_table.py qpi-driver/py/README.md \
+		< qpi-ui/internal/drivers/testdata/catalog.json
 	@echo "Done. Review the diff, then make catalog.go agree with it."
 
 format-py:

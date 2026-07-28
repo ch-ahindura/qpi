@@ -26,17 +26,45 @@ QPI is a distributed quantum control stack architecture designed to manage, sche
 
 It consists of three main components:
 1. **Server (`qpi-ui`)**: A Go-based server that manages the job queue, user time-slot bookings, and dispatches jobs to available QPUs. It includes a built-in React web dashboard.
-2. **QPU Driver (`qpi-driver`)**: A Python daemon that runs alongside the actual quantum hardware (or simulator), executing incoming jobs from the Server and returning results.
+2. **Drivers (`qpi-driver`)**: A framework, with SDKs in Python, Go and TypeScript, for the daemons that run alongside lab equipment and exchange typed events with the server. A QPU is one kind of driver; a cryostat monitor is another.
 3. **Clients**: SDKs (Python, Go, JS) for end-users to submit OpenQASM (or Qiskit) quantum jobs over the network.
 
 ```mermaid
 flowchart LR
     User[Clients] -->|Submit Quantum Jobs| Server
-    Server -->|Dispatch Jobs| Driver1[QPI Driver]
-    Server -->|Dispatch Jobs| Driver2[QPI Driver]
+    Server -->|Dispatch Jobs| Driver1[Driver: process]
+    Server -->|Dispatch Jobs| Driver2[Driver: process]
+    Driver3[Driver: monitor] -->|Report readings| Server
     Driver1 -->|Control| Hardware1[Physical QPU]
     Driver2 -->|Control| Hardware2[Simulated QPU]
+    Driver3 -->|Poll| Hardware3[Cryostat]
 ```
+
+### Operations and devices
+
+A driver is described by two things, and the difference between them is the whole
+extensibility story (see [RFC 0003](https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md)):
+
+- An **operation** is what the driver *does*, and it is a contract with the server:
+  `process` runs jobs pushed to it and reports results; `monitor` reports readings
+  upward on its own schedule. The server must have a handler for each, so the set is
+  closed — a new operation is a coordinated change across the server and the SDKs.
+- A **device** is the *backend* implementing an operation — an executor for
+  `process` (`mock`, `qiskit_aer`, `quantify`, `qblox`), a piece of lab hardware for
+  `monitor` (`bluefors_gen1`). The set is open: anyone can add one without touching
+  the SDK, and it then appears in `--help`, in `qpi-driver catalog --json` and to
+  `--device` exactly like a built-in.
+
+So every driver is launched the same way — one verb, one operation, one device:
+
+```bash
+qpi-driver start --operation process --device qblox   …   # a QPU
+qpi-driver start --operation monitor --device bluefors_gen1   …   # a cryostat
+```
+
+There is deliberately no separate "custom driver" mechanism. Because an operation is
+already a contract the server implements, a custom driver is always a custom
+*device* of an existing operation, and one concept covers it.
 
 ## Installation & Quick Start
 
@@ -135,7 +163,7 @@ print(job)
 The architecture consists of four primary components under the hood:
 1. **PocketBase Go Server (`qpi-ui/main.go`):** Extends PocketBase with Go, handling job queues, session-based bookings, and real-time job dispatching. Actively listens for LAN connections on dynamically allocated network ports.
 2. **React SPA Dashboard (`qpi-ui/internal/dashboard`):** Single-page application built with Vite, React 19, TypeScript, and Tailwind CSS. It is served directly from the server (via `//go:embed`) at `/` for viewing jobs, allocating QPU time, scheduling announcements, managing bookings, and observing calibration telemetry.
-3. **Python QPU Driver (`qpi-driver`):** Runs on isolated hardware nodes controlling the QPU. Uses Python's `multiprocessing` library to isolate network handling, quantum circuit compilation/simulation, and translation into separate processes.
+3. **Drivers (`qpi-driver`):** Run on isolated hardware nodes. A `process` driver (a QPU) isolates job execution in a worker subprocess, so a heavy or crashing executor never blocks its receive loop; a `monitor` driver just polls its hardware on a timer. Both exchange the same typed events with the server.
 4. **QPI Clients (Python, JavaScript, Go):** SDKs for submitting jobs to the quantum computer using OpenQASM specification (and Qiskit circuits if one uses the Python client)
 
 To optimize performance and simplify communication over multiprocessing queues, the worker process executes the quantum job, processes the resulting `xarray` dataset into a Qiskit-compatible result dictionary using the executor's `process_result()` method, and directly sends the results via the queue to the result sender process. This removes file-system serialization overhead.
@@ -149,10 +177,10 @@ graph TD
         Recovery[Recovery Engine]
     end
 
-    subgraph python_driver [Python QPU Driver Package]
+    subgraph python_driver [Driver: process operation]
         MainProc[Main Process: NNG PULL]
         Worker[Worker Process: Executor]
-        ResultSender[Result Sender Process: NNG PUSH]
+        ResultSender[Result-pump thread: NNG PUSH]
     end
 
     %% Client Interactions

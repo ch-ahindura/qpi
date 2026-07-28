@@ -7,6 +7,63 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Migration
+
+This release breaks the driver CLI's grammar and the Python and TypeScript SDKs'
+APIs (RFC 0003 §11). The project is pre-1.0 and makes no stability promise, so a
+name that has stopped earning its keep is deleted rather than aliased — the
+obligation that comes with that is to break **once** and to publish the table
+rather than let anyone discover the changes by failure.
+
+**Every driver is now launched with one verb.** `--operation` is required and reads
+`QPI_OPERATION`; `--device` and `--name`, when omitted, come from the operation's own
+defaults.
+
+| Before | After |
+|--------|-------|
+| `qpi-driver process --device qblox …` | `qpi-driver start --operation process --device qblox …` |
+| `qpi-driver monitor --device bluefors_gen1 …` | `qpi-driver start --operation monitor --device bluefors_gen1 …` |
+
+**Behaviour that changed without a rename**, and is worth checking an existing unit
+file against:
+
+| What | Was | Is now |
+|------|-----|--------|
+| An `-o` key no device reads | Silently ignored | Exits 1, naming the valid keys |
+| An `-o` value of the wrong type | Coerced ad hoc, or ignored | Exits 1, naming the option |
+| `--ca-fingerprint` omitted (TypeScript) | Connected **without verifying the pinned CA** | Exits 1 |
+| `--recv-timeout-ms` (TypeScript) | Accepted and ignored | Removed |
+| `--ca-file` (TypeScript) | Accepted and ignored | The CA is written there after it verifies |
+| `start --operation process` on Go/TypeScript | `unknown process device "mock"; known devices: ` | Says the SDK ships no process devices, and where to find one |
+
+**Python SDK.** The driver-authoring surface is untouched — `QpiDriver`,
+`handle_event()`, `emit()`, `every()`, `Event`, `EventType` and `Executor` keep their
+names and signatures. What moved is how a driver is registered and launched:
+
+| Removed | Replacement |
+|---------|-------------|
+| `run_driver(...)` | `QpuDriver(...).run()` |
+| `qpu.run_process(device=..., ...)` | `qpu.build_from_options(executor=..., ...).run()` |
+| `bluefors_gen1.run_monitor(...)` | `bluefors_gen1.build_from_options(...).run()` |
+| `builtins.PROCESS_DRIVERS`, `builtins.MONITOR_DRIVERS` | `builtins.devices(operation)` / `builtins.resolve(operation, device)` |
+| `builtins.DriverRunner` | `builtins.DeviceBuilder` (returns a driver rather than blocking) |
+| `resolve_executor(executor, custom_executors, ...)` | `resolve_executor(executor, ...)` — pass the class or instance itself |
+| `QpuDriver(custom_executors={"name": Cls})` | `QpuDriver(executor=Cls)` |
+| `QpuDriver.OPERATION`, `BlueforsGen1Driver.OPERATION` | `DeviceSpec.operation` |
+| `qpu.execute_job()` | `qpu.job_worker()` |
+| A builder taking raw `-o` strings | A builder taking `spec.parse_options(raw)` output |
+
+**TypeScript SDK:**
+
+| Removed | Replacement |
+|---------|-------------|
+| `DeviceRunner` | `DeviceBuilder`, taking `(config, options: Options)` |
+| `QpiDriverOptions.caFingerprint?` | `QpiDriverOptions.caFingerprint` — required |
+| `--recv-timeout-ms` | *(gone; the transport is event-driven)* |
+
+**Go SDK** breaks nothing that was reachable: its device table was unexported inside
+`package main`. It gains the importable `devices` and `cli` packages.
+
 ### Added
 
 - `qpi-driver/py`: Added the device catalog (RFC 0003 §5) — `Operation`, `OperationSpec`, `DeviceSpec`, `OptionSpec` and `DeviceBuilder` in `qpi_driver.builtins.registry`, with `register()`, `operations()`, `devices()` and `resolve()`. A device now describes itself as data next to its own code, so `--device` accepts it without any change to the CLI.
@@ -29,6 +86,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/js`: Added `qpi-driver devices [--operation OP]` and `qpi-driver catalog --json`, in the same frozen shape as the Python and Go SDKs.
 - `qpi-driver/js`: `src/builtins/cli.ts` has a test file, and `src/devices.ts`/`src/catalog.ts` are covered too — 81 tests where the CLI had none.
 - `qpi-driver/js`: `--ca-file` is now honoured: the downloaded root CA is written there after it has been verified, as the Python and Go SDKs do. It was parsed and ignored, so the file never appeared.
+- `docs`: Added an "Adding a device on a production node" runbook section (`docs/driver/operations.md`) — how an operator discovers what a node can run, the two ways a third-party device gets there, and what each of the four `-o` validation errors looks like, quoted from the CLI rather than paraphrased.
+- `docs`: The `-o` option tables in `qpi-driver/py/README.md` are now generated from `catalog --json` by `make sync-driver-catalog`, between `<!-- catalog:begin -->` markers, so they cannot fall behind the code.
+- `docs`: Added `make sync-driver-catalog`, which regenerates both the qpi-ui drift fixture and the README option tables from the Python SDK's catalog.
 - `qpi-ui`: Added a drift check between this server's driver catalog and the SDKs' (RFC 0003 §9). `qpi-ui/internal/drivers` now tests itself against a checked-in `testdata/catalog.json` generated by `qpi-driver catalog --json`, and fails when the two disagree about which devices exist, which install target ships them, or which `-o` keys each reads — and the other way, when the SDKs know an operation this server has no handler for. Regenerate the fixture with `make sync-driver-catalog`, which every failure message names; doing so is the deliberate act of recording a catalog change.
 - `qpi-ui`: `drivers.Option` now carries `Help`, `Required`, `Default` and `InSnippet` alongside `Example`, mirroring the SDKs' option schema. The `process` devices' five `-o` keys are filled in, where `processSpec` previously declared none — they have working defaults, so none of them is pre-filled in a rendered snippet, but the catalog now says they exist. `InSnippet` is what decides that: `bluefors_gen1` pre-fills `channels` and `base_url` and keeps `api_key`, `poll_interval` and `timeout` out of a copy-pasted command.
 
@@ -67,6 +127,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Fixed
 
 - `qpi-driver/go`: `--help` and `devices` no longer advertise an operation's default device in a build that does not have it, and omitting `--device` in such a build now asks for one, naming what is registered, instead of failing over a device the operator never typed. Which devices a Go binary has is decided when it is compiled.
+- `docs`: The root `README.md` described `qpi-driver` as a Python QPU daemon; it now describes the driver framework it is, with the operation/device split that makes it extensible and a QPU as one device of one operation (RFC 0003 §14). Each SDK README states what it actually ships, since only the Python SDK has a `process` device.
+- `docs`: Corrected the driver architecture in both the root and Python READMEs: results are pumped by a *thread* in the main process, not a third "Result Sender Process", and the whole worker arrangement belongs to the `process` operation — a `monitor` has none of it.
+- `docs`: Fixed the custom-executor example in `qpi-driver/py/README.md` a second time: it defined only `execute()`, so `Executor`'s other abstract method made it impossible to instantiate. Every Python snippet in a changed document is now executed against the real SDK, which is how this was found.
+- `docs`: RFC 0003 is `Implemented`, and RFC 0001 §2 now points at it for the operation/device layer rather than being edited in place.
 - `qpi-driver/py`: Fixed the custom-executor example in `qpi-driver/py/README.md`, which passed a `custom_executor=` keyword that no function accepted and would have failed with `Unknown executor name 'custom'`.
 
 ## [0.1.2] - 2026-07-24

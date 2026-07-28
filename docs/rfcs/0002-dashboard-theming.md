@@ -558,4 +558,4 @@ Logo and favicon uploads are constrained by:
 The phased implementation plan — per-phase objectives, status, remaining
 work, definition-of-done checklists, verification commands, and recommended
 cost-effective models — is maintained in
-[`.agents/ROADMAP.md`](../../.agents/ROADMAP.md), separately from this RFC.
+`.agents/ROADMAP.md` (not checked in), separately from this RFC.

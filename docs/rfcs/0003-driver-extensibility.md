@@ -1,6 +1,6 @@
 # RFC 0003 — Driver Extensibility
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-07-27
 - **Touches:** the driver SDKs (`qpi-driver/py`, `qpi-driver/go`, `qpi-driver/js`), `qpi-ui` (Go/PocketBase), docs

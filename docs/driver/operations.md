@@ -74,6 +74,88 @@ monitor emitting every few seconds needs only a handful per second; the default
 of `100` leaves wide headroom. Set it to `0` only if you trust every driver and
 want no cap.
 
+## Adding a device on a production node
+
+A driver runs one **operation** on one **device** (see
+[RFC 0003](../rfcs/0003-driver-extensibility.md)). The operations are fixed — the
+server must have a handler for each — but the devices are not, so a lab can run a
+backend the SDK has never heard of without patching it.
+
+Start by asking the node what it can already run. Both commands are generated from
+the installed SDK, so they describe that node rather than the documentation:
+
+```bash
+qpi-driver devices                  # every operation, its devices, their -o options
+qpi-driver catalog --json           # the same, for another program
+```
+
+A device whose optional dependency is not installed is listed as
+`qblox — unavailable: pip install "qpi-driver[cli,qblox]"`. That line is read from
+package metadata, so `qpi-driver devices` still works when a device does not — which
+matters, because it is the command you run *because* something is wrong.
+
+### Two ways in
+
+**Installed** (Python only) — the route for a device meant to be versioned and
+deployed. The distribution advertises it under the `qpi_driver.devices` entry-point
+group; after `pip install`, it is indistinguishable from a built-in:
+
+```bash
+uv tool install --with mylab-devices "qpi-driver[cli]"
+qpi-driver devices --operation process     # mylab's devices are now listed
+```
+
+An entry point that will not import is logged and skipped, never fatal — one broken
+third-party package cannot stop the driver from starting. Check the journal for
+`skipping device entry point` if a device you expected is missing.
+
+**Named by import path** — the route for "I have a class in a file". No packaging:
+
+```bash
+# Python: module:attr, or module.attr
+qpi-driver start --operation process --device mylab.executors:PrestoV2 …
+# TypeScript: ./module.js#export   (`:` is a URL scheme separator in a JS specifier)
+qpi-driver start --operation monitor --device ./dist/my-device.js#MyExport …
+```
+
+Both routes run code the operator installed or named; the server never supplies a
+device value and cannot introduce one. The Go SDK has no import-path route — Go
+resolves imports at compile time, so a device there is registered in your own `main`
+and the binary rebuilt.
+
+A device named by import path has no declared option schema, so its `-o` options are
+passed through unchecked. Shipping a `DeviceSpec` instead is what earns a device
+checked options, a `--help` entry and a `catalog --json` entry.
+
+### What an option error looks like now
+
+An `-o` key the chosen device does not read is an error, where it used to be
+ignored. This is the change most likely to surprise an existing unit file: a typo
+that previously meant "running with a default nobody chose" now means the driver
+does not start.
+
+```
+$ qpi-driver start --operation process --token … --ca-fingerprint … -o data_dirr=/data
+Error: unknown option 'data_dirr' for process device 'mock'. Valid options: data_dir,
+is_dummy, job_timeout, quantify_device_config, quantify_hardware_config.
+```
+
+The other three are worth recognising in a journal:
+
+```
+Error: monitor device 'bluefors_gen1' needs a 'channels' option, e.g. -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
+Error: bad value for -o job_timeout: invalid literal for int() with base 10: 'soon'
+Error: bad value for -o data_dir: /var is not in a safe location
+```
+
+The last one is a safety check, not a bug: a driver may only read and write under a
+small allow-list (`/var/qpi-driver`, `/etc/qpi-driver`, `/tmp`, `/var/tmp`, the
+user's home). It applies to a device named by import path exactly as to a built-in.
+
+All four exit 1 before the driver connects to anything, so a `Restart=on-failure`
+unit will loop on them — check `systemctl status` rather than waiting for the
+dashboard to show the driver online.
+
 ## Troubleshooting
 
 **The `events` table keeps growing.** Confirm `eventsRetention > 0` and that the

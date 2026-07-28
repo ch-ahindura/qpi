@@ -33,6 +33,15 @@ the matching client half to fill in.
 QPI-UI has a handler for each event it receives; the SDK lets a driver handle events it receives and emit
 events of its own.
 
+> **Superseded in part by [RFC 0003 — Driver Extensibility](./0003-driver-extensibility.md).**
+> The framework below stands unchanged — a driver still subclasses the SDK base,
+> implements `handle_event`, and calls `emit` and `every`. What RFC 0003 changes is
+> how a driver is *named and launched*: the vocabulary is now **operation** (what a
+> driver does — a closed set QPI-UI has handlers for) and **device** (the backend
+> implementing it — an open set anyone can add to), and every driver is started with
+> one verb, `qpi-driver start --operation <op> --device <device>`. Read RFC 0003 for
+> that layer; this RFC for the framework it sits on.
+
 ## 3. How it works
 
 ```mermaid
