@@ -225,6 +225,11 @@ export function buildProgram(): Command {
   program
     .command("catalog")
     .description("Print the whole device catalog for another program to read")
+    // --json is the default and does nothing, but the Go and Python CLIs both
+    // accept it and every README spells the command `catalog --json`. A flag that
+    // exits 1 on one SDK and not the others is a paper cut in the one place the
+    // three are supposed to be interchangeable.
+    .option("--json", "Print the catalog as JSON (the default)")
     .option("--text", "Print the same text `devices` shows, instead of JSON")
     .action((opts: { text?: boolean }) => {
       console.log(

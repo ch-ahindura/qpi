@@ -582,6 +582,15 @@ func handleDriverCreate(re *core.RequestEvent) error {
 	if !drivers.KnownLanguage(language) {
 		return re.Error(http.StatusBadRequest, fmt.Sprintf("unknown language %q", req.Language), nil)
 	}
+	// Which devices exist is the SDK's business and it differs between them: only
+	// the Python SDK has a process device. Registering, say, kind=mock with
+	// language=go used to succeed and hand the operator setup commands for a
+	// `--device mock` the Go binary has never heard of.
+	if !drivers.Default.ShipsIn(kind, language) {
+		return re.Error(http.StatusBadRequest, fmt.Sprintf(
+			"the %s SDK ships no %q device; it ships %s. Write it yourself against the SDK with kind=custom, or use a language whose SDK has it",
+			req.Language, req.Kind, joinKinds(drivers.Default.KindsIn(language))), nil)
+	}
 
 	events := drivers.Default.Events(kind)
 	if kind == drivers.Custom {

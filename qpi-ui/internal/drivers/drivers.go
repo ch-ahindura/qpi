@@ -11,6 +11,8 @@
 // branch.
 package drivers
 
+import "sort"
+
 // Language is an SDK language a driver can be written in (RFC 0001 §2).
 type Language string
 
@@ -86,6 +88,22 @@ type Spec struct {
 	// shown pre-filled in the snippets. Nil when the operation's defaults are
 	// enough (e.g. an executor).
 	Options []Option
+	// Languages are the SDKs that ship this device. Which devices a build has is
+	// the SDK's business and it differs between them — only the Python SDK has a
+	// process device — so a kind is registerable in a language only if that
+	// language's SDK can actually run it. Empty would mean a device no SDK ships;
+	// a drift test checks each SDK's own catalog against this list.
+	Languages []Language
+}
+
+// ShipsIn reports whether this backend is one the given language's SDK can run.
+func (s Spec) ShipsIn(language Language) bool {
+	for _, l := range s.Languages {
+		if l == language {
+			return true
+		}
+	}
+	return false
 }
 
 // Registry is the set of official driver backends QPI-UI knows about, keyed by
@@ -118,6 +136,30 @@ func (r *Registry) KnownKind(kind Kind) bool {
 	}
 	_, ok := r.specs[kind]
 	return ok
+}
+
+// ShipsIn reports whether kind can be run by language's SDK. Custom ships in
+// every language — it is code the operator writes against the SDK, so the SDK
+// having no such device is the point.
+func (r *Registry) ShipsIn(kind Kind, language Language) bool {
+	if kind == Custom {
+		return true
+	}
+	spec, ok := r.specs[kind]
+	return ok && spec.ShipsIn(language)
+}
+
+// KindsIn returns the official kinds language's SDK ships, sorted, so an error
+// about an unavailable one can say what is available instead.
+func (r *Registry) KindsIn(language Language) []Kind {
+	kinds := make([]Kind, 0, len(r.specs))
+	for kind, spec := range r.specs {
+		if spec.ShipsIn(language) {
+			kinds = append(kinds, kind)
+		}
+	}
+	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
+	return kinds
 }
 
 // Kinds returns every official kind registered in the catalog, in no

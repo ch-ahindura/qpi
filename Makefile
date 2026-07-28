@@ -229,18 +229,32 @@ format-go:
 	@echo "Formatting Go server files..."
 	(cd qpi-ui && go fmt ./...)
 
-# Regenerate the driver catalog fixture the qpi-ui drift check reads. Devices and
+# Regenerate the driver catalog fixtures the qpi-ui drift check reads. Devices and
 # their options belong to the driver SDK (RFC 0003 §9), so this is one-way: the SDK
 # writes, qpi-ui checks. Running it is the deliberate act of recording a catalog
 # change — the drift test names this target in every failure.
+#
+# One fixture per SDK, because they do not ship the same devices: only Python has a
+# process device, and qpi-ui has to know that to stop offering a Go driver a device
+# no Go binary has. The Python catalog is also the one the README table is rendered
+# from, being the superset.
+CATALOG_DIR := qpi-ui/internal/drivers/testdata
+
 sync-driver-catalog:
-	@echo "Regenerating qpi-ui/internal/drivers/testdata/catalog.json from the Python SDK..."
+	@echo "Regenerating $(CATALOG_DIR)/catalog.python.json..."
 	$(UV) sync --project qpi-driver/py --extra cli
 	$(UV) run --project qpi-driver/py python -m qpi_driver.cli catalog --json \
-		> qpi-ui/internal/drivers/testdata/catalog.json
+		> $(CATALOG_DIR)/catalog.python.json
+	@echo "Regenerating $(CATALOG_DIR)/catalog.go.json..."
+	(cd qpi-driver/go && go run ./qpi-driver catalog --json) \
+		> $(CATALOG_DIR)/catalog.go.json
+	@echo "Regenerating $(CATALOG_DIR)/catalog.typescript.json..."
+	(cd qpi-driver/js && npm ci --silent && npm run --silent build)
+	node qpi-driver/js/dist/builtins/cli.js catalog --json \
+		> $(CATALOG_DIR)/catalog.typescript.json
 	@echo "Regenerating the -o option tables in the driver READMEs..."
 	python3 scripts/render_catalog_table.py qpi-driver/py/README.md \
-		< qpi-ui/internal/drivers/testdata/catalog.json
+		< $(CATALOG_DIR)/catalog.python.json
 	@echo "Done. Review the diff, then make catalog.go agree with it."
 
 format-py:

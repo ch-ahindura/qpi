@@ -19,14 +19,22 @@ import (
 //     `-o` keys each takes, which extra installs it — the SDK knows and the server
 //     does not. QPI-UI's copy exists only to render setup snippets.
 //
-// So this file checks the server's device catalog against the SDK's, and the SDK's
+// So this file checks the server's device catalog against the SDKs', and the SDKs'
 // operations against the server's. Until the server can fetch a catalog from a
-// connected driver, the mechanism is this test over a checked-in fixture:
-// regenerating it is then the deliberate act of recording a catalog change.
+// connected driver, the mechanism is this test over checked-in fixtures:
+// regenerating them is then the deliberate act of recording a catalog change.
+//
+// There is one fixture per SDK, because the three do not ship the same devices —
+// only Python has a process device. Which language ships which is itself a thing
+// qpi-ui records (Spec.Languages) and therefore a thing that can drift.
 
 // regenerate is the one command that fixes any failure here. Named in every
-// message, so nobody has to work out how the fixture was made.
+// message, so nobody has to work out how the fixtures were made.
 const regenerate = "make sync-driver-catalog"
+
+// sdkLanguages are the languages with a fixture, i.e. every SDK. Python leads
+// because it is the superset and the one whose Extra field means anything.
+var sdkLanguages = []Language{Python, Go, TypeScript}
 
 // sdkCatalog is the `qpi-driver catalog --json` document, as the SDKs produce it.
 // Only the fields this test compares are read; the rest of the document is the
@@ -49,9 +57,9 @@ type sdkCatalog struct {
 	} `json:"operations"`
 }
 
-func loadSdkCatalog(t *testing.T) sdkCatalog {
+func loadSdkCatalog(t *testing.T, language Language) sdkCatalog {
 	t.Helper()
-	path := filepath.Join("testdata", "catalog.json")
+	path := filepath.Join("testdata", fmt.Sprintf("catalog.%s.json", language))
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v; regenerate it with `%s`", path, err, regenerate)
@@ -67,27 +75,30 @@ func loadSdkCatalog(t *testing.T) sdkCatalog {
 }
 
 // TestCatalogHasEveryDeviceTheSdkShips is the check that matters: a device added to
-// the SDK and not to catalog.go registers no snippets, so an operator who selects it
+// an SDK and not to catalog.go registers no snippets, so an operator who selects it
 // in the dashboard gets nothing to copy.
 func TestCatalogHasEveryDeviceTheSdkShips(t *testing.T) {
-	catalog := loadSdkCatalog(t)
+	for _, language := range sdkLanguages {
+		catalog := loadSdkCatalog(t, language)
 
-	for _, operation := range catalog.Operations {
-		for _, device := range operation.Devices {
-			spec, ok := Default.Lookup(Kind(device.Name))
-			if !ok {
-				t.Errorf("the SDK ships a %s device %q that this catalog does not know; "+
-					"add a Spec for it in catalog.go (then `%s`)",
-					operation.Name, device.Name, regenerate)
-				continue
-			}
-			if string(spec.Operation) != operation.Name {
-				t.Errorf("device %q is %s in the SDK and %s here",
-					device.Name, operation.Name, spec.Operation)
-			}
-			if spec.Extra != device.Extra {
-				t.Errorf("device %q installs from %q in the SDK and %q here",
-					device.Name, device.Extra, spec.Extra)
+		for _, operation := range catalog.Operations {
+			for _, device := range operation.Devices {
+				spec, ok := Default.Lookup(Kind(device.Name))
+				if !ok {
+					t.Errorf("the %s SDK ships a %s device %q that this catalog does not "+
+						"know; add a Spec for it in catalog.go (then `%s`)",
+						language, operation.Name, device.Name, regenerate)
+					continue
+				}
+				if string(spec.Operation) != operation.Name {
+					t.Errorf("device %q is %s in the %s SDK and %s here",
+						device.Name, operation.Name, language, spec.Operation)
+				}
+				// Extra is a pip extra, so only the Python catalog has one to compare.
+				if language == Python && spec.Extra != device.Extra {
+					t.Errorf("device %q installs from %q in the Python SDK and %q here",
+						device.Name, device.Extra, spec.Extra)
+				}
 			}
 		}
 	}
@@ -96,12 +107,12 @@ func TestCatalogHasEveryDeviceTheSdkShips(t *testing.T) {
 // TestCatalogShipsNoDeviceTheSdkDoesNot is the other direction: a Spec for a device
 // no SDK has means a dashboard offering a driver that cannot be run.
 func TestCatalogShipsNoDeviceTheSdkDoesNot(t *testing.T) {
-	catalog := loadSdkCatalog(t)
-
 	known := map[string]bool{}
-	for _, operation := range catalog.Operations {
-		for _, device := range operation.Devices {
-			known[device.Name] = true
+	for _, language := range sdkLanguages {
+		for _, operation := range loadSdkCatalog(t, language).Operations {
+			for _, device := range operation.Devices {
+				known[device.Name] = true
+			}
 		}
 	}
 
@@ -116,56 +127,89 @@ func TestCatalogShipsNoDeviceTheSdkDoesNot(t *testing.T) {
 	}
 }
 
+// TestSpecLanguagesMatchTheSdks is what stops the dashboard offering a device in a
+// language whose SDK has never heard of it. Spec.Languages is qpi-ui's copy of a
+// fact only the SDKs know — which of them ships what — so it is exactly the kind of
+// claim that rots quietly: registering kind=mock with language=go used to render
+// `--device mock` against a Go binary with no process device at all.
+func TestSpecLanguagesMatchTheSdks(t *testing.T) {
+	for _, language := range sdkLanguages {
+		shipped := map[Kind]bool{}
+		for _, operation := range loadSdkCatalog(t, language).Operations {
+			for _, device := range operation.Devices {
+				shipped[Kind(device.Name)] = true
+			}
+		}
+
+		for _, kind := range Default.Kinds() {
+			spec, _ := Default.Lookup(kind)
+			switch {
+			case shipped[kind] && !spec.ShipsIn(language):
+				t.Errorf("the %s SDK ships %q but its Spec does not list %s in "+
+					"Languages, so the dashboard will not offer it; add it in "+
+					"catalog.go (then `%s`)", language, kind, language, regenerate)
+			case !shipped[kind] && spec.ShipsIn(language):
+				t.Errorf("this catalog says %q ships in %s, but that SDK's catalog has "+
+					"no such device — its setup snippets would render a --device the "+
+					"binary rejects; drop %s from its Languages (then `%s`)",
+					kind, language, language, regenerate)
+			}
+		}
+	}
+}
+
 // TestCatalogOptionsMatchTheSdk checks the option keys, since those are what an
 // operator types and what the snippets render. An option in a snippet that the
 // driver does not read is a command that exits 1 the first time it is pasted.
 func TestCatalogOptionsMatchTheSdk(t *testing.T) {
-	catalog := loadSdkCatalog(t)
+	for _, language := range sdkLanguages {
+		catalog := loadSdkCatalog(t, language)
 
-	for _, operation := range catalog.Operations {
-		for _, device := range operation.Devices {
-			spec, ok := Default.Lookup(Kind(device.Name))
-			if !ok {
-				continue // reported by TestCatalogHasEveryDeviceTheSdkShips
-			}
+		for _, operation := range catalog.Operations {
+			for _, device := range operation.Devices {
+				spec, ok := Default.Lookup(Kind(device.Name))
+				if !ok {
+					continue // reported by TestCatalogHasEveryDeviceTheSdkShips
+				}
 
-			fromSdk := map[string]struct {
-				required bool
-				fallback *string
-			}{}
-			for _, option := range device.Options {
-				fromSdk[option.Key] = struct {
+				fromSdk := map[string]struct {
 					required bool
 					fallback *string
-				}{option.Required, option.Default}
-			}
+				}{}
+				for _, option := range device.Options {
+					fromSdk[option.Key] = struct {
+						required bool
+						fallback *string
+					}{option.Required, option.Default}
+				}
 
-			for _, option := range spec.Options {
-				sdk, ok := fromSdk[option.Key]
-				if !ok {
-					t.Errorf("device %q: this catalog has an option %q the driver does "+
-						"not read; a snippet using it would fail (then `%s`)",
-						device.Name, option.Key, regenerate)
-					continue
+				for _, option := range spec.Options {
+					sdk, ok := fromSdk[option.Key]
+					if !ok {
+						t.Errorf("device %q: this catalog has an option %q the driver does "+
+							"not read; a snippet using it would fail (then `%s`)",
+							device.Name, option.Key, regenerate)
+						continue
+					}
+					if sdk.required != option.Required {
+						t.Errorf("device %q option %q: required is %v in the SDK and %v here",
+							device.Name, option.Key, sdk.required, option.Required)
+					}
+					fallback := ""
+					if sdk.fallback != nil {
+						fallback = *sdk.fallback
+					}
+					if fallback != option.Default {
+						t.Errorf("device %q option %q: default is %q in the SDK and %q here",
+							device.Name, option.Key, fallback, option.Default)
+					}
 				}
-				if sdk.required != option.Required {
-					t.Errorf("device %q option %q: required is %v in the SDK and %v here",
-						device.Name, option.Key, sdk.required, option.Required)
-				}
-				fallback := ""
-				if sdk.fallback != nil {
-					fallback = *sdk.fallback
-				}
-				if fallback != option.Default {
-					t.Errorf("device %q option %q: default is %q in the SDK and %q here",
-						device.Name, option.Key, fallback, option.Default)
-				}
-			}
 
-			if missing := missingKeys(fromSdk, spec.Options); len(missing) > 0 {
-				t.Errorf("device %q: the driver reads %s, which this catalog does not "+
-					"list; add them in catalog.go (then `%s`)",
-					device.Name, strings.Join(missing, ", "), regenerate)
+				if missing := missingKeys(fromSdk, spec.Options); len(missing) > 0 {
+					t.Errorf("device %q: the driver reads %s, which this catalog does not "+
+						"list; add them in catalog.go (then `%s`)",
+						device.Name, strings.Join(missing, ", "), regenerate)
+				}
 			}
 		}
 	}
@@ -173,40 +217,43 @@ func TestCatalogOptionsMatchTheSdk(t *testing.T) {
 
 // TestOperationsMatchTheSdk checks the other direction of truth: the server owns the
 // operations, so an SDK that knows one this package does not is an SDK talking about
-// events the server has no handler for.
+// events the server has no handler for. Every SDK, not just Python: an operation is
+// the same set of event types whichever language reports it.
 func TestOperationsMatchTheSdk(t *testing.T) {
-	catalog := loadSdkCatalog(t)
+	for _, language := range sdkLanguages {
+		catalog := loadSdkCatalog(t, language)
 
-	fromSdk := make([]string, 0, len(catalog.Operations))
-	for _, operation := range catalog.Operations {
-		fromSdk = append(fromSdk, operation.Name)
-	}
-	ours := []string{string(Process), string(Monitor)}
-
-	sort.Strings(fromSdk)
-	sorted := append([]string(nil), ours...)
-	sort.Strings(sorted)
-	if strings.Join(fromSdk, ",") != strings.Join(sorted, ",") {
-		t.Errorf("the SDK knows operations %v; this server has handlers for %v. "+
-			"Operations are the server's to define (RFC 0003 §9): either add a "+
-			"handler here or drop it from the SDKs", fromSdk, ours)
-	}
-
-	// The event types each operation involves are the server's definition of it, so
-	// an SDK reporting different ones is reporting a different operation.
-	for _, operation := range catalog.Operations {
-		var want []string
-		switch operation.Name {
-		case string(Process):
-			want = []string{eventJobDispatch, eventJobResult}
-		case string(Monitor):
-			want = []string{eventCryostatReading}
-		default:
-			continue
+		fromSdk := make([]string, 0, len(catalog.Operations))
+		for _, operation := range catalog.Operations {
+			fromSdk = append(fromSdk, operation.Name)
 		}
-		if strings.Join(operation.Events, ",") != strings.Join(want, ",") {
-			t.Errorf("operation %q involves %v in the SDK and %v here",
-				operation.Name, operation.Events, want)
+		ours := []string{string(Process), string(Monitor)}
+
+		sort.Strings(fromSdk)
+		sorted := append([]string(nil), ours...)
+		sort.Strings(sorted)
+		if strings.Join(fromSdk, ",") != strings.Join(sorted, ",") {
+			t.Errorf("the %s SDK knows operations %v; this server has handlers for %v. "+
+				"Operations are the server's to define (RFC 0003 §9): either add a "+
+				"handler here or drop it from the SDKs", language, fromSdk, ours)
+		}
+
+		// The event types each operation involves are the server's definition of it, so
+		// an SDK reporting different ones is reporting a different operation.
+		for _, operation := range catalog.Operations {
+			var want []string
+			switch operation.Name {
+			case string(Process):
+				want = []string{eventJobDispatch, eventJobResult}
+			case string(Monitor):
+				want = []string{eventCryostatReading}
+			default:
+				continue
+			}
+			if strings.Join(operation.Events, ",") != strings.Join(want, ",") {
+				t.Errorf("operation %q involves %v in the %s SDK and %v here",
+					operation.Name, operation.Events, language, want)
+			}
 		}
 	}
 }

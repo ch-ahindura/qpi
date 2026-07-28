@@ -60,6 +60,12 @@ type Snippets struct {
 //     command and a stub to extend, in the chosen language (RFC 0001 §5).
 //   - An official driver is run, not written, so it gets the prefilled
 //     systemd + manual-CLI commands.
+//
+// A kind the chosen language's SDK does not ship gets the install command alone.
+// Rendering `--device mock` for a Go binary that has no such device produces a
+// command that exits 1 the first time it is pasted, and nothing about it says why;
+// handleDriverCreate rejects the combination before it gets this far, and this is
+// the belt to that braces.
 func (r *Registry) Snippets(kind Kind, language Language, p Params) Snippets {
 	if kind == Custom {
 		return Snippets{
@@ -67,7 +73,7 @@ func (r *Registry) Snippets(kind Kind, language Language, p Params) Snippets {
 			Stub:    stub(language),
 		}
 	}
-	if spec, ok := r.Lookup(kind); ok {
+	if spec, ok := r.Lookup(kind); ok && spec.ShipsIn(language) {
 		return officialSnippets(spec, p, language)
 	}
 	return Snippets{Install: installCommand(language)}

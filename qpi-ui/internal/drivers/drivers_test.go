@@ -145,22 +145,66 @@ func TestSnippetsCustomHasNoOfficialBuild(t *testing.T) {
 	}
 }
 
-// TestSnippetsOfficialGoUsesGoInstall proves an official Go driver resolves the
-// per-language official run snippets — installed via `go install` — rather than
-// a bare SDK install + stub (RFC 0001 Phase 4).
-func TestSnippetsOfficialGoUsesGoInstall(t *testing.T) {
-	s := Default.Snippets(Qblox, Go, Params{Name: "x", Token: "t", QpiAddr: "u", CaFingerprint: "f"})
-	if s.Install != "" || s.Stub != "" {
-		t.Errorf("expected no bare-install/stub for an official Go build, got %+v", s)
+// TestSnippetsRenderNoDeviceTheLanguageLacks is the case that used to render a
+// working-looking command that could never work: qblox is a process device and only
+// the Python SDK has one, so `--device qblox` against a `go install`-ed binary exits
+// 1 the first time it is pasted. handleDriverCreate rejects the combination now, and
+// nothing here renders it either.
+func TestSnippetsRenderNoDeviceTheLanguageLacks(t *testing.T) {
+	p := Params{Name: "x", Token: "t", QpiAddr: "u", CaFingerprint: "f"}
+
+	for _, language := range []Language{Go, TypeScript} {
+		s := Default.Snippets(Qblox, language, p)
+		if s.Systemd != "" || s.ManualCLI != "" {
+			t.Errorf("%s: expected no run snippets for a device this SDK has not got, got %+v",
+				language, s)
+		}
+		if s.Install == "" {
+			t.Errorf("%s: expected the SDK install command, got %+v", language, s)
+		}
+		if strings.Contains(s.Install, "qblox") {
+			t.Errorf("%s: expected nothing about qblox in %q", language, s.Install)
+		}
 	}
-	if !strings.Contains(s.ManualCLI, "go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver") {
-		t.Errorf("expected a `go install` manual CLI, got %q", s.ManualCLI)
-	}
+
+	// Python does have it, and is unaffected.
+	s := Default.Snippets(Qblox, Python, p)
 	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
-		t.Errorf("expected the process start command, got %q", s.ManualCLI)
+		t.Errorf("expected the process start command for Python, got %q", s.ManualCLI)
 	}
-	if !strings.Contains(s.Systemd, "/go/install-systemd.sh") {
-		t.Errorf("expected the Go install-systemd.sh URL, got %q", s.Systemd)
+}
+
+// TestShipsInKnowsWhichSdkHasWhat covers the lookup handleDriverCreate gates on.
+// Custom is registerable in every language by definition: it is code the operator
+// writes against the SDK, so the SDK having no such device is the point.
+func TestShipsInKnowsWhichSdkHasWhat(t *testing.T) {
+	cases := []struct {
+		kind     Kind
+		language Language
+		want     bool
+	}{
+		{Qblox, Python, true},
+		{Qblox, Go, false},
+		{Qblox, TypeScript, false},
+		{Mock, Go, false},
+		{BlueforsGen1, Python, true},
+		{BlueforsGen1, Go, true},
+		{BlueforsGen1, TypeScript, true},
+		{Custom, Go, true},
+		{Custom, TypeScript, true},
+		{Kind("no_such_device"), Python, false},
+	}
+	for _, c := range cases {
+		if got := Default.ShipsIn(c.kind, c.language); got != c.want {
+			t.Errorf("ShipsIn(%q, %q) = %v, want %v", c.kind, c.language, got, c.want)
+		}
+	}
+
+	if kinds := Default.KindsIn(Go); len(kinds) != 1 || kinds[0] != BlueforsGen1 {
+		t.Errorf("KindsIn(go) = %v, want just [bluefors_gen1]", kinds)
+	}
+	if kinds := Default.KindsIn(Python); len(kinds) != len(Default.Kinds()) {
+		t.Errorf("KindsIn(python) = %v, want every registered kind", kinds)
 	}
 }
 

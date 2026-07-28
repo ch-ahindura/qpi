@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "operations": [
+    {
+      "name": "process",
+      "summary": "Run quantum jobs pushed by QPI-UI and report their results.",
+      "default_device": "",
+      "events": [
+        "JobDispatch",
+        "JobResult"
+      ],
+      "devices": []
+    },
+    {
+      "name": "monitor",
+      "summary": "Report readings upward on a timer.",
+      "default_device": "bluefors_gen1",
+      "events": [
+        "CryostatReading"
+      ],
+      "devices": [
+        {
+          "name": "bluefors_gen1",
+          "summary": "Cryostat monitor for Bluefors Control Software Gen. 1.",
+          "extra": "",
+          "options": [
+            {
+              "key": "channels",
+              "help": "Value-tree channels to poll, as path[:unit] pairs.",
+              "type": "channels",
+              "default": null,
+              "required": true,
+              "example": "mapper.bf.tmc:K,mapper.bf.pmc:mbar"
+            },
+            {
+              "key": "base_url",
+              "help": "Base URL of the Bluefors Control API.",
+              "type": "str",
+              "default": "http://127.0.0.1:49099",
+              "required": false,
+              "example": "http://localhost:49099"
+            },
+            {
+              "key": "api_key",
+              "help": "Bluefors API access key, if the API requires one.",
+              "type": "str",
+              "default": null,
+              "required": false,
+              "example": "<bluefors-api-key>"
+            },
+            {
+              "key": "poll_interval",
+              "help": "Seconds between polls of every channel.",
+              "type": "float",
+              "default": "5.0",
+              "required": false,
+              "example": "5"
+            },
+            {
+              "key": "timeout",
+              "help": "HTTP timeout per channel read, in seconds.",
+              "type": "float",
+              "default": "5.0",
+              "required": false,
+              "example": "5"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

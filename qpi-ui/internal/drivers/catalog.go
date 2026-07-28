@@ -53,6 +53,10 @@ func processOptions() []Option {
 
 // processSpec builds the spec for a QPU-shaped executor kind: it runs the job
 // flow and is launched with `qpi-driver start --operation process --device <kind>`.
+//
+// Python only: it is the one SDK with a process device, and the Go and TypeScript
+// CLIs say so rather than pretending (RFC 0003 §8). A QPU in another language is a
+// Custom driver.
 func processSpec(kind Kind, extra string) Spec {
 	return Spec{
 		Kind:      kind,
@@ -60,6 +64,7 @@ func processSpec(kind Kind, extra string) Spec {
 		Extra:     extra,
 		Events:    []string{eventJobDispatch, eventJobResult},
 		Options:   processOptions(),
+		Languages: []Language{Python},
 	}
 }
 
@@ -77,6 +82,8 @@ var Default = NewRegistry(
 		Operation: Monitor,
 		Extra:     "qpi-driver[cli,bluefors_gen1]",
 		Events:    []string{eventCryostatReading},
+		// The one device all three SDKs ship.
+		Languages: []Language{Python, Go, TypeScript},
 		// Only the channels are unknowable in advance — which mappers a given
 		// system has is configuration — so they are the one required option. The
 		// base URL is pre-filled too: the default points at the cryostat host's
