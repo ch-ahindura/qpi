@@ -44,11 +44,25 @@ export interface QpiDriverOptions {
   caFilePath?: string;
 }
 
+/**
+ * Deadline for each HTTP request the handshake makes. Matches the Python SDK's
+ * `requests(..., timeout=10)` and the Go SDK's
+ * `http.Client{Timeout: 10 * time.Second}`.
+ */
+const HTTP_TIMEOUT_MS = 10_000;
+
 interface Connection {
   host: string;
   inPort: number;
   outPort: number;
   ca: string;
+}
+
+/** A completed HTTP response, with its body already read. */
+interface HttpResult {
+  ok: boolean;
+  status: number;
+  body: string;
 }
 
 interface PeriodicTask {
@@ -214,22 +228,32 @@ export abstract class QpiDriver {
    * host and ports. Every driver connects the same way (RFC 0001 §3, §8).
    */
   private async connect(): Promise<Connection> {
-    const resp = await fetch(`${this.qpiAddr}/api/op/drivers/connect`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: this.token, name: this.name }),
-    });
+    const resp = await fetchWithDeadline(
+      "the drivers/connect handshake",
+      `${this.qpiAddr}/api/op/drivers/connect`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: this.token, name: this.name }),
+      },
+    );
     if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
       throw new Error(
-        `qpi-driver: connect rejected (${resp.status}): ${body.trim()}`,
+        `qpi-driver: connect rejected (${resp.status}): ${resp.body.trim()}`,
       );
     }
-    const data = (await resp.json()) as {
+    let data: {
       nng_host: string;
       nng_in_port: number;
       nng_out_port: number;
     };
+    try {
+      data = JSON.parse(resp.body);
+    } catch {
+      throw new Error(
+        `qpi-driver: connect returned a body that is not JSON: ${resp.body.trim().slice(0, 200)}`,
+      );
+    }
     const ca = await this.downloadRootCa();
     return {
       host: data.nng_host,
@@ -252,11 +276,14 @@ export abstract class QpiDriver {
    * transport reads back.
    */
   private async downloadRootCa(): Promise<string> {
-    const resp = await fetch(`${this.qpiAddr}/api/pub/root-ca.pem`);
+    const resp = await fetchWithDeadline(
+      "the root CA download",
+      `${this.qpiAddr}/api/pub/root-ca.pem`,
+    );
     if (!resp.ok) {
       throw new Error(`qpi-driver: downloading root CA: status ${resp.status}`);
     }
-    const pem = await resp.text();
+    const pem = resp.body;
     verifyFingerprint(pem, this.caFingerprint);
 
     if (this.caFilePath) {
@@ -272,6 +299,70 @@ export abstract class QpiDriver {
     }
     return pem;
   }
+}
+
+/**
+ * `fetch` under a deadline, with the body read inside it, and a clear error when
+ * the deadline expires.
+ *
+ * Node's `fetch` sets no timeout of its own beyond undici's defaults, which are
+ * minutes rather than seconds: a server behind a firewall that drops packets
+ * leaves the driver hanging inside `run()` instead of failing, and under
+ * systemd's `Restart=on-failure` a unit that never fails never restarts. The
+ * body is read under the same deadline as the request, so a server that sends
+ * headers and then stalls is caught too.
+ *
+ * `AbortSignal.timeout` aborts with "This operation was aborted", which says
+ * neither what timed out nor against what, so `what` and `url` are put back into
+ * the message.
+ *
+ * `timeoutMs` defaults to the 10s the Python and Go SDKs use; only tests pass a
+ * shorter one, to avoid waiting out the real deadline.
+ */
+export async function fetchWithDeadline(
+  what: string,
+  url: string,
+  // No `signal`: the deadline owns it, and one passed in here would be silently
+  // dropped by the spread below.
+  init: Omit<RequestInit, "signal"> = {},
+  timeoutMs: number = HTTP_TIMEOUT_MS,
+): Promise<HttpResult> {
+  try {
+    const resp = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return { ok: resp.ok, status: resp.status, body: await resp.text() };
+  } catch (err) {
+    if (isTimeout(err)) {
+      throw new Error(
+        `qpi-driver: ${what} timed out after ${timeoutMs}ms against ${url}`,
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Whether an error is the abort raised by our own deadline. `fetch` may reject
+ * with the signal's reason directly (a `TimeoutError` DOMException) or wrap it
+ * as the `cause` of a `TypeError: fetch failed`, so the cause chain is walked.
+ *
+ * Matched on `name` rather than `instanceof`: the abort is constructed inside
+ * Node, and under a test runner that loads this module in its own realm it is
+ * not an instance of *this* realm's `Error`.
+ */
+function isTimeout(err: unknown): boolean {
+  for (let e = err, depth = 0; isObject(e) && depth < 8; e = e.cause, depth++) {
+    if (e.name === "TimeoutError" || e.name === "AbortError") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isObject(e: unknown): e is { name?: unknown; cause?: unknown } {
+  return typeof e === "object" && e !== null;
 }
 
 /** Ensure the address has a scheme and no trailing slash. */

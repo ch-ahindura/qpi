@@ -14,11 +14,18 @@ module.exports = {
   // The high floors apply to the device catalog, the CLI over it, and the CA
   // pinning — all of which need no server.
   //
-  // `global` covers only what no path threshold matches, which is the transport:
-  // driver.ts's connect/run/receive loop and nng.ts's TLS sockets. Covering those in
-  // a unit test would mean reimplementing an NNG peer, and they are exercised for
-  // real by `make test-e2e-driver`, so the floor there is set just under what they
-  // reach today — enough to catch a regression, not a number pretending to be 96.
+  // driver.ts and nng.ts are the transport, and their floors are lower because a
+  // unit test reaches them only through a fake peer: a loopback TLS server
+  // speaking SP by hand, and an HTTP server standing in for QPI-UI. That covers
+  // the handshake, the dial and every way either can time out; what it does not
+  // cover is the long-running half — the receive loop, the periodic timers and
+  // shutdown — which `make test-e2e-driver` exercises against a live server.
+  // Both floors are set just under what the suite reaches today: enough to catch
+  // a regression, not a number pretending to be 96.
+  //
+  // `global` then covers only what no path threshold matches — the event
+  // envelope and the built-in Bluefors monitor — so its numbers are not the "All
+  // files" row jest prints.
   coverageThreshold: {
     "./src/devices.ts": {
       statements: 96,
@@ -50,6 +57,18 @@ module.exports = {
       functions: 100,
       branches: 100,
     },
-    global: { statements: 86, lines: 87, functions: 80, branches: 70 },
+    "./src/driver.ts": {
+      statements: 82,
+      lines: 82,
+      functions: 84,
+      branches: 70,
+    },
+    "./src/nng.ts": {
+      statements: 95,
+      lines: 95,
+      functions: 95,
+      branches: 84,
+    },
+    global: { statements: 91, lines: 92, functions: 80, branches: 76 },
   },
 };

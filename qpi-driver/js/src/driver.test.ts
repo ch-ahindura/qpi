@@ -2,7 +2,7 @@ import * as http from "node:http";
 import * as tls from "node:tls";
 import type { AddressInfo } from "node:net";
 
-import { QpiDriver } from "./driver.js";
+import { QpiDriver, fetchWithDeadline } from "./driver.js";
 import { Event, EventType } from "./events.js";
 import {
   PipelineSocket,
@@ -201,5 +201,124 @@ describe("QpiDriver", () => {
     });
     await expect(driver.run()).rejects.toThrow(/connect rejected \(403\)/);
     httpServer.close();
+  });
+
+  test("connect surfaces a body that is not JSON", async () => {
+    const httpServer = http.createServer((_req, res) => {
+      res.end("<html>proxy error</html>");
+    });
+    await new Promise<void>((r) =>
+      httpServer.listen(0, "127.0.0.1", () => r()),
+    );
+    const httpPort = (httpServer.address() as AddressInfo).port;
+
+    const driver = new EchoDriver({
+      qpiAddr: `http://127.0.0.1:${httpPort}`,
+      token: "tok",
+      name: "qpu_1",
+      caFingerprint: FINGERPRINT,
+    });
+    await expect(driver.run()).rejects.toThrow(
+      /connect returned a body that is not JSON: <html>proxy error<\/html>/,
+    );
+    httpServer.close();
+  });
+
+  test("run fails rather than hangs when the server never answers", async () => {
+    // A server that accepts the connection and never replies — a firewall
+    // dropping packets, from the driver's side. This waits out the real 10s
+    // deadline on purpose: it is the whole point of the fix that `run()`
+    // eventually rejects, since a unit that never fails is never restarted by
+    // systemd's `Restart=on-failure`.
+    const httpServer = http.createServer(() => {});
+    await new Promise<void>((r) =>
+      httpServer.listen(0, "127.0.0.1", () => r()),
+    );
+    const httpPort = (httpServer.address() as AddressInfo).port;
+
+    const driver = new EchoDriver({
+      qpiAddr: `http://127.0.0.1:${httpPort}`,
+      token: "tok",
+      name: "qpu_1",
+      caFingerprint: FINGERPRINT,
+    });
+    await expect(driver.run()).rejects.toThrow(
+      new RegExp(
+        `the drivers/connect handshake timed out after 10000ms against http://127\\.0\\.0\\.1:${httpPort}/api/op/drivers/connect`,
+      ),
+    );
+    httpServer.close();
+    httpServer.closeAllConnections();
+  }, 20000);
+});
+
+describe("fetchWithDeadline", () => {
+  test("returns the status and body of a server that answers", async () => {
+    const server = http.createServer((_req, res) => {
+      res.statusCode = 503;
+      res.end("busy");
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as AddressInfo).port;
+
+    const resp = await fetchWithDeadline(
+      "the probe",
+      `http://127.0.0.1:${port}/`,
+      {},
+      2000,
+    );
+    expect(resp).toEqual({ ok: false, status: 503, body: "busy" });
+    server.close();
+  });
+
+  test("names what timed out, and against which address, when no response comes", async () => {
+    const server = http.createServer(() => {});
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as AddressInfo).port;
+
+    await expect(
+      fetchWithDeadline(
+        "the root CA download",
+        `http://127.0.0.1:${port}/api/pub/root-ca.pem`,
+        {},
+        150,
+      ),
+    ).rejects.toThrow(
+      new RegExp(
+        `the root CA download timed out after 150ms against http://127\\.0\\.0\\.1:${port}/api/pub/root-ca\\.pem`,
+      ),
+    );
+    server.close();
+    server.closeAllConnections();
+  });
+
+  test("catches a server that sends headers and then stalls the body", async () => {
+    // The body is read under the same deadline as the request, so a response
+    // that starts and never finishes is a timeout, not a hang.
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.write('{"nng_host":');
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as AddressInfo).port;
+
+    await expect(
+      fetchWithDeadline(
+        "the drivers/connect handshake",
+        `http://127.0.0.1:${port}/api/op/drivers/connect`,
+        { method: "POST" },
+        150,
+      ),
+    ).rejects.toThrow(/handshake timed out after 150ms against http:/);
+    server.close();
+    server.closeAllConnections();
+  });
+
+  test("passes a failure that is not a timeout through untouched", async () => {
+    // Nothing is listening: the connection is refused at once, and that error
+    // must not be dressed up as a timeout.
+    await expect(
+      fetchWithDeadline("the probe", "http://127.0.0.1:1/", {}, 5000),
+    ).rejects.toThrow(/fetch failed/);
   });
 });

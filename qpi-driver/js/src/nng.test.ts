@@ -1,7 +1,9 @@
+import * as net from "node:net";
 import * as tls from "node:tls";
 import type { AddressInfo } from "node:net";
 
 import {
+  DIAL_TIMEOUT_MS,
   PipelineSocket,
   MessageAssembler,
   buildSpHeader,
@@ -177,6 +179,136 @@ describe("PipelineSocket over TLS", () => {
     await expect(
       sock.dial({ host: "127.0.0.1", port, ca: CERT, servername: "localhost" }),
     ).rejects.toThrow(/protocol mismatch/);
+    sock.close();
+    server.close();
+  });
+
+  test("the default dial deadline matches the Python and Go SDKs' 10s", () => {
+    expect(DIAL_TIMEOUT_MS).toBe(10_000);
+  });
+
+  // The two ways a peer can go quiet without the connection failing. Neither
+  // ends on its own: tls.connect has no timeout beyond the OS TCP timeout, so
+  // before the deadline existed both of these hung the driver inside run().
+  test("dial fails when the peer accepts the connection and never speaks TLS", async () => {
+    // A plain TCP listener: the SYN is answered, the TLS handshake never is —
+    // what a firewall that drops packets after connect looks like.
+    const server = net.createServer(() => {});
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const sock = new PipelineSocket("push");
+    await expect(
+      sock.dial({
+        host: "127.0.0.1",
+        port,
+        ca: CERT,
+        servername: "localhost",
+        timeoutMs: 150,
+      }),
+    ).rejects.toThrow(
+      new RegExp(
+        `dialling the push channel at 127\\.0\\.0\\.1:${port} timed out after 150ms: the TLS handshake did not complete`,
+      ),
+    );
+    sock.close();
+    server.close();
+  });
+
+  test("dial fails when the peer completes TLS and never sends its SP header", async () => {
+    const server = tls.createServer({ key: KEY, cert: CERT }, () => {});
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const sock = new PipelineSocket("pull");
+    await expect(
+      sock.dial({
+        host: "127.0.0.1",
+        port,
+        ca: CERT,
+        servername: "localhost",
+        timeoutMs: 150,
+      }),
+    ).rejects.toThrow(
+      new RegExp(
+        `dialling the pull channel at 127\\.0\\.0\\.1:${port} timed out after 150ms: the SP handshake did not complete`,
+      ),
+    );
+    sock.close();
+    server.close();
+  });
+
+  test("dial rejects at once with the socket's own error when nothing is listening", async () => {
+    // A connection refused is reported as itself, not waited out and reported
+    // as a timeout.
+    const sock = new PipelineSocket("push");
+    await expect(
+      sock.dial({
+        host: "127.0.0.1",
+        port: 1,
+        ca: CERT,
+        servername: "localhost",
+        timeoutMs: 10_000,
+      }),
+    ).rejects.toThrow(/ECONNREFUSED/);
+    sock.close();
+  });
+
+  test("send on a closed socket throws", async () => {
+    const server = tls.createServer({ key: KEY, cert: CERT }, (socket) => {
+      socket.write(buildSpHeader(PROTO_PULL));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const sock = new PipelineSocket("push");
+    await sock.dial({
+      host: "127.0.0.1",
+      port,
+      ca: CERT,
+      servername: "localhost",
+    });
+    sock.close();
+
+    expect(() => sock.send(Buffer.from("late"))).toThrow(/closed socket/);
+    server.close();
+  });
+
+  test("the deadline does not fire on a connection that idles after dialling", async () => {
+    // The deadline bounds the dial only. Sitting idle afterwards is normal for
+    // this event-driven transport — there is no polling interval — so a deadline
+    // left armed would destroy a socket that is working perfectly.
+    let peer!: tls.TLSSocket;
+    const server = tls.createServer({ key: KEY, cert: CERT }, (socket) => {
+      peer = socket;
+      socket.write(buildSpHeader(PROTO_PUSH));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", () => resolve()),
+    );
+    const { port } = server.address() as AddressInfo;
+
+    const sock = new PipelineSocket("pull");
+    const received = new Promise<Buffer>((resolve) => sock.onMessage(resolve));
+    await sock.dial({
+      host: "127.0.0.1",
+      port,
+      ca: CERT,
+      servername: "localhost",
+      timeoutMs: 150,
+    });
+
+    // Idle well past the deadline, then send: the socket must still be there.
+    await new Promise<void>((resolve) => setTimeout(resolve, 400));
+    peer.write(frame(Buffer.from("late")));
+    expect((await received).toString()).toBe("late");
+
     sock.close();
     server.close();
   });
