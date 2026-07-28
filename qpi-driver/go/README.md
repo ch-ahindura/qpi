@@ -53,7 +53,6 @@ func main() {
 	if err := qpidriver.Run(&MyDriver{}, qpidriver.Config{
 		QpiAddr:       "https://qpi.example.com",
 		Token:         "your-driver-token",
-		Name:          "my-qpu",
 		CaFingerprint: "sha256-of-the-server-root-ca",
 	}); err != nil {
 		log.Fatal(err)
@@ -78,6 +77,7 @@ into your binary if you import them — the Go equivalent of the Python
 The Bluefors Gen. 1 cryostat monitor is a report-only driver that polls the
 Bluefors Remote Access Control API and emits `CryostatReading` events:
 
+<!-- docs-check: compile=go-bluefors -->
 ```go
 package main
 
@@ -96,7 +96,6 @@ func main() {
 	if err := qpidriver.Run(monitor, qpidriver.Config{
 		QpiAddr:       "https://qpi.example.com",
 		Token:         "your-driver-token",
-		Name:          "cryostat-1",
 		CaFingerprint: "sha256-of-the-server-root-ca",
 	}); err != nil {
 		log.Fatal(err)
@@ -167,7 +166,8 @@ An empty `QPI_DRIVER_VERSION` installs `@latest`. `DRIVER_OPTIONS` carries the
 device's own `-o` settings as `key=value;key=value`. This SDK ships only `monitor`
 devices, so that is what `OPERATION` and `DEVICE` default to. `QPI_SKIP_INSTALL=1`
 uses a `qpi-driver` already on `PATH` (or `QPI_DRIVER_BIN`) instead of running
-`go install`.
+`go install`. If the node has no Go toolchain, the installer downloads one into
+`/usr/local/go` — `GO_VERSION` says which.
 
 ### Doing it by hand
 
@@ -230,7 +230,7 @@ that the whole story rather than pretending otherwise. Describe your device as a
 has the same `start`/`devices`/`catalog` commands, the same generated help, and the
 same option validation the built-in devices get.
 
-<!--We probably need a way to test all documentation example code and samples so that documentation and code does not drift-->
+<!-- docs-check: compile=go-custom-device -->
 ```go
 package main
 

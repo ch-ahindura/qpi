@@ -76,15 +76,44 @@ if [ "${QPI_SKIP_INSTALL:-0}" = "1" ]; then
     echo "QPI_SKIP_INSTALL=1: skipping install; using an already-installed qpi-driver."
     QPI_DRIVER_BIN="${QPI_DRIVER_BIN:-qpi-driver}"
 else
-    # Locate the Go toolchain (required to `go install` the driver CLI)
+    # Locate or install the Go toolchain, which `go install` below needs. An
+    # installer that stops halfway to tell the operator to go and install a runtime
+    # is not an installer, so bring our own — the official tarball into
+    # /usr/local/go, which is where go.dev/doc/install puts it and where the `elif`
+    # above already looks.
     if sudo -u "$REAL_USER" command -v go >/dev/null 2>&1; then
         GO_BIN=$(sudo -u "$REAL_USER" command -v go)
     elif [ -x "/usr/local/go/bin/go" ]; then
         GO_BIN="/usr/local/go/bin/go"
     else
-        echo "Error: the Go toolchain ('go') is required but was not found for $REAL_USER."
-        echo "Install Go (https://go.dev/dl/) and re-run this script."
-        exit 1
+        GO_VERSION="${GO_VERSION:-1.25.5}"
+        case "$(uname -m)" in
+            x86_64 | amd64) GO_ARCH="amd64" ;;
+            aarch64 | arm64) GO_ARCH="arm64" ;;
+            *)
+                echo "Error: no Go toolchain, and no prebuilt one for $(uname -m)."
+                echo "Install Go yourself (https://go.dev/dl/) and re-run this script."
+                exit 1
+                ;;
+        esac
+        GO_TARBALL="go${GO_VERSION}.$(uname -s | tr '[:upper:]' '[:lower:]')-${GO_ARCH}.tar.gz"
+
+        echo "The Go toolchain was not found; installing go${GO_VERSION} into /usr/local/go..."
+        # Unpacked as root because /usr/local/go is root-owned and shared: unlike the
+        # Node install, which nvm deliberately keeps per-user, a Go toolchain here is
+        # the machine's. `rm -rf` first is what go.dev/doc/install prescribes — an
+        # unpack over an existing tree leaves a mix of two versions.
+        curl -fsSLo "/tmp/${GO_TARBALL}" "https://go.dev/dl/${GO_TARBALL}"
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"
+        rm -f "/tmp/${GO_TARBALL}"
+
+        GO_BIN="/usr/local/go/bin/go"
+        if [ ! -x "$GO_BIN" ]; then
+            echo "Error: unpacking ${GO_TARBALL} did not produce /usr/local/go/bin/go."
+            echo "Install Go yourself (https://go.dev/dl/) and re-run with QPI_SKIP_INSTALL=1."
+            exit 1
+        fi
     fi
 
     # Where 'go install' drops binaries (GOBIN, else GOPATH/bin).

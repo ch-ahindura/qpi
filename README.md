@@ -402,6 +402,10 @@ make test-py
 # Run dashboard Cypress E2E tests (PocketBase + Driver + Cypress)
 make test-e2e-dashboard
 
+# Check the documentation against the code: the make targets and paths it names,
+# its Python/Go/TypeScript snippets, the generated catalog table, and the site
+make test-docs
+
 # Run linters across Go, Python driver, JS client, and dashboard codebases
 make lint
 
@@ -411,8 +415,6 @@ make format
 # Clean database, build artifacts, cache files
 make clean
 ```
-
-## TODOs
 
 ## License
 

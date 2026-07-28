@@ -336,6 +336,7 @@ Universal options:
   -o, --option KEY=VALUE  A setting of the chosen device, repeatable
   --ca-file PATH          Path to the CA root certificate [env: QPI_CA_FILE]
   --ca-fingerprint TEXT   Fingerprint pinning the CA root certificate [env: QPI_CA_FINGERPRINT]
+  --recv-timeout-ms INT   How long the receive loop blocks per attempt, in ms [env: QPI_RECV_TIMEOUT_MS]
   --help                  Show this message and exit.
 ```
 

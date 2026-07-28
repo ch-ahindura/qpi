@@ -6,7 +6,7 @@
  * flags it accepts, and what it refuses to run without.
  */
 
-import { buildProgram, splitOptions } from "./cli.js";
+import { buildProgram, isCommanderOutput, splitOptions } from "./cli.js";
 import { DEVICE_SPEC } from "./bluefors-gen1.device.js";
 import {
   asInt,
@@ -357,5 +357,28 @@ describe("splitOptions", () => {
 
   it("rejects a pair without '='", () => {
     expect(() => splitOptions(["not-a-pair"])).toThrow(/expected key=value/);
+  });
+});
+
+describe("isCommanderOutput", () => {
+  // `--help` exiting non-zero is not a cosmetic complaint: a `set -e` script that
+  // asks a CLI what it can do before using it dies on the answer, and the Go and
+  // Python CLIs both exit 0. exitOverride() turns help into a rejected promise, so
+  // the bin has to tell that apart from a real failure.
+  it("treats commander printing help or the version as success", () => {
+    for (const code of [
+      "commander.helpDisplayed",
+      "commander.help",
+      "commander.version",
+    ]) {
+      expect(isCommanderOutput({ code })).toBe(true);
+    }
+  });
+
+  it("treats anything else as a failure", () => {
+    expect(isCommanderOutput({ code: "commander.unknownOption" })).toBe(false);
+    expect(isCommanderOutput(new Error("the cryostat is warm"))).toBe(false);
+    expect(isCommanderOutput(undefined)).toBe(false);
+    expect(isCommanderOutput(null)).toBe(false);
   });
 });

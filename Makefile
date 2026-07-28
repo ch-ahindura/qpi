@@ -1,7 +1,14 @@
-.PHONY: sync-driver-catalog all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
+.PHONY: sync-driver-catalog test-docs test-docs-static test-docs-snippets test-docs-example test-docs-catalog test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
 
 VERSION ?= 0.1.2
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
+
+# Scratch locations for the documentation checks. Under bin/, which is already
+# ignored, so a failed run leaves nothing in the working tree for git to notice.
+DOCS_EXAMPLE_VENV := bin/.docs-example-venv
+DOCS_SITE_VENV := bin/.docs-site-venv
+DOCS_SITE_OUT := bin/.docs-site
+DOCS_CATALOG_SNAPSHOT := bin/.docs-catalog-snapshot
 
 all: build
 
@@ -42,7 +49,95 @@ serve-docs:
 # Test targets
 # ---------------------------------------------------------------------------
 
-test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-e2e
+test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-docs test-e2e
+
+# ---------------------------------------------------------------------------
+# Documentation, tested rather than proof-read.
+#
+# Every check here exists because the thing it checks was wrong at some point and
+# nothing said so: a `make` target that only existed in .PHONY, a `pip install` path
+# with no pyproject.toml in it, a config file named with the wrong extension, a
+# TypeScript block that did not type-check, an executor example that could not be
+# instantiated, and an entry-point device that was silently skipped because loading it
+# raced the SDK's own import. Documentation drifts in one direction only — nobody
+# re-runs the command they copied a block from — so the only fix that holds is a
+# failing build.
+#
+# Split into five steps so a failure names which kind of claim broke.
+# ---------------------------------------------------------------------------
+test-docs: test-docs-static test-docs-snippets test-docs-example test-docs-catalog test-docs-site
+
+# The static claims: make targets, repository paths, links, and the CLI flags every
+# document names, checked against each SDK's own --help.
+test-docs-static:
+	@echo "Checking the documentation's claims about this repository..."
+	(cd qpi-driver/js && npm ci --silent && npm run --silent build)
+	$(UV) sync --project qpi-driver/py --extra cli
+	$(UV) run --project qpi-driver/py python scripts/check_docs.py
+
+# The code blocks: Python executed against the real SDK, Go and TypeScript compiled.
+test-docs-snippets:
+	@echo "Running the documentation's Python snippets and the CLI transcripts..."
+	$(UV) run --project qpi-driver/py python -m pytest \
+		qpi-driver/py/tests/test_docs.py qpi-driver/py/tests/test_docs_snippets.py -v
+	@echo "Compiling the documentation's Go and TypeScript snippets..."
+	bash scripts/check_doc_snippets.sh
+
+# The entry-point route end to end: install the example against *this* SDK and ask the
+# CLI whether the device arrived. Only ever exercised with `entry_points` mocked
+# before, which is how a circular import that skipped every installed device survived.
+test-docs-example:
+	@echo "Installing examples/custom_device and checking it reaches the catalog..."
+	rm -rf $(DOCS_EXAMPLE_VENV)
+	$(UV) venv --python 3.12 $(DOCS_EXAMPLE_VENV)
+	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet "./qpi-driver/py[cli]"
+	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet --no-deps \
+		./qpi-driver/py/examples/custom_device
+	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver catalog --json | grep -q '"quantum_x"' \
+		|| { echo "FAILED: the installed example's device is not in catalog --json"; exit 1; }
+	@# A skipped entry point is a warning, not an error, so the exit code alone would
+	@# not have caught it: the warning itself has to be absent.
+	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver devices 2>&1 \
+		| grep -q "skipping device entry point" \
+		&& { echo "FAILED: the installed example's entry point was skipped"; exit 1; } \
+		|| echo "OK: quantum_x is in the catalog, with no skipped entry point"
+	rm -rf $(DOCS_EXAMPLE_VENV)
+
+# The generated catalog table and the qpi-ui fixtures, regenerated and diffed. A
+# one-way generator that CI never runs is a table that drifts.
+#
+# Compared against a snapshot rather than against git, because `git diff` cannot tell
+# stale generated content from any other uncommitted work — it would fail on a branch
+# that had touched the README for an unrelated reason, and pass on a dirty tree that
+# happened to contain the regenerated file. The snapshot is restored either way, so a
+# failing run reports the drift instead of quietly fixing it.
+test-docs-catalog:
+	@echo "Checking the generated catalog table and fixtures for drift..."
+	@rm -rf $(DOCS_CATALOG_SNAPSHOT) && mkdir -p $(DOCS_CATALOG_SNAPSHOT)
+	@for f in $(GENERATED_BY_CATALOG); do cp "$$f" "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)"; done
+	@$(MAKE) --no-print-directory sync-driver-catalog
+	@status=0; \
+	for f in $(GENERATED_BY_CATALOG); do \
+		diff -u "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)" "$$f" || status=1; \
+	done; \
+	for f in $(GENERATED_BY_CATALOG); do cp "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)" "$$f"; done; \
+	rm -rf $(DOCS_CATALOG_SNAPSHOT); \
+	if [ $$status -ne 0 ]; then \
+		echo "FAILED: the checked-in catalog does not match what the SDKs report."; \
+		echo "        Run 'make sync-driver-catalog', review the diff, and commit it."; \
+		exit 1; \
+	fi
+	@echo "OK: the catalog fixtures and the README table are what the SDKs report"
+
+# The site itself: a broken nav entry or a dead internal link. `docs.yml` only runs on
+# a v* tag, so without this nothing validates the documentation on a pull request.
+test-docs-site:
+	@echo "Building the documentation site (--strict)..."
+	rm -rf $(DOCS_SITE_VENV)
+	$(UV) venv --python 3.12 $(DOCS_SITE_VENV)
+	VIRTUAL_ENV=$(DOCS_SITE_VENV) $(UV) pip install --quiet mkdocs-material "mkdocstrings[python]"
+	$(DOCS_SITE_VENV)/bin/mkdocs build --strict --site-dir $(DOCS_SITE_OUT)
+	rm -rf $(DOCS_SITE_VENV) $(DOCS_SITE_OUT)
 
 test-go: build-dashboard
 	@echo "Running Go unit tests (server)..."
@@ -189,9 +284,12 @@ lint-go: build-dashboard
 	(cd qpi-ui && go vet ./...)
 	(cd qpi-ui && gofmt -l -d .)
 
+# scripts/ too: it holds the two Python tools this repository runs on itself, and an
+# unformatted one is the same kind of drift as an unformatted SDK file.
 lint-py:
 	@echo "Linting Python driver files..."
-	$(UV) run --project qpi-driver/py ruff check qpi-driver/py/
+	$(UV) run --project qpi-driver/py ruff check qpi-driver/py/ scripts/
+	$(UV) run --project qpi-driver/py ruff format --check qpi-driver/py/ scripts/
 
 lint-js:
 	@echo "Linting JS client files..."
@@ -240,6 +338,14 @@ format-go:
 # from, being the superset.
 CATALOG_DIR := qpi-ui/internal/drivers/testdata
 
+# Everything `sync-driver-catalog` writes, and therefore everything `test-docs-catalog`
+# checks for drift.
+GENERATED_BY_CATALOG := \
+	$(CATALOG_DIR)/catalog.python.json \
+	$(CATALOG_DIR)/catalog.go.json \
+	$(CATALOG_DIR)/catalog.typescript.json \
+	qpi-driver/py/README.md
+
 sync-driver-catalog:
 	@echo "Regenerating $(CATALOG_DIR)/catalog.python.json..."
 	$(UV) sync --project qpi-driver/py --extra cli
@@ -259,8 +365,8 @@ sync-driver-catalog:
 
 format-py:
 	@echo "Formatting and sorting imports for Python driver files..."
-	$(UV) run --project qpi-driver/py ruff format qpi-driver/py/
-	$(UV) run --project qpi-driver/py ruff check --select I --fix qpi-driver/py/
+	$(UV) run --project qpi-driver/py ruff format qpi-driver/py/ scripts/
+	$(UV) run --project qpi-driver/py ruff check --select I --fix qpi-driver/py/ scripts/
 
 format-js:
 	@echo "Formatting JS client files..."

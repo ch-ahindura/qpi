@@ -204,6 +204,43 @@ describe("QpiDriver", () => {
     httpServer.close();
   });
 
+  test("a connect response with no name leaves the driver unnamed", async () => {
+    // An older server has no `name` in its connect response. The driver's label is
+    // cosmetic — it tags emitted events — so a server that does not send one must
+    // leave it empty rather than fail the handshake over it.
+    const httpServer = http.createServer((req, res) => {
+      if (req.url?.endsWith("/api/op/drivers/connect")) {
+        res.setHeader("Content-Type", "application/json");
+        res.end(
+          JSON.stringify({
+            nng_host: "127.0.0.1",
+            nng_in_port: 1,
+            nng_out_port: 2,
+          }),
+        );
+        return;
+      }
+      res.setHeader("Content-Type", "application/x-pem-file");
+      res.end(CERT);
+    });
+    await new Promise<void>((r) =>
+      httpServer.listen(0, "127.0.0.1", () => r()),
+    );
+    const httpPort = (httpServer.address() as AddressInfo).port;
+
+    const driver = new EchoDriver({
+      qpiAddr: `http://127.0.0.1:${httpPort}`,
+      token: "tok",
+      caFingerprint: FINGERPRINT,
+    });
+    // The handshake gets past `connect` and then fails dialling the ports above,
+    // which nothing is listening on — by which point the name has been set.
+    await expect(driver.run()).rejects.toThrow();
+    expect(driver.name).toBe("");
+    httpServer.close();
+    httpServer.closeAllConnections();
+  }, 20000);
+
   test("connect surfaces a body that is not JSON", async () => {
     const httpServer = http.createServer((_req, res) => {
       res.end("<html>proxy error</html>");

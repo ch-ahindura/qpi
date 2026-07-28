@@ -257,6 +257,45 @@ jobs:
       run: make test-e2e-dashboard
 
   # -------------------------------------------------------------------------
+  # Documentation
+  #
+  # docs.yml only runs on a v* tag, so without this job nothing checks the
+  # documentation on a pull request — and the checks are about claims that go
+  # stale silently: a `make` target that does not exist, an install path with no
+  # package at it, a snippet that no longer compiles, a generated table nobody
+  # regenerated. All three toolchains, because the snippets are in all three
+  # languages.
+  # -------------------------------------------------------------------------
+  test-docs:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.x'
+        cache-dependency-path: 'qpi-driver/go/go.sum'
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        python-version: '3.12'
+        enable-cache: true
+        cache-dependency-glob: "qpi-driver/py/pyproject.toml"
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.x'
+        cache: 'npm'
+        cache-dependency-path: 'qpi-driver/js/package-lock.json'
+
+    - name: Check the documentation against the code
+      run: make test-docs
+
+  # -------------------------------------------------------------------------
   # E2E Systemd Installer Tests
   # -------------------------------------------------------------------------
   test-systemd-installer:

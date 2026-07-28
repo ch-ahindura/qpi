@@ -57,9 +57,7 @@ def render(catalog: dict) -> str:
     for operation in catalog["operations"]:
         for device in operation["devices"]:
             extra = f"`{device['extra']}`" if device["extra"] else "base `[cli]`"
-            lines.append(
-                f"| `{operation['name']}` | `{device['name']}` | {extra} |"
-            )
+            lines.append(f"| `{operation['name']}` | `{device['name']}` | {extra} |")
             key = json.dumps([o["key"] for o in device["options"]])
             schemas.setdefault(key, (device["options"], []))[1].append(
                 f"`{device['name']}`"

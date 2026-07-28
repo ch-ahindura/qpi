@@ -237,6 +237,26 @@ export function buildProgram(): Command {
   return program;
 }
 
+/**
+ * Whether a rejection out of `parseAsync` is a failure, or commander doing its job.
+ *
+ * `exitOverride()` above makes commander throw instead of exiting, so that
+ * `buildProgram()` can be driven in-process by a test — but that also turns printing
+ * `--help` or `--version` into a rejected promise. Treating those as failures made
+ * `qpi-driver --help` exit 1 where the Go and Python CLIs exit 0, which breaks any
+ * `set -e` wrapper that asks a CLI what it can do before using it.
+ *
+ * Exported so the classification is testable without spawning a process.
+ */
+export function isCommanderOutput(err: unknown): boolean {
+  const code = (err as { code?: string } | null)?.code;
+  return (
+    code === "commander.helpDisplayed" ||
+    code === "commander.help" ||
+    code === "commander.version"
+  );
+}
+
 // Run only when this file is the process entry point. Importing it — which the
 // tests do — must not execute a command; `process.argv[1]` under jest is the test
 // runner, not this bin.
@@ -244,6 +264,9 @@ if (process.argv[1]?.endsWith("cli.js")) {
   buildProgram()
     .parseAsync(process.argv)
     .catch((err) => {
+      if (isCommanderOutput(err)) {
+        process.exit(0);
+      }
       console.error("Error:", err);
       process.exit(1);
     });

@@ -71,6 +71,7 @@ pulled into your bundle when imported — the bundler equivalent of the Python
 The Bluefors Gen. 1 cryostat monitor polls the Bluefors Remote Access Control
 API and emits `CryostatReading` events:
 
+<!-- docs-check: compile=ts-bluefors -->
 ```typescript
 import { QpiDriver } from "qpi-driver";
 import { BlueforsGen1Driver } from "qpi-driver/builtins/bluefors-gen1";
@@ -228,15 +229,34 @@ entry points, which npm has no equivalent of.
 `--help`, an entry in `catalog --json`, and `-o` values that are checked and
 converted for you.
 
+<!-- docs-check: compile=ts-register-device -->
 ```typescript
-import { QpiDriver } from "qpi-driver";
-import { asInt, Operation, registerDevice } from "qpi-driver/devices";
+import { QpiDriver, type QpiDriverOptions } from "qpi-driver";
+import {
+  asInt,
+  type DeviceSpec,
+  Operation,
+  registerDevice,
+} from "qpi-driver/devices";
+
+interface ThermometerOptions extends QpiDriverOptions {
+  probes: number;
+}
 
 class ThermometerDriver extends QpiDriver {
+  private readonly probes: number;
+
+  constructor(options: ThermometerOptions) {
+    super(options);
+    this.probes = options.probes;
+  }
+
   handleEvent(): void {}
 }
 
-export const THERMOMETER = {
+// The `: DeviceSpec` annotation is what makes `build`'s two parameters typed, so
+// `options.int("probes")` is checked here rather than at the first `-o probes=4`.
+export const THERMOMETER: DeviceSpec = {
   name: "thermometer",
   operation: Operation.Monitor,
   summary: "Reads a made-up thermometer.",
