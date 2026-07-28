@@ -16,9 +16,9 @@ names, depend on how a given system's mappers are configured, so they are
 supplied as configuration rather than hard-coded.
 
 Ships as an officially maintained driver — install with
-``qpi-driver[cli,bluefors_gen1]`` and run with ``qpi-driver monitor --device
-bluefors_gen1`` (see ``qpi_driver.cli``), the same tier as the qblox/quantify
-executors.
+``qpi-driver[cli,bluefors_gen1]`` and run with ``qpi-driver start --operation
+monitor --device bluefors_gen1`` (see ``qpi_driver.cli``), the same tier as the
+qblox/quantify executors.
 """
 
 import logging

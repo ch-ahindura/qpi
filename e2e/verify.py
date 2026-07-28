@@ -1468,7 +1468,8 @@ def test_driver_snippet_connection():
     print("[verify]   Testing direct connection...")
     qpi_addr_direct = BASE
     cmd_direct = [
-        sys.executable, "-m", "qpi_driver.cli", "process",
+        sys.executable, "-m", "qpi_driver.cli", "start",
+        "--operation", "process",
         "--ca-fingerprint", fingerprint,
         "--qpi-addr", qpi_addr_direct,
         "--name", f"{qpu_name}_direct",
@@ -1530,7 +1531,8 @@ def test_driver_snippet_connection():
 
     qpi_addr_proxy = f"https://localhost:{proxy_port}"
     cmd_proxy = [
-        sys.executable, "-m", "qpi_driver.cli", "process",
+        sys.executable, "-m", "qpi_driver.cli", "start",
+        "--operation", "process",
         "--ca-fingerprint", fingerprint,
         "--qpi-addr", qpi_addr_proxy,
         "--name", f"{qpu_name}_proxy",
@@ -1566,7 +1568,8 @@ def _monitor_flags(name, token, fingerprint, mock_port):
     languages — the Go (cobra) and TypeScript (commander) CLIs share the Python
     CLI's interface (universal flags + repeatable -o options)."""
     return [
-        "monitor",
+        "start",
+        "--operation", "monitor",
         "--device", "bluefors_gen1",
         "--qpi-addr", BASE,
         "--name", name,

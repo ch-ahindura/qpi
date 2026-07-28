@@ -51,7 +51,7 @@ def test_every_command_builds():
 
     typer.main.get_command(app)
 
-    for command in ("process", "monitor", "version"):
+    for command in ("start", "devices", "catalog", "version"):
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, _output(result)
         # Rich pads its help output, so strip before matching.
@@ -98,6 +98,90 @@ def _fake_device(operation, name="fake", build=None, options=None):
     table = {op: {} for op in registry.Operation}
     table[operation][name] = spec
     return patch.dict(registry._DEVICES, table, clear=True), recorder
+
+
+def test_operation_is_required():
+    """`start` alone is not a command; the operation is what it needs to know."""
+    result = runner.invoke(app, ["start", "--token", "t", "--ca-fingerprint", "fp"])
+
+    assert result.exit_code == 2
+    assert "--operation" in _output(result)
+
+
+def test_an_unknown_operation_lists_the_valid_ones():
+    """Operations are a closed set, so the error can name all of them (RFC 0003 §13.1)."""
+    result = runner.invoke(
+        app,
+        ["start", "--operation", "procces", "--token", "t", "--ca-fingerprint", "fp"],
+        env={"COLUMNS": "200"},
+    )
+    output = _output(result)
+
+    assert result.exit_code == 2
+    assert "'process'" in output and "'monitor'" in output
+
+
+def test_the_operation_comes_from_the_environment_too():
+    """Every universal flag has an env var, so a unit file can be all Environment=."""
+    result = runner.invoke(
+        app,
+        ["start", "--device", "nope"],
+        env={
+            "QPI_OPERATION": "monitor",
+            "QPI_ACCESS_TOKEN": "t",
+            "QPI_CA_FINGERPRINT": "fp",
+            "COLUMNS": "200",
+        },
+    )
+
+    # It got as far as resolving a monitor device, which is the operation landing.
+    assert "unknown monitor device" in _output(result)
+
+
+@pytest.mark.parametrize("operation", ["process", "monitor"])
+def test_the_old_subcommands_are_gone(operation):
+    """`qpi-driver process` must fail, so nobody quietly reinstates it.
+
+    The grammar broke once, deliberately (RFC 0003 §11); a subcommand that still
+    worked would make the migration optional and the docs wrong.
+    """
+    result = runner.invoke(app, [operation, "--token", "t", "--ca-fingerprint", "fp"])
+
+    assert result.exit_code != 0
+
+
+@pytest.mark.parametrize(
+    ("operation", "device", "name"),
+    [("process", "mock", "qpu_sim_01"), ("monitor", "bluefors_gen1", "qpi-monitor")],
+)
+def test_device_and_name_default_per_operation(operation, device, name):
+    """One verb, but the defaults still differ by operation, from OperationSpec.
+
+    Asserted through the CLI rather than on the table, since the point is that the
+    resolution happens when `--device`/`--name` are omitted.
+    """
+    from qpi_driver.builtins import Operation
+
+    # Registered under the name the operation defaults to, so the driver is only
+    # built at all if that default was resolved.
+    patcher, recorder = _fake_device(Operation(operation), name=device)
+    with patcher:
+        result = runner.invoke(
+            app,
+            [
+                "start",
+                "--operation",
+                operation,
+                "--token",
+                "t",
+                "--ca-fingerprint",
+                "fp",
+            ],
+        )
+
+    assert result.exit_code == 0, _output(result)
+    assert recorder.log == ["build", "run"]
+    assert recorder.build_calls[0]["name"] == name
 
 
 def test_cli_start_builds_then_runs():
@@ -172,7 +256,17 @@ def test_cli_start_reports_a_builder_error():
     with patcher:
         result = runner.invoke(
             app,
-            ["monitor", "--token", "t", "--ca-fingerprint", "fp", "--device", "fake"],
+            [
+                "start",
+                "--operation",
+                "monitor",
+                "--token",
+                "t",
+                "--ca-fingerprint",
+                "fp",
+                "--device",
+                "fake",
+            ],
         )
 
     assert result.exit_code == 1
@@ -188,6 +282,8 @@ def test_cli_reports_a_bad_import_path_in_one_line():
     result = runner.invoke(
         app,
         [
+            "start",
+            "--operation",
             "process",
             "--token",
             "t",
@@ -239,7 +335,7 @@ def test_cli_runs_a_device_named_by_import_path():
 
 def test_help_documents_the_import_path_route():
     """--help says the catalog is not the limit, and that -o is unchecked there."""
-    result = runner.invoke(app, ["process", "--help"], env={"COLUMNS": "200"})
+    result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
     output = _output(result)
 
     assert "named by import path" in output
@@ -248,7 +344,9 @@ def test_help_documents_the_import_path_route():
 
 def test_cli_process_requires_token():
     """process fails if the access token is not supplied."""
-    result = runner.invoke(app, ["process", "--ca-fingerprint", "fp"])
+    result = runner.invoke(
+        app, ["start", "--operation", "process", "--ca-fingerprint", "fp"]
+    )
     assert result.exit_code == 1
     assert "Error: access token is required" in _output(result)
 
@@ -257,7 +355,17 @@ def test_cli_process_rejects_unknown_device():
     """process rejects an executor device with no registered runner."""
     result = runner.invoke(
         app,
-        ["process", "--token", "t", "--ca-fingerprint", "fp", "--device", "nope"],
+        [
+            "start",
+            "--operation",
+            "process",
+            "--token",
+            "t",
+            "--ca-fingerprint",
+            "fp",
+            "--device",
+            "nope",
+        ],
     )
     assert result.exit_code == 1
     assert "unknown process device" in _output(result)
@@ -268,6 +376,8 @@ def test_cli_process_unsafe_ca_file():
     result = runner.invoke(
         app,
         [
+            "start",
+            "--operation",
             "process",
             "--token",
             "t",
@@ -285,6 +395,8 @@ def test_cli_process_unsafe_data_dir_option():
     result = runner.invoke(
         app,
         [
+            "start",
+            "--operation",
             "process",
             "--token",
             "t",
@@ -300,7 +412,9 @@ def test_cli_process_unsafe_data_dir_option():
 
 def test_cli_monitor_requires_token():
     """monitor fails without an access token, like process."""
-    result = runner.invoke(app, ["monitor", "--ca-fingerprint", "fp"])
+    result = runner.invoke(
+        app, ["start", "--operation", "monitor", "--ca-fingerprint", "fp"]
+    )
     assert result.exit_code == 1
 
 
@@ -308,7 +422,17 @@ def test_cli_monitor_rejects_unknown_device():
     """monitor rejects a device that no runner is registered for."""
     result = runner.invoke(
         app,
-        ["monitor", "--token", "t", "--ca-fingerprint", "fp", "--device", "nope"],
+        [
+            "start",
+            "--operation",
+            "monitor",
+            "--token",
+            "t",
+            "--ca-fingerprint",
+            "fp",
+            "--device",
+            "nope",
+        ],
     )
     assert result.exit_code == 1
     assert "unknown monitor device" in _output(result)
@@ -319,6 +443,8 @@ def test_cli_monitor_reports_missing_required_option():
     result = runner.invoke(
         app,
         [
+            "start",
+            "--operation",
             "monitor",
             "--token",
             "t",
@@ -358,7 +484,17 @@ def test_cli_rejects_an_unknown_option():
     """
     result = runner.invoke(
         app,
-        ["process", "--token", "t", "--ca-fingerprint", "fp", "-o", "data_dirr=/tmp/x"],
+        [
+            "start",
+            "--operation",
+            "process",
+            "--token",
+            "t",
+            "--ca-fingerprint",
+            "fp",
+            "-o",
+            "data_dirr=/tmp/x",
+        ],
     )
 
     output = _output(result)
@@ -371,34 +507,46 @@ def test_cli_rejects_an_uncoercible_option_value():
     """A value its parser refuses names the option, not the parser's internals."""
     result = runner.invoke(
         app,
-        ["process", "--token", "t", "--ca-fingerprint", "fp", "-o", "job_timeout=soon"],
+        [
+            "start",
+            "--operation",
+            "process",
+            "--token",
+            "t",
+            "--ca-fingerprint",
+            "fp",
+            "-o",
+            "job_timeout=soon",
+        ],
     )
 
     assert result.exit_code == 1
     assert "bad value for -o job_timeout" in _output(result)
 
 
-@pytest.mark.parametrize("operation", ["process", "monitor"])
-def test_help_lists_every_device_and_its_options(operation):
-    """--help answers "what can I pass to -o?" from the registry, not by hand.
+def test_help_lists_every_operation_device_and_option():
+    """--help answers "what can I pass?" from the registry, not by hand.
 
-    Rich rewraps the epilog, so match on substrings rather than whole lines.
+    One verb serves every operation, so one --help covers all of them. Rich
+    rewraps the epilog, so match on substrings rather than whole lines.
     """
     from qpi_driver.builtins import Operation, devices
 
-    result = runner.invoke(app, [operation, "--help"], env={"COLUMNS": "200"})
+    result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
     output = _output(result)
 
     assert result.exit_code == 0, output
-    for spec in devices(Operation(operation)):
-        assert spec.name in output
-        for option in spec.options:
-            assert f"{option.key}=<{option.type_name}>" in output
+    for operation in Operation:
+        assert f"--operation {operation.value}" in output
+        for spec in devices(operation):
+            assert spec.name in output
+            for option in spec.options:
+                assert f"{option.key}=<{option.type_name}>" in output
 
 
 def test_help_marks_a_required_option():
     """A device with a required option says so, so it is not learnt by crashing."""
-    result = runner.invoke(app, ["monitor", "--help"], env={"COLUMNS": "200"})
+    result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
 
     assert "channels=<channels> (required" in _output(result)
 

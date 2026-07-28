@@ -158,6 +158,21 @@ def _import_route_line(operation: Operation) -> str:
     )
 
 
+def catalog_lines(operation: Operation | None = None) -> tuple[str, ...]:
+    """:func:`device_lines` for every operation, each under a heading naming it.
+
+    What one command serving every operation has to show in its help: which
+    ``--operation`` values exist, and then, for each, its devices and their
+    options. Narrow to one operation with *operation*.
+    """
+    wanted = operations() if operation is None else [_operation_spec(operation)]
+    lines: list[str] = []
+    for spec in wanted:
+        lines.append(f"--operation {spec.name.value} — {spec.summary}")
+        lines.extend(device_lines(spec.name))
+    return tuple(lines)
+
+
 def render_catalog(operation: Operation | None = None) -> str:
     """The catalog as readable text: operations, their devices, their options.
 

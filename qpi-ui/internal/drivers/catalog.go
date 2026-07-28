@@ -9,7 +9,7 @@ const (
 )
 
 // processSpec builds the spec for a QPU-shaped executor kind: it runs the job
-// flow and is launched with `qpi-driver process --device <kind>`. Its runtime
+// flow and is launched with `qpi-driver start --operation process --device <kind>`. Its runtime
 // config (data dir, timeouts, …) has working defaults, so no snippet options.
 func processSpec(kind Kind, extra string) Spec {
 	return Spec{

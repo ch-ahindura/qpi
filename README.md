@@ -105,7 +105,7 @@ Ensure Python 3.12 is installed, then install using `pip` or `uv`:
 uv tool install "qpi-driver[cli]"
 
 # Start the driver daemon
-qpi-driver process \
+qpi-driver start --operation process \
   --qpi-addr http://127.0.0.1:8090 \
   --token "<YOUR_ACCESS_TOKEN>" \
   --ca-fingerprint "<YOUR_CA_FINGERPRINT>" \
@@ -290,7 +290,7 @@ Runs simulated measurements without external physics dependencies.
 pip install ./qpi-driver[cli]
 
 # Start the driver using the mock device
-qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "mock"
+qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "mock"
 ```
 
 #### 2. Qiskit Aer Simulator
@@ -300,7 +300,7 @@ Runs realistic circuit simulations using Qiskit Aer.
 pip install ./qpi-driver[cli,aer]
 
 # Start the driver using the qiskit_aer device
-qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qiskit_aer"
+qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qiskit_aer"
 ```
 
 #### 3. Quantify Executor (Qblox Cluster)
@@ -311,12 +311,12 @@ Compiles and runs circuits using `quantify-scheduler`.
   pip install ./qpi-driver[cli,quantify]
 
   # Start driver in dummy mode
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
   ```
 
 #### 4. Qblox Executor (Qblox Cluster)
@@ -327,16 +327,16 @@ Compiles and runs circuits using `qblox-scheduler`.
   pip install ./qpi-driver[cli,qblox]
 
   # Start driver in dummy mode
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
   ```
 
 ### CLI Usage
-The package exposes a command-line interface via `typer`. A driver is run by its operation subcommand — `process` (a QPU) or `monitor` (e.g. a cryostat) — on a specific `--device`. Options can be passed as flags or fall back to their environment variables.
+The package exposes a command-line interface via `typer`. A driver is run with one verb, `start`: `--operation` says what it does — `process` (a QPU) or `monitor` (e.g. a cryostat) — and `--device` which backend within it. Options can be passed as flags or fall back to their environment variables.
 
 Universal options (shared by every operation):
 * `-a`, `--qpi-addr`: Full URL of the QPI server (env: `QPI_ADDR`, default: `http://127.0.0.1:8090`).

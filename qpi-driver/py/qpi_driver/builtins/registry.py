@@ -190,12 +190,16 @@ class OperationSpec:
         name: The operation itself.
         summary: One line describing what drivers of this operation do.
         default_device: The device used when ``--device`` is omitted.
+        default_name: The driver name used when ``--name`` is omitted. Here rather
+            than in the CLI because it is the same kind of fact as
+            *default_device*, and one verb serves every operation.
         events: The event types drivers of this operation take part in.
     """
 
     name: Operation
     summary: str
     default_device: str
+    default_name: str = ""
     events: tuple[EventType, ...] = ()
 
 
@@ -204,12 +208,14 @@ OPERATIONS: dict[Operation, OperationSpec] = {
         name=Operation.PROCESS,
         summary="Run quantum jobs pushed by QPI-UI and report their results.",
         default_device="mock",
+        default_name="qpu_sim_01",
         events=(EventType.JOB_DISPATCH, EventType.JOB_RESULT),
     ),
     Operation.MONITOR: OperationSpec(
         name=Operation.MONITOR,
         summary="Report readings upward on a timer.",
         default_device="bluefors_gen1",
+        default_name="qpi-monitor",
         events=(EventType.CRYOSTAT_READING,),
     ),
 }

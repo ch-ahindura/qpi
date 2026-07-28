@@ -23,6 +23,15 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver`: [BREAKING] The `process` and `monitor` subcommands are replaced by one `start` verb taking `--operation`, in all three SDKs at once (RFC 0003 §4). One verb because everything about launching a driver is the same whichever operation it is — and because a third party can add a device, but only QPI-UI can add an operation, so the operation is an argument rather than part of the grammar.
+
+  | Before | After |
+  |--------|-------|
+  | `qpi-driver process --device qblox …` | `qpi-driver start --operation process --device qblox …` |
+  | `qpi-driver monitor --device bluefors_gen1 …` | `qpi-driver start --operation monitor --device bluefors_gen1 …` |
+
+  `--operation` is required, has no short form (`-o` is `--option`, and `-O` beside it would be a hazard), and reads `QPI_OPERATION`. `--device` and `--name`, when omitted, now come from the operation's own defaults. The dashboard's setup snippets, all three `install-systemd.sh` installers and the e2e harness render the new grammar; the `OPERATION` environment variable the installers take is unchanged.
+- `qpi-driver/go`, `qpi-driver/js`: [BREAKING] `start --operation process` now says that the SDK ships no process devices and where to find one, instead of `unknown process device "mock"; known devices: ` with an empty list and a default device that never existed there (RFC 0003 §8).
 - `qpi-driver/py`: [BREAKING] An `-o` key the chosen device does not read is now an error naming the keys it does, where before it was silently ignored. A typo such as `-o data_dirr=/data` used to mean a driver running with a default nobody chose; it now exits 1. Anything that passed an unrecognised `-o` key deliberately, expecting it to reach the executor, must declare it in a `DeviceSpec` (see `qpu.device_spec()`).
 - `qpi-driver/py`: [BREAKING] A device builder is now handed options that have already been checked and coerced against its own `DeviceSpec` — `build_from_options(options=spec.parse_options(raw))` — rather than raw strings. Calling a builder directly with `{"job_timeout": "30"}` no longer coerces it, and an omitted key is no longer defaulted by the builder.
 

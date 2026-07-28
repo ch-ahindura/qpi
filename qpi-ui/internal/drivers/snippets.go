@@ -85,7 +85,6 @@ func officialSnippets(spec Spec, p Params, l Language) Snippets {
 		Device:        string(spec.Kind),
 		Operation:     string(spec.Operation),
 		Extra:         shellQuote(spec.extra()),
-		Subcommand:    spec.subcommand(),
 		OptionsEnv:    optionsEnv(spec.Options),
 		Options:       cliOptions(spec.Options),
 	}
@@ -101,13 +100,6 @@ func (s Spec) extra() string {
 		return s.Extra
 	}
 	return baseCliExtra
-}
-
-// subcommand is the `qpi-driver` invocation that launches this backend, with
-// the device already bound, e.g. "process --device qblox" or
-// "monitor --device bluefors_gen1".
-func (s Spec) subcommand() string {
-	return fmt.Sprintf("%s %s %s", s.Operation, deviceFlag, s.Kind)
 }
 
 // cliOptions renders an operation's per-kind config as trailing `-o key=value`

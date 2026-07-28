@@ -7,7 +7,7 @@ Two things are defined here, and either one is enough on its own:
     ``process`` device, being an executor *is* being a device, so it can be run
     straight away by import path::
 
-        qpi-driver process --device mylab_devices:ThermometerExecutor \\
+        qpi-driver start --operation process --device mylab_devices:ThermometerExecutor \\
           --token "$QPI_ACCESS_TOKEN" --ca-fingerprint "$QPI_CA_FINGERPRINT" \\
           -o data_dir=./bin/data -o probe_count=4
 

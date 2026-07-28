@@ -15,7 +15,6 @@ type snippetData struct {
 	Device        string
 	Operation     string
 	Extra         string
-	Subcommand    string
 	OptionsEnv    string
 	Options       string
 }
@@ -30,19 +29,19 @@ var systemdTmpl = template.Must(template.New("systemd").Parse(
 // operators who would rather not use the systemd installer.
 var manualPyCLITmpl = template.Must(template.New("manual-py-cli").Parse(
 	`uv tool install --python 3.12 {{.Extra}} && \
-  qpi-driver {{.Subcommand}} \
+  qpi-driver start --operation {{.Operation}} --device {{.Device}} \
     --token {{.Token}} --qpi-addr {{.QpiAddr}} --ca-fingerprint {{.CaFingerprint}} --name {{.Name}}{{.Options}}`))
 
 // manualGoCLITmpl installs the driver CLI with `go install` and runs it
 // directly, for operators who would rather not use the systemd installer.
 var manualGoCLITmpl = template.Must(template.New("manual-go-cli").Parse(
 	`go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver@latest && \
-  qpi-driver {{.Subcommand}} \
+  qpi-driver start --operation {{.Operation}} --device {{.Device}} \
     --token {{.Token}} --qpi-addr {{.QpiAddr}} --ca-fingerprint {{.CaFingerprint}} --name {{.Name}}{{.Options}}`))
 
 // manualTsCLITmpl installs the driver CLI from npm and runs it directly, for
 // operators who would rather not use the systemd installer.
 var manualTsCLITmpl = template.Must(template.New("manual-ts-cli").Parse(
 	`npm install -g qpi-driver && \
-  qpi-driver {{.Subcommand}} \
+  qpi-driver start --operation {{.Operation}} --device {{.Device}} \
     --token {{.Token}} --qpi-addr {{.QpiAddr}} --ca-fingerprint {{.CaFingerprint}} --name {{.Name}}{{.Options}}`))

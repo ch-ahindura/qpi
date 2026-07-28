@@ -63,7 +63,7 @@ Requires **Python ≥ 3.12, < 3.13**.
 
 ```bash
 # Connect a mock QPU to the server
-qpi-driver process \
+qpi-driver start --operation process \
   --qpi-addr http://localhost:8090 \
   --token <qpu-access-token> \
   --ca-fingerprint <fingerprint> \
@@ -80,7 +80,7 @@ export QPI_ACCESS_TOKEN=<token>
 export QPI_CA_FINGERPRINT=<fingerprint>
 export QPI_DRIVER_NAME=qpu_sim_01
 export QPI_DEVICE=mock
-qpi-driver process
+qpi-driver start --operation process
 ```
 
 ### systemd Service (Linux)
@@ -136,7 +136,7 @@ If you prefer to configure it manually, follow these steps:
    Environment="QPI_CA_FILE=/var/qpi-driver/rigetti-aspen-1/qpi.ca.pem"
    Environment=PYTHONUNBUFFERED=1
 
-   ExecStart=/home/<user>/.local/bin/qpi-driver process \
+   ExecStart=/home/<user>/.local/bin/qpi-driver start --operation process \
            --ca-fingerprint <your-fingerprint> \
            --qpi-addr <your-qpi-server-address> \
            --name "rigetti-aspen-1" \
@@ -210,11 +210,11 @@ example of both:
 
 ```bash
 # A class in a file, with no packaging at all
-qpi-driver process --device mylab_devices:ThermometerExecutor -o probe_count=4 ...
+qpi-driver start --operation process --device mylab_devices:ThermometerExecutor -o probe_count=4 ...
 
 # Or, after `pip install` of a distribution declaring the qpi_driver.devices
 # entry point — now it is in --help and catalog --json like any built-in
-qpi-driver process --device thermometer -o probe_count=4 ...
+qpi-driver start --operation process --device thermometer -o probe_count=4 ...
 ```
 
 For `monitor`, a device is the driver rather than an executor, so the import path
@@ -276,14 +276,16 @@ The driver uses Python's `multiprocessing` library to isolate responsibilities:
 
 ## CLI Reference
 
-A driver is run by its operation subcommand — `process` (a QPU) or `monitor`
-(e.g. a cryostat) — on a specific `--device`. Both share the same universal
-options; each device's own settings are passed as repeatable `-o key=value`.
+A driver is run with one verb, `start`: `--operation` says what it does —
+`process` (a QPU) or `monitor` (e.g. a cryostat) — and `--device` which backend
+within it. Every operation shares the same universal options; each device's own
+settings are passed as repeatable `-o key=value`.
 
 ```
-qpi-driver process|monitor [OPTIONS]
+qpi-driver start --operation process|monitor [OPTIONS]
 
 Universal options:
+      --operation TEXT    What the driver does: process | monitor [env: QPI_OPERATION]
   -a, --qpi-addr TEXT     QPI server URL [env: QPI_ADDR]
   -t, --token TEXT        Access token identifying the driver [env: QPI_ACCESS_TOKEN]
   -n, --name TEXT         Human-readable driver name [env: QPI_DRIVER_NAME]

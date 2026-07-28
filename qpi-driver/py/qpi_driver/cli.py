@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Annotated
 
 from qpi_driver.builtins import Operation, resolve_device
-from qpi_driver.builtins.catalog import catalog_dict, device_lines, render_catalog
+from qpi_driver.builtins.catalog import catalog_dict, catalog_lines, render_catalog
+from qpi_driver.builtins.registry import OPERATIONS
 from qpi_driver.compat import typer
 from qpi_driver.paths import validate_safe_path
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS
@@ -18,8 +19,8 @@ if typer.IS_TYPER_INSTALLED:
         rich_markup_mode="rich",
     )
 
-    def _epilog(operation: Operation) -> str:
-        """Render the device catalog as an epilog for *operation*'s command.
+    def _epilog(operation: Operation | None = None) -> str:
+        """Render the device catalog as the ``start`` command's epilog.
 
         Built once, at import, from the registry — so a new device shows up in
         ``--help`` with no CLI change at all. Written for Typer's rich renderer,
@@ -28,11 +29,13 @@ if typer.IS_TYPER_INSTALLED:
         (``typer.rich_utils.rich_format_help``): hence one paragraph per line,
         and escaped brackets so ``qpi-driver[cli,qblox]`` survives.
         """
-        return "\n\n".join(line.replace("[", r"\[") for line in device_lines(operation))
+        return "\n\n".join(
+            line.replace("[", r"\[") for line in catalog_lines(operation)
+        )
 
-    # Universal options shared by every operation subcommand, defined once so a
-    # new operation reuses them rather than redeclaring their flags/env/help. An
-    # operation's own settings go through --option / -o instead (RFC 0001 §4).
+    # Universal options `start` shares across every operation, defined once so a
+    # new operation reuses them rather than redeclaring their flags/env/help. A
+    # device's own settings go through --option / -o instead (RFC 0001 §4).
     QpiAddrOpt = Annotated[
         str,
         typer.Option(
@@ -60,13 +63,26 @@ if typer.IS_TYPER_INSTALLED:
             help="Human-readable name for this driver",
         ),
     ]
+    # No short form for --operation: -o is --option, and -O beside it would be a
+    # hazard on a command line that is usually written once into a unit file
+    # (RFC 0003 §13.7).
+    OperationOpt = Annotated[
+        Operation,
+        typer.Option(
+            "--operation",
+            envvar="QPI_OPERATION",
+            help="What this driver does. The devices each one can run are listed below.",
+        ),
+    ]
     DeviceOpt = Annotated[
         str,
         typer.Option(
             "--device",
             "-d",
             envvar="QPI_DEVICE",
-            help="Which backend to run within the operation (e.g. mock, qblox, bluefors_gen1)",
+            help="Which backend to run within the operation (e.g. mock, qblox, "
+            "bluefors_gen1), or an import path. Defaults to the operation's own "
+            "default device.",
         ),
     ]
     CaFileOpt = Annotated[
@@ -107,53 +123,30 @@ if typer.IS_TYPER_INSTALLED:
             help="SHA-256 fingerprint pinning the automatically downloaded root CA of the QPI server.",
         )
 
-    @app.command(epilog=_epilog(Operation.PROCESS))
-    def process(
-        device: DeviceOpt = "mock",
+    @app.command(epilog=_epilog())
+    def start(
+        operation: OperationOpt,
+        device: DeviceOpt = "",
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
         token: TokenOpt = "",
-        name: NameOpt = "qpu_sim_01",
+        name: NameOpt = "",
         ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
         ca_fingerprint: str = _ca_fingerprint_option(),
         options: OptionsOpt = None,
         recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
     ):
         """
-        Run a process driver — a QPU that executes jobs pushed to it (RFC 0001 §4).
+        Run a driver: one --operation, on one --device within it (RFC 0001 §4).
 
-        The devices it can run and the -o options each one reads are listed below.
+        One verb rather than a subcommand per operation, because everything about
+        launching a driver is the same whichever operation it is — and because a
+        third party can add a device, but only QPI-UI can add an operation.
+
+        The operations, their devices and the -o options each device reads are
+        listed below.
         """
         _start(
-            Operation.PROCESS,
-            device=device,
-            qpi_addr=qpi_addr,
-            token=token,
-            name=name,
-            ca_file=ca_file,
-            ca_fingerprint=ca_fingerprint,
-            options=options,
-            recv_timeout_ms=recv_timeout_ms,
-        )
-
-    @app.command(epilog=_epilog(Operation.MONITOR))
-    def monitor(
-        device: DeviceOpt = "bluefors_gen1",
-        qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
-        token: TokenOpt = "",
-        name: NameOpt = "qpi-monitor",
-        ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
-        ca_fingerprint: str = _ca_fingerprint_option(),
-        options: OptionsOpt = None,
-        recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
-    ):
-        """
-        Run a monitor driver — one that only reports upward on its own schedule
-        and never handles JobDispatch (RFC 0001 §4, §7).
-
-        The devices it can run and the -o options each one reads are listed below.
-        """
-        _start(
-            Operation.MONITOR,
+            operation,
             device=device,
             qpi_addr=qpi_addr,
             token=token,
@@ -183,7 +176,13 @@ if typer.IS_TYPER_INSTALLED:
         the unstarted driver that gets started here. Anything rejected along the
         way — an unknown device or option, a missing or bad value — surfaces as a
         ``ValueError`` and becomes a one-line CLI error rather than a traceback.
+
+        An empty *device* or *name* means the operation's own default, since one
+        command serves every operation and their defaults differ.
         """
+        device = device or OPERATIONS[operation].default_device
+        name = name or OPERATIONS[operation].default_name
+
         if not token:
             typer.echo(
                 "Error: access token is required. "

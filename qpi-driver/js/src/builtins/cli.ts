@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * The `qpi-driver` CLI that runs QPI's officially maintained TypeScript built-in
- * drivers, mirroring the Python `qpi-driver` CLI (RFC 0001 §4): the operation is
- * the subcommand (process | monitor), the device selects the backend within it,
- * universal flags are shared, and a device's own settings are passed as
+ * drivers, mirroring the Python `qpi-driver` CLI (RFC 0003 §4): one `start` verb,
+ * `--operation` saying what the driver does, `--device` selecting the backend
+ * within it, universal flags shared, and a device's own settings passed as
  * repeatable `-o key=value`.
  *
  * Installed as the package's `qpi-driver` bin, so:
  *
  *   npm install -g qpi-driver   # or: npx -y qpi-driver …
- *   qpi-driver monitor --device bluefors_gen1 \
+ *   qpi-driver start --operation monitor --device bluefors_gen1 \
  *     --qpi-addr https://qpi.example.com --token … --ca-fingerprint … \
  *     -o base_url=http://localhost:49099 -o channels=mapper.bf.tmc:K
  */
@@ -18,33 +18,19 @@ import { Command } from "commander";
 
 import type { QpiDriver } from "../driver.js";
 import { BlueforsGen1Driver, parseChannels } from "./bluefors-gen1.js";
+import {
+  type CommonOpts,
+  operationHelp,
+  operationNames,
+  operations,
+  resolveDevice,
+} from "./catalog.js";
 
 const VERSION = "0.1.2";
 
-/** The universal options every operation subcommand shares (commander camelCases them). */
-interface CommonOpts {
-  qpiAddr: string;
-  token: string;
-  name: string;
-  device: string;
-  caFile: string;
-  caFingerprint?: string;
-  option: string[];
-  recvTimeoutMs: number;
-}
-
-/** Builds (but does not run) the driver for one device from the parsed flags/options. */
-type DeviceRunner = (
-  common: CommonOpts,
-  opts: Record<string, string>,
-) => QpiDriver;
-
-// TypeScript ships no process (QPU) built-in yet, so that registry is empty;
-// both operations are dispatched the same way, so a new device is one entry.
-const processDrivers: Record<string, DeviceRunner> = {};
-const monitorDrivers: Record<string, DeviceRunner> = {
-  bluefors_gen1: buildBlueforsGen1,
-};
+// The devices this SDK ships, registered into the catalog. Declared here rather
+// than in the catalog itself so that module stays free of driver imports.
+operations.monitor.devices.bluefors_gen1 = buildBlueforsGen1;
 
 /**
  * Builds the Bluefors Gen. 1 monitor from the -o options. Recognised keys
@@ -77,26 +63,31 @@ function buildBlueforsGen1(
   });
 }
 
-async function runOperation(
-  operation: string,
-  registry: Record<string, DeviceRunner>,
-  common: CommonOpts,
-): Promise<void> {
+/**
+ * Runs the chosen device within the chosen operation, mirroring the Python CLI's
+ * shared handler: the catalog decides which device it is and fills in the
+ * operation's defaults, the device's builder returns an unstarted driver, and this
+ * is what starts it.
+ */
+async function runOperation(common: CommonOpts): Promise<void> {
   if (!common.token) {
     fail(
       "access token is required; set --token/-t or the QPI_ACCESS_TOKEN environment variable",
     );
   }
-  const runner = registry[common.device];
-  if (!runner) {
-    const known = Object.keys(registry).sort().join(", ");
-    fail(
-      `unknown ${operation} device '${common.device}'; known devices: ${known}`,
-    );
+
+  let resolved;
+  try {
+    resolved = resolveDevice(common.operation, common.device, common.name);
+  } catch (err) {
+    fail((err as Error).message);
   }
+  common.device = resolved.device;
+  common.name = resolved.name;
+
   let driver: QpiDriver;
   try {
-    driver = runner(common, parseOptions(common.option));
+    driver = resolved.build(common, parseOptions(common.option));
   } catch (err) {
     fail((err as Error).message);
   }
@@ -130,17 +121,25 @@ function envOr(key: string, fallback: string): string {
   return process.env[key] || fallback;
 }
 
-function addOperation(
-  program: Command,
-  name: string,
-  defaultDevice: string,
-  defaultName: string,
-  description: string,
-  registry: Record<string, DeviceRunner>,
-): void {
+/**
+ * Adds the one verb that runs a driver. One command rather than a subcommand per
+ * operation, because everything about launching a driver is the same whichever
+ * operation it is (RFC 0003 §4).
+ */
+function addStart(program: Command): void {
   program
-    .command(name)
-    .description(description)
+    .command("start")
+    .description(
+      "Run a driver: one --operation, on one --device within it (RFC 0001 §4).",
+    )
+    .addHelpText("after", `\n${operationHelp()}`)
+    // No short form for --operation: -o is --option, and -O beside it would be a
+    // hazard in a command usually written once into a unit file (RFC 0003 §13.7).
+    .option(
+      "--operation <operation>",
+      `What this driver does: ${operationNames()}`,
+      process.env.QPI_OPERATION || "",
+    )
     .option(
       "-a, --qpi-addr <url>",
       "Full URL of the QPI server",
@@ -153,13 +152,13 @@ function addOperation(
     )
     .option(
       "-n, --name <name>",
-      "Human-readable name for this driver",
-      envOr("QPI_DRIVER_NAME", defaultName),
+      "Human-readable name for this driver; defaults to the operation's own",
+      process.env.QPI_DRIVER_NAME || "",
     )
     .option(
       "-d, --device <device>",
-      "Which backend to run within the operation",
-      envOr("QPI_DEVICE", defaultDevice),
+      "Which backend to run within the operation; defaults to the operation's own",
+      process.env.QPI_DEVICE || "",
     )
     .option(
       "--ca-file <path>",
@@ -183,7 +182,7 @@ function addOperation(
       (v) => parseInt(v, 10),
       Number(process.env.QPI_RECV_TIMEOUT_MS) || 200,
     )
-    .action((opts: CommonOpts) => runOperation(name, registry, opts));
+    .action((opts: CommonOpts) => runOperation(opts));
 }
 
 const program = new Command();
@@ -192,22 +191,7 @@ program
   .description("Quantum Processing Interface (QPI) Driver CLI")
   .version(VERSION);
 
-addOperation(
-  program,
-  "process",
-  "mock",
-  "qpu_sim_01",
-  "Run a process driver — a QPU that executes jobs pushed to it (RFC 0001 §4).",
-  processDrivers,
-);
-addOperation(
-  program,
-  "monitor",
-  "bluefors_gen1",
-  "qpi-monitor",
-  "Run a monitor driver — one that only reports upward on its own schedule (RFC 0001 §7).",
-  monitorDrivers,
-);
+addStart(program);
 
 program
   .command("version")

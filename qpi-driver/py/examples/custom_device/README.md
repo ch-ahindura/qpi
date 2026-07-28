@@ -9,7 +9,7 @@ The device is any importable `Executor`, so if `mylab_devices.py` is on your
 `PYTHONPATH`, it is already runnable:
 
 ```bash
-qpi-driver process \
+qpi-driver start --operation process \
   --device mylab_devices:ThermometerExecutor \
   --qpi-addr http://localhost:8090 \
   --token "$QPI_ACCESS_TOKEN" \
@@ -37,11 +37,11 @@ thermometer = "mylab_devices:THERMOMETER"
 
 ```bash
 pip install .
-qpi-driver process --device thermometer -o probe_count=4 ...
+qpi-driver start --operation process --device thermometer -o probe_count=4 ...
 ```
 
 Now it is indistinguishable from a built-in: it appears in `qpi-driver devices`,
-in `qpi-driver process --help` with its own options, and in
+in `qpi-driver start --operation process --help` with its own options, and in
 `qpi-driver catalog --json`. Because the spec *declares* `probe_count`, it arrives
 as an `int` and `-o probe_counr=4` is an error naming the valid keys instead of a
 setting silently ignored.

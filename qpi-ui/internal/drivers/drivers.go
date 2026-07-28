@@ -5,8 +5,8 @@
 // A backend is described by a data-only Spec, and the whole catalog is a
 // Registry of Specs. Adding a new backend — a new executor or a new monitor —
 // means registering one Spec in catalog.go; no other server code changes. A
-// backend's operation (the CLI subcommand — `qpi-driver process --device
-// <kind>` or `qpi-driver monitor --device <kind>`) and its options are just
+// backend's operation (`qpi-driver start --operation process --device <kind>`,
+// or `--operation monitor`) and its options are just
 // Spec fields, so a differently-shaped backend is more data rather than a new
 // branch.
 package drivers
@@ -35,7 +35,7 @@ const (
 )
 
 // Operation is what a driver does — the category it belongs to — and doubles as
-// the qpi-driver CLI subcommand that runs it: a Process driver runs jobs pushed
+// what `qpi-driver start --operation` is given: a Process driver runs jobs pushed
 // to it (a QPU), a Monitor driver reports upward on its own schedule (a
 // cryostat monitor). New operations are new constants here (RFC 0001 §4, §7).
 type Operation string
@@ -44,10 +44,6 @@ const (
 	Process Operation = "process"
 	Monitor Operation = "monitor"
 )
-
-// deviceFlag is the universal CLI flag naming the specific backend within an
-// operation, e.g. `--device qblox` or `--device bluefors_gen1`.
-const deviceFlag = "--device"
 
 // Option is one `-o key=value` setting a monitor kind needs, carrying an
 // example value so the setup snippets show a ready-to-edit command.
@@ -62,8 +58,8 @@ type Option struct {
 // they run code the operator writes.
 type Spec struct {
 	Kind Kind
-	// Operation is what this backend does, and the CLI subcommand that runs it:
-	// `qpi-driver <Operation> --device <kind> …`.
+	// Operation is what this backend does, and what the CLI is told to run:
+	// `qpi-driver start --operation <Operation> --device <kind> …`.
 	Operation Operation
 	// Extra is the qpi-driver Python extra that ships this backend, e.g.
 	// "qpi-driver[cli,qblox]". Empty means the base CLI extra (mock, presto).

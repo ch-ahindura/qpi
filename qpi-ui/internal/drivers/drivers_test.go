@@ -80,8 +80,8 @@ func TestSnippetsExecutor(t *testing.T) {
 			t.Errorf("expected snippet to carry token and name, got %q", snippet)
 		}
 	}
-	if !strings.Contains(s.ManualCLI, "process --device qblox") {
-		t.Errorf("expected process subcommand, got %q", s.ManualCLI)
+	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
+		t.Errorf("expected the process start command, got %q", s.ManualCLI)
 	}
 	if !strings.Contains(s.ManualCLI, "qpi-driver[cli,qblox]") {
 		t.Errorf("expected qblox extra, got %q", s.ManualCLI)
@@ -105,10 +105,10 @@ func TestSnippetsMonitor(t *testing.T) {
 	if s.Install != "" || s.Stub != "" {
 		t.Errorf("expected no bare-install/stub for an official build, got %+v", s)
 	}
-	if !strings.Contains(s.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected monitor subcommand, got %q", s.ManualCLI)
+	if !strings.Contains(s.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", s.ManualCLI)
 	}
-	if strings.Contains(s.ManualCLI, "process --device") {
+	if strings.Contains(s.ManualCLI, "--operation process") {
 		t.Errorf("expected monitor not to use the process operation, got %q", s.ManualCLI)
 	}
 	if !strings.Contains(s.ManualCLI, "-o base_url=") || !strings.Contains(s.ManualCLI, "-o channels=") {
@@ -146,8 +146,8 @@ func TestSnippetsOfficialGoUsesGoInstall(t *testing.T) {
 	if !strings.Contains(s.ManualCLI, "go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver") {
 		t.Errorf("expected a `go install` manual CLI, got %q", s.ManualCLI)
 	}
-	if !strings.Contains(s.ManualCLI, "process --device qblox") {
-		t.Errorf("expected the process subcommand, got %q", s.ManualCLI)
+	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
+		t.Errorf("expected the process start command, got %q", s.ManualCLI)
 	}
 	if !strings.Contains(s.Systemd, "/go/install-systemd.sh") {
 		t.Errorf("expected the Go install-systemd.sh URL, got %q", s.Systemd)
@@ -156,8 +156,8 @@ func TestSnippetsOfficialGoUsesGoInstall(t *testing.T) {
 
 // TestSnippetsBlueforsPerLanguage proves the bluefors_gen1 monitor resolves
 // official per-language run snippets — `go install` / `npm install -g` in the
-// manual CLI, the language's install-systemd.sh, and the monitor subcommand
-// with its -o options — for Go and TypeScript (RFC 0001 §7, Phase 4).
+// manual CLI, the language's install-systemd.sh, and the monitor start
+// command with its -o options — for Go and TypeScript (RFC 0001 §7, Phase 4).
 func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	p := Params{Name: "cryostat-1", Token: "tok", QpiAddr: "https://qpi.example.com", CaFingerprint: "f"}
 
@@ -168,8 +168,8 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	if !strings.Contains(goSnips.ManualCLI, "go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver") {
 		t.Errorf("expected a `go install` manual CLI, got %q", goSnips.ManualCLI)
 	}
-	if !strings.Contains(goSnips.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected the monitor subcommand, got %q", goSnips.ManualCLI)
+	if !strings.Contains(goSnips.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", goSnips.ManualCLI)
 	}
 	if !strings.Contains(goSnips.Systemd, "/go/install-systemd.sh") {
 		t.Errorf("expected the Go install-systemd.sh URL, got %q", goSnips.Systemd)
@@ -179,8 +179,8 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	if !strings.Contains(tsSnips.ManualCLI, "npm install -g qpi-driver") {
 		t.Errorf("expected an `npm install -g` manual CLI, got %q", tsSnips.ManualCLI)
 	}
-	if !strings.Contains(tsSnips.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected the monitor subcommand, got %q", tsSnips.ManualCLI)
+	if !strings.Contains(tsSnips.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", tsSnips.ManualCLI)
 	}
 	if !strings.Contains(tsSnips.Systemd, "/js/install-systemd.sh") {
 		t.Errorf("expected the TS install-systemd.sh URL, got %q", tsSnips.Systemd)

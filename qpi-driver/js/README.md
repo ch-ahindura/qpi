@@ -84,7 +84,7 @@ passed as repeatable `-o key=value`.
 ```
 npm install -g qpi-driver          # or: npx -y qpi-driver …
 
-qpi-driver monitor --device bluefors_gen1 \
+qpi-driver start --operation monitor --device bluefors_gen1 \
   --qpi-addr https://qpi.example.com --token your-driver-token \
   --ca-fingerprint sha256-of-the-server-root-ca --name cryostat-1 \
   -o base_url=http://localhost:49099 \

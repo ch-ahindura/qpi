@@ -103,7 +103,7 @@ key=value`.
 ```
 go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver@latest
 
-qpi-driver monitor --device bluefors_gen1 \
+qpi-driver start --operation monitor --device bluefors_gen1 \
   --qpi-addr https://qpi.example.com --token your-driver-token \
   --ca-fingerprint sha256-of-the-server-root-ca --name cryostat-1 \
   -o base_url=http://localhost:49099 \

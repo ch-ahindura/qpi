@@ -221,7 +221,8 @@ start_driver() {
     local token
     token="$(cat "${DATA_DIR}/driver_token.txt")"
 
-    QPI_ACCESS_TOKEN="$token" "$py" -u -m qpi_driver.cli process \
+    QPI_ACCESS_TOKEN="$token" "$py" -u -m qpi_driver.cli start \
+        --operation process \
         --device "$executor" \
         --ca-fingerprint "$ca_fingerprint" \
         --ca-file "${PROJECT_ROOT}/bin/qpi.ca.pem" \

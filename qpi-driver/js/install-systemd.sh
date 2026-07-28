@@ -33,10 +33,10 @@ while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi
 while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
 while [ -z "$QPU_NAME" ]; do read -p "Enter QPU Name (e.g. rigetti-aspen-1): " QPU_NAME; done
 
-# A driver is run by its OPERATION (the CLI subcommand: process | monitor) on a
+# A driver is run by its OPERATION (the --operation flag: process | monitor) on a
 # specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
 # presto); a monitor reports upward (bluefors_gen1). Both are launched the same
-# way: `qpi-driver <operation> --device <device> … -o key=value`.
+# way: `qpi-driver start --operation <operation> --device <device> … -o key=value`.
 [ -z "$OPERATION" ] && read -p "Enter Operation (process, monitor) [process]: " OPERATION
 OPERATION=${OPERATION:-process}
 [ -z "$DEVICE" ] && read -p "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: " DEVICE
@@ -108,7 +108,8 @@ for _opt in "${_DRIVER_OPTS[@]}"; do
     add_opt "$_opt"
 done
 
-EXEC_START_CMD="$QPI_DRIVER_BIN $OPERATION \\
+EXEC_START_CMD="$QPI_DRIVER_BIN start \\
+        --operation \"$OPERATION\" \\
         --device \"$DEVICE\" \\
         --ca-fingerprint $CA_FINGERPRINT \\
         --qpi-addr $QPI_ADDR \\
