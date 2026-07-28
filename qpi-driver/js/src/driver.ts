@@ -27,8 +27,6 @@ export interface QpiDriverOptions {
   qpiAddr: string;
   /** The driver's access token; identifies it (and its QPU) to QPI-UI. */
   token: string;
-  /** Human-readable name for this driver. */
-  name: string;
   /**
    * Expected SHA-256 (hex) of the server root CA, pinned over TLS. Required:
    * there is no path that connects without verifying the pin, because an opt-out
@@ -52,6 +50,7 @@ export interface QpiDriverOptions {
 const HTTP_TIMEOUT_MS = 10_000;
 
 interface Connection {
+  name: string;
   host: string;
   inPort: number;
   outPort: number;
@@ -75,7 +74,13 @@ interface PeriodicTask {
  * owns the transport; subclasses only decide which events they handle and emit.
  */
 export abstract class QpiDriver {
-  readonly name: string;
+  /**
+   * The display label QPI-UI has this driver registered under, used to tag emitted
+   * events. It comes from the `drivers/connect` response, so it is empty until
+   * {@link run} has connected — the label belongs to the admin who typed it into
+   * the dashboard, not to the driver.
+   */
+  name = "";
   protected readonly qpiAddr: string;
   protected readonly token: string;
   protected readonly caFingerprint: string;
@@ -92,7 +97,6 @@ export abstract class QpiDriver {
   constructor(options: QpiDriverOptions) {
     this.qpiAddr = normalizeQpiAddr(options.qpiAddr);
     this.token = options.token;
-    this.name = options.name;
     this.caFingerprint = options.caFingerprint;
     this.caFilePath = options.caFilePath;
   }
@@ -136,6 +140,8 @@ export abstract class QpiDriver {
    */
   async run(): Promise<void> {
     const conn = await this.connect();
+    // The server owns the label, so the driver only knows it from here on.
+    this.name = conn.name;
 
     this.pushSocket = new PipelineSocket("push");
     await this.pushSocket.dial({
@@ -226,6 +232,11 @@ export abstract class QpiDriver {
    * Handshake with QPI-UI over the shared `drivers/connect` endpoint. The token
    * identifies the driver (and, transitively, its QPU); QPI-UI returns the NNG
    * host and ports. Every driver connects the same way (RFC 0001 §3, §8).
+   *
+   * The token is the whole of the identity asserted here. The driver's display
+   * label comes back in the response rather than going out in the request: it
+   * belongs to the admin who typed it into the dashboard, and a driver sending one
+   * meant every restart silently overwrote what they chose.
    */
   private async connect(): Promise<Connection> {
     const resp = await fetchWithDeadline(
@@ -234,7 +245,7 @@ export abstract class QpiDriver {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: this.token, name: this.name }),
+        body: JSON.stringify({ token: this.token }),
       },
     );
     if (!resp.ok) {
@@ -243,6 +254,7 @@ export abstract class QpiDriver {
       );
     }
     let data: {
+      name?: string;
       nng_host: string;
       nng_in_port: number;
       nng_out_port: number;
@@ -256,6 +268,7 @@ export abstract class QpiDriver {
     }
     const ca = await this.downloadRootCa();
     return {
+      name: data.name ?? "",
       host: data.nng_host,
       inPort: data.nng_in_port,
       outPort: data.nng_out_port,

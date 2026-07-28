@@ -16,13 +16,29 @@ obligation that comes with that is to break **once** and to publish the table
 rather than let anyone discover the changes by failure.
 
 **Every driver is now launched with one verb.** `--operation` is required and reads
-`QPI_OPERATION`; `--device` and `--name`, when omitted, come from the operation's own
-defaults.
+`QPI_OPERATION`; `--device`, when omitted, comes from the operation's own default.
 
 | Before | After |
 |--------|-------|
 | `qpi-driver process --device qblox …` | `qpi-driver start --operation process --device qblox …` |
 | `qpi-driver monitor --device bluefors_gen1 …` | `qpi-driver start --operation monitor --device bluefors_gen1 …` |
+
+**A driver no longer names itself.** `--name`/`-n` and `QPI_DRIVER_NAME` are gone
+from all three CLIs, and `Name`/`name` from all three SDK configs. Delete the flag
+from an existing unit file; there is nothing to replace it with, because the name an
+admin typed in the dashboard is now what the driver is called. `SERVICE_NAME`
+replaces the installers' `QPU_NAME`, which never named a QPU or a driver — it names
+the unit file, its journal identifier and its data directory.
+
+| Before | After |
+|--------|-------|
+| `qpi-driver start … --name cryostat-1` | `qpi-driver start …` — the name comes back from `drivers/connect` |
+| `QPI_DRIVER_NAME=cryostat-1` | *(nothing; the dashboard is where the name is set)* |
+| `install-systemd.sh` with `QPU_NAME=cryostat-1` | `SERVICE_NAME=cryostat-1` |
+| `QpuDriver(name=…)`, `BlueforsGen1Driver(name=…)` | *(removed; read `driver.name` after `run()`)* |
+| `qpidriver.Config{Name: …}` (Go) | *(removed; read `DriverName()` after `Run`)* |
+| `QpiDriverOptions.name` (TypeScript) | *(removed; read `driver.name` after `run()`)* |
+| `OperationSpec.default_name` / `DefaultName` / `defaultName` | *(removed; an operation has no name to default)* |
 
 **Behaviour that changed without a rename**, and is worth checking an existing unit
 file against:
@@ -35,6 +51,8 @@ file against:
 | `--recv-timeout-ms` (TypeScript) | Accepted and ignored | Removed |
 | `--ca-file` (TypeScript) | Accepted and ignored | The CA is written there after it verifies |
 | `start --operation process` on Go/TypeScript | `unknown process device "mock"; known devices: ` | Says the SDK ships no process devices, and where to find one |
+| A `process` driver's dataset `backend` attribute | The driver's display label, hyphens turned to underscores | The executor's own name (`mock`, `qblox`, …) |
+| Registering `kind=mock, language=go` | Accepted, with snippets for a device Go has not got | Exits 400, naming what that SDK does ship |
 
 **Python SDK.** The driver-authoring surface is untouched — `QpiDriver`,
 `handle_event()`, `emit()`, `every()`, `Event`, `EventType` and `Executor` keep their
@@ -130,6 +148,9 @@ names and signatures. What moved is how a driver is registered and launched:
 
 - `qpi-driver/js`: The SDK set no timeout on any outbound network call, where the Python and Go SDKs both use 10 seconds. A server behind a firewall that drops packets left the driver hanging inside `run()` instead of failing — Node's `fetch` falls back to undici's defaults, which are minutes rather than seconds, and `tls.connect` has none at all beyond the OS TCP timeout, so a TLS handshake that stalls after TCP connect waited indefinitely. Under systemd's `Restart=on-failure` such a unit is never restarted, because it never fails. The `drivers/connect` handshake, the root CA download and both NNG dials now share the same hard-coded 10s deadline as the other two SDKs, and one that expires says what timed out and against which address rather than raising a bare abort. The deadline bounds the dial only: an idle connection afterwards is normal for this event-driven transport, which is why `--recv-timeout-ms` was removed rather than repurposed.
 - `qpi-driver/go`: `--help` and `devices` no longer advertise an operation's default device in a build that does not have it, and omitting `--device` in such a build now asks for one, naming what is registered, instead of failing over a device the operator never typed. Which devices a Go binary has is decided when it is compiled.
+- `qpi-driver`, `qpi-ui`: [BREAKING] **The driver no longer names itself.** `--name`/`-n`, `QPI_DRIVER_NAME`, the `Name`/`name` config field in all three SDKs and `default_name`/`DefaultName`/`defaultName` on the operation specs are all removed, and `handleDriverConnect` no longer writes a name into the driver record. The token is a driver's whole identity — it is what the record is looked up by and, transitively, what says which QPU the driver belongs to — while `name` is a cosmetic, non-unique display label that an admin types in the dashboard. Nothing looks a driver up by it and no unique index exists, so the only thing a `--name` ever achieved was to overwrite what the admin chose, on every connect, from a unit file nobody re-reads. `POST /api/op/drivers/connect` now returns `name`, so a driver *learns* its label instead of asserting one: read `driver.name` (Python, TypeScript) or `DriverName()` (Go) after connecting. `Name` is gone from `DriverConnectRequest`; an older driver that still sends one is not rejected, the field is simply not read. `Host` and `Version` stay accepted and are flagged as dead on the wire — no SDK has ever sent either.
+- `qpi-driver/py`: [BREAKING] A `process` device's datasets record the executor's own name as their `backend` attribute (`mock`, `qblox`, …) rather than the driver's display label. `QpuDriver` used to override the executor's name with its own, which is the only reason a `_sanitize_name` existed: a driver called `lab-1` produced datasets claiming a backend of `lab_1`. `_sanitize_name` is gone with it.
+- `qpi-driver`: [BREAKING] `install-systemd.sh` reads `SERVICE_NAME` where it read `QPU_NAME`, in all three SDKs, and the dashboard's systemd snippet renders the new name. It never named a QPU or a driver: it names the unit file, its `SyslogIdentifier` and its data directory. Existing invocations must be updated; there is no alias.
 - `qpi-driver/py`: Removed a dead branch in `qpu.job_worker`, which tested whether `data_dir` was already among the executor options — it never could be, being a parameter of that same function.
 - `qpi-driver/go`, `qpi-driver/js`: [BREAKING] `install-systemd.sh` no longer offers devices the SDK does not ship. Both installers were copied from the Python one, so both prompted with the Python device list (`mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1`) and defaulted to `OPERATION=process`, `DEVICE=mock`. Pressing return through the prompts wrote and enabled a unit whose `ExecStart` can never succeed — "this build ships no process devices" — and, with `Restart=on-failure`, crash-looped it. Both now prompt with and default to `monitor`/`bluefors_gen1`, the one device each actually has. An `OPERATION=process` passed explicitly is no longer offered anywhere and will still fail; run a QPU from the Python SDK or a device of your own.
 - `qpi-driver/js`: `install-systemd.sh` installs Node.js with nvm when the target user has none, instead of exiting with instructions to install it and run the script again — the one thing a one-command installer should not do. It also writes a `PATH` into the unit file that contains that `node`: `qpi-driver` is a script with a `#!/usr/bin/env node` shebang, and systemd's default `PATH` has no nvm install on it, so a unit written without this started only for operators whose Node happened to be system-wide. `NVM_VERSION` and `NODE_VERSION` override what it installs, and `QPI_SKIP_INSTALL=1` still skips the whole step.

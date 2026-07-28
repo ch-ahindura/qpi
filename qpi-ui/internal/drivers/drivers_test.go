@@ -76,9 +76,14 @@ func TestSnippetsExecutor(t *testing.T) {
 		t.Errorf("expected no bare-install/stub for an official build, got %+v", s)
 	}
 	for _, snippet := range []string{s.Systemd, s.ManualCLI} {
-		if !strings.Contains(snippet, "tok_abc") || !strings.Contains(snippet, "qpu_1") {
-			t.Errorf("expected snippet to carry token and name, got %q", snippet)
+		if !strings.Contains(snippet, "tok_abc") {
+			t.Errorf("expected snippet to carry the token, got %q", snippet)
 		}
+	}
+	// The name reaches the systemd snippet, which uses it to name the unit, and not
+	// the manual command, which no longer has anywhere to put it.
+	if !strings.Contains(s.Systemd, "SERVICE_NAME='qpu_1'") {
+		t.Errorf("expected SERVICE_NAME in the systemd snippet, got %q", s.Systemd)
 	}
 	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
 		t.Errorf("expected the process start command, got %q", s.ManualCLI)
@@ -242,12 +247,17 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 }
 
 // TestNameIsShellQuoted guards against a driver name breaking out of the shell
-// command an operator pastes and runs.
+// command an operator pastes and runs. The name no longer reaches the driver at
+// all — it names the systemd unit — but it still reaches a shell, as SERVICE_NAME.
 func TestNameIsShellQuoted(t *testing.T) {
 	s := Default.Snippets(Qblox, Python, Params{
 		Name: "a'; rm -rf /", Token: "t", QpiAddr: "u", CaFingerprint: "f",
 	})
-	if !strings.Contains(s.ManualCLI, `--name 'a'\''; rm -rf /'`) {
-		t.Errorf("expected the name's single quote to be shell-escaped, got %q", s.ManualCLI)
+	if !strings.Contains(s.Systemd, `SERVICE_NAME='a'\''; rm -rf /'`) {
+		t.Errorf("expected the name's single quote to be shell-escaped, got %q", s.Systemd)
+	}
+	// And nothing renders a --name any more.
+	if strings.Contains(s.ManualCLI, "--name") || strings.Contains(s.Systemd, "--name") {
+		t.Errorf("expected no --name in either snippet, got %q / %q", s.ManualCLI, s.Systemd)
 	}
 }

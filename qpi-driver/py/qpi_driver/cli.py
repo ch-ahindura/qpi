@@ -54,15 +54,6 @@ if typer.IS_TYPER_INSTALLED:
             help="Access token identifying this driver to the QPI server",
         ),
     ]
-    NameOpt = Annotated[
-        str,
-        typer.Option(
-            "--name",
-            "-n",
-            envvar="QPI_DRIVER_NAME",
-            help="Human-readable name for this driver",
-        ),
-    ]
     # No short form for --operation: -o is --option, and -O beside it would be a
     # hazard on a command line that is usually written once into a unit file
     # (RFC 0003 §13.7).
@@ -129,7 +120,6 @@ if typer.IS_TYPER_INSTALLED:
         device: DeviceOpt = "",
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
         token: TokenOpt = "",
-        name: NameOpt = "",
         ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
         ca_fingerprint: str = _ca_fingerprint_option(),
         options: OptionsOpt = None,
@@ -150,7 +140,6 @@ if typer.IS_TYPER_INSTALLED:
             device=device,
             qpi_addr=qpi_addr,
             token=token,
-            name=name,
             ca_file=ca_file,
             ca_fingerprint=ca_fingerprint,
             options=options,
@@ -163,7 +152,6 @@ if typer.IS_TYPER_INSTALLED:
         device: str,
         qpi_addr: str,
         token: str,
-        name: str,
         ca_file: Path,
         ca_fingerprint: str,
         options: list[str] | None,
@@ -177,11 +165,12 @@ if typer.IS_TYPER_INSTALLED:
         way — an unknown device or option, a missing or bad value — surfaces as a
         ``ValueError`` and becomes a one-line CLI error rather than a traceback.
 
-        An empty *device* or *name* means the operation's own default, since one
-        command serves every operation and their defaults differ.
+        An empty *device* means the operation's own default, since one command
+        serves every operation and their default devices differ. There is no name
+        to resolve: a driver's display label belongs to the admin who registered it
+        in the dashboard, and the ``drivers/connect`` response hands it over.
         """
         device = device or OPERATIONS[operation].default_device
-        name = name or OPERATIONS[operation].default_name
 
         if not token:
             typer.echo(
@@ -208,7 +197,6 @@ if typer.IS_TYPER_INSTALLED:
                 options=parsed,
                 qpi_addr=qpi_addr,
                 token=token,
-                name=name,
                 ca_fingerprint=ca_fingerprint,
                 ca_file_path=ca_file.as_posix(),
                 recv_timeout_ms=recv_timeout_ms,

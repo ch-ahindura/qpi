@@ -384,8 +384,21 @@ def test_the_address_gets_a_scheme_and_loses_its_trailing_slash(given, expected)
     assert driver.qpi_addr == expected
 
 
-def test_a_driver_name_with_hyphens_is_sanitised():
-    """QPI-UI keys drivers by name; the QPU driver normalises hyphens to underscores."""
-    driver = QpuDriver(name="qpu-sim-01", executor="mock", data_dir=Path("./bin/data"))
+def test_a_driver_does_not_name_itself():
+    """The display label belongs to the admin who registered the driver.
 
-    assert driver.name == "qpu_sim_01"
+    Nothing looks a driver up by name — the token is the identity — so a name in the
+    connect body only ever overwrote what an admin typed in the dashboard. It comes
+    back in the response instead, which is why there is nothing to assert here until
+    the driver has connected.
+    """
+    driver = QpuDriver(executor="mock", data_dir=Path("./bin/data"))
+
+    assert driver.name == ""
+
+    # QpuDriver takes **executor_options, so a leftover name= is not a TypeError: it
+    # reaches the executor, whose own name is what a dataset's "backend" attribute
+    # records. That is the one place a name still means something here.
+    stale = QpuDriver(name="qpu-sim-01", executor="mock")
+    assert stale.name == ""
+    assert stale.executor_options["name"] == "qpu-sim-01"

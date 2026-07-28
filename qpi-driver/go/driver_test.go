@@ -93,7 +93,7 @@ func TestConnectResolvesPortsAndPinsCA(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/op/drivers/connect":
 			_ = json.NewEncoder(w).Encode(connectResponse{
-				NNGHost: "127.0.0.1", NNGInPort: 5001, NNGOutPort: 5002,
+				Name: "cryostat-1", NNGHost: "127.0.0.1", NNGInPort: 5001, NNGOutPort: 5002,
 			})
 		case "/api/pub/root-ca.pem":
 			w.Header().Set("Content-Type", "application/x-pem-file")
@@ -108,7 +108,6 @@ func TestConnectResolvesPortsAndPinsCA(t *testing.T) {
 	conn, err := connect(Config{
 		QpiAddr:       server.URL,
 		Token:         "tok_abc",
-		Name:          "qpu_1",
 		CaFingerprint: fingerprint,
 		CaFilePath:    caPath,
 	})
@@ -117,6 +116,11 @@ func TestConnectResolvesPortsAndPinsCA(t *testing.T) {
 	}
 	if conn.host != "127.0.0.1" || conn.inPort != 5001 || conn.outPort != 5002 {
 		t.Errorf("unexpected connection: %+v", conn)
+	}
+	// The display label is the server's to hand out: the driver asserts no name in
+	// the connect body and learns it from the response.
+	if conn.name != "cryostat-1" {
+		t.Errorf("conn.name = %q, want the name the server returned", conn.name)
 	}
 
 	if _, err := buildTLSConfig(conn); err != nil {
@@ -140,7 +144,6 @@ func TestConnectRejectsFingerprintMismatch(t *testing.T) {
 	_, err := connect(Config{
 		QpiAddr:       server.URL,
 		Token:         "tok",
-		Name:          "qpu_1",
 		CaFingerprint: "deadbeef",
 		CaFilePath:    filepath.Join(t.TempDir(), "qpi.ca.pem"),
 	})
@@ -155,7 +158,7 @@ func TestConnectSurfacesRejection(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := connect(Config{QpiAddr: server.URL, Token: "tok", Name: "n"})
+	_, err := connect(Config{QpiAddr: server.URL, Token: "tok"})
 	if err == nil {
 		t.Fatal("expected connect to surface a non-200 rejection")
 	}

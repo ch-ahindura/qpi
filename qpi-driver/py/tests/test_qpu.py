@@ -16,7 +16,6 @@ def _transport() -> dict:
     return dict(
         qpi_addr="http://localhost:8090",
         token="t",
-        name="qpu-sim-01",
         ca_fingerprint="fp",
         ca_file_path="./bin/qpi.ca.pem",
         recv_timeout_ms=200,
@@ -54,8 +53,9 @@ def test_build_from_options_reads_all_keys():
 
     # The transport arguments land too, normalized as the SDK expects.
     assert driver.qpi_addr == "http://localhost:8090"
-    assert driver.name == "qpu_sim_01"
     assert driver.recv_timeout_ms == 200
+    # A driver does not name itself; the label arrives in the connect response.
+    assert driver.name == ""
 
 
 def test_build_from_options_defaults_every_key():

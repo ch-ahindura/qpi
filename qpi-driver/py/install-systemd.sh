@@ -31,7 +31,10 @@ echo ""
 while [ -z "$QPI_TOKEN" ]; do read -p "Enter QPI Access Token: " QPI_TOKEN; done
 while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi.sopherapps.se): " QPI_ADDR; done
 while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
-while [ -z "$QPU_NAME" ]; do read -p "Enter QPU Name (e.g. rigetti-aspen-1): " QPU_NAME; done
+# Names the unit file, its journal identifier and its data directory — not the
+# driver. A driver's display label is the one an admin typed into the dashboard,
+# and the drivers/connect response hands it over.
+while [ -z "$SERVICE_NAME" ]; do read -p "Enter a name for this service (e.g. cryostat-1): " SERVICE_NAME; done
 
 # A driver is run by its OPERATION (the --operation flag: process | monitor) on a
 # specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
@@ -52,7 +55,7 @@ DEVICE=${DEVICE:-mock}
 # The version of qpi-driver to install.
 # This should match the qpi-ui version if provided via environment variable.
 QPI_DRIVER_VERSION="${QPI_DRIVER_VERSION:-}"
-QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${QPU_NAME}"}"
+QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${SERVICE_NAME}"}"
 QPI_CA_FILE="${QPI_CA_FILE:-"${QPI_DATA_DIR}/qpi.ca.pem"}"
 QPI_QUANTIFY_DEVICE_CONFIG="${QPI_QUANTIFY_DEVICE_CONFIG:-"${QPI_DATA_DIR}/quantify.device.yml"}"
 QPI_QUANTIFY_HARDWARE_CONFIG="${QPI_QUANTIFY_HARDWARE_CONFIG:-"${QPI_DATA_DIR}/quantify.hardware.json"}"
@@ -94,7 +97,7 @@ fi
 
 
 # 4. Create systemd unit file
-SERVICE_FILE="/etc/systemd/system/${QPU_NAME}.qpi-driver.service"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.qpi-driver.service"
 echo "Creating systemd service at $SERVICE_FILE..."
 
 # Every operation is launched the same way: `qpi-driver <operation> --device
@@ -124,12 +127,11 @@ EXEC_START_CMD="$QPI_DRIVER_BIN start \\
         --operation \"$OPERATION\" \\
         --device \"$DEVICE\" \\
         --ca-fingerprint $CA_FINGERPRINT \\
-        --qpi-addr $QPI_ADDR \\
-        --name \"$QPU_NAME\"$OPT_ARGS"
+        --qpi-addr $QPI_ADDR$OPT_ARGS"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=QPI Driver Service ($QPU_NAME)
+Description=QPI Driver Service ($SERVICE_NAME)
 After=network.target
 
 [Service]
@@ -148,7 +150,7 @@ User=$REAL_USER
 # Journalctl logging configuration
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${QPU_NAME}.qpi-driver
+SyslogIdentifier=${SERVICE_NAME}.qpi-driver
 
 [Install]
 WantedBy=multi-user.target
@@ -158,13 +160,13 @@ EOF
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
-echo "Enabling and starting ${QPU_NAME}.qpi-driver.service..."
-systemctl enable "${QPU_NAME}.qpi-driver.service"
-systemctl start "${QPU_NAME}.qpi-driver.service"
+echo "Enabling and starting ${SERVICE_NAME}.qpi-driver.service..."
+systemctl enable "${SERVICE_NAME}.qpi-driver.service"
+systemctl start "${SERVICE_NAME}.qpi-driver.service"
 
 echo "=========================================="
 echo "Installation complete!"
 echo "Service status:"
-systemctl status "${QPU_NAME}.qpi-driver.service" --no-pager || true
+systemctl status "${SERVICE_NAME}.qpi-driver.service" --no-pager || true
 echo "=========================================="
-echo "To view logs, run: journalctl -u ${QPU_NAME}.qpi-driver.service -f"
+echo "To view logs, run: journalctl -u ${SERVICE_NAME}.qpi-driver.service -f"

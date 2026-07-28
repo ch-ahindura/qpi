@@ -128,7 +128,9 @@ def test_import_object_keeps_filesystem_paths_out_of_the_message():
     message = str(excinfo.value)
     assert "ThisNameDoesNotExist" in message  # the useful half is kept
     assert ".py" not in message
-    assert "/" not in message.replace("tests.fixtures.half_imported_device:Anything", "")
+    assert "/" not in message.replace(
+        "tests.fixtures.half_imported_device:Anything", ""
+    )
 
 
 def test_import_object_reports_a_missing_attribute():
@@ -163,7 +165,6 @@ def test_resolve_device_wraps_an_imported_executor():
         options=spec.parse_options({"probe_count": "4"}),
         qpi_addr="http://localhost:8090",
         token="t",
-        name="fake-qpu",
         ca_fingerprint="fp",
         ca_file_path="./bin/qpi.ca.pem",
         recv_timeout_ms=200,

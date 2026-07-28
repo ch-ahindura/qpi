@@ -252,13 +252,23 @@ func TestEnvFallbacks(t *testing.T) {
 }
 
 func TestFlagDefaultsComeFromTheOperation(t *testing.T) {
-	// --device and --name are blank by default and filled in from the operation,
-	// since one verb serves every operation and their defaults differ.
+	// --device is blank by default and filled in from the operation, since one verb
+	// serves every operation and their default devices differ.
 	cmd := newStartCmd()
-	for _, flag := range []string{"device", "name", "operation"} {
+	for _, flag := range []string{"device", "operation"} {
 		if got := cmd.Flags().Lookup(flag).DefValue; got != "" {
 			t.Errorf("expected --%s to default to empty, got %q", flag, got)
 		}
+	}
+	// A driver does not name itself: the display label belongs to the admin who
+	// registered it, and the drivers/connect response hands it over.
+	for _, flag := range []string{"name"} {
+		if cmd.Flags().Lookup(flag) != nil {
+			t.Errorf("expected no --%s flag", flag)
+		}
+	}
+	if cmd.Flags().ShorthandLookup("n") != nil {
+		t.Error("expected no -n shorthand")
 	}
 	if cmd.Flags().ShorthandLookup("O") != nil {
 		t.Error("expected no -O shorthand beside -o (RFC 0003 §13.7)")
@@ -272,13 +282,12 @@ func TestConfigOfCarriesTheTransportFlags(t *testing.T) {
 	cfg := configOf(&commonFlags{
 		qpiAddr:       "https://qpi.example.com",
 		token:         "tok",
-		name:          "cryostat-1",
 		caFingerprint: "fp",
 		caFile:        "./bin/qpi.ca.pem",
 		recvTimeoutMs: 350,
 	})
 
-	if cfg.QpiAddr != "https://qpi.example.com" || cfg.Token != "tok" || cfg.Name != "cryostat-1" {
+	if cfg.QpiAddr != "https://qpi.example.com" || cfg.Token != "tok" {
 		t.Errorf("expected the transport flags to land, got %+v", cfg)
 	}
 	if cfg.RecvTimeout.Milliseconds() != 350 {
@@ -308,7 +317,7 @@ func TestStartRunsTheResolvedDevice(t *testing.T) {
 	}
 	replacement := original
 	replacement.Build = func(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
-		built = &commonFlags{name: cfg.Name, qpiAddr: cfg.QpiAddr}
+		built = &commonFlags{token: cfg.Token, qpiAddr: cfg.QpiAddr}
 		return nil, errors.New("built, and deliberately not run")
 	}
 	*spec = *devices.NewRegistry(replacement)
@@ -320,7 +329,7 @@ func TestStartRunsTheResolvedDevice(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "deliberately not run") {
 		t.Fatalf("expected the builder's error to surface, got %v", err)
 	}
-	if built == nil || built.name != "qpi-monitor" || built.qpiAddr != "https://qpi.example.com" {
+	if built == nil || built.token != "t" || built.qpiAddr != "https://qpi.example.com" {
 		t.Errorf("expected the transport config to reach the builder, got %+v", built)
 	}
 }

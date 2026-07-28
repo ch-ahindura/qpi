@@ -672,9 +672,10 @@ func handleDriverConnect(re *core.RequestEvent) error {
 		return re.Error(http.StatusForbidden, "driver is currently disabled by administrator", nil)
 	}
 
-	if req.Name != "" {
-		driver.Name = req.Name
-	}
+	// The driver does not get to rename itself. Name is a display label an admin
+	// typed in the dashboard; writing it from the connect body meant every restart
+	// of a driver launched with a --name silently overwrote it, and nothing looks a
+	// driver up by name anyway — the token is the identity.
 	if req.Host != "" {
 		driver.Host = req.Host
 	}
@@ -713,6 +714,7 @@ func handleDriverConnect(re *core.RequestEvent) error {
 
 	resp := DriverConnectResponse{
 		Status:     "success",
+		Name:       driver.Name,
 		NNGInPort:  driver.NNGInPort,
 		NNGOutPort: driver.NNGOutPort,
 		TLSHash:    cfg.GetTlsCaHash(),

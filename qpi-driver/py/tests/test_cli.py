@@ -151,14 +151,14 @@ def test_the_old_subcommands_are_gone(operation):
 
 
 @pytest.mark.parametrize(
-    ("operation", "device", "name"),
-    [("process", "mock", "qpu_sim_01"), ("monitor", "bluefors_gen1", "qpi-monitor")],
+    ("operation", "device"),
+    [("process", "mock"), ("monitor", "bluefors_gen1")],
 )
-def test_device_and_name_default_per_operation(operation, device, name):
-    """One verb, but the defaults still differ by operation, from OperationSpec.
+def test_device_defaults_per_operation(operation, device):
+    """One verb, but the default device still differs by operation, from OperationSpec.
 
     Asserted through the CLI rather than on the table, since the point is that the
-    resolution happens when `--device`/`--name` are omitted.
+    resolution happens when `--device` is omitted.
     """
     from qpi_driver.builtins import Operation
 
@@ -181,7 +181,24 @@ def test_device_and_name_default_per_operation(operation, device, name):
 
     assert result.exit_code == 0, _output(result)
     assert recorder.log == ["build", "run"]
-    assert recorder.build_calls[0]["name"] == name
+    # The builder is handed no name at all: there is nothing to default.
+    assert "name" not in recorder.build_calls[0]
+
+
+def test_start_has_no_name_flag():
+    """A driver does not name itself, so --name/-n is gone rather than ignored.
+
+    The label belongs to the admin who registered the driver in the dashboard, and
+    the drivers/connect response hands it over. Accepting a flag that no longer
+    reaches anything would be worse than rejecting it.
+    """
+    result = runner.invoke(
+        app,
+        ["start", "--operation", "monitor", "--token", "t", "--name", "cryostat-1"],
+    )
+
+    assert result.exit_code != 0
+    assert "--name" in _output(result)
 
 
 def test_cli_start_builds_then_runs():
@@ -209,7 +226,6 @@ def test_cli_start_builds_then_runs():
             device="fake",
             qpi_addr="http://qpi:8090",
             token="tok",
-            name="cryostat-1",
             ca_file=Path("./bin/qpi.ca.pem"),
             ca_fingerprint="fp",
             options=["ticks=3"],
@@ -222,7 +238,6 @@ def test_cli_start_builds_then_runs():
             "options": {"ticks": 3, "label": "unnamed"},
             "qpi_addr": "http://qpi:8090",
             "token": "tok",
-            "name": "cryostat-1",
             "ca_fingerprint": "fp",
             "ca_file_path": "bin/qpi.ca.pem",
             "recv_timeout_ms": 250,
@@ -319,7 +334,6 @@ def test_cli_runs_a_device_named_by_import_path():
             device="tests.test_discovery:FakeExecutor",
             qpi_addr="http://qpi:8090",
             token="tok",
-            name="lab-qpu",
             ca_file=Path("./bin/qpi.ca.pem"),
             ca_fingerprint="fp",
             options=["probe_count=4"],

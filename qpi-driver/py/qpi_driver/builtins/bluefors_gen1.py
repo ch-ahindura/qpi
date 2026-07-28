@@ -56,7 +56,6 @@ class BlueforsGen1Driver(QpiDriver):
         self,
         qpi_addr: str = "http://127.0.0.1:8090",
         token: str = "",
-        name: str = "bluefors-gen1-monitor",
         bluefors_base_url: str = "http://127.0.0.1:49099",
         channels: dict[str, str] | list[str] | None = None,
         api_key: str = "",
@@ -69,7 +68,6 @@ class BlueforsGen1Driver(QpiDriver):
         super().__init__(
             qpi_addr=_normalize_qpi_addr(qpi_addr),
             token=token,
-            name=name,
             ca_fingerprint=ca_fingerprint,
             ca_file_path=ca_file_path,
             recv_timeout_ms=recv_timeout_ms,
@@ -176,7 +174,6 @@ def build_from_options(
     *,
     qpi_addr: str,
     token: str,
-    name: str,
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
@@ -191,7 +188,6 @@ def build_from_options(
     return BlueforsGen1Driver(
         qpi_addr=qpi_addr,
         token=token,
-        name=name,
         bluefors_base_url=options["base_url"],
         channels=options["channels"],
         # The one option with no default, so the one read with a fallback.

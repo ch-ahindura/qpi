@@ -18,7 +18,7 @@ from qpi_driver.sdk import QpiDriver
 
 class RecordingDriver(QpiDriver):
     def __init__(self):
-        super().__init__(qpi_addr="http://localhost:8090", token="t", name="rec")
+        super().__init__(qpi_addr="http://localhost:8090", token="t")
         self.handled: list[Event] = []
 
     def handle_event(self, event: Event) -> None:
@@ -47,7 +47,7 @@ def test_deliver_drops_when_handle_event_raises(caplog):
         def handle_event(self, event: Event) -> None:
             raise ValueError("boom")
 
-    driver = Boom(qpi_addr="http://localhost:8090", token="t", name="boom")
+    driver = Boom(qpi_addr="http://localhost:8090", token="t")
 
     driver._deliver(Event(type=EventType.JOB_DISPATCH))
 
@@ -56,7 +56,7 @@ def test_deliver_drops_when_handle_event_raises(caplog):
 
 def test_base_driver_is_abstract():
     with pytest.raises(TypeError):
-        QpiDriver(qpi_addr="http://localhost:8090", token="t", name="x")
+        QpiDriver(qpi_addr="http://localhost:8090", token="t")
 
 
 def test_emit_encodes_default_envelope_and_sends():
@@ -123,7 +123,7 @@ class FakeQueue:
 
 
 def test_qpu_handle_event_enqueues_dispatched_job():
-    driver = QpuDriver(name="qpu")
+    driver = QpuDriver()
     driver._job_queue = FakeQueue()
     job = {"job_id": "j1", "payload": {"circuits": []}}
 
@@ -133,7 +133,7 @@ def test_qpu_handle_event_enqueues_dispatched_job():
 
 
 def test_qpu_handle_event_ignores_other_types(caplog):
-    driver = QpuDriver(name="qpu")
+    driver = QpuDriver()
     driver._job_queue = FakeQueue()
 
     driver.handle_event(Event(type=EventType.JOB_RESULT, payload={"job_id": "j1"}))

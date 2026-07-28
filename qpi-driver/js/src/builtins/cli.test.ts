@@ -161,7 +161,7 @@ describe("start", () => {
     expect(flags).not.toMatch(/-\w, --operation/);
   });
 
-  it("defaults --device and --name to nothing, so the operation decides", async () => {
+  it("defaults --device to nothing, so the operation decides", async () => {
     const start = buildProgram().commands.find(
       (command) => command.name() === "start",
     )!;
@@ -170,8 +170,20 @@ describe("start", () => {
     );
 
     expect(defaults["--device"]).toBe("");
-    expect(defaults["--name"]).toBe("");
     expect(defaults["--operation"]).toBe("");
+  });
+
+  it("has no --name: a driver does not name itself", async () => {
+    // The display label belongs to the admin who registered the driver, and the
+    // drivers/connect response hands it over. A flag that no longer reached
+    // anything would be worse than one that is rejected.
+    const start = buildProgram().commands.find(
+      (command) => command.name() === "start",
+    )!;
+    const flags = start.options.map((option) => option.flags).join(" ");
+
+    expect(flags).not.toContain("--name");
+    expect(flags).not.toMatch(/-n\b/);
   });
 
   it("no longer has the old per-operation subcommands", async () => {
@@ -229,8 +241,6 @@ describe("start, as far as it goes without a server", () => {
       "fp",
       "--qpi-addr",
       "https://qpi.example.com",
-      "--name",
-      "cryostat-1",
       "-o",
       "probes=4",
     );
@@ -240,7 +250,6 @@ describe("start, as far as it goes without a server", () => {
     expect(built[0]).toEqual({
       qpiAddr: "https://qpi.example.com",
       token: "tok",
-      name: "cryostat-1",
       caFingerprint: "fp",
       caFilePath: "./bin/qpi.ca.pem",
     });
@@ -272,7 +281,7 @@ describe("start, as far as it goes without a server", () => {
     expect(out).toContain("Error: the cryostat is warm");
   });
 
-  it("defaults --device and --name from the operation", async () => {
+  it("defaults --device from the operation", async () => {
     const built: DeviceConfig[] = [];
     clearDevices();
     registerDevice({
@@ -294,7 +303,9 @@ describe("start, as far as it goes without a server", () => {
       "fp",
     );
 
-    expect(built[0].name).toBe("qpi-monitor");
+    // The device the operation defaults to was resolved, so the builder ran at all.
+    expect(built).toHaveLength(1);
+    expect(built[0].token).toBe("t");
   });
 });
 

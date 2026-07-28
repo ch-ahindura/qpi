@@ -120,7 +120,7 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/i
   QPI_TOKEN="<your-qpu-token>" \
   QPI_ADDR="http://127.0.0.1:8090" \
   CA_FINGERPRINT="<fingerprint>" \
-  QPU_NAME="qpu-1" \
+  SERVICE_NAME="qpu-1" \
   OPERATION="process" \
   DEVICE="mock" \
   bash
@@ -137,7 +137,6 @@ qpi-driver start --operation process \
   --qpi-addr http://127.0.0.1:8090 \
   --token "<YOUR_ACCESS_TOKEN>" \
   --ca-fingerprint "<YOUR_CA_FINGERPRINT>" \
-  --name "qpu-1" \
   --device "mock"
 ```
 
@@ -369,7 +368,6 @@ The package exposes a command-line interface via `typer`. A driver is run with o
 Universal options (shared by every operation):
 * `-a`, `--qpi-addr`: Full URL of the QPI server (env: `QPI_ADDR`, default: `http://127.0.0.1:8090`).
 * `-t`, `--token`: Access token identifying the driver (env: `QPI_ACCESS_TOKEN`, required).
-* `-n`, `--name`: Human-readable name for this driver (env: `QPI_DRIVER_NAME`).
 * `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1` (env: `QPI_DEVICE`).
 * `--ca-file`: Path to the downloaded root CA certificate of the server (env: `QPI_CA_FILE`, default: `./bin/qpi.ca.pem`).
 * `--ca-fingerprint`: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: `QPI_CA_FINGERPRINT`, required).

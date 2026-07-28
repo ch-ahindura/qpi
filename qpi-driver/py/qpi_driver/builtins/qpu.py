@@ -56,7 +56,6 @@ class QpuDriver(QpiDriver):
         self,
         qpi_addr: str = "http://127.0.0.1:8090",
         token: str = "",
-        name: str = "qpu_sim_01",
         executor: str | type[Executor] | Executor = "mock",
         data_dir: Path = Path("bin/data"),
         ca_fingerprint: str = "",
@@ -67,7 +66,6 @@ class QpuDriver(QpiDriver):
         super().__init__(
             qpi_addr=_normalize_qpi_addr(qpi_addr),
             token=token,
-            name=_sanitize_name(name),
             ca_fingerprint=ca_fingerprint,
             ca_file_path=Path(ca_file_path).as_posix(),
             recv_timeout_ms=recv_timeout_ms,
@@ -101,7 +99,10 @@ class QpuDriver(QpiDriver):
         self._job_queue = multiprocessing.Queue()
         self._result_queue = multiprocessing.Queue()
 
-        worker_options = {**self.executor_options, "name": self.name}
+        # The executor keeps its own name, which is what a dataset's "backend"
+        # attribute is for. This used to be overridden with the driver's display
+        # label — the reason a _sanitize_name existed at all — so a cryostat called
+        # "lab-1" produced datasets claiming a backend of "lab_1".
         self._worker = multiprocessing.Process(
             target=job_worker,
             kwargs={
@@ -109,7 +110,7 @@ class QpuDriver(QpiDriver):
                 "result_queue": self._result_queue,
                 "executor": self.executor,
                 "data_dir": self.data_dir,
-                **worker_options,
+                **self.executor_options,
             },
             name="QPI-Worker",
             daemon=True,
@@ -160,7 +161,6 @@ def build_from_options(
     options: dict[str, Any],
     qpi_addr: str,
     token: str,
-    name: str,
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
@@ -183,7 +183,6 @@ def build_from_options(
     return QpuDriver(
         qpi_addr=qpi_addr,
         token=token,
-        name=name,
         executor=executor,
         data_dir=options["data_dir"],
         ca_fingerprint=ca_fingerprint,
@@ -372,10 +371,6 @@ def _normalize_qpi_addr(qpi_addr: str) -> str:
     if "://" not in qpi_addr:
         qpi_addr = f"http://{qpi_addr}"
     return qpi_addr.rstrip("/")
-
-
-def _sanitize_name(name: str) -> str:
-    return name.replace("-", "_")
 
 
 def _sanitize_exception_msg(exc: Exception) -> str:

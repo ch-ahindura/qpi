@@ -14,7 +14,6 @@ qpi-driver start --operation process \
   --qpi-addr http://localhost:8090 \
   --token "$QPI_ACCESS_TOKEN" \
   --ca-fingerprint "$QPI_CA_FINGERPRINT" \
-  --name lab-thermometer \
   -o data_dir=./bin/data \
   -o probe_count=4
 ```

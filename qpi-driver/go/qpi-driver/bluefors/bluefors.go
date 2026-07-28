@@ -34,8 +34,6 @@ const (
 	DefaultPollInterval = 5 * time.Second
 	// DefaultTimeout is the per-channel HTTP read timeout.
 	DefaultTimeout = 5 * time.Second
-	// DefaultName is the driver name used when none is supplied.
-	DefaultName = "bluefors-gen1-monitor"
 )
 
 // Options configures the Bluefors monitor. Channels maps a value-tree channel

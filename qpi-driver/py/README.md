@@ -56,7 +56,6 @@ qpi-driver start --operation process \
   --qpi-addr http://localhost:8090 \
   --token <qpu-access-token> \
   --ca-fingerprint <fingerprint> \
-  --name qpu_sim_01 \
   --device mock \
   -o data_dir=./data
 ```
@@ -67,7 +66,6 @@ Environment variables are also supported for the universal flags:
 export QPI_ADDR=http://localhost:8090
 export QPI_ACCESS_TOKEN=<token>
 export QPI_CA_FINGERPRINT=<fingerprint>
-export QPI_DRIVER_NAME=qpu_sim_01
 export QPI_DEVICE=mock
 qpi-driver start --operation process
 ```
@@ -90,7 +88,7 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/i
   QPI_TOKEN="<your-qpi-access-token>" \
   QPI_ADDR="http://127.0.0.1:8090" \
   CA_FINGERPRINT="<fingerprint>" \
-  QPU_NAME="rigetti-aspen-1" \
+  SERVICE_NAME="rigetti-aspen-1" \
   OPERATION="process" \
   DEVICE="qblox" \
   bash
@@ -129,7 +127,6 @@ If you prefer to configure it manually, follow these steps:
    ExecStart=/home/<user>/.local/bin/qpi-driver start --operation process \
            --ca-fingerprint <your-fingerprint> \
            --qpi-addr <your-qpi-server-address> \
-           --name "rigetti-aspen-1" \
            --device "qblox" \
            -o data_dir=/var/qpi-driver/rigetti-aspen-1 \
            -o quantify_device_config=/var/qpi-driver/rigetti-aspen-1/quantify.device.yml \
@@ -290,7 +287,6 @@ Universal options:
       --operation TEXT    What the driver does: process | monitor [env: QPI_OPERATION]
   -a, --qpi-addr TEXT     QPI server URL [env: QPI_ADDR]
   -t, --token TEXT        Access token identifying the driver [env: QPI_ACCESS_TOKEN]
-  -n, --name TEXT         Human-readable driver name [env: QPI_DRIVER_NAME]
   -d, --device TEXT       Backend within the operation, e.g. mock, qblox, bluefors_gen1 [env: QPI_DEVICE]
   -o, --option KEY=VALUE  A setting of the chosen device, repeatable
   --ca-file PATH          Path to the CA root certificate [env: QPI_CA_FILE]

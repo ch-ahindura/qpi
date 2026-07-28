@@ -80,7 +80,6 @@ describe("operations", () => {
   it("each describe themselves for generated help", () => {
     for (const spec of operations()) {
       expect(spec.summary).toBeTruthy();
-      expect(spec.defaultName).toBeTruthy();
       expect(spec.events.length).toBeGreaterThan(0);
     }
   });
@@ -91,7 +90,7 @@ describe("operations", () => {
   });
 
   it("can be looked up by name, and only by a real one", () => {
-    expect(lookupOperation("monitor")?.defaultName).toBe("qpi-monitor");
+    expect(lookupOperation("monitor")?.defaultDevice).toBe("bluefors_gen1");
     expect(lookupOperation("telemetry")).toBeUndefined();
   });
 });

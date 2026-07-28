@@ -24,7 +24,6 @@ class Recorder(QpiDriver):
     def __init__(self, explode: bool = False, **kwargs):
         kwargs.setdefault("qpi_addr", "http://127.0.0.1:8090")
         kwargs.setdefault("token", "tok")
-        kwargs.setdefault("name", "test-driver")
         super().__init__(**kwargs)
         self.explode = explode
         self.handled: list[Event] = []
@@ -71,7 +70,13 @@ class FakeSocket:
 
 
 def _connection() -> Connection:
-    return Connection(host="127.0.0.1", in_port=1, out_port=2, ca_file="/tmp/ca.pem")
+    return Connection(
+        name="test-driver",
+        host="127.0.0.1",
+        in_port=1,
+        out_port=2,
+        ca_file="/tmp/ca.pem",
+    )
 
 
 def _wire(event_type=EventType.JOB_DISPATCH, payload=None) -> bytes:
@@ -320,7 +325,12 @@ class TestConnect:
             sent["url"] = url
             sent["json"] = json
             return self._response(
-                {"nng_host": "10.0.0.1", "nng_in_port": "7001", "nng_out_port": 7002}
+                {
+                    "name": "cryostat-1",
+                    "nng_host": "10.0.0.1",
+                    "nng_in_port": "7001",
+                    "nng_out_port": 7002,
+                }
             )
 
         with (
@@ -333,7 +343,10 @@ class TestConnect:
             conn = driver._connect()
 
         assert sent["url"].endswith("/api/op/drivers/connect")
-        assert sent["json"] == {"token": "tok", "name": "test-driver"}
+        # The token is the whole of the identity asserted: the driver does not send
+        # a name, it is told one.
+        assert sent["json"] == {"token": "tok"}
+        assert conn.name == "cryostat-1"
         # Ports arrive as strings or ints depending on the server's JSON encoder.
         assert (conn.host, conn.in_port, conn.out_port) == ("10.0.0.1", 7001, 7002)
 

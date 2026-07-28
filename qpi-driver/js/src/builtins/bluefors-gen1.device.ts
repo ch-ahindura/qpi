@@ -40,7 +40,6 @@ function build(config: DeviceConfig, options: Options): QpiDriver {
   return new BlueforsGen1Driver({
     qpiAddr: config.qpiAddr,
     token: config.token,
-    name: config.name,
     caFingerprint: config.caFingerprint,
     caFilePath: config.caFilePath,
     blueforsBaseUrl: options.str("base_url"),

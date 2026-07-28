@@ -90,7 +90,6 @@ describe("QpiDriver", () => {
     const driver = new EchoDriver({
       qpiAddr: "http://127.0.0.1:1",
       token: "t",
-      name: "qpu_1",
       caFingerprint: FINGERPRINT,
     });
     expect(() => driver.emit(new Event(EventType.JobResult))).toThrow(
@@ -140,6 +139,7 @@ describe("QpiDriver", () => {
         res.setHeader("Content-Type", "application/json");
         res.end(
           JSON.stringify({
+            name: "qpu_1",
             nng_host: "127.0.0.1",
             nng_in_port: tlsPort(inServer),
             nng_out_port: tlsPort(outServer),
@@ -163,7 +163,6 @@ describe("QpiDriver", () => {
     const driver = new EchoDriver({
       qpiAddr: `http://127.0.0.1:${httpPort}`,
       token: "tok_abc",
-      name: "qpu_1",
       caFingerprint: FINGERPRINT,
     });
 
@@ -172,6 +171,9 @@ describe("QpiDriver", () => {
     const result = Event.fromJSON(raw);
 
     expect(result.type).toBe(EventType.JobResult);
+    // The label came from the handshake response, not from anything the driver
+    // was constructed with.
+    expect(driver.name).toBe("qpu_1");
     expect(result.driver).toBe("qpu_1");
     expect(result.payload.job_id).toBe("j1");
     expect(driver.seen.map((e) => e.type)).toContain(EventType.JobDispatch);
@@ -196,7 +198,6 @@ describe("QpiDriver", () => {
     const driver = new EchoDriver({
       qpiAddr: `http://127.0.0.1:${httpPort}`,
       token: "tok",
-      name: "qpu_1",
       caFingerprint: FINGERPRINT,
     });
     await expect(driver.run()).rejects.toThrow(/connect rejected \(403\)/);
@@ -215,7 +216,6 @@ describe("QpiDriver", () => {
     const driver = new EchoDriver({
       qpiAddr: `http://127.0.0.1:${httpPort}`,
       token: "tok",
-      name: "qpu_1",
       caFingerprint: FINGERPRINT,
     });
     await expect(driver.run()).rejects.toThrow(
@@ -239,7 +239,6 @@ describe("QpiDriver", () => {
     const driver = new EchoDriver({
       qpiAddr: `http://127.0.0.1:${httpPort}`,
       token: "tok",
-      name: "qpu_1",
       caFingerprint: FINGERPRINT,
     });
     await expect(driver.run()).rejects.toThrow(

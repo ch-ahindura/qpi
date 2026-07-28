@@ -123,8 +123,6 @@ type OperationSpec struct {
 	// SDK registers none, in which case the CLI says so rather than offering a
 	// device it cannot honour (RFC 0003 §8).
 	DefaultDevice string
-	// DefaultName is the driver name used when --name is omitted.
-	DefaultName string
 	// Events are the event-type names drivers of this operation take part in.
 	Events []string
 }
@@ -136,14 +134,12 @@ var operationSpecs = []OperationSpec{
 		Name:          Process,
 		Summary:       "Run quantum jobs pushed by QPI-UI and report their results.",
 		DefaultDevice: "",
-		DefaultName:   "qpu_sim_01",
 		Events:        []string{eventJobDispatch, eventJobResult},
 	},
 	{
 		Name:          Monitor,
 		Summary:       "Report readings upward on a timer.",
 		DefaultDevice: "bluefors_gen1",
-		DefaultName:   "qpi-monitor",
 		Events:        []string{eventCryostatReading},
 	},
 }

@@ -56,7 +56,7 @@ func TestBuildFromOptionsReadsEveryKey(t *testing.T) {
 		t.Fatalf("expected the options to parse, got %v", err)
 	}
 
-	driver, err := DeviceSpec.Build(qpidriver.Config{Name: "cryostat-1"}, opts)
+	driver, err := DeviceSpec.Build(qpidriver.Config{Token: "tok"}, opts)
 	if err != nil {
 		t.Fatalf("expected the builder to succeed, got %v", err)
 	}

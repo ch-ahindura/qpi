@@ -53,7 +53,6 @@ export enum Operation {
 export interface DeviceConfig {
   qpiAddr: string;
   token: string;
-  name: string;
   caFingerprint: string;
   caFilePath?: string;
 }
@@ -137,8 +136,6 @@ export interface OperationSpec {
    * honour (RFC 0003 §8).
    */
   defaultDevice: string;
-  /** The driver name used when `--name` is omitted. */
-  defaultName: string;
   /** The event-type names drivers of this operation take part in. */
   events: EventType[];
 }
@@ -152,14 +149,12 @@ const operationSpecs: OperationSpec[] = [
     name: Operation.Process,
     summary: "Run quantum jobs pushed by QPI-UI and report their results.",
     defaultDevice: "",
-    defaultName: "qpu_sim_01",
     events: [EventType.JobDispatch, EventType.JobResult],
   },
   {
     name: Operation.Monitor,
     summary: "Report readings upward on a timer.",
     defaultDevice: "bluefors_gen1",
-    defaultName: "qpi-monitor",
     events: [EventType.CryostatReading],
   },
 ];

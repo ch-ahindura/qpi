@@ -36,7 +36,6 @@ type commonFlags struct {
 	operation     string
 	qpiAddr       string
 	token         string
-	name          string
 	device        string
 	caFile        string
 	caFingerprint string
@@ -146,8 +145,6 @@ func addCommonFlags(cmd *cobra.Command, cf *commonFlags) {
 		"Full URL of the QPI server")
 	f.StringVarP(&cf.token, "token", "t", os.Getenv("QPI_ACCESS_TOKEN"),
 		"Access token identifying this driver to the QPI server")
-	f.StringVarP(&cf.name, "name", "n", os.Getenv("QPI_DRIVER_NAME"),
-		"Human-readable name for this driver; defaults to the operation's own")
 	f.StringVarP(&cf.device, "device", "d", os.Getenv("QPI_DEVICE"),
 		"Which backend to run within the operation; defaults to the operation's own")
 	f.StringVar(&cf.caFile, "ca-file", envOr("QPI_CA_FILE", "./bin/qpi.ca.pem"),
@@ -191,10 +188,6 @@ func runStart(cf *commonFlags) error {
 		}
 		cf.device = spec.DefaultDevice
 	}
-	if cf.name == "" {
-		cf.name = spec.DefaultName
-	}
-
 	device, err := devices.Resolve(operation, cf.device)
 	if err != nil {
 		return err
@@ -220,7 +213,6 @@ func configOf(cf *commonFlags) qpidriver.Config {
 	return qpidriver.Config{
 		QpiAddr:       cf.qpiAddr,
 		Token:         cf.token,
-		Name:          cf.name,
 		CaFingerprint: cf.caFingerprint,
 		CaFilePath:    cf.caFile,
 		RecvTimeout:   time.Duration(cf.recvTimeoutMs) * time.Millisecond,

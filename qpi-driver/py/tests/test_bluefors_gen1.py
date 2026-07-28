@@ -61,7 +61,6 @@ def _driver(**kwargs) -> BlueforsGen1Driver:
     defaults = dict(
         qpi_addr="http://localhost:8090",
         token="t",
-        name="bluefors-gen1-monitor",
         bluefors_base_url="http://localhost:49099",
         channels={"mapper.bf.tmc": "K"},
         poll_interval=0.01,
@@ -176,7 +175,6 @@ def _common_options() -> dict:
     return dict(
         qpi_addr="http://localhost:8090",
         token="t",
-        name="cryostat-1",
         ca_fingerprint="fp",
         ca_file_path="./bin/qpi.ca.pem",
         recv_timeout_ms=200,

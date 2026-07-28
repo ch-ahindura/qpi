@@ -116,12 +116,12 @@ go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver@latest
 
 qpi-driver start --operation monitor --device bluefors_gen1 \
   --qpi-addr https://qpi.example.com --token your-driver-token \
-  --ca-fingerprint sha256-of-the-server-root-ca --name cryostat-1 \
+  --ca-fingerprint sha256-of-the-server-root-ca \
   -o base_url=http://localhost:49099 \
   -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 ```
 
-Universal flags (`--qpi-addr/-a`, `--token/-t`, `--name/-n`, `--device/-d`,
+Universal flags (`--qpi-addr/-a`, `--token/-t`, `--device/-d`,
 `--ca-file`, `--ca-fingerprint`, `--recv-timeout-ms`) also read the matching
 `QPI_*` environment variables, so `install-systemd.sh` can pass the token as
 `QPI_ACCESS_TOKEN`.
@@ -156,7 +156,7 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/go/i
   QPI_TOKEN="<your-qpi-access-token>" \
   QPI_ADDR="https://qpi.example.com" \
   CA_FINGERPRINT="<fingerprint>" \
-  QPU_NAME="cryostat-1" \
+  SERVICE_NAME="cryostat-1" \
   OPERATION="monitor" \
   DEVICE="bluefors_gen1" \
   DRIVER_OPTIONS="base_url=http://localhost:49099;channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar" \
@@ -196,7 +196,6 @@ uses a `qpi-driver` already on `PATH` (or `QPI_DRIVER_BIN`) instead of running
            --device bluefors_gen1 \
            --ca-fingerprint <your-fingerprint> \
            --qpi-addr <your-qpi-server-address> \
-           --name "cryostat-1" \
            -o base_url=http://localhost:49099 \
            -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 

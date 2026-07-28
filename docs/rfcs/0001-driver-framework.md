@@ -166,6 +166,14 @@ dataclass client-side).
 }
 ```
 
+`driver` is informational on the way **up** and authoritative on the way **down**.
+QPI-UI parses an inbound envelope's `driver` and then ignores it, keying everything
+off the socket the event arrived on: an event's driver is the one whose NNG port
+delivered it, which is not something a driver gets to claim (`nng_driver.go`). On an
+outbound envelope the server fills the field with the driver's **ID**. The SDKs put
+their display label there — the one `drivers/connect` returned — so it is worth
+reading as a label in a log, not as an identifier.
+
 ## 7. Data model
 
 `drivers` and `qpus` stay **separate** collections; a driver points at its QPU.

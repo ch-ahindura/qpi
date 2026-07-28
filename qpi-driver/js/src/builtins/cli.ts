@@ -44,7 +44,6 @@ interface CommonOpts {
   operation: string;
   qpiAddr: string;
   token: string;
-  name: string;
   device: string;
   caFile: string;
   caFingerprint: string;
@@ -83,7 +82,6 @@ async function runStart(common: CommonOpts): Promise<void> {
   }
 
   const device = common.device || spec.defaultDevice;
-  const name = common.name || spec.defaultName;
 
   try {
     const resolved = await resolve(operation, device);
@@ -91,7 +89,6 @@ async function runStart(common: CommonOpts): Promise<void> {
     const config: DeviceConfig = {
       qpiAddr: common.qpiAddr,
       token: common.token,
-      name,
       caFingerprint: common.caFingerprint,
       caFilePath: common.caFile,
     };
@@ -160,11 +157,6 @@ function addStart(program: Command): void {
       "-t, --token <token>",
       "Access token identifying this driver",
       process.env.QPI_ACCESS_TOKEN || "",
-    )
-    .option(
-      "-n, --name <name>",
-      "Human-readable name for this driver; defaults to the operation's own",
-      process.env.QPI_DRIVER_NAME || "",
     )
     .option(
       "-d, --device <device>",

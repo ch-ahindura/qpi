@@ -46,7 +46,7 @@ func TestOperationsAreAClosedPair(t *testing.T) {
 		t.Fatalf("expected exactly process and monitor, got %v", names)
 	}
 	for _, spec := range devices.Operations() {
-		if spec.Summary == "" || spec.DefaultName == "" || len(spec.Events) == 0 {
+		if spec.Summary == "" || len(spec.Events) == 0 {
 			t.Errorf("expected %s to describe itself fully, got %+v", spec.Name, spec)
 		}
 	}
@@ -76,7 +76,7 @@ func TestADownstreamModuleAddsADevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the options to parse, got %v", err)
 	}
-	driver, err := spec.Build(qpidriver.Config{Name: "lab"}, opts)
+	driver, err := spec.Build(qpidriver.Config{Token: "tok"}, opts)
 	if err != nil {
 		t.Fatalf("expected the builder to succeed, got %v", err)
 	}
@@ -503,7 +503,7 @@ func TestThePackageLevelFunctionsUseTheDefaultRegistry(t *testing.T) {
 
 func TestLookupOperation(t *testing.T) {
 	spec, ok := devices.LookupOperation(devices.Monitor)
-	if !ok || spec.DefaultName != "qpi-monitor" {
+	if !ok || spec.DefaultDevice != "bluefors_gen1" {
 		t.Errorf("expected the monitor spec, got %+v (ok=%v)", spec, ok)
 	}
 	if _, ok := devices.LookupOperation(devices.Operation("telemetry")); ok {

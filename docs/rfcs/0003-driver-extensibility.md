@@ -121,8 +121,10 @@ set-once value in a systemd unit, it does not need one.
 mock QPU with no further arguments.
 
 The transport flags are unchanged from RFC 0001: `--qpi-addr`/`-a`, `--token`/`-t`,
-`--name`/`-n`, `--device`/`-d`, `--ca-file`, `--ca-fingerprint`, `--option`/`-o`,
+`--device`/`-d`, `--ca-file`, `--ca-fingerprint`, `--option`/`-o`,
 `--recv-timeout-ms`, each with its existing environment variable and default.
+`--name`/`-n` is gone: a driver's display label belongs to the admin who registered
+it, and `drivers/connect` returns it rather than accepting one.
 
 Two commands make the catalog inspectable:
 
@@ -342,10 +344,14 @@ removals one traceback at a time.
 
 **Command line.** `qpi-driver process …` and `qpi-driver monitor …` become
 `qpi-driver start --operation process …` and `--operation monitor …`. Every flag,
-short form, environment variable and default is otherwise unchanged. Unknown `-o`
-keys now fail instead of being ignored — which is the point, though it will surface
-typos that had been quietly tolerated. The systemd installers, the dashboard's
-generated snippets, and the end-to-end suites move with it.
+short form, environment variable and default is otherwise unchanged, bar one:
+`--name`/`-n` and `QPI_DRIVER_NAME` are removed, because a driver's display label
+belongs to the admin who registered it in the dashboard and `drivers/connect` hands
+it back rather than accepting one. Unknown `-o` keys now fail instead of being
+ignored — which is the point, though it will surface typos that had been quietly
+tolerated. The systemd installers, the dashboard's generated snippets, and the
+end-to-end suites move with it; the installers' `QPU_NAME` becomes `SERVICE_NAME`,
+which is what it always named.
 
 **Python API.** The QPU convenience wrapper gives way to constructing the driver
 directly (`QpuDriver(...).run()`), the two device registries and their callable type

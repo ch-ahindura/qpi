@@ -51,7 +51,6 @@ class MyDriver extends QpiDriver {
 await new MyDriver({
   qpiAddr: "https://qpi.example.com",
   token: "your-driver-token",
-  name: "my-qpu",
   caFingerprint: "sha256-of-the-server-root-ca",
 }).run();
 ```
@@ -79,7 +78,6 @@ import { BlueforsGen1Driver } from "qpi-driver/builtins/bluefors-gen1";
 await new BlueforsGen1Driver({
   qpiAddr: "https://qpi.example.com",
   token: "your-driver-token",
-  name: "cryostat-1",
   caFingerprint: "sha256-of-the-server-root-ca",
   blueforsBaseUrl: "http://localhost:49099",
   channels: { "mapper.bf.tmc": "K", "mapper.bf.pmc": "mbar" },
@@ -98,12 +96,12 @@ npm install -g qpi-driver          # or: npx -y qpi-driver …
 
 qpi-driver start --operation monitor --device bluefors_gen1 \
   --qpi-addr https://qpi.example.com --token your-driver-token \
-  --ca-fingerprint sha256-of-the-server-root-ca --name cryostat-1 \
+  --ca-fingerprint sha256-of-the-server-root-ca \
   -o base_url=http://localhost:49099 \
   -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 ```
 
-Universal flags (`--qpi-addr/-a`, `--token/-t`, `--name/-n`, `--device/-d`,
+Universal flags (`--qpi-addr/-a`, `--token/-t`, `--device/-d`,
 `--ca-file`, `--ca-fingerprint`) also read the matching `QPI_*` environment
 variables, so `install-systemd.sh` can pass the token as `QPI_ACCESS_TOKEN`.
 `--ca-fingerprint` is **required**: there is no code path that connects without
@@ -141,7 +139,7 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/js/i
   QPI_TOKEN="<your-qpi-access-token>" \
   QPI_ADDR="https://qpi.example.com" \
   CA_FINGERPRINT="<fingerprint>" \
-  QPU_NAME="cryostat-1" \
+  SERVICE_NAME="cryostat-1" \
   OPERATION="monitor" \
   DEVICE="bluefors_gen1" \
   DRIVER_OPTIONS="base_url=http://localhost:49099;channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar" \
@@ -194,7 +192,6 @@ instead of installing one.
            --device bluefors_gen1 \
            --ca-fingerprint <your-fingerprint> \
            --qpi-addr <your-qpi-server-address> \
-           --name "cryostat-1" \
            -o base_url=http://localhost:49099 \
            -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 
