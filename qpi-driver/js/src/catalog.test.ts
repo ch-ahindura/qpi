@@ -164,3 +164,48 @@ describe("deviceLines", () => {
     expect(lines).toContain("unchecked");
   });
 });
+
+describe("deviceLines edge cases", () => {
+  it("gives a device with no options a line but no options heading", () => {
+    clearDevices();
+    registerDevice({
+      name: "bare",
+      operation: Operation.Monitor,
+      summary: "Reads nothing.",
+      build: () => ({}) as QpiDriver,
+    });
+
+    const lines = deviceLines(Operation.Monitor);
+
+    expect(lines.some((line) => line.startsWith("• bare"))).toBe(true);
+    expect(lines.some((line) => line.startsWith("Options"))).toBe(false);
+  });
+
+  it("describes every shape an option can have", () => {
+    // Four shapes, each of which reads differently in help.
+    clearDevices();
+    registerDevice({
+      name: "shapes",
+      operation: Operation.Monitor,
+      build: () => ({}) as QpiDriver,
+      options: [
+        {
+          key: "needed",
+          help: "Required, with an example.",
+          required: true,
+          example: "x",
+        },
+        { key: "bare", help: "Required, with none.", required: true },
+        { key: "suggested", help: "Optional, with an example.", example: "y" },
+        { key: "plain", help: "Optional, with neither." },
+      ],
+    });
+
+    const lines = deviceLines(Operation.Monitor).join("\n");
+
+    expect(lines).toContain("• needed=<str> (required, e.g. x)");
+    expect(lines).toContain("• bare=<str> (required)");
+    expect(lines).toContain("• suggested=<str> (optional, e.g. y)");
+    expect(lines).toContain("• plain=<str> (optional)");
+  });
+});

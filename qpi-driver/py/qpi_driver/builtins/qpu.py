@@ -303,10 +303,11 @@ def job_worker(
     from qpi_driver.executors import resolve_executor
 
     try:
-        options = executor_options.copy()
-        if "data_dir" not in options:
-            options["data_dir"] = data_dir
-        executor_instance = resolve_executor(executor, **options)
+        # data_dir is a parameter of this function, so it can never arrive in
+        # **executor_options — the executor is told about it here instead.
+        executor_instance = resolve_executor(
+            executor, **executor_options, data_dir=data_dir
+        )
     except Exception as exc:
         _worker_log.exception("Failed to resolve executor")
         result_queue.put(

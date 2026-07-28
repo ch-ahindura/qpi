@@ -8,6 +8,21 @@
 
 import { buildProgram, splitOptions } from "./cli.js";
 import { DEVICE_SPEC } from "./bluefors-gen1.device.js";
+import {
+  asInt,
+  clearDevices,
+  type DeviceConfig,
+  Operation,
+  registerDevice,
+} from "../devices.js";
+import type { QpiDriver } from "../driver.js";
+
+// cli.ts registers bluefors_gen1 when it is imported, and some tests below replace
+// the registry wholesale — so it is put back for the ones that need it.
+afterEach(() => {
+  clearDevices();
+  registerDevice(DEVICE_SPEC);
+});
 
 /** Run the CLI, capturing what it wrote and any exit it attempted. */
 async function run(...argv: string[]): Promise<{ out: string; exit?: number }> {
@@ -179,6 +194,107 @@ describe("start", () => {
       expect(out).toContain(`${option.key}=<${option.type}>`);
     }
     expect(out).toContain("channels=<channels> (required");
+  });
+});
+
+describe("start, as far as it goes without a server", () => {
+  it("builds the resolved device and runs it", async () => {
+    // The happy path: resolve, parse, build, run. `run()` is where it would connect,
+    // so the device under test is one whose driver does nothing — which is only
+    // possible because a builder returns a driver rather than running one.
+    const built: DeviceConfig[] = [];
+    const ran: string[] = [];
+    clearDevices();
+    registerDevice({
+      name: "recorder",
+      operation: Operation.Monitor,
+      build: (config) => {
+        built.push(config);
+        return {
+          run: async () => void ran.push("ran"),
+        } as unknown as QpiDriver;
+      },
+      options: [{ key: "probes", help: "How many.", parse: asInt }],
+    });
+
+    const { exit } = await run(
+      "start",
+      "--operation",
+      "monitor",
+      "--device",
+      "recorder",
+      "--token",
+      "tok",
+      "--ca-fingerprint",
+      "fp",
+      "--qpi-addr",
+      "https://qpi.example.com",
+      "--name",
+      "cryostat-1",
+      "-o",
+      "probes=4",
+    );
+
+    expect(exit).toBeUndefined();
+    expect(ran).toEqual(["ran"]);
+    expect(built[0]).toEqual({
+      qpiAddr: "https://qpi.example.com",
+      token: "tok",
+      name: "cryostat-1",
+      caFingerprint: "fp",
+      caFilePath: "./bin/qpi.ca.pem",
+    });
+  });
+
+  it("reports an error from the builder as one line", async () => {
+    clearDevices();
+    registerDevice({
+      name: "refuses",
+      operation: Operation.Monitor,
+      build: () => {
+        throw new Error("the cryostat is warm");
+      },
+    });
+
+    const { out, exit } = await run(
+      "start",
+      "--operation",
+      "monitor",
+      "--device",
+      "refuses",
+      "--token",
+      "t",
+      "--ca-fingerprint",
+      "fp",
+    );
+
+    expect(exit).toBe(1);
+    expect(out).toContain("Error: the cryostat is warm");
+  });
+
+  it("defaults --device and --name from the operation", async () => {
+    const built: DeviceConfig[] = [];
+    clearDevices();
+    registerDevice({
+      name: "bluefors_gen1",
+      operation: Operation.Monitor,
+      build: (config) => {
+        built.push(config);
+        return { run: async () => {} } as unknown as QpiDriver;
+      },
+    });
+
+    await run(
+      "start",
+      "--operation",
+      "monitor",
+      "--token",
+      "t",
+      "--ca-fingerprint",
+      "fp",
+    );
+
+    expect(built[0].name).toBe("qpi-monitor");
   });
 });
 

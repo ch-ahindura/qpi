@@ -291,3 +291,36 @@ measure q[1] -> c[1];"""
     assert sum(counts.values()) == 20
     assert len(counts) == 4
     assert counts["10"] == 20
+
+
+def test_close_is_a_no_op_by_default():
+    """An executor with nothing to release need not implement close()."""
+    from qpi_driver.executors import MockExecutor
+
+    MockExecutor(name="mock").close()  # must not raise
+
+
+def test_the_mock_executor_binds_circuit_parameters():
+    """A parameterised circuit is bound before transpiling, not sent as-is."""
+    from qpi_driver.executors import MockExecutor
+    from qpi_driver.executors.base import CircuitPayload, JobPayload
+
+    qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+input float[64] theta;
+qubit[1] q;
+bit[1] c;
+rx(theta) q[0];
+c[0] = measure q[0];
+"""
+    payload = JobPayload(
+        circuits=[CircuitPayload(circuit=qasm, parameter_values=[[0.0]])],
+        id="parameterised",
+        shots=8,
+    )
+
+    dataset = MockExecutor(name="mock").execute(payload)
+    results = MockExecutor(name="mock").process_result(dataset, "parameterised")
+
+    assert results["success"] is True
+    assert sum(results["counts"].values()) == 8

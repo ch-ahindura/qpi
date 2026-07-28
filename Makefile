@@ -54,15 +54,29 @@ test-go-minimal:
 
 test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox
 
+# The framework modules the coverage floor applies to: the SDK, the CLI, the device
+# catalog, and the executors that need no hardware. Everything else is reported but
+# not gated — see cov-py.
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
+PY_COV_MIN := 96
+
 test-py-base:
 	@echo "Running Python driver tests with base deps only (mock executor)..."
 	$(UV) sync --project qpi-driver/py --dev
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
+# The gated run. It is the [cli] extra's because that one imports the most: the base
+# run skips every CLI test, so a floor there would be measuring a smaller program.
 test-py-cli:
 	@echo "Running Python driver tests with [cli] extra..."
 	$(UV) sync --project qpi-driver/py --extra cli --dev
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
+	(cd qpi-driver/py && $(UV) run pytest tests/ -v --cov --cov-report=)
+	@echo "Enforcing $(PY_COV_MIN)% coverage on the framework modules..."
+	(cd qpi-driver/py && $(UV) run coverage report \
+		--include='$(PY_COV_INCLUDE)' --fail-under=$(PY_COV_MIN))
+	@echo "Coverage of the hardware executors, for information only:"
+	-(cd qpi-driver/py && $(UV) run coverage report \
+		--include='qpi_driver/executors/qblox/*,qpi_driver/executors/quantify/*,qpi_driver/executors/presto/*,qpi_driver/executors/qiskit_aer/*,qpi_driver/executors/utils/*,qpi_driver/compat/*')
 
 test-py-aer:
 	@echo "Running Python driver tests with [aer] extra..."
@@ -108,9 +122,27 @@ test-js-driver:
 	@echo "Running JS/TS driver SDK tests..."
 	(cd qpi-driver/js && npm ci && npm test)
 
+# The Go packages the coverage floor applies to: the device catalog and the CLI over
+# it, both of which need no server. The base SDK (driver.go: Run, recvLoop, the TLS
+# dialling) and `qpi-driver/main.go` are reported but not gated — the first needs a
+# live server and is covered by `make test-e2e-driver`, and the second is `main`,
+# which no in-process test can call. `cli.Execute` is inside a gated package but
+# calls os.Exit, hence 94 rather than 96.
+GO_COV_GATED := ./devices/... ./cli/...
+GO_COV_MIN := 94
+
 test-go-driver:
 	@echo "Running Go driver SDK tests..."
 	(cd qpi-driver/go && go test -race -v ./...)
+	@echo "Enforcing $(GO_COV_MIN)% coverage on $(GO_COV_GATED)..."
+	(cd qpi-driver/go && go test -coverprofile=/tmp/qpi-go-cov.out $(GO_COV_GATED) >/dev/null \
+		&& go tool cover -func=/tmp/qpi-go-cov.out | tail -1 \
+		&& go tool cover -func=/tmp/qpi-go-cov.out | awk -v min=$(GO_COV_MIN) '\
+			/^total:/ { got = $$3 + 0; \
+				if (got < min) { printf "Coverage failure: total of %s is less than %d%%\n", $$3, min; exit 1 } \
+				printf "Coverage OK: %s\n", $$3 }')
+	@echo "Coverage of the base SDK transport, for information only:"
+	-(cd qpi-driver/go && go test -cover ./... | grep coverage)
 
 test-go-driver-minimal:
 	@echo "Running Go driver SDK tests..."

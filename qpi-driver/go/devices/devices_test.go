@@ -467,3 +467,131 @@ func TestDeviceLinesSayWhenAnOperationIsEmpty(t *testing.T) {
 		t.Errorf("expected no default device advertised when there is none, got:\n%s", joined)
 	}
 }
+
+// The package-level functions delegate to [devices.Default]. They are what a
+// downstream main calls, so they get their own coverage rather than only the method
+// form — and the shipped CLI's registry is that global, so this is also the only
+// place it is exercised directly.
+func TestThePackageLevelFunctionsUseTheDefaultRegistry(t *testing.T) {
+	spec := fakeSpec("package_level_probe", devices.Monitor)
+
+	if err := devices.Register(spec); err != nil {
+		t.Fatalf("expected the device to register into Default, got %v", err)
+	}
+	t.Cleanup(func() {
+		// Default is process-global; leaving a test device in it would change what
+		// every later test, and --help, sees.
+		*devices.Default = *devices.NewRegistry()
+	})
+
+	found := false
+	for _, each := range devices.Devices(devices.Monitor) {
+		if each.Name == spec.Name {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected Devices() to list what Register() added")
+	}
+	if _, err := devices.Resolve(devices.Monitor, spec.Name); err != nil {
+		t.Errorf("expected Resolve() to find it, got %v", err)
+	}
+	if err := devices.Register(spec); err == nil {
+		t.Error("expected a duplicate to be refused through the package function too")
+	}
+}
+
+func TestLookupOperation(t *testing.T) {
+	spec, ok := devices.LookupOperation(devices.Monitor)
+	if !ok || spec.DefaultName != "qpi-monitor" {
+		t.Errorf("expected the monitor spec, got %+v (ok=%v)", spec, ok)
+	}
+	if _, ok := devices.LookupOperation(devices.Operation("telemetry")); ok {
+		t.Error("expected an invented operation not to be found")
+	}
+}
+
+func TestNewRegistryPanicsOnADuplicate(t *testing.T) {
+	// NewRegistry is for assembly, where a duplicate can only be a programming
+	// error; Register is the recoverable form.
+	defer func() {
+		if recover() == nil {
+			t.Error("expected NewRegistry to panic on a duplicate")
+		}
+	}()
+	devices.NewRegistry(
+		fakeSpec("same", devices.Monitor),
+		fakeSpec("same", devices.Monitor),
+	)
+}
+
+func TestOptionLineDescribesEveryKindOfOption(t *testing.T) {
+	// Four shapes an option can have, each of which reads differently in help.
+	registry := devices.NewRegistry(devices.DeviceSpec{
+		Name:      "shapes",
+		Operation: devices.Monitor,
+		Build: func(qpidriver.Config, devices.Options) (qpidriver.Driver, error) {
+			return nil, nil
+		},
+		Options: []devices.OptionSpec{
+			{Key: "needed", Help: "Required, with an example.", Required: true, Example: "x"},
+			{Key: "bare", Help: "Required, with none.", Required: true},
+			{Key: "suggested", Help: "Optional, with an example.", Example: "y"},
+			{Key: "plain", Help: "Optional, with neither."},
+		},
+	})
+
+	lines := strings.Join(devices.DeviceLines(registry, devices.Monitor), "\n")
+	for _, want := range []string{
+		"• needed=<str> (required, e.g. x)",
+		"• bare=<str> (required)",
+		"• suggested=<str> (optional, e.g. y)",
+		"• plain=<str> (optional)",
+	} {
+		if !strings.Contains(lines, want) {
+			t.Errorf("expected %q in:\n%s", want, lines)
+		}
+	}
+}
+
+func TestAnOptionWithNoDeclaredTypeReadsAsAString(t *testing.T) {
+	// Type is documentation, not enforcement: omitting it must not produce
+	// `key=<>` in help or `"type": ""` in the catalog.
+	registry := devices.NewRegistry(devices.DeviceSpec{
+		Name:      "untyped",
+		Operation: devices.Monitor,
+		Build: func(qpidriver.Config, devices.Options) (qpidriver.Driver, error) {
+			return nil, nil
+		},
+		Options: []devices.OptionSpec{{Key: "thing", Help: "Whatever."}},
+	})
+
+	if !strings.Contains(
+		strings.Join(devices.DeviceLines(registry, devices.Monitor), "\n"),
+		"thing=<str>",
+	) {
+		t.Error("expected an untyped option to render as <str>")
+	}
+	for _, operation := range devices.CatalogOf(registry).Operations {
+		for _, device := range operation.Devices {
+			if device.Options[0].Type != "str" {
+				t.Errorf("expected the catalog to report str, got %q", device.Options[0].Type)
+			}
+		}
+	}
+}
+
+func TestParseOptionsReportsNoneWhenADeviceDeclaresNothing(t *testing.T) {
+	spec := devices.DeviceSpec{
+		Name:      "bare",
+		Operation: devices.Monitor,
+		Build: func(qpidriver.Config, devices.Options) (qpidriver.Driver, error) {
+			return nil, nil
+		},
+	}
+
+	_, err := spec.ParseOptions(map[string]string{"anything": "1"})
+	if err == nil || !strings.Contains(err.Error(), "valid options: none") {
+		t.Errorf(`expected "none" rather than an empty list, got %v`, err)
+	}
+}

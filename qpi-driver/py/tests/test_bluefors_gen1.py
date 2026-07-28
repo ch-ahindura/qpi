@@ -234,3 +234,15 @@ def test_parse_channels_handles_optional_units():
         "mapper.bf.pmc": "mbar",
         "mapper.bf.flow": "",
     }
+
+
+def test_parse_channels_ignores_empty_segments():
+    """A trailing comma or a stray space is not a channel named "".
+
+    Worth tolerating: these strings are typed into unit files by hand.
+    """
+    assert parse_channels("mapper.bf.tmc:K, ,mapper.bf.pmc:mbar,") == {
+        "mapper.bf.tmc": "K",
+        "mapper.bf.pmc": "mbar",
+    }
+    assert parse_channels("") == {}

@@ -342,6 +342,28 @@ def test_help_documents_the_import_path_route():
     assert "unchecked" in output
 
 
+def test_catalog_command_can_print_the_text_view():
+    """`catalog --text` is the same renderer `devices` uses, for a quick look."""
+    result = runner.invoke(app, ["catalog", "--text"])
+
+    assert result.exit_code == 0, _output(result)
+    assert _output(result) == _output(runner.invoke(app, ["devices"]))
+
+
+def test_version_falls_back_when_the_package_is_not_installed():
+    """Run from a source tree with no installed distribution, `version` still works."""
+    import importlib.metadata
+
+    from qpi_driver.cli import _get_version
+
+    with patch.object(
+        importlib.metadata,
+        "version",
+        side_effect=importlib.metadata.PackageNotFoundError("qpi-driver"),
+    ):
+        assert _get_version() == "0.1.2"
+
+
 def test_cli_process_requires_token():
     """process fails if the access token is not supplied."""
     result = runner.invoke(

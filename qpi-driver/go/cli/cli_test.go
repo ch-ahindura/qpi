@@ -3,9 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
+
+	qpidriver "github.com/sopherapps/qpi/qpi-driver/go"
 
 	"github.com/sopherapps/qpi/qpi-driver/go/devices"
 	"github.com/sopherapps/qpi/qpi-driver/go/qpi-driver/bluefors"
@@ -280,5 +283,101 @@ func TestConfigOfCarriesTheTransportFlags(t *testing.T) {
 	}
 	if cfg.RecvTimeout.Milliseconds() != 350 {
 		t.Errorf("expected 350ms, got %v", cfg.RecvTimeout)
+	}
+}
+
+func TestVersionPrintsTheVersion(t *testing.T) {
+	out, err := run(t, "version")
+	if err != nil {
+		t.Fatalf("expected version to succeed, got %v", err)
+	}
+	if strings.TrimSpace(out) != Version {
+		t.Errorf("expected %q, got %q", Version, out)
+	}
+}
+
+func TestStartRunsTheResolvedDevice(t *testing.T) {
+	// The happy path as far as it goes without a server: resolve, parse, build, and
+	// hand the driver to qpidriver.Run — which is where it stops, since Run needs
+	// somewhere to connect to. The e2e suite covers the rest.
+	var built *commonFlags
+	spec := devices.Default
+	original, err := spec.Resolve(devices.Monitor, "bluefors_gen1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := original
+	replacement.Build = func(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
+		built = &commonFlags{name: cfg.Name, qpiAddr: cfg.QpiAddr}
+		return nil, errors.New("built, and deliberately not run")
+	}
+	*spec = *devices.NewRegistry(replacement)
+	t.Cleanup(func() { *spec = *devices.NewRegistry(original) })
+
+	_, err = run(t, "start", "--operation", "monitor", "--token", "t",
+		"--qpi-addr", "https://qpi.example.com", "-o", "channels=mapper.bf.tmc:K")
+
+	if err == nil || !strings.Contains(err.Error(), "deliberately not run") {
+		t.Fatalf("expected the builder's error to surface, got %v", err)
+	}
+	if built == nil || built.name != "qpi-monitor" || built.qpiAddr != "https://qpi.example.com" {
+		t.Errorf("expected the transport config to reach the builder, got %+v", built)
+	}
+}
+
+func TestStartRejectsAMalformedOption(t *testing.T) {
+	// `-o` with no `=` is a syntax error, caught before the device sees it.
+	_, err := run(t, "start", "--operation", "monitor", "--token", "t", "-o", "not-a-pair")
+
+	if err == nil || !strings.Contains(err.Error(), "expected key=value") {
+		t.Fatalf("expected a malformed option to be reported, got %v", err)
+	}
+}
+
+func TestStartRejectsABadOptionValue(t *testing.T) {
+	_, err := run(t, "start", "--operation", "monitor", "--token", "t",
+		"-o", "channels=mapper.bf.tmc:K", "-o", "poll_interval=soon")
+
+	if err == nil || !strings.Contains(err.Error(), "bad value for -o poll_interval") {
+		t.Fatalf("expected the option named, got %v", err)
+	}
+}
+
+func TestStartAsksForADeviceWhenTheDefaultIsNotInThisBuild(t *testing.T) {
+	// Which devices a Go binary has is settled at compile time, so an operation's
+	// DefaultDevice may name one this build never registered.
+	spec := devices.Default
+	original, err := spec.Resolve(devices.Monitor, "bluefors_gen1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := original
+	renamed.Name = "something_else"
+	*spec = *devices.NewRegistry(renamed)
+	t.Cleanup(func() { *spec = *devices.NewRegistry(original) })
+
+	_, err = run(t, "start", "--operation", "monitor", "--token", "t")
+
+	if err == nil || !strings.Contains(err.Error(), "--device is required") {
+		t.Fatalf("expected a request for --device, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "something_else") {
+		t.Errorf("expected the available devices named, got %v", err)
+	}
+}
+
+func TestCatalogJSONIsTheDefault(t *testing.T) {
+	// `catalog` and `catalog --json` are the same thing; the flag exists so the
+	// documented invocation works verbatim.
+	plain, err := run(t, "catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicit, err := run(t, "catalog", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain != explicit {
+		t.Errorf("expected --json to be the default, got:\n%s\nvs\n%s", plain, explicit)
 	}
 }

@@ -22,7 +22,7 @@ class Executor(ABC):
         Returns:
             xr.Dataset: Dataset mimicking the raw measurement counts and frequencies.
         """
-        pass
+        ...
 
     @abstractmethod
     def process_result(self, dataset: xr.Dataset, job_id: str) -> dict:
@@ -42,7 +42,7 @@ class Executor(ABC):
             dict: Qiskit-compatible result dict with keys like 'counts', 'memory',
                   'shots', 'backend', 'success', etc.
         """
-        pass
+        ...
 
     def close(self) -> None:
         """Release resources."""

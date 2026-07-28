@@ -210,3 +210,46 @@ def test_missing_requirements_reads_real_metadata():
 
     assert isinstance(result, tuple)
     assert all(isinstance(name, str) for name in result)
+
+
+def test_device_lines_skip_an_options_block_for_a_device_with_none():
+    """A device that reads nothing gets a line, not an empty options heading."""
+    from unittest.mock import patch
+
+    from qpi_driver.builtins import registry
+    from qpi_driver.builtins.registry import DeviceSpec
+
+    bare = DeviceSpec(name="bare", operation=Operation.MONITOR, build=lambda **_: None)
+    table = {op: {} for op in Operation}
+    table[Operation.MONITOR]["bare"] = bare
+
+    with patch.dict(registry._DEVICES, table, clear=True):
+        lines = device_lines(Operation.MONITOR)
+
+    assert any(line.startswith("• bare") for line in lines)
+    assert not any(line.startswith("Options") for line in lines)
+
+
+def test_missing_requirements_is_silent_with_no_installed_distribution():
+    """Run from a source tree, nothing is knowable — so nothing is claimed missing."""
+    import importlib.metadata
+    from unittest.mock import patch
+
+    with patch.object(
+        importlib.metadata,
+        "requires",
+        side_effect=importlib.metadata.PackageNotFoundError("qpi-driver"),
+    ):
+        assert missing_requirements("qpi-driver[cli,qblox]") == ()
+
+
+def test_missing_for_extras_skips_a_requirement_it_cannot_parse():
+    """A requirement with no recognisable name is skipped, not guessed at."""
+    assert missing_for_extras(("odd",), ['; extra == "odd"']) == ()
+
+
+def test_render_catalog_refuses_an_operation_that_does_not_exist():
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown operation"):
+        render_catalog("telemetry")

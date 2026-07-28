@@ -44,7 +44,8 @@ presto = []
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
-    "ruff>=0.3.0"
+    "pytest-cov>=7.1.0",
+    "ruff>=0.3.0",
 ]
 
 [project.urls]
@@ -67,3 +68,30 @@ override-dependencies = [
     "pyqt5>=5.15.10",
     "qcodes<0.57"
 ]
+
+# Coverage is measured on the framework — the SDK, the CLI, the catalog and the
+# executors that need no hardware — and gated there. The hardware executors are
+# reported but not gated: they need real instruments, and a floor over code nobody
+# can run in CI only invites tests that assert nothing (see `omit` below).
+[tool.coverage.run]
+source = ["qpi_driver"]
+branch = true
+# The worker runs in a subprocess; without this its lines look untested.
+concurrency = ["multiprocessing", "thread"]
+parallel = true
+sigterm = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+    # A bin script's entry guard: reached only by running the module, never by a test.
+    'if __name__ == "__main__":',
+    # The body of an abstract method is unreachable by definition — a subclass
+    # overrides it, and the base is never called.
+    "^\\s*\\.\\.\\.$",
+]
+
+[tool.coverage.paths]
+# The subprocess sees an installed path; combine it with the source tree's.
+source = ["qpi_driver", "*/qpi_driver"]
