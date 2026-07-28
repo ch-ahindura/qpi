@@ -102,24 +102,38 @@ func (s Spec) extra() string {
 	return baseCliExtra
 }
 
-// cliOptions renders an operation's per-kind config as trailing `-o key=value`
-// CLI flags, or "" when there are none.
+// snippetOptions are the options a rendered command should pre-fill: the ones the
+// driver cannot default for the operator. The rest are catalog-only — see
+// [Option.InSnippet].
+func snippetOptions(opts []Option) []Option {
+	shown := make([]Option, 0, len(opts))
+	for _, opt := range opts {
+		if opt.InSnippet {
+			shown = append(shown, opt)
+		}
+	}
+	return shown
+}
+
+// cliOptions renders a kind's config as trailing `-o key=value` CLI flags, or ""
+// when none of them belong in a snippet.
 func cliOptions(opts []Option) string {
 	var b strings.Builder
-	for _, opt := range opts {
+	for _, opt := range snippetOptions(opts) {
 		fmt.Fprintf(&b, " %s %s=%s", optionFlag, opt.Key, opt.Example)
 	}
 	return b.String()
 }
 
-// optionsEnv renders an operation's per-kind config as the DRIVER_OPTIONS
-// environment variable install-systemd.sh reads, or "" when there are none.
+// optionsEnv renders a kind's config as the DRIVER_OPTIONS environment variable
+// install-systemd.sh reads, or "" when none of them belong in a snippet.
 func optionsEnv(opts []Option) string {
-	if len(opts) == 0 {
+	shown := snippetOptions(opts)
+	if len(shown) == 0 {
 		return ""
 	}
-	pairs := make([]string, len(opts))
-	for i, opt := range opts {
+	pairs := make([]string, len(shown))
+	for i, opt := range shown {
 		pairs[i] = opt.Key + "=" + opt.Example
 	}
 	return fmt.Sprintf(" DRIVER_OPTIONS='%s'", strings.Join(pairs, ";"))

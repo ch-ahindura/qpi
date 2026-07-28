@@ -114,8 +114,18 @@ func TestSnippetsMonitor(t *testing.T) {
 	if !strings.Contains(s.ManualCLI, "-o base_url=") || !strings.Contains(s.ManualCLI, "-o channels=") {
 		t.Errorf("expected -o options in the manual CLI, got %q", s.ManualCLI)
 	}
-	if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='base_url=") {
+	// channels first, matching the order the SDKs declare them in, since the
+	// catalog is checked against the SDK's own.
+	if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='channels=") ||
+		!strings.Contains(s.Systemd, ";base_url=") {
 		t.Errorf("expected DRIVER_OPTIONS env in the systemd snippet, got %q", s.Systemd)
+	}
+	// The options the driver defaults sensibly stay out of a copy-pasted command.
+	for _, key := range []string{"api_key", "poll_interval", "timeout"} {
+		if strings.Contains(s.Systemd, key) || strings.Contains(s.ManualCLI, key) {
+			t.Errorf("expected %q to be catalog-only, not in a snippet: %q / %q",
+				key, s.Systemd, s.ManualCLI)
+		}
 	}
 	if !strings.Contains(s.Systemd, "OPERATION=monitor DEVICE=bluefors_gen1") {
 		t.Errorf("expected OPERATION/DEVICE in the systemd snippet, got %q", s.Systemd)

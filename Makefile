@@ -1,4 +1,4 @@
-.PHONY: all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard test-e2e-driver-framework
+.PHONY: sync-driver-catalog all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard test-e2e-driver-framework
 
 VERSION ?= 0.1.2
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
@@ -196,6 +196,17 @@ format: format-go format-py format-js format-dashboard format-go-client format-p
 format-go:
 	@echo "Formatting Go server files..."
 	(cd qpi-ui && go fmt ./...)
+
+# Regenerate the driver catalog fixture the qpi-ui drift check reads. Devices and
+# their options belong to the driver SDK (RFC 0003 §9), so this is one-way: the SDK
+# writes, qpi-ui checks. Running it is the deliberate act of recording a catalog
+# change — the drift test names this target in every failure.
+sync-driver-catalog:
+	@echo "Regenerating qpi-ui/internal/drivers/testdata/catalog.json from the Python SDK..."
+	$(UV) sync --project qpi-driver/py --extra cli
+	$(UV) run --project qpi-driver/py python -m qpi_driver.cli catalog --json \
+		> qpi-ui/internal/drivers/testdata/catalog.json
+	@echo "Done. Review the diff, then make catalog.go agree with it."
 
 format-py:
 	@echo "Formatting and sorting imports for Python driver files..."

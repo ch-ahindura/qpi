@@ -45,11 +45,26 @@ const (
 	Monitor Operation = "monitor"
 )
 
-// Option is one `-o key=value` setting a monitor kind needs, carrying an
-// example value so the setup snippets show a ready-to-edit command.
+// Option is one `-o key=value` setting a kind reads. It mirrors the SDKs'
+// OptionSpec — the driver owns this information and QPI-UI's copy exists to render
+// setup snippets and to be checked against the SDK's own catalog (RFC 0003 §9).
 type Option struct {
-	Key     string
+	// Key is the option name as typed, e.g. "channels".
+	Key string
+	// Help is one line describing it, as the SDK's help does.
+	Help string
+	// Required reports whether omitting it is an error.
+	Required bool
+	// Default is the value the driver uses when it is absent, written as it would
+	// be typed. Empty means there is no default.
+	Default string
+	// Example is a ready-to-paste value, and the input to the rendered snippets.
 	Example string
+	// InSnippet reports whether the rendered setup snippet should pre-fill this
+	// option. An option the driver already defaults sensibly is schema-only: it
+	// belongs in the catalog, but putting it in a copy-pasted command would invite
+	// an operator to change something they have no reason to.
+	InSnippet bool
 }
 
 // Spec is the data-only description of one official driver backend: how it is
