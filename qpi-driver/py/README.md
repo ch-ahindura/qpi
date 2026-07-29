@@ -171,9 +171,8 @@ QpuDriver(
 ## Adding a device of your own
 
 There is one thing to write, and it is the same thing whichever operation you are
-extending: a **device**. Describe it as data, and the CLI gains it — a line in
-`--help`, an entry in `catalog --json`, and `-o` values that are checked and
-converted for you, exactly as the built-in devices get.
+extending: a **device**. Register it under a name, and `--device <name>` runs it —
+on exactly the same footing as the devices the SDK ships.
 
 For `process` — a QPU — a device is an **executor**, because every process device is
 the one built-in QPU driver over a different executor. `Executor` asks for two
@@ -184,7 +183,7 @@ methods: `execute()` runs the job on your hardware and returns an `xr.Dataset`, 
 import numpy as np
 import xarray as xr
 
-from qpi_driver import Executor, JobPayload, OptionSpec
+from qpi_driver import Executor, JobPayload
 from qpi_driver.builtins.qpu import device_spec
 
 
@@ -206,17 +205,9 @@ class QuantumXExecutor(Executor):
         }
 
 
-# The executor, described as data. This is what earns it a --help entry and gets
-# `-o qubit_count=4` converted to an int rather than passed through as "4".
-QUANTUM_X = device_spec(
-    "quantum_x",
-    executor=QuantumXExecutor,
-    summary="MyLab's QuantumX control system.",
-    options=(
-        OptionSpec(key="qubit_count", help="How many qubits the chip has.",
-                   parse=int, default="1", example="4"),
-    ),
-)
+# The name --device will use, bound to the executor behind it. `pass_through=True`
+# hands your executor the -o keys the SDK knows nothing about, like qubit_count.
+QUANTUM_X = device_spec("quantum_x", executor=QuantumXExecutor, pass_through=True)
 ```
 
 **Ship it** by advertising the spec under the `qpi_driver.devices` entry-point group
@@ -232,10 +223,10 @@ pip install .    # your distribution, depending on qpi-driver[cli]
 qpi-driver start --operation process --device quantum_x -o qubit_count=4 ...
 ```
 
-`quantum_x` is now indistinguishable from a built-in: in `qpi-driver devices`, in
-`--help` with its own options, and in `catalog --json`. An entry point that will not
-import, or resolves to something other than a `DeviceSpec`, is logged and skipped —
-it cannot stop the CLI from starting.
+`quantum_x` is now indistinguishable from a built-in: it is in `qpi-driver devices`
+and it is what `--device` will accept. An entry point that will not import, or
+resolves to something other than a `DeviceSpec`, is logged and skipped — it cannot
+stop the CLI from starting.
 
 **Or name it by import path**, with nothing to install and nothing to register:
 
@@ -244,11 +235,10 @@ qpi-driver start --operation process --device mylab_devices:QuantumXExecutor \
   -o qubit_count=4 ...
 ```
 
-`module.attr` works as well as `module:attr`. There is no declared schema behind an
-import path, so `qubit_count` arrives at the constructor as the string `"4"` and a
-typo in it is not caught; the `-o` options the SDK *does* declare, `data_dir`
-included, are still validated. Use it to try a device out, and the entry point to
-deploy one.
+`module.attr` works as well as `module:attr`. An executor named this way is given
+every `-o` key the SDK does not read itself, as the string it was typed as — so
+`qubit_count` arrives as `"4"` and a typo in it reaches your constructor rather than
+being reported. Use it to try a device out, and the entry point to deploy one.
 
 [`examples/custom_device/`](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/examples/custom_device/)
 is this worked all the way through, as two files you can run.
@@ -267,6 +257,10 @@ device of an existing operation (RFC 0003 §6, §13.4).
 > you are driving the SDK from your own Python and want no CLI at all; reach for a
 > device when anything else has to *launch* the driver.
 
+Nothing here describes your device to QPI-UI. Registering a driver in the dashboard
+is where a device is named, configured and documented; the SDK's job is to run the
+one it is told to run (RFC 0003 §9).
+
 The TypeScript SDK has the same import-path route with a different separator —
 `--device ./dist/my-device.js#MyExport` — because `:` is a URL scheme separator in a
 JavaScript module specifier. The Go SDK has no import-path route at all: Go resolves
@@ -278,10 +272,14 @@ imports at compile time, so a device there is registered in your own `main`.
 
 | Backend | Description | Extra |
 |---------|-------------|-------|
-| `mock` | Qiskit BasicSimulator (default) | — |
+| `mock` | Qiskit BasicSimulator, needs no hardware | — |
 | `qiskit_aer` | Qiskit Aer simulator | `[aer]` |
 | `quantify` | Quantify-scheduler + Qblox instruments | `[quantify]` |
 | `qblox` | Qblox scheduler (legacy) | `[qblox]` |
+| `presto` | Presto control system (not yet implemented) | — |
+
+The one `monitor` device is `bluefors_gen1`, a cryostat monitor for Bluefors Control
+Software Gen. 1, shipped by `[bluefors_gen1]`.
 
 ---
 
@@ -340,64 +338,29 @@ Universal options:
   --help                  Show this message and exit.
 ```
 
-Each device declares the `-o` keys it reads, so `--help` lists them with their
-types, defaults and examples rather than the list being maintained by hand — and
-a key no device reads is an error naming the ones that exist, not a silent no-op.
+There is no default device: QPI-UI generates the command that launches a driver, and
+that command always names one.
 
-The whole of that — which operations exist, which devices each one can run, and
-which `-o` keys each device reads — is the SDK's **catalog**, and the `DeviceSpec`s
-are its only source. `devices` prints it for a person; `catalog --json` hands it to
-another program, which is how the dashboard builds its setup snippets and how
-QPI-UI's own drift test notices when server and SDK disagree.
+Which `-o` keys a device reads is the device's own business — the keys its builder
+looks at, and nothing else. The SDK publishes no schema for them, because QPI-UI
+already holds one: the dashboard's registration form is where a device's options are
+described and filled in, and a second copy here would be a second copy to keep in
+step (RFC 0003 §9). A key nothing read is reported rather than ignored:
+
+```
+Error: unknown option 'data_dirr' for process device 'mock'.
+```
+
+What the SDK *can* answer is which devices this particular install has — after
+`pip install`ing a distribution of them, or writing one:
 
 ```bash
-# Every operation, its devices, and each device's -o options
+# Names only, by operation
 qpi-driver devices
 
 # Just one operation
 qpi-driver devices --operation monitor
-
-# The same catalog for another program to read
-qpi-driver catalog --json
 ```
-
-Today's catalog — generated from `qpi-driver catalog --json`, so it cannot fall
-behind the code:
-
-<!-- catalog:begin -->
-
-<!-- Generated by `make sync-driver-catalog`. Do not edit by hand. -->
-
-| Operation | Device | Ships with |
-|-----------|--------|------------|
-| `process` | `mock` | base `[cli]` |
-| `process` | `presto` | base `[cli]` |
-| `process` | `qblox` | `qpi-driver[cli,qblox]` |
-| `process` | `qiskit_aer` | `qpi-driver[cli,aer]` |
-| `process` | `quantify` | `qpi-driver[cli,quantify]` |
-| `monitor` | `bluefors_gen1` | `qpi-driver[cli,bluefors_gen1]` |
-
-`-o` options for `mock`, `presto`, `qblox`, `qiskit_aer`, `quantify`:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `data_dir` | `safe_dir` | `./bin/data` | Directory the executor writes datasets and artefacts to. |
-| `job_timeout` | `int` | `10` | Seconds a single job may run before it is abandoned. |
-| `is_dummy` | `bool` | `false` | Run against the vendor's dummy instruments instead of real hardware. |
-| `quantify_hardware_config` | `Path` | `./quantify.hardware.json` | Path to the quantify hardware configuration JSON. |
-| `quantify_device_config` | `Path` | `./quantify.device.yml` | Path to the quantify device configuration YAML. |
-
-`-o` options for `bluefors_gen1`:
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `channels` | `channels` | **required** | Value-tree channels to poll, as path[:unit] pairs. |
-| `base_url` | `str` | `http://127.0.0.1:49099` | Base URL of the Bluefors Control API. |
-| `api_key` | `str` | — | Bluefors API access key, if the API requires one. |
-| `poll_interval` | `float` | `5.0` | Seconds between polls of every channel. |
-| `timeout` | `float` | `5.0` | HTTP timeout per channel read, in seconds. |
-
-<!-- catalog:end -->
 
 ---
 

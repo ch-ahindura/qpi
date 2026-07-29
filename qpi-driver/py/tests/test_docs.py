@@ -61,54 +61,38 @@ def _output(result) -> str:
 TRANSCRIPT_CASES = [
     pytest.param(
         "unknown option 'data_dirr'",
-        [
-            "start",
-            "--operation",
-            "process",
-            "--token",
-            "t",
-            "--ca-fingerprint",
-            "f",
-            "-o",
-            "data_dirr=/data",
-        ],
+        ["-o", "data_dirr=/data"],
         id="unknown-option",
     ),
     pytest.param(
-        "monitor device 'bluefors_gen1' needs a 'channels' option",
-        ["start", "--operation", "monitor", "--token", "t", "--ca-fingerprint", "f"],
+        "missing required option 'channels'",
+        ["--operation", "monitor", "--device", "bluefors_gen1"],
         id="missing-required-option",
     ),
     pytest.param(
         "bad value for -o job_timeout",
-        [
-            "start",
-            "--operation",
-            "process",
-            "--token",
-            "t",
-            "--ca-fingerprint",
-            "f",
-            "-o",
-            "job_timeout=soon",
-        ],
+        ["-o", "job_timeout=soon"],
         id="bad-value",
     ),
     pytest.param(
         "bad value for -o data_dir",
-        [
-            "start",
-            "--operation",
-            "process",
-            "--token",
-            "t",
-            "--ca-fingerprint",
-            "f",
-            "-o",
-            "data_dir=/var",
-        ],
+        ["-o", "data_dir=/var"],
         id="unsafe-path",
     ),
+]
+
+# The universal part of every transcript's invocation. A case adds only what makes
+# it the case it is, and `--operation`/`--device` given twice takes the later value.
+TRANSCRIPT_BASE = [
+    "start",
+    "--operation",
+    "process",
+    "--device",
+    "mock",
+    "--token",
+    "t",
+    "--ca-fingerprint",
+    "f",
 ]
 
 
@@ -155,7 +139,7 @@ def test_the_documented_error_is_the_error_the_cli_prints(prefix, argv):
         f"move this case with it; if it is gone, delete both."
     )
 
-    result = runner.invoke(app, argv)
+    result = runner.invoke(app, TRANSCRIPT_BASE + argv)
     assert result.exit_code == 1, _output(result)
 
     printed = " ".join(_output(result).split())

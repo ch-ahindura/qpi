@@ -24,13 +24,13 @@ qpi-driver start --operation process \
   -o qubit_count=4
 ```
 
-`module.attr` works as well as `module:attr`. There is no schema behind an import
-path, so `qubit_count` reaches the executor's constructor as the string `"4"`,
-unchecked — the executor converts it. The `-o` options the SDK does declare, such
-as `data_dir`, are still validated, so a `data_dir` outside a driver's safe roots
-is refused on this route exactly as on any other.
+`module.attr` works as well as `module:attr`. `qubit_count` reaches the executor's
+constructor as the string `"4"` — the executor converts it, being the only thing
+that knows the key exists. The `-o` options the SDK reads itself, such as `data_dir`,
+are still checked, so a `data_dir` outside a driver's safe roots is refused on this
+route exactly as on any other.
 
-## 2. Install it — it joins the catalog
+## 2. Install it — it joins the registry
 
 Ship the `DeviceSpec` under the `qpi_driver.devices` entry-point group, as
 [pyproject.toml](pyproject.toml) does:
@@ -45,11 +45,10 @@ pip install .
 qpi-driver start --operation process --device quantum_x -o qubit_count=4 ...
 ```
 
-Now it is indistinguishable from a built-in: it appears in `qpi-driver devices`,
-in `qpi-driver start --operation process --help` with its own options, and in
-`qpi-driver catalog --json`. Because the spec *declares* `qubit_count`, it arrives
-as an `int` and `-o qubit_counr=4` is an error naming the valid keys instead of a
-setting silently ignored.
+Now it is indistinguishable from a built-in: it appears in `qpi-driver devices` and
+`--device quantum_x` runs it. What it *is* — what it does, which `-o` keys to fill in
+— belongs in QPI-UI, where the driver is registered; the SDK only needs to know the
+name and what to call.
 
 An entry point that will not import, or resolves to something other than a
 `DeviceSpec`, is logged and skipped. It cannot stop the CLI from starting.

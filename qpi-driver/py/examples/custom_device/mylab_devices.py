@@ -11,25 +11,24 @@ Two things are defined here, and either one is enough on its own:
           --token "$QPI_ACCESS_TOKEN" --ca-fingerprint "$QPI_CA_FINGERPRINT" \\
           -o data_dir=./bin/data -o qubit_count=4
 
-    ``qubit_count`` is not an option this SDK has heard of. A device named by
-    import path has no declared schema, so undeclared options are passed to the
-    executor's constructor as the strings they were typed as.
+    ``qubit_count`` is not an option this SDK has heard of. An executor named by
+    import path is handed every ``-o`` key the SDK does not read itself, as the
+    string it was typed as.
 
 ``QUANTUM_X``
-    A :class:`~qpi_driver.builtins.DeviceSpec`, which is the same executor plus a
-    name, a summary and a declared option schema. Being described as data is what
-    earns it a line in ``--help``, an entry in ``catalog --json``, and checked and
-    converted ``-o`` values — ``qubit_count`` arrives as an ``int``, and a typo in
-    it is an error rather than a surprise.
+    A :class:`~qpi_driver.builtins.DeviceSpec`: the same executor under a name.
+    That is the whole of a device — a name, an operation and a builder — because
+    QPI-UI is where a device is described and configured, and a second description
+    here would be a second one to keep in step (RFC 0003 §9).
 
 Ship the spec by advertising it in your own ``pyproject.toml``::
 
     [project.entry-points."qpi_driver.devices"]
     quantum_x = "mylab_devices:QUANTUM_X"
 
-Then ``pip install mylab-devices`` and it is simply there: in ``--help``, in
-``catalog --json``, and to ``--device quantum_x``, with nothing to change in the
-SDK or the CLI.
+Then ``pip install mylab-devices`` and it is simply there: listed by ``qpi-driver
+devices`` and accepted by ``--device quantum_x``, with nothing to change in the SDK
+or the CLI.
 """
 
 from typing import Any
@@ -37,7 +36,7 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
-from qpi_driver import Executor, JobPayload, OptionSpec
+from qpi_driver import Executor, JobPayload
 from qpi_driver.builtins.qpu import device_spec
 
 
@@ -90,19 +89,9 @@ class QuantumXExecutor(Executor):
         }
 
 
-# The same executor, described as data. `device_spec` is the QPU module's helper:
-# every process device is the one built-in QPU driver over a different executor.
-QUANTUM_X = device_spec(
-    "quantum_x",
-    executor=QuantumXExecutor,
-    summary="MyLab's QuantumX control system, as an example of a custom device.",
-    options=(
-        OptionSpec(
-            key="qubit_count",
-            help="How many qubits the chip has.",
-            parse=int,
-            default="1",
-            example="4",
-        ),
-    ),
-)
+# The same executor, under the name `--device` will use. `device_spec` is the QPU
+# module's helper: every process device is the one built-in QPU driver over a
+# different executor. `pass_through` hands this executor the -o keys the SDK does
+# not read itself — `qubit_count` here — since its constructor is the only thing
+# that knows them.
+QUANTUM_X = device_spec("quantum_x", executor=QuantumXExecutor, pass_through=True)

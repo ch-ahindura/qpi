@@ -51,7 +51,7 @@ def test_every_command_builds():
 
     typer.main.get_command(app)
 
-    for command in ("start", "devices", "catalog", "version"):
+    for command in ("start", "devices", "version"):
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, _output(result)
         # Rich pads its help output, so strip before matching.
@@ -68,9 +68,15 @@ class Recorder:
 
     def __init__(self):
         self.build_calls: list[dict] = []
+        self.options: dict[str, str] = {}
         self.log: list[str] = []
 
     def build(self, **kwargs):
+        options = kwargs.get("options")
+        if options is not None:
+            # A real device reads the keys it understands; this one takes whatever
+            # it is given, so the CLI's unread-option check has nothing to report.
+            self.options = options.remaining()
         self.build_calls.append(kwargs)
         self.log.append("build")
         return self
@@ -79,7 +85,7 @@ class Recorder:
         self.log.append("run")
 
 
-def _fake_device(operation, name="fake", build=None, options=None):
+def _fake_device(operation, name="fake", build=None):
     """Register *name* as the only device of *operation*, for the test's duration.
 
     Lets the CLI's own behaviour be asserted without a real device's dependencies
@@ -93,7 +99,6 @@ def _fake_device(operation, name="fake", build=None, options=None):
         name=name,
         operation=operation,
         build=build or recorder.build,
-        options=options if options is not None else (),
     )
     table = {op: {} for op in registry.Operation}
     table[operation][name] = spec
@@ -150,28 +155,38 @@ def test_the_old_subcommands_are_gone(operation):
     assert result.exit_code != 0
 
 
-@pytest.mark.parametrize(
-    ("operation", "device"),
-    [("process", "mock"), ("monitor", "bluefors_gen1")],
-)
-def test_device_defaults_per_operation(operation, device):
-    """One verb, but the default device still differs by operation, from OperationSpec.
+@pytest.mark.parametrize("operation", ["process", "monitor"])
+def test_device_is_required(operation):
+    """There is no default device, because the SDK has no fact to default it from.
 
-    Asserted through the CLI rather than on the table, since the point is that the
-    resolution happens when `--device` is omitted.
+    QPI-UI is where a driver is registered and where the command to run it is
+    generated, and that command always names a device. A driver guessing one would
+    be the driver deciding what it is (RFC 0003 §9).
     """
+    result = runner.invoke(
+        app,
+        ["start", "--operation", operation, "--token", "t", "--ca-fingerprint", "fp"],
+        env={"COLUMNS": "200"},
+    )
+
+    assert result.exit_code == 2
+    assert "--device" in _output(result)
+
+
+def test_start_builds_the_device_it_is_given():
+    """The named device is the one built, and the builder gets no name at all."""
     from qpi_driver.builtins import Operation
 
-    # Registered under the name the operation defaults to, so the driver is only
-    # built at all if that default was resolved.
-    patcher, recorder = _fake_device(Operation(operation), name=device)
+    patcher, recorder = _fake_device(Operation.MONITOR, name="fake")
     with patcher:
         result = runner.invoke(
             app,
             [
                 "start",
                 "--operation",
-                operation,
+                "monitor",
+                "--device",
+                "fake",
                 "--token",
                 "t",
                 "--ca-fingerprint",
@@ -181,7 +196,6 @@ def test_device_defaults_per_operation(operation, device):
 
     assert result.exit_code == 0, _output(result)
     assert recorder.log == ["build", "run"]
-    # The builder is handed no name at all: there is nothing to default.
     assert "name" not in recorder.build_calls[0]
 
 
@@ -205,21 +219,15 @@ def test_cli_start_builds_then_runs():
     """The CLI builds a driver from the spec, then starts it — in that order.
 
     The builder returns an unstarted driver and the CLI calls ``run()`` on it, so
-    a device never decides when to connect (RFC 0003 §7). The options it is handed
-    have been through the device's own schema, so ``ticks`` arrives as an int.
+    a device never decides when to connect (RFC 0003 §7). The ``-o`` values arrive
+    as the strings they were typed as: what they mean is the device's business.
     """
     from pathlib import Path
 
-    from qpi_driver.builtins import Operation, OptionSpec
+    from qpi_driver.builtins import Operation
     from qpi_driver.cli import _start
 
-    patcher, recorder = _fake_device(
-        Operation.MONITOR,
-        options=(
-            OptionSpec(key="ticks", help="How many.", parse=int),
-            OptionSpec(key="label", help="What to call it.", default="unnamed"),
-        ),
-    )
+    patcher, recorder = _fake_device(Operation.MONITOR)
     with patcher:
         _start(
             Operation.MONITOR,
@@ -233,16 +241,15 @@ def test_cli_start_builds_then_runs():
         )
 
     assert recorder.log == ["build", "run"]
-    assert recorder.build_calls == [
-        {
-            "options": {"ticks": 3, "label": "unnamed"},
-            "qpi_addr": "http://qpi:8090",
-            "token": "tok",
-            "ca_fingerprint": "fp",
-            "ca_file_path": "bin/qpi.ca.pem",
-            "recv_timeout_ms": 250,
-        }
-    ]
+    assert recorder.options == {"ticks": "3"}
+    call = recorder.build_calls[0]
+    assert {key: value for key, value in call.items() if key != "options"} == {
+        "qpi_addr": "http://qpi:8090",
+        "token": "tok",
+        "ca_fingerprint": "fp",
+        "ca_file_path": "bin/qpi.ca.pem",
+        "recv_timeout_ms": 250,
+    }
 
 
 def test_cli_start_takes_no_registry():
@@ -347,21 +354,25 @@ def test_cli_runs_a_device_named_by_import_path():
     assert built[0].executor_options["probe_count"] == "4"
 
 
-def test_help_documents_the_import_path_route():
-    """--help says the catalog is not the limit, and that -o is unchecked there."""
+def test_help_points_at_the_dashboard_rather_than_describing_devices():
+    """--help says where a device is chosen and configured; it is not a catalog.
+
+    It used to render every device and every -o key from a declared schema, which
+    was a second catalog beside QPI-UI's (RFC 0003 §9).
+    """
     result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
     output = _output(result)
 
-    assert "named by import path" in output
-    assert "unchecked" in output
+    assert result.exit_code == 0, output
+    assert "QPI-UI" in output
+    assert "qpi-driver devices" in output
 
 
-def test_catalog_command_can_print_the_text_view():
-    """`catalog --text` is the same renderer `devices` uses, for a quick look."""
-    result = runner.invoke(app, ["catalog", "--text"])
+def test_there_is_no_catalog_command():
+    """The machine-readable catalog is gone; nothing consumed it but a sync script."""
+    result = runner.invoke(app, ["catalog", "--json"])
 
-    assert result.exit_code == 0, _output(result)
-    assert _output(result) == _output(runner.invoke(app, ["devices"]))
+    assert result.exit_code != 0
 
 
 def test_version_falls_back_when_the_package_is_not_installed():
@@ -381,7 +392,16 @@ def test_version_falls_back_when_the_package_is_not_installed():
 def test_cli_process_requires_token():
     """process fails if the access token is not supplied."""
     result = runner.invoke(
-        app, ["start", "--operation", "process", "--ca-fingerprint", "fp"]
+        app,
+        [
+            "start",
+            "--operation",
+            "process",
+            "--device",
+            "mock",
+            "--ca-fingerprint",
+            "fp",
+        ],
     )
     assert result.exit_code == 1
     assert "Error: access token is required" in _output(result)
@@ -419,6 +439,8 @@ def test_cli_process_unsafe_ca_file():
             "t",
             "--ca-fingerprint",
             "fp",
+            "--device",
+            "mock",
             "--ca-file",
             "/",
         ],
@@ -434,6 +456,8 @@ def test_cli_process_unsafe_data_dir_option():
             "start",
             "--operation",
             "process",
+            "--device",
+            "mock",
             "--token",
             "t",
             "--ca-fingerprint",
@@ -449,7 +473,16 @@ def test_cli_process_unsafe_data_dir_option():
 def test_cli_monitor_requires_token():
     """monitor fails without an access token, like process."""
     result = runner.invoke(
-        app, ["start", "--operation", "monitor", "--ca-fingerprint", "fp"]
+        app,
+        [
+            "start",
+            "--operation",
+            "monitor",
+            "--device",
+            "bluefors_gen1",
+            "--ca-fingerprint",
+            "fp",
+        ],
     )
     assert result.exit_code == 1
 
@@ -497,9 +530,9 @@ def test_cli_monitor_reports_missing_required_option():
 def test_split_options_reads_the_syntax_only():
     """-o key=value pairs split into raw strings; a pair without '=' is rejected.
 
-    Splitting is all the CLI does — which keys exist and what type each value has
-    is the chosen device's schema's business, not this function's, so an unknown
-    key passes through here untouched.
+    Splitting is all the CLI does — which keys mean anything and what type each
+    value has is the chosen device's business, so an unknown key passes through
+    here untouched.
     """
     from qpi_driver.cli import _split_options
 
@@ -513,10 +546,12 @@ def test_split_options_reads_the_syntax_only():
 
 
 def test_cli_rejects_an_unknown_option():
-    """A misspelt -o key is an error naming the valid ones, not a silent no-op.
+    """A misspelt -o key is an error, not a silent no-op.
 
-    Silently ignoring it is the behaviour this replaced: a typo in a systemd unit
-    used to mean a driver running with a default nobody chose.
+    With no declared schema, the check is what the device read: `mock` builds
+    fine and never looks at `data_dirr`, so the leftover key is the whole
+    evidence. Silently ignoring it — which the executors' `**kwargs` would —
+    means a typo in a systemd unit runs a driver with a default nobody chose.
     """
     result = runner.invoke(
         app,
@@ -524,6 +559,8 @@ def test_cli_rejects_an_unknown_option():
             "start",
             "--operation",
             "process",
+            "--device",
+            "mock",
             "--token",
             "t",
             "--ca-fingerprint",
@@ -535,18 +572,19 @@ def test_cli_rejects_an_unknown_option():
 
     output = _output(result)
     assert result.exit_code == 1
-    assert "unknown option 'data_dirr'" in output
-    assert "data_dir" in output  # the valid keys are listed
+    assert "unknown option 'data_dirr' for process device 'mock'" in output
 
 
 def test_cli_rejects_an_uncoercible_option_value():
-    """A value its parser refuses names the option, not the parser's internals."""
+    """A value the device cannot read names the option, not the parser's internals."""
     result = runner.invoke(
         app,
         [
             "start",
             "--operation",
             "process",
+            "--device",
+            "mock",
             "--token",
             "t",
             "--ca-fingerprint",
@@ -560,66 +598,8 @@ def test_cli_rejects_an_uncoercible_option_value():
     assert "bad value for -o job_timeout" in _output(result)
 
 
-def test_help_lists_every_operation_device_and_option():
-    """--help answers "what can I pass?" from the registry, not by hand.
-
-    One verb serves every operation, so one --help covers all of them. Rich
-    rewraps the epilog, so match on substrings rather than whole lines.
-    """
-    from qpi_driver.builtins import Operation, devices
-
-    result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
-    output = _output(result)
-
-    assert result.exit_code == 0, output
-    for operation in Operation:
-        assert f"--operation {operation.value}" in output
-        for spec in devices(operation):
-            assert spec.name in output
-            for option in spec.options:
-                assert f"{option.key}=<{option.type_name}>" in output
-
-
-def test_help_marks_a_required_option():
-    """A device with a required option says so, so it is not learnt by crashing."""
-    result = runner.invoke(app, ["start", "--help"], env={"COLUMNS": "200"})
-
-    assert "channels=<channels> (required" in _output(result)
-
-
-def test_help_survives_a_device_it_cannot_describe():
-    """One unusable device must not take --help down for the others.
-
-    An installed device whose module half-imports is the case this guards: help
-    is the command someone runs *because* something is wrong, so it has to work
-    when a device does not.
-    """
-    from qpi_driver.builtins import Operation, registry
-    from qpi_driver.cli import _epilog
-
-    class Unimportable:
-        """A registered device whose description cannot be read."""
-
-        name = "broken"
-
-        def __getattr__(self, attribute):
-            raise ImportError("no module named 'vendor_sdk'")
-
-    table = {op: {} for op in registry.Operation}
-    table[Operation.MONITOR]["broken"] = Unimportable()
-    table[Operation.MONITOR]["bluefors_gen1"] = registry.resolve(
-        Operation.MONITOR, "bluefors_gen1"
-    )
-
-    with patch.dict(registry._DEVICES, table, clear=True):
-        epilog = _epilog(Operation.MONITOR)
-
-    assert "broken — cannot be described: ImportError" in epilog
-    assert "bluefors_gen1" in epilog
-
-
-def test_devices_command_lists_every_operation():
-    """`devices` is the readable view of the same catalog --help generates."""
+def test_devices_command_lists_what_this_install_can_run():
+    """Names only: what a device does is documented in QPI-UI, not here."""
     result = runner.invoke(app, ["devices"])
     output = _output(result)
 
@@ -637,32 +617,19 @@ def test_devices_command_narrows_to_one_operation():
     assert "mock" not in output
 
 
-def test_catalog_command_round_trips_as_json():
-    """`catalog --json` is what QPI-UI and the other SDKs read (RFC 0003 §9)."""
-    import json
+def test_devices_command_says_none_rather_than_nothing():
+    """An SDK with no device for an operation must say so (RFC 0003 §8)."""
+    from qpi_driver.builtins import Operation, registry
 
-    from qpi_driver.builtins import Operation, devices
-
-    result = runner.invoke(app, ["catalog", "--json"])
-    assert result.exit_code == 0, _output(result)
-
-    document = json.loads(result.stdout)
-    assert document["schema_version"] == 1
-
-    operations = {entry["name"]: entry for entry in document["operations"]}
-    assert set(operations) == {"process", "monitor"}
-
-    for name, entry in operations.items():
-        listed = {device["name"] for device in entry["devices"]}
-        assert listed == {spec.name for spec in devices(Operation(name))}
-
-    qblox = next(
-        device
-        for device in operations["process"]["devices"]
-        if device["name"] == "qblox"
+    table = {op: {} for op in registry.Operation}
+    table[Operation.MONITOR]["bluefors_gen1"] = registry.resolve(
+        Operation.MONITOR, "bluefors_gen1"
     )
-    assert qblox["extra"] == "qpi-driver[cli,qblox]"
-    assert {option["key"] for option in qblox["options"]} >= {"data_dir", "job_timeout"}
+
+    with patch.dict(registry._DEVICES, table, clear=True):
+        result = runner.invoke(app, ["devices"])
+
+    assert "process: none" in _output(result)
 
 
 def test_validate_safe_path():

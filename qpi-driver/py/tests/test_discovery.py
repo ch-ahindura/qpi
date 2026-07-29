@@ -19,6 +19,7 @@ from qpi_driver.builtins.discovery import (
 )
 from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.executors import Executor
+from qpi_driver.options import Options
 
 # Something importable to point an import path at. `import_object` is given
 # `tests.test_discovery:FakeExecutor` and has to find these.
@@ -161,8 +162,9 @@ def test_resolve_device_wraps_an_imported_executor():
     spec = resolve_device(Operation.PROCESS, "tests.test_discovery:FakeExecutor")
 
     assert spec.operation is Operation.PROCESS
+    options = Options({"probe_count": "4"})
     driver = spec.build(
-        options=spec.parse_options({"probe_count": "4"}),
+        options=options,
         qpi_addr="http://localhost:8090",
         token="t",
         ca_fingerprint="fp",
@@ -171,20 +173,29 @@ def test_resolve_device_wraps_an_imported_executor():
     )
 
     assert driver.executor is FakeExecutor
-    # An undeclared option reaches the executor as typed; nothing knows its type.
+    # An option this SDK never heard of reaches the executor as typed, and counts
+    # as read: the executor's constructor is the only schema there is.
     assert driver.executor_options["probe_count"] == "4"
+    assert options.unread() == ()
 
 
-def test_an_imported_process_device_still_checks_its_declared_options():
+def test_an_imported_process_device_still_checks_its_data_dir():
     """The import route does not open a hole in the safe-path check (RFC 0003 §10)."""
     spec = resolve_device(Operation.PROCESS, "tests.test_discovery:FakeExecutor")
 
     with pytest.raises(ValueError, match="safe location"):
-        spec.parse_options({"data_dir": "/var"})
+        spec.build(
+            options=Options({"data_dir": "/var"}),
+            qpi_addr="http://localhost:8090",
+            token="t",
+            ca_fingerprint="fp",
+            ca_file_path="./bin/qpi.ca.pem",
+            recv_timeout_ms=200,
+        )
 
 
 def test_resolve_device_uses_an_imported_spec_directly():
-    """A DeviceSpec is accepted by either operation — the route to a real schema."""
+    """A DeviceSpec is accepted by either operation — the route to a whole driver."""
     spec = resolve_device(Operation.MONITOR, "tests.test_discovery:FAKE_MONITOR_SPEC")
 
     assert spec is FAKE_MONITOR_SPEC
@@ -201,9 +212,6 @@ def test_resolve_device_accepts_an_imported_monitor_builder():
     spec = resolve_device(Operation.MONITOR, "tests.test_discovery:fake_builder")
 
     assert spec.build is fake_builder
-    assert spec.accepts_any_option is True
-    # With no schema, every option passes through as the string it was typed as.
-    assert spec.parse_options({"anything": "1"}) == {"anything": "1"}
 
 
 def test_resolve_device_refuses_an_executor_for_monitor():

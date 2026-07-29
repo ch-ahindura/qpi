@@ -27,8 +27,9 @@ from typing import Any
 import requests
 
 from qpi_driver.builtins.qpu import _normalize_qpi_addr
-from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec
+from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.events import Event, EventType
+from qpi_driver.options import Options
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
 log = logging.getLogger(__name__)
@@ -177,73 +178,33 @@ def build_from_options(
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
-    options: dict[str, Any],
+    options: Options,
 ) -> BlueforsGen1Driver:
-    """Build an unstarted driver from parsed ``-o`` options.
+    """Build an unstarted driver from its ``-o`` options.
 
-    *options* is what :meth:`DeviceSpec.parse_options` returns for :data:`OPTIONS`
-    — every key present and already coerced, ``channels`` included — so a missing
-    or malformed option has already become a clean CLI error by the time this runs.
+    The options this monitor reads are the ones read here. Only ``channels`` is
+    unknowable in advance — which channels a system exposes depends on how its
+    mappers are configured (see the module docstring) — so it is the one with no
+    default and the one whose absence is an error.
     """
     return BlueforsGen1Driver(
         qpi_addr=qpi_addr,
         token=token,
-        bluefors_base_url=options["base_url"],
-        channels=options["channels"],
-        # The one option with no default, so the one read with a fallback.
-        api_key=options.get("api_key", ""),
-        poll_interval=options["poll_interval"],
-        timeout=options["timeout"],
+        bluefors_base_url=options.get_str("base_url", "http://127.0.0.1:49099"),
+        channels=parse_channels(
+            options.require("channels", "mapper.bf.tmc:K,mapper.bf.pmc:mbar")
+        ),
+        api_key=options.get_str("api_key"),
+        poll_interval=options.get_float("poll_interval", DEFAULT_POLL_INTERVAL),
+        timeout=options.get_float("timeout", DEFAULT_TIMEOUT),
         ca_fingerprint=ca_fingerprint,
         ca_file_path=ca_file_path,
         recv_timeout_ms=recv_timeout_ms,
     )
 
 
-# What this monitor reads from -o. Only the channels are unknowable in advance,
-# so they are the one required option (see the module docstring on mappers).
-OPTIONS = (
-    OptionSpec(
-        key="channels",
-        help="Value-tree channels to poll, as path[:unit] pairs.",
-        parse=parse_channels,
-        required=True,
-        example="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
-    ),
-    OptionSpec(
-        key="base_url",
-        help="Base URL of the Bluefors Control API.",
-        default="http://127.0.0.1:49099",
-        example="http://localhost:49099",
-    ),
-    OptionSpec(
-        key="api_key",
-        # No default: an API key has no sensible one, and saying "defaults to
-        # empty" would report a default the Go and TypeScript SDKs do not.
-        help="Bluefors API access key, if the API requires one.",
-        example="<bluefors-api-key>",
-    ),
-    OptionSpec(
-        key="poll_interval",
-        help="Seconds between polls of every channel.",
-        parse=float,
-        default=str(DEFAULT_POLL_INTERVAL),
-        example="5",
-    ),
-    OptionSpec(
-        key="timeout",
-        help="HTTP timeout per channel read, in seconds.",
-        parse=float,
-        default=str(DEFAULT_TIMEOUT),
-        example="5",
-    ),
-)
-
 DEVICE_SPEC = DeviceSpec(
     name="bluefors_gen1",
     operation=Operation.MONITOR,
     build=build_from_options,
-    extra="qpi-driver[cli,bluefors_gen1]",
-    summary="Cryostat monitor for Bluefors Control Software Gen. 1.",
-    options=OPTIONS,
 )

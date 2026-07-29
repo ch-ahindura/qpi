@@ -5,12 +5,11 @@ handler for — and within an operation by *device*, the particular backend. QPU
 that run jobs pushed to them are ``process`` devices; things that report upward on
 a timer are ``monitor`` devices (RFC 0003 §5).
 
-Each device describes itself with a :class:`~qpi_driver.builtins.registry.DeviceSpec`
-declared beside its own code, so a device and its description cannot drift apart.
-This module is only where they are registered: importing it makes every built-in
-device visible to :func:`~qpi_driver.builtins.registry.devices`, ``--help`` and
-``--device``. Adding a device is one spec in its own module and one line here, with
-no CLI changes.
+Each device is a :class:`~qpi_driver.builtins.registry.DeviceSpec` — a name, an
+operation and a builder — declared beside its own code. This module is only where
+they are registered: importing it makes every built-in device visible to
+:func:`~qpi_driver.builtins.registry.devices` and to ``--device``. Adding a device
+is one spec in its own module and one line here, with no CLI changes.
 
 Devices installed from elsewhere land in the same registry, right after the
 built-ins, so nothing downstream can tell them apart
@@ -26,14 +25,11 @@ from qpi_driver.builtins.registry import (
     DeviceBuilder,
     DeviceSpec,
     Operation,
-    OperationSpec,
-    OptionSpec,
-    as_bool,
     devices,
-    operations,
     register,
     resolve,
 )
+from qpi_driver.options import Options
 
 for _spec in (*qpu.DEVICE_SPECS, bluefors_gen1.DEVICE_SPEC):
     register(_spec)
@@ -43,7 +39,7 @@ for _spec in (*qpu.DEVICE_SPECS, bluefors_gen1.DEVICE_SPEC):
 #
 # `load_installed_devices()` is *not* called here. An installed device imports the
 # SDK — the documented way to write one is `from qpi_driver import Executor,
-# JobPayload, OptionSpec` — and this module is imported by `qpi_driver/__init__.py`
+# JobPayload, Options` — and this module is imported by `qpi_driver/__init__.py`
 # on its way to binding those names, so loading here means loading a third party's
 # module against a half-initialised `qpi_driver`. Every such device was skipped with
 # "cannot import name 'Executor' from partially initialized module". The call moved
@@ -63,13 +59,10 @@ __all__ = [
     "DeviceSpec",
     "ENTRY_POINT_GROUP",
     "Operation",
-    "OperationSpec",
-    "OptionSpec",
-    "as_bool",
+    "Options",
     "devices",
     "import_object",
     "load_installed_devices",
-    "operations",
     "register",
     "resolve",
     "resolve_device",

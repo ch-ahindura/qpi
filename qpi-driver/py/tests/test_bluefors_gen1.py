@@ -11,13 +11,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 from qpi_driver.builtins.bluefors_gen1 import (
-    DEVICE_SPEC,
     BlueforsGen1Driver,
     build_from_options,
     normalize_channels,
     parse_channels,
 )
 from qpi_driver.events import Event, EventType
+from qpi_driver.options import Options
 
 
 class FakeSocket:
@@ -181,15 +181,15 @@ def _common_options() -> dict:
     )
 
 
-def _parsed(**raw: str) -> dict:
-    """Run *raw* ``-o`` strings through this device's own schema, as the CLI does."""
-    return DEVICE_SPEC.parse_options(raw)
+def _options(**raw: str) -> Options:
+    """The raw ``-o`` strings this device is handed, as the CLI hands them over."""
+    return Options(raw)
 
 
 def test_build_from_options_reads_all_keys():
     driver = build_from_options(
         **_common_options(),
-        options=_parsed(
+        options=_options(
             base_url="http://cryo:49099",
             channels="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
             api_key="secret",
@@ -209,7 +209,7 @@ def test_build_from_options_reads_all_keys():
 def test_defaults_every_key_but_channels():
     """Only the channels are unknowable in advance, so only they are required."""
     driver = build_from_options(
-        **_common_options(), options=_parsed(channels="mapper.bf.tmc")
+        **_common_options(), options=_options(channels="mapper.bf.tmc")
     )
 
     assert driver.bluefors_base_url == "http://127.0.0.1:49099"
@@ -219,9 +219,17 @@ def test_defaults_every_key_but_channels():
 
 
 def test_channels_are_required():
-    """The schema refuses to build without channels, naming the option."""
+    """It refuses to build without channels, naming the option."""
     with pytest.raises(ValueError, match="'channels'"):
-        _parsed(base_url="http://x")
+        build_from_options(**_common_options(), options=_options(base_url="http://x"))
+
+
+def test_an_option_this_monitor_does_not_read_is_left_unread():
+    """What the device reads is its whole schema, so the CLI can flag the rest."""
+    options = _options(channels="mapper.bf.tmc", pol_interval="2")
+    build_from_options(**_common_options(), options=options)
+
+    assert options.unread() == ("pol_interval",)
 
 
 def test_parse_channels_handles_optional_units():

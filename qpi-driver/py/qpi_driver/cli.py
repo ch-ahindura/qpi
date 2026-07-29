@@ -1,37 +1,19 @@
 import importlib.metadata
-import json
 from pathlib import Path
 from typing import Annotated
 
-from qpi_driver.builtins import Operation, resolve_device
-from qpi_driver.builtins.catalog import catalog_dict, catalog_lines, render_catalog
-from qpi_driver.builtins.registry import OPERATIONS
+from qpi_driver.builtins import Operation, devices as registered_devices, resolve_device
 from qpi_driver.compat import typer
+from qpi_driver.options import Options
 from qpi_driver.paths import validate_safe_path
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS
 
 app = None
 if typer.IS_TYPER_INSTALLED:
-    # Rich mode explicitly, because _epilog() is written for how it renders:
-    # blank line for a line break, and square brackets escaped.
     app = typer.Typer(
         help="Quantum Processing Interface (QPI) Driver CLI",
         rich_markup_mode="rich",
     )
-
-    def _epilog(operation: Operation | None = None) -> str:
-        """Render the device catalog as the ``start`` command's epilog.
-
-        Built once, at import, from the registry — so a new device shows up in
-        ``--help`` with no CLI change at all. Written for Typer's rich renderer,
-        which joins the lines of a paragraph with spaces and keeps a break only
-        where it finds a blank line, and which reads ``[...]`` as markup
-        (``typer.rich_utils.rich_format_help``): hence one paragraph per line,
-        and escaped brackets so ``qpi-driver[cli,qblox]`` survives.
-        """
-        return "\n\n".join(
-            line.replace("[", r"\[") for line in catalog_lines(operation)
-        )
 
     # Universal options `start` shares across every operation, defined once so a
     # new operation reuses them rather than redeclaring their flags/env/help. A
@@ -62,7 +44,7 @@ if typer.IS_TYPER_INSTALLED:
         typer.Option(
             "--operation",
             envvar="QPI_OPERATION",
-            help="What this driver does. The devices each one can run are listed below.",
+            help="What this driver does: run jobs pushed to it, or report upward.",
         ),
     ]
     DeviceOpt = Annotated[
@@ -72,8 +54,8 @@ if typer.IS_TYPER_INSTALLED:
             "-d",
             envvar="QPI_DEVICE",
             help="Which backend to run within the operation (e.g. mock, qblox, "
-            "bluefors_gen1), or an import path. Defaults to the operation's own "
-            "default device.",
+            "bluefors_gen1), or an import path. `qpi-driver devices` lists the ones "
+            "this install has.",
         ),
     ]
     CaFileOpt = Annotated[
@@ -94,8 +76,9 @@ if typer.IS_TYPER_INSTALLED:
             "--option",
             "-o",
             help="A setting of the chosen device, as key=value, repeatable — "
-            "e.g. -o data_dir=./bin/data. The keys each device reads are "
-            "listed below, and by `qpi-driver devices`.",
+            "e.g. -o data_dir=./bin/data. Which keys a device reads is the "
+            "device's own business; QPI-UI's registration form is where they "
+            "are documented and filled in.",
         ),
     ]
     RecvTimeoutOpt = Annotated[
@@ -114,10 +97,10 @@ if typer.IS_TYPER_INSTALLED:
             help="SHA-256 fingerprint pinning the automatically downloaded root CA of the QPI server.",
         )
 
-    @app.command(epilog=_epilog())
+    @app.command()
     def start(
         operation: OperationOpt,
-        device: DeviceOpt = "",
+        device: DeviceOpt,
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
         token: TokenOpt = "",
         ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
@@ -132,8 +115,9 @@ if typer.IS_TYPER_INSTALLED:
         launching a driver is the same whichever operation it is — and because a
         third party can add a device, but only QPI-UI can add an operation.
 
-        The operations, their devices and the -o options each device reads are
-        listed below.
+        QPI-UI is where a driver is registered and where the command to run it —
+        this operation, this device, these -o options — is generated. Run
+        `qpi-driver devices` to see which devices this install has.
         """
         _start(
             operation,
@@ -159,19 +143,20 @@ if typer.IS_TYPER_INSTALLED:
     ) -> None:
         """Build the driver for *device* within *operation* and run it.
 
-        Shared by every operation: the device selects the backend, its own option
-        schema checks and coerces the -o values, and its builder turns those into
-        the unstarted driver that gets started here. Anything rejected along the
-        way — an unknown device or option, a missing or bad value — surfaces as a
-        ``ValueError`` and becomes a one-line CLI error rather than a traceback.
+        Shared by every operation: the device selects the backend and its builder
+        reads the -o options it understands, returning the unstarted driver that
+        gets started here. Anything rejected along the way — an unknown device, a
+        missing or unreadable value — surfaces as a ``ValueError`` and becomes a
+        one-line CLI error rather than a traceback.
 
-        An empty *device* means the operation's own default, since one command
-        serves every operation and their default devices differ. There is no name
-        to resolve: a driver's display label belongs to the admin who registered it
-        in the dashboard, and the ``drivers/connect`` response hands it over.
+        An option no device read is reported after the build rather than checked
+        against a declared list beforehand: the device's own code is the only
+        description of what it accepts.
+
+        There is no name to resolve: a driver's display label belongs to the admin
+        who registered it in the dashboard, and the ``drivers/connect`` response
+        hands it over.
         """
-        device = device or OPERATIONS[operation].default_device
-
         if not token:
             typer.echo(
                 "Error: access token is required. "
@@ -181,10 +166,10 @@ if typer.IS_TYPER_INSTALLED:
             raise typer.Exit(code=1)
 
         # Usage errors, reported before the banner so they are the first thing on
-        # screen: which device, and whether its options make sense at all.
+        # screen: which device, and whether the -o syntax parses at all.
         try:
             spec = resolve_device(operation, device)
-            parsed = spec.parse_options(_split_options(options or []))
+            parsed = Options(_split_options(options or []))
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
@@ -205,6 +190,16 @@ if typer.IS_TYPER_INSTALLED:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
 
+        unread = parsed.unread()
+        if unread:
+            label = "options" if len(unread) > 1 else "option"
+            typer.echo(
+                f"Error: unknown {label} {', '.join(repr(k) for k in unread)} for "
+                f"{operation.value} device {device!r}.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
         driver.run()
 
     @app.command()
@@ -218,34 +213,17 @@ if typer.IS_TYPER_INSTALLED:
         ] = None,
     ):
         """
-        List the operations, the devices each one can run, and their -o options.
+        List the devices this install can run, by operation.
 
-        The same catalog `process --help` and `monitor --help` show, in one place;
-        `catalog --json` is the machine-readable form.
+        Names only, and only what is actually registered here — which is the useful
+        question after installing a distribution of devices, or writing one. What a
+        device does and which -o options it takes is documented where a driver is
+        registered, in QPI-UI.
         """
-        typer.echo(render_catalog(operation))
-
-    @app.command()
-    def catalog(
-        as_json: Annotated[
-            bool,
-            typer.Option(
-                "--json/--text",
-                help="Print the catalog as JSON, or as the same text `devices` shows.",
-            ),
-        ] = True,
-    ):
-        """
-        Print the whole device catalog for another program to read.
-
-        The JSON shape is a contract — QPI-UI checks its own catalog against it,
-        and the Go and TypeScript SDKs mirror it — and is documented in full on
-        `qpi_driver.builtins.catalog.catalog_dict` (RFC 0003 §9).
-        """
-        if not as_json:
-            typer.echo(render_catalog())
-            return
-        typer.echo(json.dumps(catalog_dict(), indent=2))
+        wanted = list(Operation) if operation is None else [operation]
+        for op in wanted:
+            names = [spec.name for spec in registered_devices(op)]
+            typer.echo(f"{op.value}: {', '.join(names) or 'none'}")
 
     @app.command()
     def version():
@@ -284,9 +262,8 @@ if typer.IS_TYPER_INSTALLED:
     def _split_options(pairs: list[str]) -> dict[str, str]:
         """Turn repeatable ``-o key=value`` options into a dict of raw strings.
 
-        Only the syntax is the CLI's business; what the keys mean, whether they
-        exist and what type each value is belong to the chosen device's schema
-        (:meth:`DeviceSpec.parse_options`), which runs on the result.
+        Only the syntax is the CLI's business; what the keys mean and what type
+        each value is belong to the device that reads them.
         """
         options: dict[str, str] = {}
         for pair in pairs:

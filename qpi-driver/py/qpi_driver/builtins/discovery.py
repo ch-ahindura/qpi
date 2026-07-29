@@ -4,8 +4,8 @@ Route 1 is the built-in devices, which register themselves in
 :mod:`qpi_driver.builtins`. The other two live here:
 
 **Installed.** A distribution advertises devices through the ``qpi_driver.devices``
-entry-point group. ``pip install mylab-qpi-devices`` and its devices appear in
-``--help``, in ``catalog --json`` and to ``--device``, with nothing to change here.
+entry-point group. ``pip install mylab-qpi-devices`` and its devices are there for
+``--device``, and listed by ``qpi-driver devices``, with nothing to change here.
 This is the route for a device meant to be shared, versioned and installed on a
 production node.
 
@@ -162,25 +162,14 @@ def _imported_spec(operation: Operation, path: str) -> DeviceSpec:
         if isinstance(imported, Executor) or (
             isinstance(imported, type) and issubclass(imported, Executor)
         ):
-            return qpu.device_spec(
-                path,
-                executor=imported,
-                summary=f"Executor imported from {path}.",
-                accepts_any_option=True,
-            )
+            return qpu.device_spec(path, executor=imported, pass_through=True)
         raise ValueError(
             f"{path!r} is not usable as a process device: expected an Executor "
             "subclass or instance, or a DeviceSpec"
         )
 
     if callable(imported):
-        return DeviceSpec(
-            name=path,
-            operation=operation,
-            build=imported,
-            summary=f"Device builder imported from {path}.",
-            accepts_any_option=True,
-        )
+        return DeviceSpec(name=path, operation=operation, build=imported)
     raise ValueError(
         f"{path!r} is not usable as a {operation.value} device: expected a "
         "device builder or a DeviceSpec"

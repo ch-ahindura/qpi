@@ -14,10 +14,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from qpi_driver.builtins.registry import DeviceSpec, Operation, OptionSpec, as_bool
+from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.events import Event, EventType
 from qpi_driver.executors import Executor, JobPayload
-from qpi_driver.paths import as_safe_dir
+from qpi_driver.options import Options
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
 log = logging.getLogger(__name__)
@@ -27,26 +27,10 @@ _worker_log = logging.getLogger("worker")
 
 # The executor devices the `process` operation can run. Every one of them is the
 # same driver over a different executor, so they share one builder and differ
-# only in their spec (RFC 0003 §5).
+# only in the name they register under (RFC 0003 §5). Which of them a given
+# install can actually run depends on the extras it was installed with; the
+# executor's own import failure says so.
 PROCESS_DEVICES = ("mock", "qiskit_aer", "quantify", "qblox", "presto")
-
-# Which install target ships each executor. Empty means the base `[cli]` extra
-# is enough; kept in step with qpi-ui/internal/drivers/catalog.go.
-_DEVICE_EXTRAS = {
-    "mock": "",
-    "presto": "",
-    "qiskit_aer": "qpi-driver[cli,aer]",
-    "quantify": "qpi-driver[cli,quantify]",
-    "qblox": "qpi-driver[cli,qblox]",
-}
-
-_DEVICE_SUMMARIES = {
-    "mock": "Qiskit BasicSimulator — the default, needs no hardware.",
-    "presto": "Presto control system (not yet implemented).",
-    "qiskit_aer": "Qiskit Aer simulator.",
-    "quantify": "Quantify-scheduler over Qblox instruments.",
-    "qblox": "Qblox scheduler (legacy).",
-}
 
 
 class QpuDriver(QpiDriver):
@@ -158,33 +142,47 @@ class QpuDriver(QpiDriver):
 def build_from_options(
     *,
     executor: str | type[Executor] | Executor,
-    options: dict[str, Any],
+    options: Options,
     qpi_addr: str,
     token: str,
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
+    pass_through: bool = False,
 ) -> QpuDriver:
-    """Build an unstarted QPU driver over *executor* from parsed ``-o`` options.
+    """Build an unstarted QPU driver over *executor* from its ``-o`` options.
 
-    *options* is what :meth:`DeviceSpec.parse_options` returns for a process
-    device — already checked and coerced against :data:`OPTIONS`, so there is
-    nothing to validate or convert here. Everything but ``data_dir``, which the
-    driver takes in its own right, goes to the executor untouched, so a new entry
-    in :data:`OPTIONS` reaches the executor without editing this function.
+    The options a QPU reads are the ones read here, and all of them have a working
+    default, so a QPU needs no ``-o`` at all. ``data_dir`` is the driver's own;
+    every other one is handed to the executor's constructor.
+
+    *pass_through* additionally forwards options this function does not know, for
+    an executor named by import path — whose constructor is the only thing that
+    knows its keys. A built-in executor leaves it off, so a mistyped ``-o`` for one
+    of those is still reported rather than swallowed by ``**kwargs``.
 
     The driver is returned rather than started so a caller — including a test —
     decides when, and whether, to connect (RFC 0003 §7).
     """
-    executor_options = {
-        key: value for key, value in options.items() if key != "data_dir"
+    executor_options: dict[str, Any] = {
+        "job_timeout": options.get_int("job_timeout", 10),
+        "is_dummy": options.get_bool("is_dummy"),
+        "quantify_hardware_config": options.get_path(
+            "quantify_hardware_config", "./quantify.hardware.json"
+        ),
+        "quantify_device_config": options.get_path(
+            "quantify_device_config", "./quantify.device.yml"
+        ),
     }
+    data_dir = options.get_dir("data_dir", "./bin/data")
+    if pass_through:
+        executor_options.update(options.remaining())
 
     return QpuDriver(
         qpi_addr=qpi_addr,
         token=token,
         executor=executor,
-        data_dir=options["data_dir"],
+        data_dir=data_dir,
         ca_fingerprint=ca_fingerprint,
         ca_file_path=Path(ca_file_path),
         recv_timeout_ms=recv_timeout_ms,
@@ -192,91 +190,34 @@ def build_from_options(
     )
 
 
-# The runtime settings every process device reads, whichever executor it runs.
-# All of them have working defaults, so a QPU needs no -o options at all.
-OPTIONS = (
-    OptionSpec(
-        key="data_dir",
-        help="Directory the executor writes datasets and artefacts to.",
-        parse=as_safe_dir,
-        default="./bin/data",
-        example="./bin/data",
-    ),
-    OptionSpec(
-        key="job_timeout",
-        help="Seconds a single job may run before it is abandoned.",
-        parse=int,
-        default="10",
-        example="30",
-    ),
-    OptionSpec(
-        key="is_dummy",
-        help="Run against the vendor's dummy instruments instead of real hardware.",
-        parse=as_bool,
-        default="false",
-        example="true",
-    ),
-    OptionSpec(
-        key="quantify_hardware_config",
-        help="Path to the quantify hardware configuration JSON.",
-        parse=Path,
-        default="./quantify.hardware.json",
-        example="./quantify.hardware.json",
-    ),
-    OptionSpec(
-        key="quantify_device_config",
-        help="Path to the quantify device configuration YAML.",
-        parse=Path,
-        default="./quantify.device.yml",
-        example="./quantify.device.yml",
-    ),
-)
-
-
 def device_spec(
     name: str,
     executor: str | type[Executor] | Executor | None = None,
     *,
-    extra: str = "",
-    summary: str = "",
-    options: tuple[OptionSpec, ...] = (),
-    accepts_any_option: bool = False,
+    pass_through: bool = False,
 ) -> DeviceSpec:
-    """Describe a ``process`` device that runs *executor* on the QPU driver.
+    """A ``process`` device that runs *executor* on the QPU driver.
 
     Every process device is this one driver over a different executor, so they
     all share :func:`build_from_options` with the executor bound. *executor*
     defaults to *name*, which is how the built-in executors register; pass a
     class or instance to wrap one the SDK does not ship.
 
-    *options* are this executor's own settings, added to the :data:`OPTIONS` every
-    process device reads. Declaring them is what gets them into ``--help`` and gets
-    their values checked and converted; *accepts_any_option* is the alternative,
-    letting undeclared options through to the executor's constructor as strings —
-    which is all a device named by import path can do, its executor being one this
-    module has never seen.
+    *pass_through* is for exactly that case: an executor this module has never seen
+    may read ``-o`` keys nothing here can anticipate.
     """
     return DeviceSpec(
         name=name,
         operation=Operation.PROCESS,
         build=functools.partial(
-            build_from_options, executor=name if executor is None else executor
+            build_from_options,
+            executor=name if executor is None else executor,
+            pass_through=pass_through,
         ),
-        options=OPTIONS + tuple(options),
-        extra=extra,
-        summary=summary,
-        accepts_any_option=accepts_any_option,
     )
 
 
-DEVICE_SPECS = tuple(
-    device_spec(
-        name,
-        extra=_DEVICE_EXTRAS[name],
-        summary=_DEVICE_SUMMARIES[name],
-    )
-    for name in PROCESS_DEVICES
-)
+DEVICE_SPECS = tuple(device_spec(name) for name in PROCESS_DEVICES)
 
 
 def job_worker(
