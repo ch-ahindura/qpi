@@ -41,7 +41,7 @@ export function ThemeEditorModal({ theme, onClose }: Props) {
       try {
         const tokensObj = JSON.parse(tokensStr);
         applyTokens(tokensObj, isDark);
-      } catch (e) {
+      } catch {
         alert("Invalid JSON in Design Tokens. Cannot preview design tokens.");
       }
     }

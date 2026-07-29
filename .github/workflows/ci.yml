@@ -253,6 +253,9 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'qpi-ui/internal/dashboard/package-lock.json'
 
+    - name: Lint dashboard
+      run: make lint-dashboard
+
     - name: Run E2E Cypress Dashboard Tests
       run: make test-e2e-dashboard
 
