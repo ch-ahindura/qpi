@@ -27,14 +27,44 @@ fi
 echo "Installing for user: $REAL_USER (Home: $REAL_HOME)"
 echo ""
 
-# 1. Prompt for configuration if not provided via environment
-while [ -z "$QPI_TOKEN" ]; do read -p "Enter QPI Access Token: " QPI_TOKEN; done
-while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi.sopherapps.se): " QPI_ADDR; done
-while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
+# 1. Configuration comes from the environment; a prompt fills in the rest.
+#
+# Prompting needs a terminal on stdin, and one of the two documented invocations
+# has none: `curl … | sudo bash` puts the script itself on stdin, so a `read` there
+# reaches EOF at once and returns non-zero — which under `set -e` ends the install
+# with nothing printed and no service written. So nothing is prompted for unless
+# there is a terminal to answer it. Piped, a value with a default takes its
+# default, and one without names the variable to set instead of exiting silently.
+#
+# The interactive form, `sudo bash -c "$(curl …)"`, keeps the terminal on stdin,
+# because the script arrives as an argument rather than on the pipe.
+require() { # require VAR PROMPT — for a value the installer cannot invent
+    local name="$1" prompt="$2"
+    while [ -z "${!name}" ]; do
+        if [ ! -t 0 ]; then
+            echo "Error: $name is not set, and there is no terminal to ask on." >&2
+            echo "Set it in the environment ($name=…), or install interactively:" >&2
+            echo "  sudo bash -c \"\$(curl -LsSf <installer-url>)\"" >&2
+            exit 1
+        fi
+        read -rp "$prompt" "$name"
+    done
+}
+
+ask() { # ask VAR PROMPT — for a value whose default the caller applies below
+    local name="$1" prompt="$2"
+    if [ -z "${!name}" ] && [ -t 0 ]; then
+        read -rp "$prompt" "$name"
+    fi
+}
+
+require QPI_TOKEN "Enter QPI Access Token: "
+require QPI_ADDR "Enter QPI Server Address (e.g. https://qpi.sopherapps.se): "
+require CA_FINGERPRINT "Enter CA Fingerprint: "
 # Names the unit file, its journal identifier and its data directory — not the
 # driver. A driver's display label is the one an admin typed into the dashboard,
 # and the drivers/connect response hands it over.
-while [ -z "$SERVICE_NAME" ]; do read -p "Enter a name for this service (e.g. cryostat-1): " SERVICE_NAME; done
+require SERVICE_NAME "Enter a name for this service (e.g. cryostat-1): "
 
 # A driver is run by its OPERATION (the --operation flag) on a specific DEVICE,
 # and both are launched the same way: `qpi-driver start --operation <operation>
@@ -45,15 +75,15 @@ while [ -z "$SERVICE_NAME" ]; do read -p "Enter a name for this service (e.g. cr
 # monitor device and no process device, so offering `process` here would write a
 # unit whose ExecStart can never succeed — and with Restart=on-failure below,
 # crash-loop. Running a QPU means the Python SDK, or a device of your own.
-[ -z "$OPERATION" ] && read -p "Enter Operation (monitor) [monitor]: " OPERATION
+ask OPERATION "Enter Operation (monitor) [monitor]: "
 OPERATION=${OPERATION:-monitor}
-[ -z "$DEVICE" ] && read -p "Enter Device (bluefors_gen1) [bluefors_gen1]: " DEVICE
+ask DEVICE "Enter Device (bluefors_gen1) [bluefors_gen1]: "
 DEVICE=${DEVICE:-bluefors_gen1}
 
 # A driver's device settings (e.g. bluefors_gen1's base_url/channels) are passed
 # as generic DRIVER_OPTIONS ("key=value;key=value"), rendered as -o flags below.
 # This applies to any operation; leave blank for a device that needs none.
-[ -z "$DRIVER_OPTIONS" ] && read -p "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K), or leave blank: " DRIVER_OPTIONS
+ask DRIVER_OPTIONS "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K), or leave blank: "
 
 # The version of qpi-driver to install.
 # This should match the qpi-ui version if provided via environment variable.
@@ -129,7 +159,12 @@ echo "Creating systemd service at $SERVICE_FILE..."
 # base_url/channels) are rendered as trailing -o flags.
 OPT_ARGS=""
 add_opt() {
-    [ -n "$1" ] && OPT_ARGS="$OPT_ARGS \\
+    # `return 0` rather than `[ -n "$1" ] && …`, whose false test would make the
+    # function itself return non-zero and take `set -e` with it: a DRIVER_OPTIONS
+    # of ";base_url=…" splits into an empty first field, and a stray semicolon
+    # should not end the install without a word.
+    [ -n "$1" ] || return 0
+    OPT_ARGS="$OPT_ARGS \\
         -o $1"
 }
 
