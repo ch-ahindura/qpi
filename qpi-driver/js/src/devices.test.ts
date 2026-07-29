@@ -274,7 +274,6 @@ describe("Options", () => {
     expect(options.num("interval", 2.5)).toBe(2.5);
     expect(options.bool("fast", true)).toBe(true);
     expect(options.ms("timeout")).toBeUndefined();
-    expect(options.has("anything")).toBe(false);
   });
 
   it("reads a given value as the accessor says", () => {

@@ -160,12 +160,6 @@ func (r *Registry) Resolve(operation Operation, device string) (DeviceSpec, erro
 	return spec, nil
 }
 
-// Has reports whether operation has a device of this name registered.
-func (r *Registry) Has(operation Operation, device string) bool {
-	_, ok := r.devices[operation][device]
-	return ok
-}
-
 // Register adds spec to [Default].
 func Register(spec DeviceSpec) error { return Default.Register(spec) }
 
@@ -238,13 +232,6 @@ func NewOptions(values map[string]string) *Options {
 		copied[key] = value
 	}
 	return &Options{values: copied, read: map[string]bool{}}
-}
-
-// Has reports whether the option was given. Counts as reading it.
-func (o *Options) Has(key string) bool {
-	o.read[key] = true
-	_, ok := o.values[key]
-	return ok
 }
 
 // String returns the option as typed, or fallback if it is absent.

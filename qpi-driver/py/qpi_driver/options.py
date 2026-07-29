@@ -36,11 +36,6 @@ class Options:
         self._values = {key: str(value) for key, value in (values or {}).items()}
         self._read: set[str] = set()
 
-    def __contains__(self, key: str) -> bool:
-        """Whether *key* was given. Counts as reading it."""
-        self._read.add(key)
-        return key in self._values
-
     def __repr__(self) -> str:
         return f"Options({self._values!r})"
 

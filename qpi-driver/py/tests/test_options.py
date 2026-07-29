@@ -88,13 +88,6 @@ def test_reading_an_absent_key_still_counts_as_reading_it():
     assert options.unread() == ()
 
 
-def test_containment_counts_as_a_read():
-    options = Options({"api_key": "s3cret"})
-
-    assert "api_key" in options
-    assert options.unread() == ()
-
-
 def test_remaining_hands_over_everything_left():
     """For a device passing options on to something this SDK has never seen."""
     options = Options({"ticks": "9", "qubits": "5", "mode": "fast"})

@@ -135,6 +135,9 @@ names and signatures. What moved is how a driver is registered and launched:
 
 ### Changed
 
+- `qpi-driver`: Removed the "was this option given?" query — `Options.Has` in Go, `Options.__contains__` in Python, and `Options.has` from the TypeScript public surface (it stays as an internal detail of `ms()`). It answered a question that mattered when `Options` held pre-parsed values and a caller had to tell "absent" from "the zero value"; now every accessor takes its own fallback, so nothing asked. `devices.Registry.Has` went with it: its only caller was the default-device resolution, which is gone along with default devices.
+
+
 - `qpi-driver`: The `bluefors_gen1` monitor now takes *what reads one channel* as an argument, in all three SDKs — `read_channel=` in Python, `channelReader` in TypeScript, `Options.ReadChannel` in Go. Everything around that read is the same whatever is being read: the timer, one bad channel not losing the rest of the tick, and the `CryostatReading` event. Supplying a different reader is therefore the whole of what a monitor for other control software has to write — Bluefors Gen. 2, whose control software has its own API, being the obvious case. It is the arrangement `QpuDriver` already used for executors: the reusable driver holds the replaceable part as a value, so nothing is subclassed and a device cannot be broken by the driver's internals moving. In Go it also had to be a value, there being no inheritance to reach for; making the three agree was the point. `bluefors.Reading` is exported for it.
 
 

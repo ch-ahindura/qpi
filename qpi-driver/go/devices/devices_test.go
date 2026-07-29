@@ -229,9 +229,6 @@ func TestOptionsFallBackWhenAKeyIsAbsent(t *testing.T) {
 		!opts.Bool("fast", true) || opts.Seconds("timeout", 5*time.Second) != 5*time.Second {
 		t.Error("expected each accessor to return its fallback")
 	}
-	if opts.Has("anything") {
-		t.Error("expected Has to report an absent option")
-	}
 	if err := opts.Err(); err != nil {
 		t.Errorf("expected no error from absent options, got %v", err)
 	}
@@ -333,17 +330,6 @@ func TestOptionsCopyWhatTheyAreGiven(t *testing.T) {
 
 	if opts.Int("probes", 0) != 9 {
 		t.Error("expected NewOptions to copy its input")
-	}
-}
-
-func TestHasReportsWhatIsRegistered(t *testing.T) {
-	registry := devices.NewRegistry(fakeSpec("mine", devices.Monitor))
-
-	if !registry.Has(devices.Monitor, "mine") {
-		t.Error("expected a registered device to be found")
-	}
-	if registry.Has(devices.Monitor, "other") || registry.Has(devices.Process, "mine") {
-		t.Error("expected Has to be scoped to the operation and name")
 	}
 }
 

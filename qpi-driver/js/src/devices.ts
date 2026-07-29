@@ -320,12 +320,6 @@ export class Options {
     this.values = { ...values };
   }
 
-  /** Whether the option was given. Counts as reading it. */
-  has(key: string): boolean {
-    this.seen.add(key);
-    return key in this.values;
-  }
-
   /** The option as typed, or `fallback` if it is absent. */
   str(key: string, fallback = ""): string {
     this.seen.add(key);
@@ -386,7 +380,7 @@ export class Options {
    * Undefined when absent, so a driver's own default still applies.
    */
   ms(key: string): number | undefined {
-    return this.has(key) ? this.num(key, 0) * 1000 : undefined;
+    return this.lookup(key) === undefined ? undefined : this.num(key, 0) * 1000;
   }
 
   /**
