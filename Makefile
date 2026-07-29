@@ -1,4 +1,4 @@
-.PHONY: sync-driver-catalog test-docs test-docs-static test-docs-snippets test-docs-example test-docs-catalog test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
+.PHONY: test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
 
 VERSION ?= 0.1.2
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
@@ -8,7 +8,6 @@ UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
 DOCS_EXAMPLE_VENV := bin/.docs-example-venv
 DOCS_SITE_VENV := bin/.docs-site-venv
 DOCS_SITE_OUT := bin/.docs-site
-DOCS_CATALOG_SNAPSHOT := bin/.docs-catalog-snapshot
 
 all: build
 
@@ -63,9 +62,9 @@ test: test-go test-py test-js-client test-go-client test-py-client test-js-drive
 # re-runs the command they copied a block from — so the only fix that holds is a
 # failing build.
 #
-# Split into five steps so a failure names which kind of claim broke.
+# Split into four steps so a failure names which kind of claim broke.
 # ---------------------------------------------------------------------------
-test-docs: test-docs-static test-docs-snippets test-docs-example test-docs-catalog test-docs-site
+test-docs: test-docs-static test-docs-snippets test-docs-example test-docs-site
 
 # The static claims: make targets, repository paths, links, and the CLI flags every
 # document names, checked against each SDK's own --help.
@@ -87,47 +86,21 @@ test-docs-snippets:
 # CLI whether the device arrived. Only ever exercised with `entry_points` mocked
 # before, which is how a circular import that skipped every installed device survived.
 test-docs-example:
-	@echo "Installing examples/custom_device and checking it reaches the catalog..."
+	@echo "Installing examples/custom_device and checking the CLI can run it..."
 	rm -rf $(DOCS_EXAMPLE_VENV)
 	$(UV) venv --python 3.12 $(DOCS_EXAMPLE_VENV)
 	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet "./qpi-driver/py[cli]"
 	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet --no-deps \
 		./qpi-driver/py/examples/custom_device
-	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver catalog --json | grep -q '"quantum_x"' \
-		|| { echo "FAILED: the installed example's device is not in catalog --json"; exit 1; }
+	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver devices 2>&1 | grep -q "quantum_x" \
+		|| { echo "FAILED: the installed example's device is not registered"; exit 1; }
 	@# A skipped entry point is a warning, not an error, so the exit code alone would
 	@# not have caught it: the warning itself has to be absent.
 	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver devices 2>&1 \
 		| grep -q "skipping device entry point" \
 		&& { echo "FAILED: the installed example's entry point was skipped"; exit 1; } \
-		|| echo "OK: quantum_x is in the catalog, with no skipped entry point"
+		|| echo "OK: quantum_x is registered, with no skipped entry point"
 	rm -rf $(DOCS_EXAMPLE_VENV)
-
-# The generated catalog table and the qpi-ui fixtures, regenerated and diffed. A
-# one-way generator that CI never runs is a table that drifts.
-#
-# Compared against a snapshot rather than against git, because `git diff` cannot tell
-# stale generated content from any other uncommitted work — it would fail on a branch
-# that had touched the README for an unrelated reason, and pass on a dirty tree that
-# happened to contain the regenerated file. The snapshot is restored either way, so a
-# failing run reports the drift instead of quietly fixing it.
-test-docs-catalog:
-	@echo "Checking the generated catalog table and fixtures for drift..."
-	@rm -rf $(DOCS_CATALOG_SNAPSHOT) && mkdir -p $(DOCS_CATALOG_SNAPSHOT)
-	@for f in $(GENERATED_BY_CATALOG); do cp "$$f" "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)"; done
-	@$(MAKE) --no-print-directory sync-driver-catalog
-	@status=0; \
-	for f in $(GENERATED_BY_CATALOG); do \
-		diff -u "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)" "$$f" || status=1; \
-	done; \
-	for f in $(GENERATED_BY_CATALOG); do cp "$(DOCS_CATALOG_SNAPSHOT)/$$(echo $$f | tr / _)" "$$f"; done; \
-	rm -rf $(DOCS_CATALOG_SNAPSHOT); \
-	if [ $$status -ne 0 ]; then \
-		echo "FAILED: the checked-in catalog does not match what the SDKs report."; \
-		echo "        Run 'make sync-driver-catalog', review the diff, and commit it."; \
-		exit 1; \
-	fi
-	@echo "OK: the catalog fixtures and the README table are what the SDKs report"
 
 # The site itself: a broken nav entry or a dead internal link. `docs.yml` only runs on
 # a v* tag, so without this nothing validates the documentation on a pull request.
@@ -150,9 +123,9 @@ test-go-minimal:
 test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox
 
 # The framework modules the coverage floor applies to: the SDK, the CLI, the device
-# catalog, and the executors that need no hardware. Everything else is reported but
-# not gated — see cov-py.
-PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
+# registry and its options, and the executors that need no hardware. Everything else
+# is reported but not gated — see cov-py.
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
 PY_COV_MIN := 96
 
 test-py-base:
@@ -217,7 +190,7 @@ test-js-driver:
 	@echo "Running JS/TS driver SDK tests..."
 	(cd qpi-driver/js && npm ci && npm test)
 
-# The Go packages the coverage floor applies to: the device catalog and the CLI over
+# The Go packages the coverage floor applies to: the device registry and the CLI over
 # it, both of which need no server. The base SDK (driver.go: Run, recvLoop, the TLS
 # dialling) and `qpi-driver/main.go` are reported but not gated — the first needs a
 # live server and is covered by `make test-e2e-driver`, and the second is `main`,
@@ -326,42 +299,6 @@ format: format-go format-py format-js format-dashboard format-go-client format-p
 format-go:
 	@echo "Formatting Go server files..."
 	(cd qpi-ui && go fmt ./...)
-
-# Regenerate the driver catalog fixtures the qpi-ui drift check reads. Devices and
-# their options belong to the driver SDK (RFC 0003 §9), so this is one-way: the SDK
-# writes, qpi-ui checks. Running it is the deliberate act of recording a catalog
-# change — the drift test names this target in every failure.
-#
-# One fixture per SDK, because they do not ship the same devices: only Python has a
-# process device, and qpi-ui has to know that to stop offering a Go driver a device
-# no Go binary has. The Python catalog is also the one the README table is rendered
-# from, being the superset.
-CATALOG_DIR := qpi-ui/internal/drivers/testdata
-
-# Everything `sync-driver-catalog` writes, and therefore everything `test-docs-catalog`
-# checks for drift.
-GENERATED_BY_CATALOG := \
-	$(CATALOG_DIR)/catalog.python.json \
-	$(CATALOG_DIR)/catalog.go.json \
-	$(CATALOG_DIR)/catalog.typescript.json \
-	qpi-driver/py/README.md
-
-sync-driver-catalog:
-	@echo "Regenerating $(CATALOG_DIR)/catalog.python.json..."
-	$(UV) sync --project qpi-driver/py --extra cli
-	$(UV) run --project qpi-driver/py python -m qpi_driver.cli catalog --json \
-		> $(CATALOG_DIR)/catalog.python.json
-	@echo "Regenerating $(CATALOG_DIR)/catalog.go.json..."
-	(cd qpi-driver/go && go run ./qpi-driver catalog --json) \
-		> $(CATALOG_DIR)/catalog.go.json
-	@echo "Regenerating $(CATALOG_DIR)/catalog.typescript.json..."
-	(cd qpi-driver/js && npm ci --silent && npm run --silent build)
-	node qpi-driver/js/dist/builtins/cli.js catalog --json \
-		> $(CATALOG_DIR)/catalog.typescript.json
-	@echo "Regenerating the -o option tables in the driver READMEs..."
-	python3 scripts/render_catalog_table.py qpi-driver/py/README.md \
-		< $(CATALOG_DIR)/catalog.python.json
-	@echo "Done. Review the diff, then make catalog.go agree with it."
 
 format-py:
 	@echo "Formatting and sorting imports for Python driver files..."

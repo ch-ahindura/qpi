@@ -8,14 +8,14 @@ const (
 	eventCryostatReading = "CryostatReading"
 )
 
-// processOptions are the `-o` keys every process device reads, mirroring the SDKs'
-// qpu OPTIONS. All of them have working defaults, so a QPU needs no -o options at
-// all and none is pre-filled in a snippet — but they belong here, because the
-// catalog is checked against the SDK's own and because the dashboard shows them.
+// processOptions are the `-o` keys every process device reads. All of them have
+// working defaults, so a QPU needs no -o options at all and none is pre-filled in a
+// snippet — but they belong here, because this is where an operator sees what a QPU
+// can be told.
 //
 // The two quantify paths are only meaningful to the quantify and qblox executors;
-// they are listed for every process device because the SDK declares them for every
-// process device, and the catalog's job is to say what the SDK accepts.
+// they are listed for every process device because the SDK's QPU builder reads them
+// for every process device.
 func processOptions() []Option {
 	return []Option{
 		{
@@ -68,7 +68,8 @@ func processSpec(kind Kind, extra string) Spec {
 	}
 }
 
-// Default is the catalog the server uses. Register a new backend by adding one
+// Default is the catalog the server uses — the only catalog there is. Register a
+// new backend by adding one
 // line here — a processSpec for a QPU-shaped kind, or a Spec with
 // Operation=Monitor and its -o options for a monitor-shaped kind.
 var Default = NewRegistry(

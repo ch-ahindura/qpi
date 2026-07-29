@@ -15,8 +15,8 @@ nothing installed beyond the SDKs themselves, so they run first and fail fast:
    come from each SDK's own ``--help``, so a removed flag cannot linger in a README,
    and each document is checked against the SDK it belongs to.
 
-The runnable half — the snippets, the error transcripts, the catalog, the installed
-example — is the rest of ``make test-docs``.
+The runnable half — the snippets, the error transcripts, the installed example — is
+the rest of ``make test-docs``.
 
 Three deliberate exclusions:
 
@@ -243,9 +243,9 @@ def check_paths(path: Path, lines: list[Line], report: Report) -> None:
 FLAG_RE = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]+)")
 DRIVER_COMMAND_RE = re.compile(r"qpi-driver\b|qpi_driver\.cli\b")
 
-# Every subcommand whose flags a document might legitimately name. `catalog --json`
-# and `devices --operation` are as much part of the documented CLI as `start` is.
-SUBCOMMANDS = ("", "start", "devices", "catalog")
+# Every subcommand whose flags a document might legitimately name.
+# `devices --operation` is as much part of the documented CLI as `start` is.
+SUBCOMMANDS = ("", "start", "devices")
 
 CLI_INVOCATIONS = {
     "py": ([sys.executable, "-m", "qpi_driver.cli"], ROOT / "qpi-driver" / "py"),

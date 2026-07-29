@@ -119,8 +119,7 @@ func TestSnippetsMonitor(t *testing.T) {
 	if !strings.Contains(s.ManualCLI, "-o base_url=") || !strings.Contains(s.ManualCLI, "-o channels=") {
 		t.Errorf("expected -o options in the manual CLI, got %q", s.ManualCLI)
 	}
-	// channels first, matching the order the SDKs declare them in, since the
-	// catalog is checked against the SDK's own.
+	// channels first: it is the one option with no default, so it leads.
 	if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='channels=") ||
 		!strings.Contains(s.Systemd, ";base_url=") {
 		t.Errorf("expected DRIVER_OPTIONS env in the systemd snippet, got %q", s.Systemd)

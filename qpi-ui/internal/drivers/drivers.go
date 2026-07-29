@@ -1,14 +1,18 @@
 // Package drivers is QPI-UI's catalog of registerable driver backends: which
-// kinds exist, how each is installed and launched, and which events it takes
-// part in (RFC 0001 §3, §7).
+// kinds exist, how each is installed and launched, which `-o` options each takes,
+// and which events it participates in (RFC 0001 §3, §7).
 //
-// A backend is described by a data-only Spec, and the whole catalog is a
-// Registry of Specs. Adding a new backend — a new executor or a new monitor —
-// means registering one Spec in catalog.go; no other server code changes. A
-// backend's operation (`qpi-driver start --operation process --device <kind>`,
-// or `--operation monitor`) and its options are just
-// Spec fields, so a differently-shaped backend is more data rather than a new
-// branch.
+// This is *the* catalog. The driver SDKs publish none — a device there is a name
+// and a builder, nothing more — because two descriptions of the same device is one
+// to keep in step by hand (RFC 0003 §9). An operator picks a device and fills in its
+// options here, and the command this package renders is what launches it.
+//
+// A backend is described by a data-only Spec, and the whole catalog is a Registry of
+// Specs. Adding a new backend — a new executor or a new monitor — means registering
+// one Spec in catalog.go; no other server code changes. A backend's operation
+// (`qpi-driver start --operation process --device <kind>`, or `--operation monitor`)
+// and its options are just Spec fields, so a differently-shaped backend is more data
+// rather than a new branch.
 package drivers
 
 import "sort"
@@ -47,9 +51,10 @@ const (
 	Monitor Operation = "monitor"
 )
 
-// Option is one `-o key=value` setting a kind reads. It mirrors the SDKs'
-// OptionSpec — the driver owns this information and QPI-UI's copy exists to render
-// setup snippets and to be checked against the SDK's own catalog (RFC 0003 §9).
+// Option is one `-o key=value` setting a kind reads: what the dashboard's
+// registration form asks for, and what the rendered setup command fills in. The
+// device on the other end reads whichever of these keys it understands and reports
+// any it does not (RFC 0003 §9).
 type Option struct {
 	// Key is the option name as typed, e.g. "channels".
 	Key string
@@ -91,8 +96,8 @@ type Spec struct {
 	// Languages are the SDKs that ship this device. Which devices a build has is
 	// the SDK's business and it differs between them — only the Python SDK has a
 	// process device — so a kind is registerable in a language only if that
-	// language's SDK can actually run it. Empty would mean a device no SDK ships;
-	// a drift test checks each SDK's own catalog against this list.
+	// language's SDK can actually run it. Empty would mean a device no SDK ships.
+	// `qpi-driver devices` on the node is what confirms this list.
 	Languages []Language
 }
 
