@@ -14,7 +14,13 @@ if has_typer:
     from qpi_driver.cli import app
     from typer.testing import CliRunner
 
-    runner = CliRunner()
+    # TERM=dumb is what makes these assertions hold on CI as well as locally.
+    # Typer forces Rich's colour on when GITHUB_ACTIONS is set, and Rich renders a
+    # flag as several coloured runs — `--device` arrives as `-` then `-device` with
+    # escape codes between — so a plain substring match finds neither the flag nor
+    # even the `Usage:` at the start of a line. A dumb terminal turns the whole
+    # colour system off, leaving the text Rich would have coloured.
+    runner = CliRunner(env={"TERM": "dumb"})
 
 
 def _output(result) -> str:

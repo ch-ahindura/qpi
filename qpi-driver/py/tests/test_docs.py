@@ -36,7 +36,9 @@ if has_typer:
 
     from qpi_driver.cli import app
 
-    runner = CliRunner()
+    # TERM=dumb keeps Rich from colouring the output, which CI would otherwise
+    # turn on and break every match against it. See tests/test_cli.py.
+    runner = CliRunner(env={"TERM": "dumb"})
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PY_README = REPO_ROOT / "qpi-driver" / "py" / "README.md"
