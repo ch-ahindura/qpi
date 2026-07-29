@@ -5,75 +5,39 @@ import (
 	"github.com/sopherapps/qpi/qpi-driver/go/devices"
 )
 
-// DeviceSpec describes this monitor to the CLI: the `-o` options it reads, with
-// their types, defaults and examples, and the builder that turns them into a
-// driver (RFC 0003 §5).
+// DeviceSpec is what `--device bluefors_gen1` names: this package's driver
+// (RFC 0003 §6).
 //
-// It lives here, beside the driver it describes, rather than in a table somewhere
-// central — so the two cannot drift apart. Whichever main assembles the CLI
-// registers it: `devices.Register(bluefors.DeviceSpec)`.
+// A name, an operation and a builder is the whole of it. What the device is and
+// which `-o` keys to fill in belongs to QPI-UI, where the driver is registered;
+// describing it here as well would be a second catalog to keep in step with the
+// first (RFC 0003 §9).
 //
-// The option keys, types and defaults match the Python SDK's bluefors_gen1 device
-// exactly; a test compares the two catalogs, since QPI-UI renders setup snippets
-// from one of them and an operator may well run the other (RFC 0003 §9).
+// Whichever main assembles the CLI registers it:
+// `devices.Register(bluefors.DeviceSpec)`.
 var DeviceSpec = devices.DeviceSpec{
 	Name:      "bluefors_gen1",
 	Operation: devices.Monitor,
-	Summary:   "Cryostat monitor for Bluefors Control Software Gen. 1.",
 	Build:     build,
-	Options: []devices.OptionSpec{
-		{
-			Key:      "channels",
-			Help:     "Value-tree channels to poll, as path[:unit] pairs.",
-			Type:     "channels",
-			Parse:    asChannels,
-			Required: true,
-			Example:  "mapper.bf.tmc:K,mapper.bf.pmc:mbar",
-		},
-		{
-			Key:     "base_url",
-			Help:    "Base URL of the Bluefors Control API.",
-			Type:    "str",
-			Default: DefaultBaseURL,
-			Example: "http://localhost:49099",
-		},
-		{
-			Key:     "api_key",
-			Help:    "Bluefors API access key, if the API requires one.",
-			Type:    "str",
-			Example: "<bluefors-api-key>",
-		},
-		{
-			Key:     "poll_interval",
-			Help:    "Seconds between polls of every channel.",
-			Type:    "float",
-			Parse:   devices.AsFloat,
-			Default: "5.0",
-			Example: "5",
-		},
-		{
-			Key:     "timeout",
-			Help:    "HTTP timeout per channel read, in seconds.",
-			Type:    "float",
-			Parse:   devices.AsFloat,
-			Default: "5.0",
-			Example: "5",
-		},
-	},
 }
 
-// build returns an unstarted driver from the parsed options. There is nothing to
-// validate or convert here: the spec's own schema did that, so a missing or
-// malformed option has already become a clean CLI error by the time this runs.
-func build(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
-	return New(Options{
-		BaseURL:      opts.String("base_url"),
-		Channels:     opts.Channels("channels"),
-		APIKey:       opts.String("api_key"),
-		PollInterval: opts.Seconds("poll_interval"),
-		Timeout:      opts.Seconds("timeout"),
-	}), nil
+// build returns an unstarted driver from its `-o` options.
+//
+// The options this monitor reads are the ones read here. Only the channels are
+// unknowable in advance — which ones a system exposes depends on how its mappers
+// are configured — so they are the one option with no default and the one whose
+// absence is an error.
+func build(cfg qpidriver.Config, opts *devices.Options) (qpidriver.Driver, error) {
+	channels := opts.Require("channels", "mapper.bf.tmc:K,mapper.bf.pmc:mbar")
+	options := Options{
+		BaseURL:      opts.String("base_url", DefaultBaseURL),
+		Channels:     ParseChannels(channels),
+		APIKey:       opts.String("api_key", ""),
+		PollInterval: opts.Seconds("poll_interval", DefaultPollInterval),
+		Timeout:      opts.Seconds("timeout", DefaultTimeout),
+	}
+	if err := opts.Err(); err != nil {
+		return nil, err
+	}
+	return New(options), nil
 }
-
-// asChannels adapts [ParseChannels] to an option parser.
-func asChannels(raw string) (any, error) { return ParseChannels(raw), nil }

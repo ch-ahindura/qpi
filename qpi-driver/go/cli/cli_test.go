@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -107,24 +106,24 @@ func TestTokenIsRequired(t *testing.T) {
 }
 
 func TestUnknownOptionKeyIsRejected(t *testing.T) {
-	// Silently ignoring it is what this replaced: a typo in a unit file used to
-	// mean a driver running with a default nobody chose.
-	_, err := run(t, "start", "--operation", "monitor", "--token", "t",
-		"-o", "channels=mapper.bf.tmc:K", "-o", "base_urll=http://x")
+	// With no declared schema, the check is what the device read: the builder never
+	// looks at base_urll, so the leftover key is the whole evidence. Silently
+	// ignoring it is what this replaced — a typo in a unit file used to mean a
+	// driver running with a default nobody chose.
+	_, err := run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1",
+		"--token", "t", "-o", "channels=mapper.bf.tmc:K", "-o", "base_urll=http://x")
 	if err == nil {
 		t.Fatal("expected an unknown -o key to fail")
 	}
 	if !strings.Contains(err.Error(), `unknown option "base_urll"`) {
 		t.Errorf("expected the bad key named, got %q", err)
 	}
-	if !strings.Contains(err.Error(), "base_url") {
-		t.Errorf("expected the valid keys listed, got %q", err)
-	}
 }
 
 func TestMissingRequiredOptionIsReported(t *testing.T) {
-	_, err := run(t, "start", "--operation", "monitor", "--token", "t")
-	if err == nil || !strings.Contains(err.Error(), `needs a "channels" option`) {
+	_, err := run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1",
+		"--token", "t")
+	if err == nil || !strings.Contains(err.Error(), `missing required option "channels"`) {
 		t.Fatalf("expected the required option to be named, got %v", err)
 	}
 }
@@ -139,20 +138,31 @@ func TestTheOldSubcommandsAreGone(t *testing.T) {
 	}
 }
 
-func TestStartHelpListsOperationsAndDevices(t *testing.T) {
-	// Generated from the registry, so a new device appears with no change to any
-	// help string.
+func TestStartHelpPointsAtTheDashboard(t *testing.T) {
+	// --help used to render every device and every -o key from a declared schema,
+	// which was a second catalog beside QPI-UI's (RFC 0003 §9).
 	out, err := run(t, "start", "--help")
 	if err != nil {
 		t.Fatalf("expected --help to succeed, got %v", err)
 	}
-	for _, want := range []string{
-		"--operation process", "--operation monitor", "bluefors_gen1",
-		"channels=<channels> (required", "poll_interval=<float>",
-	} {
+	for _, want := range []string{"QPI-UI", "qpi-driver devices"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected --help to mention %q, got:\n%s", want, out)
 		}
+	}
+}
+
+func TestDevicesCommandListsNamesByOperation(t *testing.T) {
+	out, err := run(t, "devices")
+	if err != nil {
+		t.Fatalf("expected devices to succeed, got %v", err)
+	}
+	if !strings.Contains(out, "monitor: bluefors_gen1") {
+		t.Errorf("expected the monitor device listed, got:\n%s", out)
+	}
+	// This build ships no process device, and must say so rather than print nothing.
+	if !strings.Contains(out, "process: none") {
+		t.Errorf("expected the empty operation stated, got:\n%s", out)
 	}
 }
 
@@ -164,7 +174,7 @@ func TestDevicesCommandNarrowsToOneOperation(t *testing.T) {
 	if !strings.Contains(out, "bluefors_gen1") {
 		t.Errorf("expected the monitor device listed, got:\n%s", out)
 	}
-	if strings.Contains(out, "--operation process") {
+	if strings.Contains(out, "process:") {
 		t.Errorf("expected process to be left out, got:\n%s", out)
 	}
 
@@ -173,52 +183,16 @@ func TestDevicesCommandNarrowsToOneOperation(t *testing.T) {
 	}
 }
 
-func TestCatalogCommandEmitsTheFrozenShape(t *testing.T) {
-	// The document Go, Python, TypeScript and qpi-ui all agree on (RFC 0003 §9).
-	out, err := run(t, "catalog", "--json")
-	if err != nil {
-		t.Fatalf("expected catalog to succeed, got %v", err)
-	}
-
-	var document map[string]any
-	if err := json.Unmarshal([]byte(out), &document); err != nil {
-		t.Fatalf("expected valid JSON, got %v in:\n%s", err, out)
-	}
-	if document["schema_version"] != float64(devices.SchemaVersion) {
-		t.Errorf("expected schema_version %d, got %v", devices.SchemaVersion, document["schema_version"])
-	}
-
-	operations, ok := document["operations"].([]any)
-	if !ok || len(operations) != 2 {
-		t.Fatalf("expected two operations, got %v", document["operations"])
-	}
-	for _, entry := range operations {
-		operation := entry.(map[string]any)
-		for _, key := range []string{"name", "summary", "default_device", "events", "devices"} {
-			if _, ok := operation[key]; !ok {
-				t.Errorf("expected operation key %q, got %v", key, operation)
-			}
-		}
-	}
-}
-
-func TestCatalogTextMatchesDevices(t *testing.T) {
-	asText, err := run(t, "catalog", "--text")
-	if err != nil {
-		t.Fatalf("expected catalog --text to succeed, got %v", err)
-	}
-	listed, err := run(t, "devices")
-	if err != nil {
-		t.Fatalf("expected devices to succeed, got %v", err)
-	}
-	if asText != listed {
-		t.Errorf("expected one renderer behind both, got:\n%s\nvs\n%s", asText, listed)
+func TestThereIsNoCatalogCommand(t *testing.T) {
+	// The machine-readable catalog is gone; nothing consumed it but a sync script.
+	if _, err := run(t, "catalog", "--json"); err == nil {
+		t.Error("expected `catalog` to no longer be a subcommand")
 	}
 }
 
 func TestParseOptionsReadsTheSyntaxOnly(t *testing.T) {
-	// Splitting is all this does; an unknown key passes through for the device's
-	// own schema to reject.
+	// Splitting is all this does; an unknown key passes through for the unread-option
+	// check to catch after the build.
 	opts, err := parseOptions([]string{"channels=a:K", " base_url = http://x ", "nonsense=1"})
 	if err != nil {
 		t.Fatalf("expected valid pairs to parse, got %v", err)
@@ -251,9 +225,9 @@ func TestEnvFallbacks(t *testing.T) {
 	}
 }
 
-func TestFlagDefaultsComeFromTheOperation(t *testing.T) {
-	// --device is blank by default and filled in from the operation, since one verb
-	// serves every operation and their default devices differ.
+func TestFlagDefaults(t *testing.T) {
+	// --device is blank by default and has no fallback: QPI-UI generates the command
+	// that launches a driver, and it always names a device.
 	cmd := newStartCmd()
 	for _, flag := range []string{"device", "operation"} {
 		if got := cmd.Flags().Lookup(flag).DefValue; got != "" {
@@ -316,15 +290,16 @@ func TestStartRunsTheResolvedDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement := original
-	replacement.Build = func(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
+	replacement.Build = func(cfg qpidriver.Config, opts *devices.Options) (qpidriver.Driver, error) {
 		built = &commonFlags{token: cfg.Token, qpiAddr: cfg.QpiAddr}
 		return nil, errors.New("built, and deliberately not run")
 	}
 	*spec = *devices.NewRegistry(replacement)
 	t.Cleanup(func() { *spec = *devices.NewRegistry(original) })
 
-	_, err = run(t, "start", "--operation", "monitor", "--token", "t",
-		"--qpi-addr", "https://qpi.example.com", "-o", "channels=mapper.bf.tmc:K")
+	_, err = run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1",
+		"--token", "t", "--qpi-addr", "https://qpi.example.com",
+		"-o", "channels=mapper.bf.tmc:K")
 
 	if err == nil || !strings.Contains(err.Error(), "deliberately not run") {
 		t.Fatalf("expected the builder's error to surface, got %v", err)
@@ -336,7 +311,8 @@ func TestStartRunsTheResolvedDevice(t *testing.T) {
 
 func TestStartRejectsAMalformedOption(t *testing.T) {
 	// `-o` with no `=` is a syntax error, caught before the device sees it.
-	_, err := run(t, "start", "--operation", "monitor", "--token", "t", "-o", "not-a-pair")
+	_, err := run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1",
+		"--token", "t", "-o", "not-a-pair")
 
 	if err == nil || !strings.Contains(err.Error(), "expected key=value") {
 		t.Fatalf("expected a malformed option to be reported, got %v", err)
@@ -344,49 +320,32 @@ func TestStartRejectsAMalformedOption(t *testing.T) {
 }
 
 func TestStartRejectsABadOptionValue(t *testing.T) {
-	_, err := run(t, "start", "--operation", "monitor", "--token", "t",
-		"-o", "channels=mapper.bf.tmc:K", "-o", "poll_interval=soon")
+	_, err := run(t, "start", "--operation", "monitor", "--device", "bluefors_gen1",
+		"--token", "t", "-o", "channels=mapper.bf.tmc:K", "-o", "poll_interval=soon")
 
 	if err == nil || !strings.Contains(err.Error(), "bad value for -o poll_interval") {
 		t.Fatalf("expected the option named, got %v", err)
 	}
 }
 
-func TestStartAsksForADeviceWhenTheDefaultIsNotInThisBuild(t *testing.T) {
-	// Which devices a Go binary has is settled at compile time, so an operation's
-	// DefaultDevice may name one this build never registered.
-	spec := devices.Default
-	original, err := spec.Resolve(devices.Monitor, "bluefors_gen1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	renamed := original
-	renamed.Name = "something_else"
-	*spec = *devices.NewRegistry(renamed)
-	t.Cleanup(func() { *spec = *devices.NewRegistry(original) })
-
-	_, err = run(t, "start", "--operation", "monitor", "--token", "t")
+func TestStartAsksForADeviceAndNamesTheOnesThisBuildHas(t *testing.T) {
+	// Which devices a Go binary has is settled at compile time, so the message has
+	// to come from the registry rather than from a documented default.
+	_, err := run(t, "start", "--operation", "monitor", "--token", "t")
 
 	if err == nil || !strings.Contains(err.Error(), "--device is required") {
 		t.Fatalf("expected a request for --device, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "something_else") {
+	if !strings.Contains(err.Error(), "bluefors_gen1") {
 		t.Errorf("expected the available devices named, got %v", err)
 	}
 }
 
-func TestCatalogJSONIsTheDefault(t *testing.T) {
-	// `catalog` and `catalog --json` are the same thing; the flag exists so the
-	// documented invocation works verbatim.
-	plain, err := run(t, "catalog")
-	if err != nil {
-		t.Fatal(err)
-	}
-	explicit, err := run(t, "catalog", "--json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if plain != explicit {
-		t.Errorf("expected --json to be the default, got:\n%s\nvs\n%s", plain, explicit)
+func TestStartSaysWhenThisBuildHasNoDeviceForTheOperation(t *testing.T) {
+	// No devices at all is a different message from "pick one of these".
+	_, err := run(t, "start", "--operation", "process", "--token", "t")
+
+	if err == nil || !strings.Contains(err.Error(), "ships no process devices") {
+		t.Fatalf("expected the empty case stated, got %v", err)
 	}
 }

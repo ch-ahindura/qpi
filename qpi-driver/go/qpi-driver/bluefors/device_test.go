@@ -1,6 +1,7 @@
 package bluefors
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -12,49 +13,23 @@ import (
 // be asserted on — which is the point of a builder that returns rather than runs:
 // every option can be checked with no server, no socket and no polling.
 
-func TestSpecDescribesItself(t *testing.T) {
+func TestSpecIsANameAnOperationAndABuilder(t *testing.T) {
 	if DeviceSpec.Name != "bluefors_gen1" || DeviceSpec.Operation != devices.Monitor {
 		t.Fatalf("expected a monitor device named bluefors_gen1, got %+v", DeviceSpec)
 	}
-	if DeviceSpec.Summary == "" || DeviceSpec.Build == nil {
-		t.Error("expected a summary and a builder")
-	}
-
-	// The keys, types and defaults must match the Python SDK's bluefors_gen1
-	// device: QPI-UI renders setup snippets from one catalog and an operator may
-	// well run the other (RFC 0003 §9).
-	want := map[string]string{
-		"channels": "channels", "base_url": "str", "api_key": "str",
-		"poll_interval": "float", "timeout": "float",
-	}
-	got := map[string]string{}
-	for _, option := range DeviceSpec.Options {
-		got[option.Key] = option.Type
-		if option.Help == "" {
-			t.Errorf("expected %q to have help text", option.Key)
-		}
-	}
-	if len(got) != len(want) {
-		t.Fatalf("expected options %v, got %v", want, got)
-	}
-	for key, kind := range want {
-		if got[key] != kind {
-			t.Errorf("expected %q to be %q, got %q", key, kind, got[key])
-		}
+	if DeviceSpec.Build == nil {
+		t.Error("expected a builder")
 	}
 }
 
 func TestBuildFromOptionsReadsEveryKey(t *testing.T) {
-	opts, err := DeviceSpec.ParseOptions(map[string]string{
+	opts := devices.NewOptions(map[string]string{
 		"channels":      "mapper.bf.tmc:K,mapper.bf.pmc:mbar",
 		"base_url":      "http://cryo:49099/",
 		"api_key":       "secret",
 		"poll_interval": "2.5",
 		"timeout":       "7",
 	})
-	if err != nil {
-		t.Fatalf("expected the options to parse, got %v", err)
-	}
 
 	driver, err := DeviceSpec.Build(qpidriver.Config{Token: "tok"}, opts)
 	if err != nil {
@@ -80,15 +55,15 @@ func TestBuildFromOptionsReadsEveryKey(t *testing.T) {
 	if built.channels["mapper.bf.tmc"] != "K" || built.channels["mapper.bf.pmc"] != "mbar" {
 		t.Errorf("expected the channels parsed with units, got %v", built.channels)
 	}
+	if len(opts.Unread()) != 0 {
+		t.Errorf("expected every option read by the builder, got %v", opts.Unread())
+	}
 }
 
 func TestBuildFromOptionsDefaultsEveryKeyButChannels(t *testing.T) {
 	// Only the channels are unknowable in advance — which mappers a given system
 	// has is configuration — so only they are required.
-	opts, err := DeviceSpec.ParseOptions(map[string]string{"channels": "mapper.bf.tmc"})
-	if err != nil {
-		t.Fatalf("expected the options to parse, got %v", err)
-	}
+	opts := devices.NewOptions(map[string]string{"channels": "mapper.bf.tmc"})
 
 	driver, err := DeviceSpec.Build(qpidriver.Config{}, opts)
 	if err != nil {
@@ -111,22 +86,40 @@ func TestBuildFromOptionsDefaultsEveryKeyButChannels(t *testing.T) {
 }
 
 func TestChannelsAreRequired(t *testing.T) {
-	if _, err := DeviceSpec.ParseOptions(map[string]string{"base_url": "http://x"}); err == nil {
+	opts := devices.NewOptions(map[string]string{"base_url": "http://x"})
+
+	_, err := DeviceSpec.Build(qpidriver.Config{}, opts)
+	if err == nil {
 		t.Fatal("expected a missing channels option to fail")
+	}
+	if !strings.Contains(err.Error(), `missing required option "channels"`) {
+		t.Errorf("expected the option named, got %q", err)
+	}
+}
+
+func TestAnOptionThisMonitorDoesNotReadIsLeftUnread(t *testing.T) {
+	// What the builder reads is its whole schema, so the CLI can flag the rest.
+	opts := devices.NewOptions(map[string]string{
+		"channels": "mapper.bf.tmc", "pol_interval": "2",
+	})
+
+	if _, err := DeviceSpec.Build(qpidriver.Config{}, opts); err != nil {
+		t.Fatal(err)
+	}
+	got := opts.Unread()
+	if len(got) != 1 || got[0] != "pol_interval" {
+		t.Errorf("expected pol_interval left unread, got %v", got)
 	}
 }
 
 func TestBuildingStartsNothing(t *testing.T) {
 	// The builder connects to nothing: qpidriver.Run is what starts a driver, so a
 	// device can be built and asserted on in a test like this one (RFC 0003 §7).
-	opts, err := DeviceSpec.ParseOptions(map[string]string{
+	opts := devices.NewOptions(map[string]string{
 		"channels":      "mapper.bf.tmc:K",
 		"base_url":      "http://127.0.0.1:1",
 		"poll_interval": "0.01",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := DeviceSpec.Build(qpidriver.Config{}, opts); err != nil {
 		t.Fatalf("expected building against an unreachable host to succeed, got %v", err)
 	}

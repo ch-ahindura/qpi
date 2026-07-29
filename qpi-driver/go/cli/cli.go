@@ -3,17 +3,16 @@
 //
 // It is a package rather than a `main` so that a build of your own can be the CLI:
 // register your device with [devices.Register] and call [Execute], and your binary
-// has the same `start`/`devices`/`catalog` commands, the same generated help and
-// the same option validation as the officially maintained one. Go resolves imports
-// at compile time, so this — not a device named in a string — is how a device from
-// outside the SDK reaches the CLI. See the module README.
+// has the same `start`/`devices`/`version` commands as the officially maintained
+// one. Go resolves imports at compile time, so this — not a device named in a
+// string — is how a device from outside the SDK reaches the CLI. See the module
+// README.
 //
 // The command that ships with the SDK is exactly that: qpi-driver/main.go
 // registers the built-in devices and calls Execute.
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -54,7 +53,7 @@ func Execute() {
 
 // NewRootCmd builds the whole command tree over whatever is in
 // [devices.Default] — so a binary that registered a device of its own gets the
-// same commands, the same generated help and the same option validation.
+// same commands as the stock one.
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "qpi-driver",
@@ -62,7 +61,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newStartCmd(), newDevicesCmd(), newCatalogCmd(), newVersionCmd())
+	root.AddCommand(newStartCmd(), newDevicesCmd(), newVersionCmd())
 	return root
 }
 
@@ -74,64 +73,47 @@ func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Run a driver: one --operation, on one --device within it (RFC 0001 §4).",
+		Long: "Run a driver: one --operation, on one --device within it (RFC 0001 §4).\n\n" +
+			"QPI-UI is where a driver is registered and where the command to run it —\n" +
+			"this operation, this device, these -o options — is generated. Run\n" +
+			"`qpi-driver devices` to see which devices this build has.",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return runStart(cf)
 		},
 	}
-	// Generated from the registry at command-construction time, so a device
-	// registered before the CLI is assembled shows up in --help with no change here.
-	cmd.SetHelpTemplate(cmd.HelpTemplate() + "\n" + devices.RenderCatalog(devices.Default, ""))
 	addCommonFlags(cmd, cf)
 	return cmd
 }
 
+// newDevicesCmd lists what this build can run — names only. What a device does and
+// which -o keys it takes is documented where a driver is registered, in QPI-UI.
 func newDevicesCmd() *cobra.Command {
 	var operation string
 	cmd := &cobra.Command{
 		Use:   "devices",
-		Short: "List the operations, the devices each one can run, and their -o options",
+		Short: "List the devices this build can run, by operation",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			wanted := devices.Operations()
 			if operation != "" {
-				if _, ok := devices.LookupOperation(devices.Operation(operation)); !ok {
+				if !devices.KnownOperation(devices.Operation(operation)) {
 					return fmt.Errorf("unknown operation %q; valid operations: %s",
 						operation, strings.Join(devices.OperationNames(), ", "))
 				}
+				wanted = []devices.Operation{devices.Operation(operation)}
 			}
-			fmt.Fprint(cmd.OutOrStdout(),
-				devices.RenderCatalog(devices.Default, devices.Operation(operation)))
+			for _, op := range wanted {
+				names := devices.DeviceNames(devices.Devices(op))
+				listed := "none"
+				if len(names) > 0 {
+					listed = strings.Join(names, ", ")
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", op, listed)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&operation, "operation", "",
 		"Show only this operation's devices, instead of all of them")
-	return cmd
-}
-
-func newCatalogCmd() *cobra.Command {
-	var asText bool
-	cmd := &cobra.Command{
-		Use:   "catalog",
-		Short: "Print the whole device catalog for another program to read",
-		Long: "Print the whole device catalog for another program to read.\n\n" +
-			"The JSON shape is a contract — QPI-UI checks its own catalog against it, and\n" +
-			"the Python and TypeScript SDKs produce the same document — and is documented\n" +
-			"in full on devices.Catalog (RFC 0003 §9).",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if asText {
-				fmt.Fprint(cmd.OutOrStdout(), devices.RenderCatalog(devices.Default, ""))
-				return nil
-			}
-			encoded, err := json.MarshalIndent(devices.CatalogOf(devices.Default), "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
-			return nil
-		},
-	}
-	cmd.Flags().BoolVar(&asText, "text", false,
-		"Print the same text `devices` shows, instead of JSON")
-	cmd.Flags().Bool("json", true, "Print the catalog as JSON (the default)")
 	return cmd
 }
 
@@ -146,7 +128,7 @@ func addCommonFlags(cmd *cobra.Command, cf *commonFlags) {
 	f.StringVarP(&cf.token, "token", "t", os.Getenv("QPI_ACCESS_TOKEN"),
 		"Access token identifying this driver to the QPI server")
 	f.StringVarP(&cf.device, "device", "d", os.Getenv("QPI_DEVICE"),
-		"Which backend to run within the operation; defaults to the operation's own")
+		"Which backend to run within the operation; `qpi-driver devices` lists them")
 	f.StringVar(&cf.caFile, "ca-file", envOr("QPI_CA_FILE", "./bin/qpi.ca.pem"),
 		"Where the downloaded server root CA certificate is written")
 	f.StringVar(&cf.caFingerprint, "ca-fingerprint", os.Getenv("QPI_CA_FINGERPRINT"),
@@ -158,36 +140,34 @@ func addCommonFlags(cmd *cobra.Command, cf *commonFlags) {
 		"How long the receive loop blocks per attempt before checking for shutdown, in ms")
 }
 
-// runStart resolves the device within the chosen operation, lets that device's own
-// schema check the -o options, and runs the driver its builder returns — the same
-// sequence as the Python CLI's shared handler.
+// runStart resolves the device within the chosen operation, hands it its -o
+// options, and runs the driver its builder returns — the same sequence as the
+// Python CLI's shared handler.
+//
+// An option no device read is reported after the build rather than checked against a
+// declared list beforehand: the device's own code is the only description of what it
+// accepts (RFC 0003 §9).
 func runStart(cf *commonFlags) error {
 	if cf.operation == "" {
 		return fmt.Errorf("--operation is required; one of %s (or set QPI_OPERATION)",
 			strings.Join(devices.OperationNames(), ", "))
 	}
 	operation := devices.Operation(cf.operation)
-	spec, ok := devices.LookupOperation(operation)
-	if !ok {
+	if !devices.KnownOperation(operation) {
 		return fmt.Errorf("unknown operation %q; valid operations: %s",
 			cf.operation, strings.Join(devices.OperationNames(), ", "))
 	}
 	if cf.token == "" {
 		return fmt.Errorf("access token is required; set --token/-t or the QPI_ACCESS_TOKEN environment variable")
 	}
-
-	if cf.device == "" {
-		// The operation's default device is a fact about the operation, not about
-		// this build: a binary that registered its own devices may not have it. Ask
-		// for a choice rather than failing over a device the operator never typed.
-		if !devices.Default.Has(operation, spec.DefaultDevice) {
-			if names := devices.DeviceNames(devices.Devices(operation)); len(names) > 0 {
-				return fmt.Errorf("--device is required: this build's %s devices are %s",
-					operation, strings.Join(names, ", "))
-			}
-		}
-		cf.device = spec.DefaultDevice
+	// There is no default device: QPI-UI generates the command that launches a driver
+	// and it always names one. Say what this build has instead of guessing — unless it
+	// has none, in which case Resolve's own message is the one worth printing.
+	if names := devices.DeviceNames(devices.Devices(operation)); cf.device == "" && len(names) > 0 {
+		return fmt.Errorf("--device is required: this build's %s devices are %s",
+			operation, strings.Join(names, ", "))
 	}
+
 	device, err := devices.Resolve(operation, cf.device)
 	if err != nil {
 		return err
@@ -196,14 +176,19 @@ func runStart(cf *commonFlags) error {
 	if err != nil {
 		return err
 	}
-	opts, err := device.ParseOptions(raw)
-	if err != nil {
-		return err
-	}
+	opts := devices.NewOptions(raw)
 
 	driver, err := device.Build(configOf(cf), opts)
 	if err != nil {
 		return err
+	}
+	if unread := opts.Unread(); len(unread) > 0 {
+		label := "option"
+		if len(unread) > 1 {
+			label = "options"
+		}
+		return fmt.Errorf("unknown %s %q for %s device %q", label,
+			strings.Join(unread, "\", \""), operation, cf.device)
 	}
 	return qpidriver.Run(driver, configOf(cf))
 }
@@ -231,8 +216,8 @@ func newVersionCmd() *cobra.Command {
 }
 
 // parseOptions turns repeatable `-o key=value` flags into raw strings. Only the
-// syntax is the CLI's business; which keys exist and what type each value has
-// belong to the chosen device's schema, which runs on the result.
+// syntax is the CLI's business; which keys mean anything and what type each value
+// has belong to the device that reads them.
 func parseOptions(pairs []string) (map[string]string, error) {
 	opts := make(map[string]string, len(pairs))
 	for _, pair := range pairs {

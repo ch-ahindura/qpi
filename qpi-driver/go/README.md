@@ -125,15 +125,18 @@ Universal flags (`--qpi-addr/-a`, `--token/-t`, `--device/-d`,
 `QPI_*` environment variables, so `install-systemd.sh` can pass the token as
 `QPI_ACCESS_TOKEN`.
 
-`qpi-driver devices` prints what this build can run: each operation, the devices
-under it, and every `-o` key each device reads with its type and default.
+`qpi-driver devices` prints what this build can run, as names by operation. There is
+no default device, so `--device` is always given.
 
-That table is the SDK's **catalog** — the list of operations, devices and options a
-build knows about, which the `DeviceSpec`s themselves are the source of.
-`qpi-driver catalog --json` is the same document for another program to read;
-QPI-UI's dashboard builds its setup snippets from it, and a test fails if the
-server's idea of the catalog and the SDKs' ever disagree. Because both come from
-the specs, neither can fall behind the code — including for a device of your own.
+Which `-o` keys a device reads is the device's own business — the keys its builder
+looks at, and nothing else. The SDK publishes no catalog of them, because QPI-UI
+already holds one: the dashboard's registration form is where a device's options are
+described and filled in, and a second copy here would be a second copy to keep in
+step (RFC 0003 §9). A key nothing read is reported rather than ignored:
+
+```
+Error: unknown option "base_urll" for monitor device "bluefors_gen1"
+```
 
 ## Running a built-in as a systemd service (Linux)
 
@@ -225,10 +228,9 @@ Logs go to the journal: `journalctl -u cryostat-1.qpi-driver.service -f`.
 ## Adding a device of your own
 
 Go has no runtime import by name, so extension is compile-time — and the SDK makes
-that the whole story rather than pretending otherwise. Describe your device as a
-`devices.DeviceSpec`, register it, and hand off to the SDK's CLI: your binary then
-has the same `start`/`devices`/`catalog` commands, the same generated help, and the
-same option validation the built-in devices get.
+that the whole story rather than pretending otherwise. Register a
+`devices.DeviceSpec` and hand off to the SDK's CLI: your binary then has the same
+`start`/`devices`/`version` commands the stock one does, with your device among them.
 
 <!-- docs-check: compile=go-custom-device -->
 ```go
@@ -250,18 +252,18 @@ type ThermometerDriver struct {
 
 func (d *ThermometerDriver) HandleEvent(qpidriver.Event) {}
 
-// Spec describes it as data — which is what earns it a line in `--help`, an entry
-// in `catalog --json`, and `-o` values that are checked and converted for you.
+// Spec is the name `--device` will use, bound to the builder behind it. The options
+// this device accepts are the ones the builder reads, with the fallback stated where
+// it is used; `opts.Err()` carries anything that would not convert.
 var Spec = devices.DeviceSpec{
 	Name:      "thermometer",
 	Operation: devices.Monitor,
-	Summary:   "Reads a made-up thermometer.",
-	Options: []devices.OptionSpec{{
-		Key: "probes", Help: "How many probes to read.",
-		Type: "int", Parse: devices.AsInt, Default: "1", Example: "4",
-	}},
-	Build: func(cfg qpidriver.Config, opts devices.Options) (qpidriver.Driver, error) {
-		return &ThermometerDriver{probes: opts.Int("probes")}, nil
+	Build: func(cfg qpidriver.Config, opts *devices.Options) (qpidriver.Driver, error) {
+		driver := &ThermometerDriver{probes: opts.Int("probes", 1)}
+		if err := opts.Err(); err != nil {
+			return nil, err
+		}
+		return driver, nil
 	},
 }
 
@@ -280,10 +282,10 @@ Two things worth knowing:
   in a test with no server (RFC 0003 §7). `Driver` is sealed by an unexported
   method, so `Build` can only return something embedding `Base` — deliberately, so
   `Run` can always reach the transport.
-- **Declaring an option is what gets it checked.** `Parse` runs in one place, so no
-  builder hand-rolls `strconv`; an `-o` key no device declares is an error naming
-  the ones that exist, rather than being silently ignored. Set
-  `AcceptsAnyOption: true` only for a device that genuinely has no schema.
+- **Reading an option is what declares it.** There is no option schema anywhere in
+  the SDK; `Options` remembers which keys were read, so an `-o` key nothing looked at
+  is reported after the build rather than silently ignored. A device forwarding
+  options to something the SDK has never seen calls `opts.Remaining()`.
 
 There is no import-path device in Go, as there is in Python (`--device
 mylab.devices:PrestoV2`): Go resolves imports at compile time, so naming a type in
