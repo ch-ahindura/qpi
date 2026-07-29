@@ -150,6 +150,10 @@ check_go "go SDK: the bluefors_gen1 monitor" \
     "$ROOT/qpi-driver/go/README.md" "go-bluefors" \
     "github.com/sopherapps/qpi/qpi-driver/go" "qpi-driver/go"
 
+check_go "go SDK: reusing the shipped monitor" \
+    "$ROOT/qpi-driver/go/README.md" "go-extend-device" \
+    "github.com/sopherapps/qpi/qpi-driver/go" "qpi-driver/go"
+
 check_go "go client: quick start" \
     "$ROOT/qpi-client/go/README.md" "go-client-quickstart" \
     "github.com/sopherapps/qpi/qpi-client/go" "qpi-client/go"
@@ -159,6 +163,9 @@ check_ts "typescript SDK: the bluefors_gen1 monitor" \
 
 check_ts "typescript SDK: registering a device" \
     "$ROOT/qpi-driver/js/README.md" "ts-register-device"
+
+check_ts "typescript SDK: reusing the shipped monitor" \
+    "$ROOT/qpi-driver/js/README.md" "ts-extend-device"
 
 if [ "$FAILURES" -gt 0 ]; then
     echo "[check-snippets] ✗ $FAILURES of $CHECKED blocks do not build"

@@ -81,7 +81,7 @@ def test_read_channel_parses_latest_valid_value():
     driver = _driver()
 
     with patch("requests.get", return_value=_bluefors_response("0.0123")) as get:
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     url = get.call_args.args[0]
     assert url == "http://localhost:49099/values/mapper/bf/tmc"
@@ -92,7 +92,7 @@ def test_read_channel_sends_api_key_query_param():
     driver = _driver(api_key="secret-key")
 
     with patch("requests.get", return_value=_bluefors_response("1.0")) as get:
-        driver._read_channel("mapper.bf.tmc", "K")
+        driver.read_channel("mapper.bf.tmc", "K")
 
     assert get.call_args.kwargs["params"] == {"key": "secret-key"}
 
@@ -101,7 +101,7 @@ def test_read_channel_reports_error_status_on_http_failure(caplog):
     driver = _driver()
 
     with patch("requests.get", side_effect=ConnectionError("boom")):
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     assert reading == {"value": None, "unit": "K", "status": "ERROR"}
     assert "failed to read channel" in caplog.text
@@ -114,7 +114,7 @@ def test_read_channel_reports_error_status_on_malformed_response():
     bad_resp.json.return_value = {"unexpected": "shape"}
 
     with patch("requests.get", return_value=bad_resp):
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     assert reading["status"] == "ERROR"
     assert reading["value"] is None
@@ -163,6 +163,35 @@ def test_poll_emits_partial_readings_when_some_channels_fail():
     readings = json.loads(driver._out_sock.sent[0])["payload"]["readings"]
     assert readings["mapper.bf.tmc"]["status"] == "SYNCHRONIZED"
     assert readings["mapper.bf.tstill"]["status"] == "ERROR"
+
+
+def test_a_supplied_channel_reader_is_the_seam():
+    """A monitor for different control software reuses everything but the read.
+
+    Composition, not inheritance — the same way every `process` device is the one
+    QPU driver over a different `Executor`. The timer, one bad channel not losing
+    the rest of the tick, and the CryostatReading event all stay.
+    """
+    asked: list[str] = []
+
+    def gen2_reader(channel: str, unit: str) -> dict:
+        asked.append(channel)
+        return {"value": 0.02, "unit": unit, "status": "OK"}
+
+    driver = _driver(channels={"gen2.temperature": "K"}, read_channel=gen2_reader)
+    driver._out_sock = FakeSocket()
+
+    # No `requests` patching: the supplied reader never reaches the network.
+    driver._poll()
+
+    assert asked == ["gen2.temperature"]
+    sent = json.loads(driver._out_sock.sent[0])
+    assert sent["type"] == "CryostatReading"
+    assert sent["payload"]["readings"]["gen2.temperature"] == {
+        "value": 0.02,
+        "unit": "K",
+        "status": "OK",
+    }
 
 
 def test_normalize_channels_accepts_list_dict_or_none():

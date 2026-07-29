@@ -14,11 +14,23 @@ go get github.com/sopherapps/qpi/qpi-driver/go
 > **Upgrading from a pre-RFC-0003 release?** The CLI grammar and some SDK APIs
 > changed, and every removal is listed with its replacement in the
 > [change log](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md).
-> **What this SDK ships:** one `monitor` device, `bluefors_gen1`. It ships no
-> `process` (QPU) device — running a QPU means the Python SDK
-> (`pip install "qpi-driver[cli]"`) or a device of your own, registered as below.
-> `qpi-driver start --operation process` says so rather than offering a device it
-> does not have.
+> **What this SDK ships:** one device, `bluefors_gen1`, a cryostat monitor. It ships
+> no QPU — running one means the Python SDK (`pip install "qpi-driver[cli]"`) or a
+> device of your own, written as described below. `qpi-driver start --operation
+> process` says so plainly rather than offering a device it has not got.
+
+Two words appear throughout, and the difference between them is the whole of how a
+driver is described:
+
+- An **operation** is what a driver *does*, and it is a contract with the server:
+  `process` runs jobs pushed to it and returns results (a QPU); `monitor` reports
+  readings upward on its own schedule (a cryostat, say). QPI-UI must have a handler
+  for each, so there are exactly these two.
+- A **device** is the particular backend implementing an operation —
+  `bluefors_gen1` is a `monitor` device. Anyone can add one; that is what "Adding a
+  device of your own" below is about.
+
+A driver is one operation running on one device.
 
 
 ## Writing a driver
@@ -64,8 +76,10 @@ func main() {
 - `Emit` sends an event upward (best-effort; dropped if nothing is listening).
 - `Every(interval, fn)` runs a callback on a timer, for drivers that report on
   their own schedule rather than in reply to a dispatch.
-- `Run` performs the handshake, opens the transport, and blocks until the
-  process is signalled (SIGINT/SIGTERM) or `Stop` is called.
+- `Run` does the setup — fetches and verifies the server's root certificate,
+  registers this driver over HTTP, opens the two sockets events travel on — and then
+  blocks until the process is signalled (SIGINT/SIGTERM) or `Stop` is called. Until
+  `Run` is called a driver has touched no network at all.
 
 ## Built-in drivers
 
@@ -120,23 +134,37 @@ qpi-driver start --operation monitor --device bluefors_gen1 \
   -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 ```
 
-Universal flags (`--qpi-addr/-a`, `--token/-t`, `--device/-d`,
-`--ca-file`, `--ca-fingerprint`, `--recv-timeout-ms`) also read the matching
-`QPI_*` environment variables, so `install-systemd.sh` can pass the token as
-`QPI_ACCESS_TOKEN`.
+Those flags before the `-o` ones are the same for every device — where the server is,
+which token identifies this driver, which certificate to trust. Each also reads a
+matching `QPI_*` environment variable (`--qpi-addr` / `QPI_ADDR`, `--token` /
+`QPI_ACCESS_TOKEN`, and so on), which is how `install-systemd.sh` keeps the token out
+of the unit file's command line.
 
-`qpi-driver devices` prints what this build can run, as names by operation. There is
-no default device, so `--device` is always given.
+`qpi-driver devices` prints the device names this build can run, grouped by
+operation. There is no default, so `--device` is always given.
 
-Which `-o` keys a device reads is the device's own business — the keys its builder
-looks at, and nothing else. The SDK publishes no catalog of them, because QPI-UI
-already holds one: the dashboard's registration form is where a device's options are
-described and filled in, and a second copy here would be a second copy to keep in
-step (RFC 0003 §9). A key nothing read is reported rather than ignored:
+### Where a device's `-o` options are documented
+
+Not here, and not in the SDK. Each device decides for itself which `-o` keys it
+understands, simply by reading them — there is no list of them anywhere in this
+module. The list an operator needs lives in QPI-UI: registering a driver in the
+dashboard presents the chosen device's options as a form, and generates the
+`qpi-driver start …` command with the values filled in. Copy that command into the
+unit file. Keeping a second list here would only give the two something to disagree
+about (RFC 0003 §9).
+
+If you pass an `-o` key the device turns out not to read, `qpi-driver start` says so
+and exits 1 — before it opens any connection to the server:
 
 ```
 Error: unknown option "base_urll" for monitor device "bluefors_gen1"
 ```
+
+It has to wait until the device has been constructed to know that, since being read
+is the only evidence a key means anything. Nothing is lost by waiting: constructing a
+device touches no network, so the check still happens before the driver is running.
+Reporting it at all is the point — a mistyped option in a unit file used to be
+ignored, which meant a driver silently running on a default nobody chose.
 
 ## Running a built-in as a systemd service (Linux)
 
@@ -227,34 +255,180 @@ Logs go to the journal: `journalctl -u cryostat-1.qpi-driver.service -f`.
 
 ## Adding a device of your own
 
-Go has no runtime import by name, so extension is compile-time — and the SDK makes
-that the whole story rather than pretending otherwise. Register a
-`devices.DeviceSpec` and hand off to the SDK's CLI: your binary then has the same
-`start`/`devices`/`version` commands the stock one does, with your device among them.
+A **device** is the thing `--device` names. To this SDK it is three fields — a name,
+an operation, and a *builder*: a function the CLI calls to construct your driver from
+the `-o` options and the connection settings. The builder returns the driver rather
+than running it; `qpidriver.Run` is what starts it.
+
+Go resolves imports at compile time, so a device cannot be named in a string and
+loaded — extension here is compile-time, and the SDK makes that the whole story rather
+than pretending otherwise. Your own `main` registers a `devices.DeviceSpec` and hands
+off to the SDK's CLI, and your binary then has the same `start`/`devices`/`version`
+commands the stock one does, with your device among them.
+
+There are two shapes this takes, and which one you want depends on whether the SDK
+already ships something close to what you need.
+
+### 1. Reuse a driver the SDK ships, with your part plugged in
+
+The `bluefors` package already does most of what any cryostat monitor does: it polls on
+a timer, tolerates one channel failing without losing the rest of the tick, and emits
+a `CryostatReading` event. The only part specific to Gen. 1 is the HTTP call that reads
+one channel. So `bluefors.Options` takes that part as a field — `ReadChannel` — and a
+monitor for Bluefors Gen. 2, whose control software has a different API, supplies its
+own and gets the rest for nothing.
+
+Go has no inheritance, and this needs none: the reusable driver takes the replaceable
+part as a value. (It is the same arrangement the Python SDK's QPU uses — every
+`process` device is the one shipped QPU driver holding a different `Executor`.)
+
+<!-- docs-check: compile=go-extend-device -->
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+
+	qpidriver "github.com/sopherapps/qpi/qpi-driver/go"
+	"github.com/sopherapps/qpi/qpi-driver/go/cli"
+	"github.com/sopherapps/qpi/qpi-driver/go/devices"
+	"github.com/sopherapps/qpi/qpi-driver/go/qpi-driver/bluefors"
+)
+
+// gen2Reader reads one channel from Gen. 2 Control Software, which has its own API.
+func gen2Reader(baseURL, apiKey string) func(channel, unit string) bluefors.Reading {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	return func(channel, unit string) bluefors.Reading {
+		// Never panic and never give up on the tick: an ERROR reading is how the
+		// driver knows to carry on with the other channels.
+		fail := bluefors.Reading{Unit: unit, Status: "ERROR"}
+
+		req, err := http.NewRequest(http.MethodGet,
+			fmt.Sprintf("%s/api/v2/values/%s", baseURL, channel), nil)
+		if err != nil {
+			log.Printf("[bluefors_gen2] bad request for %s: %v", channel, err)
+			return fail
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("[bluefors_gen2] failed to read %s: %v", channel, err)
+			return fail
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		var body struct {
+			Value float64 `json:"value"`
+			State string  `json:"state"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			log.Printf("[bluefors_gen2] unreadable response for %s: %v", channel, err)
+			return fail
+		}
+		return bluefors.Reading{Value: &body.Value, Unit: unit, Status: body.State}
+	}
+}
+
+// Gen2Spec is the name `--device` will use, bound to the builder behind it.
+var Gen2Spec = devices.DeviceSpec{
+	Name:      "bluefors_gen2",
+	Operation: devices.Monitor,
+	Build: func(cfg qpidriver.Config, opts *devices.Options) (qpidriver.Driver, error) {
+		// Reading an option is what makes it an option of this device. The second
+		// argument is the value used when `-o` does not mention it.
+		monitor := bluefors.New(bluefors.Options{
+			Channels: bluefors.ParseChannels(
+				opts.Require("channels", "gen2.temperature:K")),
+			PollInterval: opts.Seconds("poll_interval", 5*time.Second),
+			ReadChannel: gen2Reader(
+				opts.String("base_url", "http://127.0.0.1:49099"),
+				opts.String("api_key", ""),
+			),
+		})
+		// One check, after every read: opts.Err() carries the first value that would
+		// not convert, and Require's complaint if `channels` was missing.
+		if err := opts.Err(); err != nil {
+			return nil, err
+		}
+		return monitor, nil
+	},
+}
+
+func main() {
+	if err := devices.Register(Gen2Spec); err != nil {
+		log.Fatal(err)
+	}
+	cli.Execute() // the SDK's own CLI, now including your device
+}
+```
+
+`opts.Require` is for the one kind of option nothing can invent a value for — which
+channels a given cryostat exposes depends on how its mappers are configured, so there
+is no sensible default and omitting it is an error rather than a guess.
+
+Build your binary and run it exactly as you would the stock one:
+
+```bash
+qpi-driver start --operation monitor --device bluefors_gen2 \
+  --qpi-addr https://qpi.example.com --token … --ca-fingerprint … \
+  -o channels=gen2.temperature:K -o base_url=http://localhost:49099
+```
+
+### 2. Write a device from scratch
+
+When nothing shipped is close, write the driver yourself: embed `qpidriver.Base`,
+which owns the connection and the event loop, and implement `HandleEvent` — called for
+every event the server pushes to this driver. Schedule whatever reports upward with
+`Every`.
 
 <!-- docs-check: compile=go-custom-device -->
 ```go
 package main
 
 import (
+	"fmt"
 	"log"
+	"time"
 
 	qpidriver "github.com/sopherapps/qpi/qpi-driver/go"
 	"github.com/sopherapps/qpi/qpi-driver/go/cli"
 	"github.com/sopherapps/qpi/qpi-driver/go/devices"
 )
 
-// ThermometerDriver is your driver: embed Base, implement HandleEvent.
+// ThermometerDriver is your driver. Embedding Base is not optional: it is what makes
+// this a driver the SDK can connect and run.
 type ThermometerDriver struct {
 	qpidriver.Base
 	probes int
 }
 
-func (d *ThermometerDriver) HandleEvent(qpidriver.Event) {}
+// HandleEvent is called for every event the server pushes to this driver. A monitor
+// is told nothing and asked nothing — it only reports — so log and drop, and an event
+// sent here by mistake is visible rather than silently swallowed.
+func (d *ThermometerDriver) HandleEvent(event qpidriver.Event) {
+	log.Printf("[thermometer] not a QPU; dropping %s", event.Type)
+}
 
-// Spec is the name `--device` will use, bound to the builder behind it. The options
-// this device accepts are the ones the builder reads, with the fallback stated where
-// it is used; `opts.Err()` carries anything that would not convert.
+func (d *ThermometerDriver) report() {
+	readings := map[string]any{}
+	for probe := 0; probe < d.probes; probe++ {
+		readings[fmt.Sprintf("probe.%d", probe)] = map[string]any{
+			"value": 4.2, "unit": "K", "status": "OK",
+		}
+	}
+	payload := map[string]any{"readings": readings}
+	if err := d.Emit(qpidriver.NewEvent(
+		qpidriver.CryostatReading, d.DriverName(), payload)); err != nil {
+		log.Printf("[thermometer] emit failed: %v", err)
+	}
+}
+
 var Spec = devices.DeviceSpec{
 	Name:      "thermometer",
 	Operation: devices.Monitor,
@@ -263,6 +437,8 @@ var Spec = devices.DeviceSpec{
 		if err := opts.Err(); err != nil {
 			return nil, err
 		}
+		// Runs every interval once the driver is connected, and not before.
+		driver.Every(opts.Seconds("interval", 5*time.Second), driver.report)
 		return driver, nil
 	},
 }
@@ -271,23 +447,33 @@ func main() {
 	if err := devices.Register(Spec); err != nil {
 		log.Fatal(err)
 	}
-	cli.Execute() // the SDK's own CLI, now including your device
+	cli.Execute()
 }
 ```
 
-Two things worth knowing:
+The **operation** you choose is not free: it is a contract the server implements, so
+it has to be one QPI-UI already has a handler for. `devices.Monitor` means "reports
+readings upward on its own schedule"; `devices.Process` means "runs jobs pushed to it
+and returns results". This SDK ships no `process` device — writing a QPU in Go means
+implementing job execution yourself, where the Python SDK gives you the whole QPU
+driver and asks only for an executor.
 
-- **`Build` returns a driver; it does not run one.** `qpidriver.Run` is the only
-  thing that starts anything, which is what lets a device be built and asserted on
-  in a test with no server (RFC 0003 §7). `Driver` is sealed by an unexported
-  method, so `Build` can only return something embedding `Base` — deliberately, so
-  `Run` can always reach the transport.
-- **Reading an option is what declares it.** There is no option schema anywhere in
-  the SDK; `Options` remembers which keys were read, so an `-o` key nothing looked at
-  is reported after the build rather than silently ignored. A device forwarding
-  options to something the SDK has never seen calls `opts.Remaining()`.
+### Two things worth knowing
+
+- **`Build` returns a driver; it does not run one.** `qpidriver.Run` is what connects
+  and starts the timers, and the CLI is what calls it. That is what lets a device be
+  constructed and asserted on in a test with no server (RFC 0003 §7). `Driver` is
+  sealed by an unexported method, so `Build` can only return something embedding
+  `Base` — deliberately, so `Run` can always reach the transport.
+- **Reading an option is what declares it.** There is no list of a device's options in
+  this SDK — `Options` records which keys your builder asked for, and `qpi-driver
+  start` reports any `-o` key that nothing asked for, then exits 1 without connecting.
+  Conversion failures accumulate in `opts.Err()` rather than being returned one at a
+  time, so a builder stays a flat run of statements with one check at the end. If your
+  device passes options on to something the SDK has never seen, call `opts.Remaining()`
+  to take everything not yet read, which counts as reading it.
 
 There is no import-path device in Go, as there is in Python (`--device
-mylab.devices:PrestoV2`): Go resolves imports at compile time, so naming a type in
-a string could only work by building a plugin, and `devices.Register` in your own
-`main` is both simpler and type-checked.
+mylab.devices:PrestoV2`) and TypeScript (`--device ./dist/mine.js#Export`): naming a
+type in a string could only work by building a plugin, and `devices.Register` in your
+own `main` is both simpler and type-checked.

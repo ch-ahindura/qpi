@@ -12,6 +12,11 @@ How a snippet is run:
 * ``QpiDriver.run`` is stubbed. Every driver snippet ends in ``.run()``, which would
   otherwise try to reach a server; what is being checked is that the code up to that
   point is valid and the driver can be constructed at all.
+* The device registry is swapped for a copy. A snippet showing how to add a device
+  ends in ``register(SPEC)``, and the registry is process-global — running the
+  documentation would otherwise leave ``thermometer`` and ``bluefors_gen2`` in it for
+  every later test to trip over. A copy rather than an empty table, so a snippet that
+  registers a name the SDK already ships still fails here.
 * A block that is deliberately not meant to run is skipped, by preceding it with
   ``<!-- docs-check: skip -->`` in the document. There are none today; the marker
   exists so that a block which needs one does not become a reason to delete this
@@ -30,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from qpi_driver.builtins import registry
 from qpi_driver.sdk import QpiDriver
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -100,6 +106,12 @@ def test_the_snippet_runs(snippet: Snippet, monkeypatch, tmp_path):
     """Import it, define it, construct the driver — then stop short of connecting."""
     connected: list[QpiDriver] = []
     monkeypatch.setattr(QpiDriver, "run", lambda self: connected.append(self))
+    # A snippet that registers a device must not leave it in the process-global table.
+    monkeypatch.setattr(
+        registry,
+        "_DEVICES",
+        {op: dict(table) for op, table in registry._DEVICES.items()},
+    )
     # A snippet writing under `./data` or `./bin/data` writes it wherever pytest was
     # run from, which is not somewhere a test may leave things.
     monkeypatch.chdir(tmp_path)

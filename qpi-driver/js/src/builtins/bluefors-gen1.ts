@@ -40,6 +40,13 @@ export interface BlueforsGen1Options extends QpiDriverOptions {
   pollIntervalMs?: number;
   /** Per-channel HTTP timeout in ms. Defaults to {@link DEFAULT_TIMEOUT_MS}. */
   timeoutMs?: number;
+  /**
+   * What reads one channel; see {@link ChannelReader}. Defaults to the Gen. 1
+   * Control API read, which is what `blueforsBaseUrl`, `apiKey` and `timeoutMs`
+   * configure. A monitor for other control software supplies its own and leaves
+   * those alone.
+   */
+  channelReader?: ChannelReader;
 }
 
 /** One channel's latest value in the emitted payload. */
@@ -49,12 +56,30 @@ export interface Reading {
   status: string;
 }
 
+/**
+ * Reads one channel of a cryostat's value tree, given its path and display unit.
+ *
+ * This is the part of a cryostat monitor that is specific to one control API, and the
+ * only part: the timer, one bad channel not losing the rest of the tick, and the
+ * `CryostatReading` event are the same whatever is being read. Passing a different
+ * reader to {@link BlueforsGen1Driver} is therefore the whole of what a monitor for
+ * different control software has to write.
+ *
+ * It must not reject: a channel it cannot read is a `null` value with an `"ERROR"`
+ * status, which is how the driver knows to carry on with the others.
+ */
+export type ChannelReader = (
+  channel: string,
+  unit: string,
+) => Promise<Reading>;
+
 /** Polls Bluefors Gen. 1 Control API channels and emits readings on a timer. */
 export class BlueforsGen1Driver extends QpiDriver {
   private readonly baseUrl: string;
   private readonly channels: Record<string, string>;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
+  private readonly read: ChannelReader;
 
   constructor(options: BlueforsGen1Options) {
     super(options);
@@ -65,6 +90,9 @@ export class BlueforsGen1Driver extends QpiDriver {
     this.channels = normalizeChannels(options.channels);
     this.apiKey = options.apiKey ?? "";
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.read =
+      options.channelReader ??
+      ((channel, unit) => this.readGen1Channel(channel, unit));
 
     this.every(options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS, () =>
       this.poll(),
@@ -89,7 +117,7 @@ export class BlueforsGen1Driver extends QpiDriver {
   async poll(): Promise<void> {
     const readings: Record<string, Reading> = {};
     for (const [channel, unit] of Object.entries(this.channels)) {
-      readings[channel] = await this.readChannel(channel, unit);
+      readings[channel] = await this.read(channel, unit);
     }
 
     const anyOk = Object.values(readings).some((r) => r.status !== "ERROR");
@@ -103,7 +131,14 @@ export class BlueforsGen1Driver extends QpiDriver {
     this.emit(new Event(EventType.CryostatReading, { readings }));
   }
 
-  private async readChannel(channel: string, unit: string): Promise<Reading> {
+  /**
+   * Read one value-tree channel from the Bluefors Gen. 1 Control API — the default
+   * {@link ChannelReader}, and the only Gen. 1-specific code here.
+   */
+  private async readGen1Channel(
+    channel: string,
+    unit: string,
+  ): Promise<Reading> {
     const path = channel.replaceAll(".", "/");
     const url = new URL(`${this.baseUrl}/values/${path}`);
     if (this.apiKey) {

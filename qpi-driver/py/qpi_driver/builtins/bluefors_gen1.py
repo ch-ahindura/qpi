@@ -22,6 +22,7 @@ qblox/quantify executors.
 """
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -37,6 +38,20 @@ log = logging.getLogger(__name__)
 DEFAULT_POLL_INTERVAL = 5.0
 DEFAULT_TIMEOUT = 5.0
 
+# Reads one channel of a cryostat's value tree, given its path and display unit, and
+# returns ``{"value": float | None, "unit": str, "status": str}``.
+#
+# This is the part of a cryostat monitor that is specific to one control API, and the
+# only part: the timer, one bad channel not losing the rest of the tick, and the
+# CryostatReading event are the same whatever is being read. Passing a different
+# reader to `BlueforsGen1Driver` is therefore the whole of what a monitor for
+# different control software has to write — the same way every `process` device is the
+# one QPU driver over a different `Executor`.
+#
+# A reader must not raise: a channel it cannot read is a ``None`` value with an
+# ``"ERROR"`` status, which is how the driver knows to carry on with the others.
+ChannelReader = Callable[[str, str], dict[str, Any]]
+
 
 class BlueforsGen1Driver(QpiDriver):
     """Polls Bluefors Gen. 1 Control API channels and emits readings on a timer.
@@ -51,6 +66,10 @@ class BlueforsGen1Driver(QpiDriver):
             parameter (Bluefors reference §3.5.1).
         poll_interval: Seconds between polls.
         timeout: HTTP timeout per channel read, in seconds.
+        read_channel: What reads one channel; see :data:`ChannelReader`. Defaults to
+            the Gen. 1 Control API read, which is what ``bluefors_base_url``,
+            ``api_key`` and ``timeout`` configure. A monitor for other control
+            software supplies its own and leaves those alone.
     """
 
     def __init__(
@@ -65,6 +84,7 @@ class BlueforsGen1Driver(QpiDriver):
         ca_fingerprint: str = "",
         ca_file_path: str = "./bin/qpi.ca.pem",
         recv_timeout_ms: int = DEFAULT_RECV_TIMEOUT_MS,
+        read_channel: ChannelReader | None = None,
     ) -> None:
         super().__init__(
             qpi_addr=_normalize_qpi_addr(qpi_addr),
@@ -78,6 +98,7 @@ class BlueforsGen1Driver(QpiDriver):
         self.api_key = api_key
         self.poll_interval = poll_interval
         self.timeout = timeout
+        self.read_channel: ChannelReader = read_channel or self._read_gen1_channel
 
         self.every(self.poll_interval, self._poll)
 
@@ -103,7 +124,7 @@ class BlueforsGen1Driver(QpiDriver):
         """
         readings: dict[str, dict[str, Any]] = {}
         for channel, unit in self.channels.items():
-            readings[channel] = self._read_channel(channel, unit)
+            readings[channel] = self.read_channel(channel, unit)
 
         if not any(r["status"] != "ERROR" for r in readings.values()):
             log.warning(
@@ -119,13 +140,15 @@ class BlueforsGen1Driver(QpiDriver):
             )
         )
 
-    def _read_channel(self, channel: str, unit: str) -> dict[str, Any]:
-        """Read a single value-tree channel from the Bluefors Control API.
+    def _read_gen1_channel(self, channel: str, unit: str) -> dict[str, Any]:
+        """Read a single value-tree channel from the Bluefors Gen. 1 Control API.
 
         Mirrors the "values" endpoint example in the Bluefors reference: GET
         the endpoint path (channel with dots replaced by slashes) and read
         ``data.content.latest_valid_value``, falling back to
         ``latest_value`` if there is no recent valid sample.
+
+        The default :data:`ChannelReader`, and the only Gen. 1-specific code here.
         """
         url = f"{self.bluefors_base_url}/values/{channel.replace('.', '/')}"
         params = {"key": self.api_key} if self.api_key else {}

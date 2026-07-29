@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	qpidriver "github.com/sopherapps/qpi/qpi-driver/go"
 )
@@ -84,4 +85,33 @@ func TestParseChannels(t *testing.T) {
 func TestHandleEventIgnoresInbound(t *testing.T) {
 	d := New(Options{Channels: map[string]string{"x": "K"}})
 	d.HandleEvent(qpidriver.NewEvent(qpidriver.JobDispatch, "qpu_1", nil)) // must not panic
+}
+
+func TestOptionsReadChannelReplacesTheRead(t *testing.T) {
+	// The seam a monitor for different control software reuses this driver
+	// through: Go has no inheritance, so a Gen. 2 supplies its own read and keeps
+	// the timer, the per-channel error handling and the CryostatReading emit.
+	value := 42.0
+	var asked []string
+
+	d := New(Options{
+		Channels:     map[string]string{"gen2.temperature": "K"},
+		PollInterval: time.Hour, // long enough that only the direct call below runs
+		ReadChannel: func(channel, unit string) Reading {
+			asked = append(asked, channel)
+			return Reading{Value: &value, Unit: unit, Status: "OK"}
+		},
+	})
+	r := d.read("gen2.temperature", "K")
+
+	if len(asked) != 1 || asked[0] != "gen2.temperature" {
+		t.Fatalf("expected the supplied reader to be asked, got %v", asked)
+	}
+	if r.Status != "OK" || r.Value == nil || *r.Value != 42.0 {
+		t.Fatalf("expected the supplied reader's reading, got %+v", r)
+	}
+	// And the built-in read is untouched for a driver that does not replace it.
+	if New(Options{Channels: map[string]string{"x": ""}}).read == nil {
+		t.Error("expected a default read when ReadChannel is nil")
+	}
 }

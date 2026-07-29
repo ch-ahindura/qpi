@@ -113,6 +113,38 @@ describe("BlueforsGen1Driver", () => {
   });
 });
 
+describe("channelReader as the seam", () => {
+  test("a supplied reader keeps the timer, the retry and the emit", async () => {
+    // A monitor for different control software reuses everything but the read —
+    // composition, the same way every `process` device is the one QPU driver over a
+    // different executor. No subclassing, and nothing protected to reach for.
+    const asked: string[] = [];
+    const driver = new BlueforsGen1Driver({
+      qpiAddr: "http://127.0.0.1:1",
+      token: "t",
+      caFingerprint: "unused: this driver never connects in these tests",
+      channels: { "gen2.temperature": "K" },
+      channelReader: async (channel, unit) => {
+        asked.push(channel);
+        return { value: 0.02, unit, status: "OK" };
+      },
+    });
+    const emitted: Event[] = [];
+    (driver as unknown as { emit: (e: Event) => void }).emit = (e) =>
+      emitted.push(e);
+
+    // No HTTP server: the supplied reader never reaches the network.
+    await driver.poll();
+
+    expect(asked).toEqual(["gen2.temperature"]);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].type).toBe(EventType.CryostatReading);
+    expect(emitted[0].payload.readings).toEqual({
+      "gen2.temperature": { value: 0.02, unit: "K", status: "OK" },
+    });
+  });
+});
+
 describe("channel parsing helpers", () => {
   test("normalizeChannels handles maps, lists, and undefined", () => {
     expect(normalizeChannels({ "a.b": "K" })).toEqual({ "a.b": "K" });
