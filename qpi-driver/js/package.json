@@ -1,6 +1,6 @@
 {
   "name": "qpi-driver",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "TypeScript/JavaScript SDK for building QPI quantum platform drivers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

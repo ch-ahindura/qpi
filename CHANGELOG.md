@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-29
+
 ### Migration
 
 This release breaks the driver CLI's grammar and the Python and TypeScript SDKs'

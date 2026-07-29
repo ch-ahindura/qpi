@@ -3,7 +3,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("qpi-driver")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.1.2"
+    __version__ = "0.2.0"
 
 from qpi_driver.builtins.bluefors_gen1 import (
     BlueforsGen1Driver,

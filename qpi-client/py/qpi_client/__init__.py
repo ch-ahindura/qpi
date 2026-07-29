@@ -30,7 +30,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("qpi-client")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.1.2"
+    __version__ = "0.2.0"
 
 from qpi_client.client import QPIClient
 from qpi_client.provider import QPIBackend, QPIJob

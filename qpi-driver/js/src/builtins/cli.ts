@@ -33,7 +33,7 @@ import {
 } from "../devices.js";
 import { DEVICE_SPEC as BLUEFORS_GEN1 } from "./bluefors-gen1.device.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.2.0";
 
 // The devices this build ships. One line per device, and the same line a bundle of
 // your own writes for a device of its own (RFC 0003 §6).
