@@ -19,7 +19,6 @@
  * await new MyDriver({
  *   qpiAddr: "https://qpi.example.com",
  *   token: "your-driver-token",
- *   name: "my-qpu",
  *   caFingerprint: "sha256-of-the-server-root-ca",
  * }).run();
  * ```
@@ -28,9 +27,8 @@
  * sub-modules — `import { BlueforsGen1Driver } from "qpi-driver/builtins/bluefors-gen1"` —
  * so they are only pulled into a bundle when actually used.
  *
- * To make a driver of your own runnable by the `qpi-driver` CLI, describe it as a
- * device and register it: `import { registerDevice } from "qpi-driver/devices"`
- * (RFC 0003 §6).
+ * To make a driver of your own runnable by the `qpi-driver` CLI, register it as a
+ * device: `import { registerDevice } from "qpi-driver/devices"` (RFC 0003 §6).
  *
  * @packageDocumentation
  */
@@ -38,35 +36,17 @@
 export { QpiDriver, type QpiDriverOptions } from "./driver.js";
 export { Event, EventType, type EventWire, type EventInit } from "./events.js";
 export {
-  asBool,
-  asFloat,
-  asInt,
-  asString,
   clearDevices,
   devices,
   hasDevice,
-  lookupOperation,
+  knownOperation,
   Operation,
   Options,
   operationNames,
   operations,
-  parseOptions,
   registerDevice,
   resolve,
   type DeviceBuilder,
   type DeviceConfig,
   type DeviceSpec,
-  type OperationSpec,
-  type OptionSpec,
-  type Parser,
 } from "./devices.js";
-export {
-  catalog,
-  deviceLines,
-  renderCatalog,
-  SCHEMA_VERSION,
-  type Catalog,
-  type CatalogDevice,
-  type CatalogOperation,
-  type CatalogOption,
-} from "./catalog.js";

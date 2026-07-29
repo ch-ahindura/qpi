@@ -109,15 +109,18 @@ variables, so `install-systemd.sh` can pass the token as `QPI_ACCESS_TOKEN`.
 verifying the pinned root CA, because an opt-out reachable by leaving an argument
 out is one a copy-pasted command hits by accident.
 
-`qpi-driver devices` prints what this build can run: each operation, the devices
-under it, and every `-o` key each device reads with its type and default.
+`qpi-driver devices` prints what this build can run, as names by operation. There is
+no default device, so `--device` is always given.
 
-That table is the SDK's **catalog** — the list of operations, devices and options a
-build knows about, which the `DeviceSpec`s themselves are the source of.
-`qpi-driver catalog --json` is the same document for another program to read;
-QPI-UI's dashboard builds its setup snippets from it, and a test fails if the
-server's idea of the catalog and the SDKs' ever disagree. Because both come from
-the specs, neither can fall behind the code — including for a device of your own.
+Which `-o` keys a device reads is the device's own business — the keys its builder
+looks at, and nothing else. The SDK publishes no catalog of them, because QPI-UI
+already holds one: the dashboard's registration form is where a device's options are
+described and filled in, and a second copy here would be a second copy to keep in
+step (RFC 0003 §9). A key nothing read is reported rather than ignored:
+
+```
+Error: unknown option 'base_urll' for monitor device 'bluefors_gen1'
+```
 
 ## Running a built-in as a systemd service (Linux)
 
@@ -225,19 +228,13 @@ A driver becomes runnable by the CLI by being described as a device. Either regi
 it, or name it by import path — the same two routes the Python SDK has, minus
 entry points, which npm has no equivalent of.
 
-**Register it.** Describe the device as data, and the CLI gains it: a line in
-`--help`, an entry in `catalog --json`, and `-o` values that are checked and
-converted for you.
+**Register it** under a name, and `--device <name>` runs it — on exactly the same
+footing as the device the SDK ships.
 
 <!-- docs-check: compile=ts-register-device -->
 ```typescript
 import { QpiDriver, type QpiDriverOptions } from "qpi-driver";
-import {
-  asInt,
-  type DeviceSpec,
-  Operation,
-  registerDevice,
-} from "qpi-driver/devices";
+import { type DeviceSpec, Operation, registerDevice } from "qpi-driver/devices";
 
 interface ThermometerOptions extends QpiDriverOptions {
   probes: number;
@@ -255,17 +252,14 @@ class ThermometerDriver extends QpiDriver {
 }
 
 // The `: DeviceSpec` annotation is what makes `build`'s two parameters typed, so
-// `options.int("probes")` is checked here rather than at the first `-o probes=4`.
+// `options.int(…)` is checked here rather than at the first `-o probes=4`. The
+// options this device accepts are the ones the builder reads, with the fallback
+// stated where it is used.
 export const THERMOMETER: DeviceSpec = {
   name: "thermometer",
   operation: Operation.Monitor,
-  summary: "Reads a made-up thermometer.",
-  options: [
-    { key: "probes", help: "How many probes to read.", type: "int",
-      parse: asInt, default: "1", example: "4" },
-  ],
   build: (config, options) =>
-    new ThermometerDriver({ ...config, probes: options.int("probes") }),
+    new ThermometerDriver({ ...config, probes: options.int("probes", 1) }),
 };
 
 registerDevice(THERMOMETER);
@@ -279,17 +273,24 @@ qpi-driver start --operation monitor --device ./dist/my-device.js#THERMOMETER \
 ```
 
 The separator is `#`, where the Python SDK uses `:` (`--device mylab.devices:Presto`).
-That is not gratuitous: `:` is a URL scheme separator in a JavaScript module
+That is not unwarranted: `:` is a URL scheme separator in a JavaScript module
 specifier, so `./m.js:X` could not be told from a URL. `#` cannot appear in a bare
 identifier either, so a plain `--device bluefors` is still read as a name and a typo
 still gets the known-devices error rather than an import failure.
 
-The export may be a `DeviceSpec` — which is how it gets a declared option schema and
-a `--help` entry — or a builder, in which case the operation comes from
-`--operation` and its `-o` options are passed through as typed, unchecked. The path
-is resolved relative to the working directory, and must be a module Node can import,
-so point at built `.js`, not `.ts`.
+<!-- FIXME: 'or a builder, in which case the operation comes from `--operation` and the name is the specifier.' is confusing. Elaborate.-->
+The export may be a `DeviceSpec` — which is how it gets its own name — or a builder,
+in which case the operation comes from `--operation` and the name is the specifier.
+The path is resolved relative to the working directory, and must be a module Node can
+import, so point at built `.js`, not `.ts`.
 
-`build` returns a driver; it does not run one. `driver.run()` is the only thing that
-starts anything, which is what lets a device be built and asserted on with no
-server.
+Two things worth knowing:
+
+- **`build` returns a driver; it does not run one.** `driver.run()` is the only thing
+  that starts anything, which is what lets a device be built and asserted on with no
+  server.
+<!--FIXME: 'key nothing looked at is reported after the build rather than silently ignored' - what build? isn't -o passed to the CLI. Or do you mean it is reported when the driver is starting? -->
+- **Reading an option is what declares it.** There is no option schema anywhere in the
+  SDK; `Options` remembers which keys were read by the code, so an `-o` key nothing looked at is
+  reported after the build rather than silently ignored. A device forwarding options to
+  something the SDK has never seen calls `options.remaining()`.

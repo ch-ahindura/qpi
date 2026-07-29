@@ -1,10 +1,9 @@
 /**
- * The operation and device catalog (RFC 0003 §5, §6, §8).
+ * The device registry and the options a device reads (RFC 0003 §6, §8, §9).
  *
  * The decisions live here rather than in the commander wiring, so this is where they
  * are asserted: which operations exist, which device an `--operation`/`--device` pair
- * means, what an omitted flag falls back to, and what happens when an import path or
- * an option value is wrong.
+ * means, and what happens when an import path or an option value is wrong.
  */
 
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -12,19 +11,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  asBool,
-  asFloat,
-  asInt,
-  asString,
   clearDevices,
   devices,
   hasDevice,
-  lookupOperation,
+  knownOperation,
   Operation,
   Options,
   operationNames,
   operations,
-  parseOptions,
   registerDevice,
   resolve,
   type DeviceSpec,
@@ -39,30 +33,7 @@ function fakeSpec(
   operation: Operation,
   extra: Partial<DeviceSpec> = {},
 ): DeviceSpec {
-  return {
-    name,
-    operation,
-    summary: "A device from outside the SDK.",
-    build: fakeBuild,
-    options: [
-      {
-        key: "probes",
-        help: "How many.",
-        type: "int",
-        parse: asInt,
-        default: "1",
-      },
-      { key: "label", help: "What to call it.", type: "str" },
-      {
-        key: "fast",
-        help: "Whether to hurry.",
-        type: "bool",
-        parse: asBool,
-        default: "no",
-      },
-    ],
-    ...extra,
-  };
+  return { name, operation, build: fakeBuild, ...extra };
 }
 
 // The registry is module-global, so a test that registered into it would change what
@@ -77,21 +48,27 @@ describe("operations", () => {
     expect(operationNames()).toEqual(["process", "monitor"]);
   });
 
-  it("each describe themselves for generated help", () => {
-    for (const spec of operations()) {
-      expect(spec.summary).toBeTruthy();
-      expect(spec.events.length).toBeGreaterThan(0);
-    }
-  });
-
   it("cannot be mutated through the accessor", () => {
-    operations()[0].summary = "tampered";
-    expect(operations()[0].summary).not.toBe("tampered");
+    operations()[0] = "tampered" as Operation;
+    expect(operations()[0]).not.toBe("tampered");
   });
 
-  it("can be looked up by name, and only by a real one", () => {
-    expect(lookupOperation("monitor")?.defaultDevice).toBe("bluefors_gen1");
-    expect(lookupOperation("telemetry")).toBeUndefined();
+  it("are recognised by name, and only a real one is", () => {
+    expect(knownOperation("monitor")).toBe(true);
+    expect(knownOperation("telemetry")).toBe(false);
+  });
+});
+
+describe("DeviceSpec", () => {
+  it("is a name, an operation and a builder — and nothing else", () => {
+    // A device that also described itself — a summary, a declared option schema, an
+    // install target — would be a second catalog beside QPI-UI's, kept in step by
+    // hand (RFC 0003 §9).
+    expect(Object.keys(fakeSpec("mine", Operation.Monitor)).sort()).toEqual([
+      "build",
+      "name",
+      "operation",
+    ]);
   });
 });
 
@@ -208,23 +185,18 @@ describe("import-path devices", () => {
 
     expect(spec.operation).toBe(Operation.Monitor);
     expect(typeof spec.build).toBe("function");
-    // With no declared schema, every option passes through as the string it was
-    // typed as — there is nothing to convert it to.
-    expect(spec.acceptsAnyOption).toBe(true);
-    expect(parseOptions(spec, { anything: "1" }).str("anything")).toBe("1");
+    expect(spec.name).toBe(`${path}#MyMonitor`);
   });
 
-  it("imports a DeviceSpec directly, which is how a schema is declared", async () => {
+  it("imports a DeviceSpec directly, which is how a name is chosen", async () => {
     const path = await moduleWith(
       `module.exports.SPEC = { name: "mine", operation: "monitor",
-         summary: "Mine.", build: () => ({}),
-         options: [{ key: "probes", help: "How many.", type: "int" }] };\n`,
+         build: () => ({}) };\n`,
     );
 
     const spec = await resolve(Operation.Monitor, `${path}#SPEC`);
 
     expect(spec.name).toBe("mine");
-    expect(spec.options?.[0].key).toBe("probes");
   });
 
   it("refuses a spec of another operation", async () => {
@@ -289,118 +261,93 @@ describe("import-path devices", () => {
   });
 });
 
-describe("parseOptions", () => {
-  it("converts what is given and fills in defaults", () => {
-    const parsed = parseOptions(fakeSpec("mine", Operation.Monitor), {
-      probes: "9",
-    });
+describe("Options", () => {
+  it("falls back when a key is absent", () => {
+    // Every accessor takes the fallback, so a device states its default once, in the
+    // one piece of code that acts on it.
+    const options = new Options();
 
-    expect(parsed.int("probes")).toBe(9);
-    expect(parsed.bool("fast")).toBe(false);
-    // `label` has neither a value nor a default, so it is absent rather than "" —
-    // which lets a builder tell "not set" from "set to nothing".
-    expect(parsed.has("label")).toBe(false);
-  });
-
-  it("rejects an unknown key, listing the valid ones", () => {
-    // Silently ignoring it is what this replaced: a typo in a unit file used to mean
-    // a driver running with a default nobody chose.
-    expect(() =>
-      parseOptions(fakeSpec("mine", Operation.Monitor), { probez: "9" }),
-    ).toThrow(/unknown option 'probez'.*valid options: fast, label, probes/);
-  });
-
-  it("reports every unknown key at once", () => {
-    expect(() =>
-      parseOptions(fakeSpec("mine", Operation.Monitor), { y: "1", x: "2" }),
-    ).toThrow(/unknown options 'x', 'y'/);
-  });
-
-  it("passes anything through for a device with no schema", () => {
-    const spec = fakeSpec("mine", Operation.Monitor, {
-      acceptsAnyOption: true,
-    });
-
-    expect(parseOptions(spec, { whatever: "1" }).str("whatever")).toBe("1");
-  });
-
-  it("reports a missing required key with its example", () => {
-    const spec = fakeSpec("mine", Operation.Monitor, {
-      options: [
-        {
-          key: "channels",
-          help: "What to poll.",
-          required: true,
-          example: "a:K",
-        },
-      ],
-    });
-
-    // The error is the fix: it shows the -o line that should have been typed.
-    expect(() => parseOptions(spec, {})).toThrow(
-      /needs a 'channels' option, e.g. -o channels=a:K/,
+    expect(options.str("base_url", "http://localhost")).toBe(
+      "http://localhost",
     );
+    expect(options.int("probes", 3)).toBe(3);
+    expect(options.num("interval", 2.5)).toBe(2.5);
+    expect(options.bool("fast", true)).toBe(true);
+    expect(options.ms("timeout")).toBeUndefined();
+    expect(options.has("anything")).toBe(false);
+  });
+
+  it("reads a given value as the accessor says", () => {
+    const options = new Options({
+      probes: "9",
+      interval: "0.5",
+      fast: "on",
+      poll_interval: "2.5",
+    });
+
+    expect(options.int("probes", 3)).toBe(9);
+    expect(options.num("interval", 5)).toBe(0.5);
+    expect(options.bool("fast")).toBe(true);
+    // Seconds on the command line, milliseconds in a JS timer.
+    expect(options.ms("poll_interval")).toBe(2500);
+  });
+
+  it("reads booleans the way the other SDKs do", () => {
+    for (const raw of ["1", "true", "TRUE", " yes ", "On"]) {
+      expect(new Options({ k: raw }).bool("k")).toBe(true);
+    }
+    for (const raw of ["0", "false", "no", "off", "", "  ", "maybe"]) {
+      expect(new Options({ k: raw }).bool("k", true)).toBe(false);
+    }
   });
 
   it("names the option a bad value belongs to", () => {
-    expect(() =>
-      parseOptions(fakeSpec("mine", Operation.Monitor), { probes: "many" }),
-    ).toThrow(/bad value for -o probes/);
-  });
-
-  it("accepts a device that reads nothing", () => {
-    const spec: DeviceSpec = {
-      name: "bare",
-      operation: Operation.Monitor,
-      build: fakeBuild,
-    };
-
-    expect(parseOptions(spec, {}).all()).toEqual({});
-    expect(() => parseOptions(spec, { anything: "1" })).toThrow(
-      /valid options: none/,
+    expect(() => new Options({ probes: "many" }).int("probes", 1)).toThrow(
+      /bad value for -o probes: 'many' is not a whole number/,
+    );
+    expect(() => new Options({ interval: "soon" }).num("interval", 1)).toThrow(
+      /bad value for -o interval: 'soon' is not a number/,
     );
   });
-});
 
-describe("parsers", () => {
-  it("read booleans the way the other SDKs do", () => {
-    for (const raw of ["1", "true", "TRUE", " yes ", "On"]) {
-      expect(asBool(raw)).toBe(true);
-    }
-    for (const raw of ["0", "false", "no", "off", "", "  ", "maybe"]) {
-      expect(asBool(raw)).toBe(false);
-    }
+  it("reports the -o pair a required option was missing", () => {
+    expect(() => new Options().require("channels", "a:K")).toThrow(
+      /missing required option 'channels', e.g. -o channels=a:K/,
+    );
+    expect(new Options({ channels: "a:K" }).require("channels")).toBe("a:K");
   });
 
-  it("read numbers, and refuse what is not one", () => {
-    expect(asFloat(" 2.5 ")).toBe(2.5);
-    expect(() => asFloat("soon")).toThrow(/not a number/);
-    expect(asInt(" 7 ")).toBe(7);
-    expect(() => asInt("7.5")).toThrow(/not a whole number/);
+  it("reports what nothing looked at", () => {
+    // The device's own code is the schema: a key it never read is a typo.
+    const options = new Options({ probes: "9", probez: "9", elephant: "1" });
+    options.int("probes", 1);
+
+    expect(options.unread()).toEqual(["elephant", "probez"]);
   });
 
-  it("leave a string alone by default", () => {
-    expect(asString(" kept ")).toBe(" kept ");
-  });
-});
+  it("counts reading an absent key as reading it", () => {
+    // Asking about a key is what says the device understands it, given or not.
+    const options = new Options({ probes: "9" });
+    options.str("label", "");
+    options.int("probes", 1);
 
-describe("Options", () => {
-  it("reads a missing or wrongly-typed option as its zero value", () => {
-    // A builder asking for a key its own spec declares cannot be wrong; one asking
-    // for anything else should not crash a driver.
-    const options = new Options();
-
-    expect(options.str("x")).toBe("");
-    expect(options.num("x")).toBe(0);
-    expect(options.bool("x")).toBe(false);
-    expect(options.channels("x")).toEqual({});
-    expect(options.ms("x")).toBeUndefined();
-    expect(options.has("x")).toBe(false);
+    expect(options.unread()).toEqual([]);
   });
 
-  it("converts a seconds option to milliseconds", () => {
-    // Seconds on the command line, milliseconds in a JS timer — declared as "float"
-    // in the catalog so every SDK reports the same type for the same option.
-    expect(new Options({ poll_interval: 2.5 }).ms("poll_interval")).toBe(2500);
+  it("hands over everything left, for a device that forwards options", () => {
+    const options = new Options({ probes: "9", qubits: "5" });
+    options.int("probes", 1);
+
+    expect(options.remaining()).toEqual({ qubits: "5" });
+    expect(options.unread()).toEqual([]);
+  });
+
+  it("copies what it is given", () => {
+    // A caller mutating its own object afterwards must not change what a driver reads.
+    const raw = { probes: "9" };
+    const options = new Options(raw);
+    raw.probes = "1";
+
+    expect(options.int("probes", 0)).toBe(9);
   });
 });

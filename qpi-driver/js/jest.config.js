@@ -11,7 +11,7 @@ module.exports = {
   collectCoverageFrom: ["src/**/*.ts"],
   coveragePathIgnorePatterns: ["\\.test\\.ts$"],
   coverageReporters: ["text", "lcov"],
-  // The high floors apply to the device catalog, the CLI over it, and the CA
+  // The high floors apply to the device registry, the CLI over it, and the CA
   // pinning — all of which need no server.
   //
   // driver.ts and nng.ts are the transport, and their floors are lower because a
@@ -32,12 +32,6 @@ module.exports = {
       lines: 96,
       functions: 96,
       branches: 90,
-    },
-    "./src/catalog.ts": {
-      statements: 96,
-      lines: 96,
-      functions: 96,
-      branches: 85,
     },
     "./src/builtins/cli.ts": {
       statements: 90,

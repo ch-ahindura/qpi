@@ -1,7 +1,7 @@
 /**
- * The operation and device catalog for the TypeScript SDK (RFC 0003 §5, §6, §8) —
- * the counterpart of the Python SDK's `qpi_driver.builtins.registry` and the Go
- * SDK's `devices` package.
+ * What `--device` can name in the TypeScript SDK (RFC 0003 §6, §8, §9) — the
+ * counterpart of the Python SDK's `qpi_driver.builtins.registry` and the Go SDK's
+ * `devices` package.
  *
  * Two ideas, deliberately asymmetric:
  *
@@ -14,21 +14,21 @@
  * is where they land — by {@link registerDevice} from your own code, or by import
  * path on the command line (`--device ./my-device.js#MyExport`).
  *
- * A device is described by data ({@link DeviceSpec}), never by running it, so
- * `--help`, `catalog --json` and QPI-UI's own catalog are all generated from one
- * source. Specs live beside the code they describe.
+ * What a device *is*, here, is a name and a builder. It has no description and no
+ * declared options, because none of that is the driver's to publish: QPI-UI is where
+ * a device is chosen and configured, and a driver that also described itself would be
+ * a second catalog to keep in step with the first. A driver runs what it is told to
+ * run.
  *
  * @example Registering a device of your own
  * ```typescript
- * import { QpiDriver } from "qpi-driver";
- * import { asInt, registerDevice, Operation } from "qpi-driver/devices";
+ * import { registerDevice, Operation } from "qpi-driver/devices";
  *
  * registerDevice({
  *   name: "thermometer",
  *   operation: Operation.Monitor,
- *   summary: "Reads a made-up thermometer.",
- *   options: [{ key: "probes", help: "How many.", type: "int", parse: asInt, default: "1" }],
- *   build: (cfg, opts) => new ThermometerDriver({ ...cfg, probes: opts.int("probes") }),
+ *   build: (cfg, opts) =>
+ *     new ThermometerDriver({ ...cfg, probes: opts.int("probes", 1) }),
  * });
  * ```
  *
@@ -36,7 +36,6 @@
  */
 
 import type { QpiDriver } from "./driver.js";
-import { EventType } from "./events.js";
 
 /**
  * What a driver does, and the contract QPI-UI implements for it. Closed by design:
@@ -71,37 +70,7 @@ export type DeviceBuilder = (
   options: Options,
 ) => QpiDriver;
 
-/** Turns one raw `-o` string into the value a builder wants. */
-export type Parser = (raw: string) => unknown;
-
-/** One `-o key=value` setting a device reads. */
-export interface OptionSpec {
-  /** The option name as typed, e.g. `"channels"`. */
-  key: string;
-  /** One line for generated help. */
-  help: string;
-  /**
-   * The kind of value expected — `"str"`, `"int"`, `"float"`, `"bool"`,
-   * `"channels"`. It is what `catalog --json` reports, and must match what the
-   * other SDKs report for the same device, since a test compares the catalogs
-   * (RFC 0003 §9).
-   */
-  type?: string;
-  /** Converts the raw string. Defaults to {@link asString}. */
-  parse?: Parser;
-  /**
-   * The value used when the option is absent, written as it would be typed on the
-   * command line; it goes through {@link OptionSpec.parse} like any other value.
-   * Omitted means there is no default.
-   */
-  default?: string;
-  /** Whether omitting the option is an error. */
-  required?: boolean;
-  /** A ready-to-paste value for generated help and snippets. */
-  example?: string;
-}
-
-/** The data-only description of one device. */
+/** One device: what `--device` names, and what to call when it does. */
 export interface DeviceSpec {
   /** How `--device` names it, e.g. `"bluefors_gen1"`. */
   name: string;
@@ -109,69 +78,27 @@ export interface DeviceSpec {
   operation: Operation;
   /** Returns an unstarted driver; see {@link DeviceBuilder}. */
   build: DeviceBuilder;
-  /** The `-o` keys this device reads. */
-  options?: OptionSpec[];
-  /**
-   * The install target that ships it, e.g. `"qpi-driver[cli,qblox]"` — meaningful
-   * for the Python SDK's devices, empty here where a device is imported.
-   */
-  extra?: string;
-  /** One line describing the device, for generated help. */
-  summary?: string;
-  /**
-   * Pass an undeclared `-o` key through as a raw string instead of rejecting it.
-   * For a device with no schema to check against; a device in the catalog declares
-   * its options and leaves this alone, so a typo stays an error.
-   */
-  acceptsAnyOption?: boolean;
-}
-
-/** The data-only description of one operation. */
-export interface OperationSpec {
-  name: Operation;
-  summary: string;
-  /**
-   * The device used when `--device` is omitted. Empty when this SDK registers
-   * none, in which case the CLI says so rather than offering a device it cannot
-   * honour (RFC 0003 §8).
-   */
-  defaultDevice: string;
-  /** The event-type names drivers of this operation take part in. */
-  events: EventType[];
 }
 
 /**
- * Every operation, in the order help and `catalog --json` list them. Deliberately
- * the same order and content as the Python and Go SDKs'.
+ * Every operation, in the order help and errors list them. Deliberately the same
+ * order as the Python and Go SDKs'.
  */
-const operationSpecs: OperationSpec[] = [
-  {
-    name: Operation.Process,
-    summary: "Run quantum jobs pushed by QPI-UI and report their results.",
-    defaultDevice: "",
-    events: [EventType.JobDispatch, EventType.JobResult],
-  },
-  {
-    name: Operation.Monitor,
-    summary: "Report readings upward on a timer.",
-    defaultDevice: "bluefors_gen1",
-    events: [EventType.CryostatReading],
-  },
-];
+const allOperations: Operation[] = [Operation.Process, Operation.Monitor];
 
 /** Every operation, in declaration order. */
-export function operations(): OperationSpec[] {
-  return operationSpecs.map((spec) => ({ ...spec }));
+export function operations(): Operation[] {
+  return [...allOperations];
 }
 
 /** The operation names, in declaration order, for help and error messages. */
 export function operationNames(): string[] {
-  return operationSpecs.map((spec) => spec.name);
+  return [...allOperations];
 }
 
-/** The spec for one operation, or undefined if there is no such operation. */
-export function lookupOperation(operation: string): OperationSpec | undefined {
-  return operationSpecs.find((spec) => spec.name === operation);
+/** Whether a string is one of the two operations. */
+export function knownOperation(operation: string): boolean {
+  return (allOperations as string[]).includes(operation);
 }
 
 /**
@@ -191,7 +118,7 @@ export function registerDevice(spec: DeviceSpec): void {
   if (!spec.name || !spec.build) {
     throw new Error("qpi-driver: a device spec needs a name and a builder");
   }
-  if (!lookupOperation(spec.operation)) {
+  if (!knownOperation(spec.operation)) {
     throw new Error(
       `qpi-driver: unknown operation '${spec.operation}' for device '${spec.name}'; ` +
         `valid operations: ${operationNames().join(", ")}`,
@@ -209,8 +136,8 @@ export function registerDevice(spec: DeviceSpec): void {
 
 /**
  * Every device registered for an operation, sorted by name — sorted rather than in
- * registration order so generated help and `catalog --json` are stable no matter
- * what was imported first.
+ * registration order so `qpi-driver devices` is stable no matter what was imported
+ * first.
  */
 export function devices(operation: Operation): DeviceSpec[] {
   return [...(registry.get(operation)?.values() ?? [])].sort((a, b) =>
@@ -251,7 +178,7 @@ export async function resolve(
   if (device.includes("#")) {
     return importedSpec(operation, device);
   }
-  if (!lookupOperation(operation)) {
+  if (!knownOperation(operation)) {
     throw new Error(
       `unknown operation '${operation}'; valid operations: ${operationNames().join(", ")}`,
     );
@@ -322,13 +249,7 @@ async function importedSpec(
     return value;
   }
   if (typeof value === "function") {
-    return {
-      name: specifier,
-      operation,
-      build: value as DeviceBuilder,
-      summary: `Device builder imported from ${specifier}.`,
-      acceptsAnyOption: true,
-    };
+    return { name: specifier, operation, build: value as DeviceBuilder };
   }
   throw new Error(
     `'${specifier}' is not usable as a ${operation} device: expected a device ` +
@@ -376,158 +297,126 @@ function messageOf(err: unknown): string {
 }
 
 /**
- * A device's `-o` values, already checked and converted by its own schema. The
- * accessors are lookups, not conversions: whatever a value is going to be, it
- * became that in {@link parseOptions}.
+ * The `-o key=value` settings a device was launched with.
+ *
+ * There is no option schema in this SDK. A device's options are whatever keys its
+ * builder reads, and a value's type is whichever accessor reads it — so there is no
+ * second description of a device to keep in step with the device, and nothing for
+ * QPI-UI to be checked against.
+ *
+ * Every accessor takes the fallback used when the key is absent, written as the value
+ * itself rather than as a string to parse: the default belongs to the one piece of
+ * code that acts on it. A value the accessor cannot read throws, naming the option.
+ *
+ * Reads are remembered so {@link Options.unread} can report a key nothing looked at.
+ * That is what keeps `-o pol_interval=2` an error rather than a setting silently
+ * ignored, without a declared list of keys to check it against.
  */
 export class Options {
-  constructor(private readonly values: Record<string, unknown> = {}) {}
+  private readonly values: Record<string, string>;
+  private readonly seen = new Set<string>();
 
-  /** Whether the option is present at all — "not set" versus "set to nothing". */
+  constructor(values: Record<string, string> = {}) {
+    this.values = { ...values };
+  }
+
+  /** Whether the option was given. Counts as reading it. */
   has(key: string): boolean {
+    this.seen.add(key);
     return key in this.values;
   }
 
-  /** The stored value, whatever its type. */
-  raw(key: string): unknown {
+  /** The option as typed, or `fallback` if it is absent. */
+  str(key: string, fallback = ""): string {
+    this.seen.add(key);
+    return this.values[key] ?? fallback;
+  }
+
+  /**
+   * The option, or a throw because the device cannot run without it. For the one
+   * kind of option nothing can make up a value for.
+   */
+  require(key: string, example = ""): string {
+    this.seen.add(key);
+    if (!(key in this.values)) {
+      const hint = example ? `, e.g. -o ${key}=${example}` : "";
+      throw new Error(`missing required option '${key}'${hint}`);
+    }
     return this.values[key];
   }
 
-  /** A string option, or `""` if it is absent or not a string. */
-  str(key: string): string {
-    const value = this.values[key];
-    return typeof value === "string" ? value : "";
+  /** The option as a whole number, or `fallback` if it is absent. */
+  int(key: string, fallback: number): number {
+    const raw = this.lookup(key);
+    if (raw === undefined) return fallback;
+    const value = Number(raw.trim());
+    if (!Number.isInteger(value)) {
+      throw new Error(`bad value for -o ${key}: '${raw}' is not a whole number`);
+    }
+    return value;
   }
 
-  /** A numeric option, or 0 if it is absent or not a number. */
-  num(key: string): number {
-    const value = this.values[key];
-    return typeof value === "number" ? value : 0;
+  /** The option as a decimal number, or `fallback` if it is absent. */
+  num(key: string, fallback: number): number {
+    const raw = this.lookup(key);
+    if (raw === undefined) return fallback;
+    const value = Number(raw.trim());
+    if (Number.isNaN(value)) {
+      throw new Error(`bad value for -o ${key}: '${raw}' is not a number`);
+    }
+    return value;
   }
 
-  /** An integer option, or 0. The same store as {@link Options.num}. */
-  int(key: string): number {
-    return this.num(key);
-  }
-
-  /** A boolean option, or false if it is absent or not a boolean. */
-  bool(key: string): boolean {
-    return this.values[key] === true;
+  /**
+   * The option as a boolean, or `fallback` if it is absent. `1`, `true`, `yes` and
+   * `on` are true in any case; every other value, the empty string included, is
+   * false. Matches the Python and Go SDKs, so the same `-o is_dummy=on` means the
+   * same thing in all three — and nothing here can fail, so a misspelling is false
+   * rather than a refusal to start.
+   */
+  bool(key: string, fallback = false): boolean {
+    const raw = this.lookup(key);
+    if (raw === undefined) return fallback;
+    return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
   }
 
   /**
    * A seconds-valued option as milliseconds, which is how every time-valued option
-   * in the catalog is declared — seconds on the command line, milliseconds in a JS
-   * timer. Undefined when absent, so a driver's own default still applies.
+   * is written on a command line — seconds there, milliseconds in a JS timer.
+   * Undefined when absent, so a driver's own default still applies.
    */
   ms(key: string): number | undefined {
-    return this.has(key) ? this.num(key) * 1000 : undefined;
+    return this.has(key) ? this.num(key, 0) * 1000 : undefined;
   }
 
-  /** A channel-map option, or `{}` if it is absent or not one. */
-  channels(key: string): Record<string, string> {
-    const value = this.values[key];
-    return typeof value === "object" && value !== null
-      ? (value as Record<string, string>)
-      : {};
-  }
-
-  /** Every stored value, for tests and for passing on wholesale. */
-  all(): Record<string, unknown> {
-    return { ...this.values };
-  }
-}
-
-/** The default parser: no conversion at all. */
-export function asString(raw: string): unknown {
-  return raw;
-}
-
-/** Parses a whole number. */
-export function asInt(raw: string): unknown {
-  const value = Number(raw.trim());
-  if (!Number.isInteger(value)) {
-    throw new Error(`'${raw}' is not a whole number`);
-  }
-  return value;
-}
-
-/** Parses a decimal number, which is how seconds are given. */
-export function asFloat(raw: string): unknown {
-  const value = Number(raw.trim());
-  if (Number.isNaN(value)) {
-    throw new Error(`'${raw}' is not a number`);
-  }
-  return value;
-}
-
-/**
- * Parses a boolean-ish value: `1`, `true`, `yes` and `on` are true, in any case;
- * anything else, including the empty string, is false. Matches the Python and Go
- * SDKs, so the same `-o is_dummy=on` means the same thing in all three.
- */
-export function asBool(raw: string): unknown {
-  return ["1", "true", "yes", "on"].includes(raw.trim().toLowerCase());
-}
-
-/**
- * Check raw `-o` values against a device's schema and convert them.
- *
- * The result is what {@link DeviceSpec.build} is called with, and carries every
- * option that has a value — the ones given, plus the parsed default of each one
- * left out — so a builder reads its keys without repeating their defaults, and
- * conversion happens here rather than in every builder. A key the device does not
- * declare is an error unless {@link DeviceSpec.acceptsAnyOption} says to pass it
- * through.
- */
-export function parseOptions(
-  spec: DeviceSpec,
-  raw: Record<string, string>,
-): Options {
-  const declared = new Map((spec.options ?? []).map((o) => [o.key, o]));
-  const valid = [...declared.keys()].sort();
-  const parsed: Record<string, unknown> = {};
-
-  const unknown = Object.keys(raw)
-    .filter((key) => !declared.has(key))
-    .sort();
-  if (unknown.length > 0 && !spec.acceptsAnyOption) {
-    const label = unknown.length > 1 ? "options" : "option";
-    throw new Error(
-      `unknown ${label} ${unknown.map((k) => `'${k}'`).join(", ")} for ` +
-        `${spec.operation} device '${spec.name}'; valid options: ` +
-        `${valid.length > 0 ? valid.join(", ") : "none"}`,
-    );
-  }
-  // With no schema there is nothing to convert an undeclared option to, and
-  // guessing would be worse than leaving it as typed.
-  for (const key of unknown) {
-    parsed[key] = raw[key];
-  }
-
-  for (const option of spec.options ?? []) {
-    let value: string;
-    if (option.key in raw) {
-      value = raw[option.key];
-    } else if (option.required) {
-      const example = option.example
-        ? `, e.g. -o ${option.key}=${option.example}`
-        : "";
-      throw new Error(
-        `${spec.operation} device '${spec.name}' needs a '${option.key}' option${example}`,
-      );
-    } else if (option.default === undefined || option.default === "") {
-      continue;
-    } else {
-      value = option.default;
+  /**
+   * Every option not read yet, as typed, and marks them read. For a device passing
+   * options on to something this SDK has never seen; a device that reads its own
+   * options should not need it.
+   */
+  remaining(): Record<string, string> {
+    const rest: Record<string, string> = {};
+    for (const [key, value] of Object.entries(this.values)) {
+      if (!this.seen.has(key)) {
+        rest[key] = value;
+        this.seen.add(key);
+      }
     }
-
-    try {
-      parsed[option.key] = (option.parse ?? asString)(value);
-    } catch (err) {
-      throw new Error(`bad value for -o ${option.key}: ${messageOf(err)}`);
-    }
+    return rest;
   }
 
-  return new Options(parsed);
+  /**
+   * The keys given that nothing read, sorted. The caller reports them: the device
+   * has finished building by then, so a key left over is one it does not understand.
+   */
+  unread(): string[] {
+    return Object.keys(this.values)
+      .filter((key) => !this.seen.has(key))
+      .sort();
+  }
+
+  private lookup(key: string): string | undefined {
+    this.seen.add(key);
+    return this.values[key];
+  }
 }

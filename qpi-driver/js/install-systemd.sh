@@ -41,7 +41,7 @@ while [ -z "$SERVICE_NAME" ]; do read -p "Enter a name for this service (e.g. cr
 # --device <device> … -o key=value`.
 #
 # These are the operations and devices *this* SDK ships, and they must stay in
-# step with its own catalog (`qpi-driver devices`). The TypeScript SDK ships one
+# step with what it registers (`qpi-driver devices`). The TypeScript SDK ships one
 # monitor device and no process device, so offering `process` here would write a
 # unit whose ExecStart can never succeed — and with Restart=on-failure below,
 # crash-loop. Running a QPU means the Python SDK, or a device of your own.

@@ -16,36 +16,33 @@ describe("the package entry point", () => {
     }
   });
 
-  it("exports the device catalog, so a device can be registered from it", () => {
+  it("exports the device registry, so a device can be registered from it", () => {
     for (const name of [
       "Operation",
       "Options",
       "registerDevice",
       "devices",
       "resolve",
-      "parseOptions",
       "operations",
       "operationNames",
-      "lookupOperation",
+      "knownOperation",
       "hasDevice",
       "clearDevices",
-      "asString",
-      "asInt",
-      "asFloat",
-      "asBool",
     ]) {
       expect(sdk).toHaveProperty(name);
     }
   });
 
-  it("exports the catalog renderers the CLI is built on", () => {
+  it("exports no catalog: the driver publishes none (RFC 0003 §9)", () => {
     for (const name of [
       "catalog",
       "renderCatalog",
       "deviceLines",
       "SCHEMA_VERSION",
+      "parseOptions",
+      "asInt",
     ]) {
-      expect(sdk).toHaveProperty(name);
+      expect(sdk).not.toHaveProperty(name);
     }
   });
 

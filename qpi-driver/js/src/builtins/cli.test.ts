@@ -1,15 +1,14 @@
 /**
  * The `qpi-driver` CLI (RFC 0003 §4, §10) — which had no test file at all.
  *
- * The decisions belong to `devices.ts` and `catalog.ts` and are tested there; what
- * is left here is the wiring, and the two things only the wiring can get wrong: the
- * flags it accepts, and what it refuses to run without.
+ * The decisions belong to `devices.ts` and are tested there; what is left here is the
+ * wiring, and the two things only the wiring can get wrong: the flags it accepts, and
+ * what it refuses to run without.
  */
 
 import { buildProgram, isCommanderOutput, splitOptions } from "./cli.js";
 import { DEVICE_SPEC } from "./bluefors-gen1.device.js";
 import {
-  asInt,
   clearDevices,
   type DeviceConfig,
   Operation,
@@ -105,6 +104,8 @@ describe("start", () => {
       "start",
       "--operation",
       "monitor",
+      "--device",
+      "bluefors_gen1",
       "--token",
       "t",
     );
@@ -114,10 +115,14 @@ describe("start", () => {
   });
 
   it("rejects an unknown -o key before connecting to anything", async () => {
+    // With no declared schema, the check is what the device read: the builder never
+    // looks at base_urll, so the leftover key is the whole evidence.
     const { out, exit } = await run(
       "start",
       "--operation",
       "monitor",
+      "--device",
+      "bluefors_gen1",
       "--token",
       "t",
       "--ca-fingerprint",
@@ -130,7 +135,6 @@ describe("start", () => {
 
     expect(exit).toBe(1);
     expect(out).toContain("unknown option 'base_urll'");
-    expect(out).toContain("base_url");
   });
 
   it("reports a missing required option", async () => {
@@ -138,6 +142,8 @@ describe("start", () => {
       "start",
       "--operation",
       "monitor",
+      "--device",
+      "bluefors_gen1",
       "--token",
       "t",
       "--ca-fingerprint",
@@ -145,7 +151,7 @@ describe("start", () => {
     );
 
     expect(exit).toBe(1);
-    expect(out).toContain("needs a 'channels' option");
+    expect(out).toContain("missing required option 'channels'");
   });
 
   it("has no short form for --operation, and no -O beside -o", async () => {
@@ -161,7 +167,7 @@ describe("start", () => {
     expect(flags).not.toMatch(/-\w, --operation/);
   });
 
-  it("defaults --device to nothing, so the operation decides", async () => {
+  it("defaults --device to nothing, and has no fallback for it", async () => {
     const start = buildProgram().commands.find(
       (command) => command.name() === "start",
     )!;
@@ -196,16 +202,44 @@ describe("start", () => {
     expect(names).not.toContain("monitor");
   });
 
-  it("lists every operation, device and option in --help", async () => {
+  it("points at the dashboard in --help rather than describing devices", async () => {
+    // --help used to render every device and every -o key from a declared schema,
+    // which was a second catalog beside QPI-UI's (RFC 0003 §9).
     const { out } = await run("start", "--help");
 
-    expect(out).toContain("--operation process");
-    expect(out).toContain("--operation monitor");
+    expect(out).toContain("QPI-UI");
+    expect(out).toContain("qpi-driver devices");
+  });
+
+  it("asks for a device, naming the ones this build has", async () => {
+    const { out, exit } = await run(
+      "start",
+      "--operation",
+      "monitor",
+      "--token",
+      "t",
+      "--ca-fingerprint",
+      "fp",
+    );
+
+    expect(exit).toBe(1);
+    expect(out).toContain("--device is required");
     expect(out).toContain("bluefors_gen1");
-    for (const option of DEVICE_SPEC.options ?? []) {
-      expect(out).toContain(`${option.key}=<${option.type}>`);
-    }
-    expect(out).toContain("channels=<channels> (required");
+  });
+
+  it("says plainly when this build ships no device for the operation", async () => {
+    const { out, exit } = await run(
+      "start",
+      "--operation",
+      "process",
+      "--token",
+      "t",
+      "--ca-fingerprint",
+      "fp",
+    );
+
+    expect(exit).toBe(1);
+    expect(out).toContain("ships no process devices");
   });
 });
 
@@ -226,7 +260,6 @@ describe("start, as far as it goes without a server", () => {
           run: async () => void ran.push("ran"),
         } as unknown as QpiDriver;
       },
-      options: [{ key: "probes", help: "How many.", parse: asInt }],
     });
 
     const { exit } = await run(
@@ -241,8 +274,6 @@ describe("start, as far as it goes without a server", () => {
       "fp",
       "--qpi-addr",
       "https://qpi.example.com",
-      "-o",
-      "probes=4",
     );
 
     expect(exit).toBeUndefined();
@@ -281,41 +312,43 @@ describe("start, as far as it goes without a server", () => {
     expect(out).toContain("Error: the cryostat is warm");
   });
 
-  it("defaults --device from the operation", async () => {
-    const built: DeviceConfig[] = [];
+  it("reports an option the device never read, after building it", async () => {
     clearDevices();
     registerDevice({
-      name: "bluefors_gen1",
+      name: "reads_nothing",
       operation: Operation.Monitor,
-      build: (config) => {
-        built.push(config);
-        return { run: async () => {} } as unknown as QpiDriver;
-      },
+      build: () => ({ run: async () => {} }) as unknown as QpiDriver,
     });
 
-    await run(
+    const { out, exit } = await run(
       "start",
       "--operation",
       "monitor",
+      "--device",
+      "reads_nothing",
       "--token",
       "t",
       "--ca-fingerprint",
       "fp",
+      "-o",
+      "probes=4",
     );
 
-    // The device the operation defaults to was resolved, so the builder ran at all.
-    expect(built).toHaveLength(1);
-    expect(built[0].token).toBe("t");
+    expect(exit).toBe(1);
+    expect(out).toContain("unknown option 'probes' for monitor device");
   });
 });
 
 describe("devices", () => {
-  it("lists the whole catalog, or one operation", async () => {
-    expect((await run("devices")).out).toContain("--operation process");
+  it("lists names by operation, or one operation", async () => {
+    const all = await run("devices");
+    expect(all.out).toContain("monitor: bluefors_gen1");
+    // This build ships no process device, and must say so rather than print nothing.
+    expect(all.out).toContain("process: none");
 
     const narrowed = await run("devices", "--operation", "monitor");
     expect(narrowed.out).toContain("bluefors_gen1");
-    expect(narrowed.out).not.toContain("--operation process");
+    expect(narrowed.out).not.toContain("process:");
   });
 
   it("rejects an unknown operation", async () => {
@@ -327,27 +360,17 @@ describe("devices", () => {
 });
 
 describe("catalog", () => {
-  it("prints JSON by default, and the devices text on --text", async () => {
-    const { out } = await run("catalog");
-    const document = JSON.parse(out);
+  it("is gone; nothing consumed it but a sync script", async () => {
+    const names = buildProgram().commands.map((command) => command.name());
 
-    expect(document.schema_version).toBe(1);
-    expect(
-      document.operations.find(
-        (each: { name: string }) => each.name === "monitor",
-      ).devices[0].name,
-    ).toBe("bluefors_gen1");
-
-    expect((await run("catalog", "--text")).out).toEqual(
-      (await run("devices")).out,
-    );
+    expect(names).not.toContain("catalog");
   });
 });
 
 describe("splitOptions", () => {
   it("reads the syntax only", () => {
-    // Splitting is all the CLI does; an unknown key passes through for the device's
-    // own schema to reject.
+    // Splitting is all the CLI does; an unknown key passes through for the
+    // unread-option check to catch after the build.
     expect(splitOptions(["a=1", " b = two ", "nonsense=x"])).toEqual({
       a: "1",
       b: "two",

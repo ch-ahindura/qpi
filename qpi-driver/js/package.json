@@ -19,10 +19,6 @@
     "./devices": {
       "types": "./dist/devices.d.ts",
       "default": "./dist/devices.js"
-    },
-    "./catalog": {
-      "types": "./dist/catalog.d.ts",
-      "default": "./dist/catalog.js"
     }
   },
   "files": [

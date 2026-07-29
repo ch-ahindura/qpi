@@ -14,20 +14,20 @@
  *     -o base_url=http://localhost:49099 -o channels=mapper.bf.tmc:K
  *
  * Everything it knows about devices comes from `qpi-driver/devices`, so a device of
- * your own — registered with `registerDevice`, or named by import path — gets the
- * same help, the same option validation and the same `catalog --json` entry. This
- * file is only wiring.
+ * your own — registered with `registerDevice`, or named by import path — is run
+ * exactly as a built-in is. This file is only wiring.
  */
 
 import { Command } from "commander";
 
-import { catalog, renderCatalog } from "../catalog.js";
 import {
   type DeviceConfig,
-  lookupOperation,
-  type Operation,
+  devices,
+  knownOperation,
+  Operation,
   operationNames,
-  parseOptions,
+  operations,
+  Options,
   registerDevice,
   resolve,
 } from "../devices.js";
@@ -51,8 +51,12 @@ interface CommonOpts {
 }
 
 /**
- * Resolves the device within the chosen operation, lets that device's own schema
- * check the `-o` options, and runs the driver its builder returns.
+ * Resolves the device within the chosen operation, hands it its `-o` options, and
+ * runs the driver its builder returns.
+ *
+ * An option no device read is reported after the build rather than checked against a
+ * declared list beforehand: the device's own code is the only description of what it
+ * accepts (RFC 0003 §9).
  */
 async function runStart(common: CommonOpts): Promise<void> {
   if (!common.operation) {
@@ -61,8 +65,7 @@ async function runStart(common: CommonOpts): Promise<void> {
     );
   }
   const operation = common.operation as Operation;
-  const spec = lookupOperation(operation);
-  if (!spec) {
+  if (!knownOperation(operation)) {
     fail(
       `unknown operation '${common.operation}'; valid operations: ${operationNames().join(", ")}`,
     );
@@ -81,18 +84,35 @@ async function runStart(common: CommonOpts): Promise<void> {
     );
   }
 
-  const device = common.device || spec.defaultDevice;
+  // There is no default device: QPI-UI generates the command that launches a driver
+  // and it always names one. Say what this build has instead of guessing — unless it
+  // has none, in which case resolve's own message is the one worth printing.
+  const available = devices(operation).map((each) => each.name);
+  if (!common.device && available.length > 0) {
+    fail(
+      `--device is required: this build's ${operation} devices are ${available.join(", ")}`,
+    );
+  }
 
   try {
-    const resolved = await resolve(operation, device);
-    const options = parseOptions(resolved, splitOptions(common.option));
+    const resolved = await resolve(operation, common.device);
+    const options = new Options(splitOptions(common.option));
     const config: DeviceConfig = {
       qpiAddr: common.qpiAddr,
       token: common.token,
       caFingerprint: common.caFingerprint,
       caFilePath: common.caFile,
     };
-    await resolved.build(config, options).run();
+    const driver = resolved.build(config, options);
+    const unread = options.unread();
+    if (unread.length > 0) {
+      const label = unread.length > 1 ? "options" : "option";
+      fail(
+        `unknown ${label} ${unread.map((k) => `'${k}'`).join(", ")} for ` +
+          `${operation} device '${common.device}'`,
+      );
+    }
+    await driver.run();
   } catch (err) {
     fail((err as Error).message);
   }
@@ -100,8 +120,8 @@ async function runStart(common: CommonOpts): Promise<void> {
 
 /**
  * Turns repeatable `-o key=value` flags into raw strings. Only the syntax is the
- * CLI's business; which keys exist and what type each value has belong to the
- * chosen device's schema, which runs on the result.
+ * CLI's business; which keys mean anything and what type each value has belong to
+ * the device that reads them.
  */
 export function splitOptions(pairs: string[]): Record<string, string> {
   const opts: Record<string, string> = {};
@@ -140,7 +160,12 @@ function addStart(program: Command): void {
     .description(
       "Run a driver: one --operation, on one --device within it (RFC 0001 §4).",
     )
-    .addHelpText("after", `\n${renderCatalog()}`)
+    .addHelpText(
+      "after",
+      "\nQPI-UI is where a driver is registered and where the command to run it —\n" +
+        "this operation, this device, these -o options — is generated. Run\n" +
+        "`qpi-driver devices` to see which devices this build has.\n",
+    )
     // No short form for --operation: -o is --option, and -O beside it would be a
     // hazard in a command usually written once into a unit file (RFC 0003 §13.7).
     .option(
@@ -160,7 +185,7 @@ function addStart(program: Command): void {
     )
     .option(
       "-d, --device <device>",
-      "Which backend to run within the operation, or an import path; defaults to the operation's own",
+      "Which backend to run within the operation, or an import path; `qpi-driver devices` lists them",
       process.env.QPI_DEVICE || "",
     )
     .option(
@@ -196,37 +221,27 @@ export function buildProgram(): Command {
 
   addStart(program);
 
+  // Names only: what a device does is documented in QPI-UI, not here.
   program
     .command("devices")
-    .description(
-      "List the operations, the devices each one can run, and their -o options",
-    )
+    .description("List the devices this build can run, by operation")
     .option(
       "--operation <operation>",
       "Show only this operation's devices, instead of all of them",
     )
     .action((opts: { operation?: string }) => {
-      if (opts.operation && !operationNames().includes(opts.operation)) {
+      if (opts.operation && !knownOperation(opts.operation)) {
         fail(
           `unknown operation '${opts.operation}'; valid operations: ${operationNames().join(", ")}`,
         );
       }
-      console.log(renderCatalog(opts.operation as Operation | undefined));
-    });
-
-  program
-    .command("catalog")
-    .description("Print the whole device catalog for another program to read")
-    // --json is the default and does nothing, but the Go and Python CLIs both
-    // accept it and every README spells the command `catalog --json`. A flag that
-    // exits 1 on one SDK and not the others is a paper cut in the one place the
-    // three are supposed to be interchangeable.
-    .option("--json", "Print the catalog as JSON (the default)")
-    .option("--text", "Print the same text `devices` shows, instead of JSON")
-    .action((opts: { text?: boolean }) => {
-      console.log(
-        opts.text ? renderCatalog() : JSON.stringify(catalog(), null, 2),
-      );
+      const wanted = opts.operation
+        ? [opts.operation as Operation]
+        : operations();
+      for (const operation of wanted) {
+        const names = devices(operation).map((each) => each.name);
+        console.log(`${operation}: ${names.join(", ") || "none"}`);
+      }
     });
 
   program
