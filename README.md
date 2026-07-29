@@ -52,8 +52,7 @@ extensibility story (see [RFC 0003](https://github.com/sopherapps/qpi/blob/main/
 - A **device** is the *backend* implementing an operation — an executor for
   `process` (`mock`, `qiskit_aer`, `quantify`, `qblox`), a piece of lab hardware for
   `monitor` (`bluefors_gen1`). The set is open: anyone can add one without touching
-  the SDK, and it then appears in `--help`, in `qpi-driver catalog --json` and to
-  `--device` exactly like a built-in.
+  the SDK, and `--device` then runs it exactly like a built-in.
 
 So every driver is launched the same way — one verb, one operation, one device:
 
@@ -377,11 +376,12 @@ Universal options (shared by every operation):
 
 `monitor` options (`-o`) for `bluefors_gen1`: `channels` (required, `path[:unit],…`), `base_url`, `api_key`, `poll_interval`, `timeout`.
 
-Each device declares the keys it reads, so rather than trusting this list, ask the
-CLI: `process --help` and `monitor --help` list every device and option with its
-type and default, `qpi-driver devices` shows all operations at once, and
-`qpi-driver catalog --json` is the same thing for another program to read. An `-o`
-key no device reads is an error naming the ones that exist.
+The dashboard is where these are documented and filled in — registering a driver
+generates the command that launches it, with its options in place — and it is the only
+place they are described: a device in an SDK is a name and a builder, so there is no
+second list to fall out of step ([RFC 0003 §9](https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md)).
+`qpi-driver devices` on the node says which devices that build can run. An `-o` key no
+device reads is an error rather than a setting silently ignored.
 
 ---
 
@@ -403,7 +403,7 @@ make test-py
 make test-e2e-dashboard
 
 # Check the documentation against the code: the make targets and paths it names,
-# its Python/Go/TypeScript snippets, the generated catalog table, and the site
+# its Python/Go/TypeScript snippets, the custom-device example, and the site
 make test-docs
 
 # Run linters across Go, Python driver, JS client, and dashboard codebases

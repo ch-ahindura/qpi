@@ -81,18 +81,17 @@ A driver runs one **operation** on one **device** (see
 server must have a handler for each — but the devices are not, so a lab can run a
 backend the SDK has never heard of without patching it.
 
-Start by asking the node what it can already run. Both commands are generated from
-the installed SDK, so they describe that node rather than the documentation:
+Start by asking the node what it can already run. The list comes from the installed
+SDK's own registry, so it describes that node rather than the documentation:
 
 ```bash
-qpi-driver devices                  # every operation, its devices, their -o options
-qpi-driver catalog --json           # the same, for another program
+qpi-driver devices                    # names, by operation
+qpi-driver devices --operation monitor
 ```
 
-A device whose optional dependency is not installed is listed as
-`qblox — unavailable: pip install "qpi-driver[cli,qblox]"`. That line is read from
-package metadata, so `qpi-driver devices` still works when a device does not — which
-matters, because it is the command you run *because* something is wrong.
+Names only. What a device does, and which `-o` keys it wants, is documented in QPI-UI
+where the driver is registered — the driver publishes no catalog of its own, so there
+is nothing to sync and nothing that can disagree ([RFC 0003 §9](../rfcs/0003-driver-extensibility.md)).
 
 ### Two ways in
 
@@ -123,27 +122,26 @@ device value and cannot introduce one. The Go SDK has no import-path route — G
 resolves imports at compile time, so a device there is registered in your own `main`
 and the binary rebuilt.
 
-A device named by import path has no declared option schema, so its `-o` options are
-passed through unchecked. Shipping a `DeviceSpec` instead is what earns a device
-checked options, a `--help` entry and a `catalog --json` entry.
+An executor named by import path is handed every `-o` key the SDK does not read
+itself, as the string it was typed as: its constructor is the only thing that knows
+those keys exist.
 
 ### What an option error looks like now
 
-An `-o` key the chosen device does not read is an error, where it used to be
-ignored. This is the change most likely to surprise an existing unit file: a typo
-that previously meant "running with a default nobody chose" now means the driver
-does not start.
+An `-o` key the chosen device never read is an error, where it used to be ignored.
+This is the change most likely to surprise an existing unit file: a typo that
+previously meant "running with a default nobody chose" now means the driver does not
+start.
 
 ```
-$ qpi-driver start --operation process --token … --ca-fingerprint … -o data_dirr=/data
-Error: unknown option 'data_dirr' for process device 'mock'. Valid options: data_dir,
-is_dummy, job_timeout, quantify_device_config, quantify_hardware_config.
+$ qpi-driver start --operation process --device mock --token … --ca-fingerprint … -o data_dirr=/data
+Error: unknown option 'data_dirr' for process device 'mock'.
 ```
 
 The other three are worth recognising in a journal:
 
 ```
-Error: monitor device 'bluefors_gen1' needs a 'channels' option, e.g. -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
+Error: missing required option 'channels', e.g. -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
 Error: bad value for -o job_timeout: invalid literal for int() with base 10: 'soon'
 Error: bad value for -o data_dir: /var is not in a safe location
 ```

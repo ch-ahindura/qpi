@@ -87,9 +87,10 @@ device at all, yet both advertise `--device mock` as the default, so
 `qpi-driver process` in those SDKs fails with `unknown process device "mock";
 known devices: ` and an empty list.
 
-**QPI-UI keeps its own copy of the catalog.** `qpi-ui/internal/drivers/catalog.go`
-independently lists the same devices, extras and `-o` options in order to render
-the dashboard's setup snippets (RFC 0001 §3 step 2). Nothing checks the two agree.
+**The catalog exists twice.** `qpi-ui/internal/drivers/catalog.go` lists the same
+devices, extras and `-o` options as the SDKs do, in order to render the dashboard's
+setup snippets (RFC 0001 §3 step 2). Nothing checks the two agree, and there is no
+good reason for there to be two — see §9.
 
 ## 4. The command line
 
@@ -116,9 +117,9 @@ qpi-driver start --operation process --device mylab.executors:PrestoV2
 capital `-O` beside a lowercase `-o` is a typo waiting to happen. Being a
 set-once value in a systemd unit, it does not need one.
 
-`--device` defaults to its operation's default device (`mock` for `process`,
-`bluefors_gen1` for `monitor`), so `qpi-driver start --operation process` runs a
-mock QPU with no further arguments.
+`--device` is required, and falls back to `QPI_DEVICE`. There is no default: QPI-UI
+generates the command that launches a driver and it always names a device, so a value
+the SDK filled in could only be a guess (§9).
 
 The transport flags are unchanged from RFC 0001: `--qpi-addr`/`-a`, `--token`/`-t`,
 `--device`/`-d`, `--ca-file`, `--ca-fingerprint`, `--option`/`-o`,
@@ -126,11 +127,10 @@ The transport flags are unchanged from RFC 0001: `--qpi-addr`/`-a`, `--token`/`-
 `--name`/`-n` is gone: a driver's display label belongs to the admin who registered
 it, and `drivers/connect` returns it rather than accepting one.
 
-Two commands make the catalog inspectable:
+One command says what a build can run:
 
 ```
-qpi-driver devices [--operation <op>]   # human-readable: operations → devices → options
-qpi-driver catalog --json               # the whole registry, machine-readable
+qpi-driver devices [--operation <op>]   # the registered names, by operation
 ```
 
 ### Why one verb rather than a subcommand per operation
@@ -147,78 +147,60 @@ The cost is honest: `start --operation process` is longer to type than `process`
 and it is a breaking change to every published invocation. Both are accepted —
 see §11.
 
-## 5. The device catalog
-
-A device is described by data. Nothing about it should require running it to
-discover.
+## 5. A device is a name and a builder
 
 ```python
-@dataclass(frozen=True)
-class OptionSpec:
-    key: str
-    help: str
-    parse: Callable[[str], Any] = str    # str | int | float | bool | Path | parse_channels
-    default: Any = None
-    required: bool = False
-    example: str = ""
-
 @dataclass(frozen=True)
 class DeviceSpec:
     name: str                            # "qblox", "bluefors_gen1"
     operation: Operation
     build: DeviceBuilder                 # (options, **transport) -> unstarted driver
-    options: tuple[OptionSpec, ...] = ()
-    extra: str = ""                      # "qpi-driver[cli,qblox]"
-    summary: str = ""
 ```
 
-This is deliberately the same data-only shape `qpi-ui/internal/drivers` already
-uses for its half of the catalog, extended with the fields `--help` needs. Specs
-live beside the code they describe — the QPU module owns the `process` specs, the
-Bluefors module owns its own — so a device and its description cannot drift apart.
+That is the whole of it. A device has no summary, no declared option schema and no
+install target, because none of that is the driver's to publish — see §9. Specs live
+beside the code they describe: the QPU module owns the `process` specs, the Bluefors
+module owns its own.
 
-Operations are described the same way, with their default device and the event
-types they involve, mirroring what QPI-UI records for each kind:
+`-o` values reach the builder as the strings they were typed as, in an `Options`
+object with typed accessors that each take the fallback:
 
 ```python
-@dataclass(frozen=True)
-class OperationSpec:
-    name: Operation
-    summary: str
-    default_device: str
-    events: tuple[EventType, ...]
+data_dir = options.get_dir("data_dir", "./bin/data")
+interval = options.get_float("poll_interval", 5.0)
+channels = parse_channels(options.require("channels", "mapper.bf.tmc:K"))
 ```
 
-The schema earns its keep four times over:
+Two consequences, both deliberate:
 
-- **`--help`** lists every device for the chosen operation and every `-o` key it
-  accepts, with defaults and examples — generated, never hand-maintained.
-- **Unknown `-o` keys are rejected**, naming the valid keys, instead of being
-  silently ignored.
-- **Coercion happens once**, from `OptionSpec.parse`, rather than each device
-  hand-rolling `int(...)` / boolean-ish string parsing / path validation.
-- **`catalog --json`** gives QPI-UI a machine-readable copy to check its own
-  catalog against (§9).
+- **The default lives in the one piece of code that acts on it**, rather than as a
+  string in a schema that something else parses.
+- **What a device accepts is the set of keys it reads.** `Options` remembers the
+  reads, so an `-o` key nothing looked at is reported after the build —
+  `unknown option 'data_dirr' for process device 'mock'` — which keeps a typo an
+  error without a declared list to check it against. That matters more than it
+  sounds: every built-in executor's constructor takes `**kwargs`, so an unread key
+  would otherwise vanish silently.
 
-A device whose optional dependency is not installed is listed as
-`qblox — unavailable: pip install "qpi-driver[cli,qblox]"`. Discovering what exists
-must never require having installed all of it.
+`qpi-driver devices` lists the names a build has, and nothing else. It answers the
+one question the driver is the authority on — *what can this node run?* — which is
+what an operator asks after `pip install`ing a distribution of devices or writing
+one.
 
 ## 6. Extending: three routes, same registry
 
 ```python
 def register(spec: DeviceSpec) -> None: ...
-def operations() -> tuple[OperationSpec, ...]: ...
 def devices(operation: Operation) -> tuple[DeviceSpec, ...]: ...
 def resolve(operation: Operation, device: str) -> DeviceSpec: ...
 ```
 
 **1. Built in.** The devices the SDK ships register themselves at import: one
-declarative list of specs, the same way QPI-UI's catalog is one list of specs.
+declarative list of specs.
 
 **2. Installed.** A third-party distribution advertises devices through the
 `qpi_driver.devices` entry-point group. `pip install mylab-qpi-devices` and its
-devices appear in `--help`, in `catalog --json`, and to `--device`, with no change
+devices are listed by `qpi-driver devices` and accepted by `--device`, with no change
 here. This is the route for a device meant to be shared, versioned and installed
 on a production node.
 
@@ -241,8 +223,10 @@ the driver itself:
 | `process` | `Executor` subclass or instance | wrapped in the built-in QPU driver |
 | `monitor` | `DeviceSpec`, or a device builder | used directly |
 
-Either operation also accepts a `DeviceSpec`, which is how someone who wants their
-own option schema and `--help` entry gets one.
+Either operation also accepts a `DeviceSpec`, which is how a device gets a name of
+its own rather than being known by the specifier that imported it. An executor
+imported this way is handed every `-o` key the SDK does not read itself, as typed:
+its constructor is the only thing that knows those keys exist.
 
 Notably, there is **no separate mechanism for "a whole custom driver"**. Because an
 operation is a contract QPI-UI must already implement, a custom driver is always a
@@ -274,9 +258,9 @@ not what this RFC changes; making one *runnable by the CLI* is.
 | --- | --- | --- | --- |
 | `start --operation … --device …` | yes | yes | yes |
 | Builder returns an unstarted driver | yes | yes | already does |
-| Spec + option schema as data | yes | yes | yes |
+| Builder reads raw `-o` options via `Options` | yes | yes | yes |
 | Exported, extensible registry | `register()` | `Register()` from an importable package | `registerDevice()` |
-| Generated `--help`, `devices`, `catalog --json` | yes | yes | yes |
+| `devices` lists what the build has | yes | yes | yes |
 | Installed third-party devices | entry points | — | — |
 | Device named by import path | `mod:attr` | **not possible** | `./mod.js#Export` |
 
@@ -289,28 +273,41 @@ only, which is not a lesser mechanism — in Go it is *the* mechanism.
 
 Where an SDK ships no device for an operation, `start --operation process` must say
 so plainly — that this SDK ships no `process` devices, and where to find one — not
-report an empty list of known devices. An SDK's default device comes from what it
-actually registers.
+report an empty list of known devices. And no SDK has a default device: QPI-UI
+generates the command that launches a driver and it always names one, so a `--device`
+the SDK filled in could only be a guess.
 
 ## 9. Where truth lives
 
-The catalog is split, and the split is not arbitrary:
+**QPI-UI is the single source of truth, for operations and for devices alike.** It is
+where a driver is registered, where a device is chosen, where its `-o` options are
+described and filled in, and where the command that launches it is generated. The
+driver SDKs publish no catalog at all.
 
-- **Operations belong to QPI-UI.** An operation is the set of event types and
-  payload shapes the server has handlers for. A driver cannot invent one; the SDKs
-  mirror the operation enum the way they already mirror `EventType` (RFC 0001 §2).
-  QPI-UI is the single source of truth, and if a driver ever needs to discover the
-  operations a server supports, the server should advertise them rather than each
-  SDK guessing.
-- **Devices and their options belong to the driver.** Which backends exist, what
-  `-o` keys each takes, which extra installs it — the SDK knows and the server does
-  not. QPI-UI's copy exists only to render setup snippets at registration.
+This reverses an earlier version of this RFC, which split the two: operations to the
+server, devices and their options to the driver, reconciled by `catalog --json` and a
+drift test over checked-in fixtures. That did not survive contact with the work. The
+split meant the same device was described twice — once in `qpi-ui/internal/drivers`,
+once in each SDK — and the thing keeping the copies together was a `make` target,
+`sync-driver-catalog`, that a person had to remember to run after touching either
+side. Three SDKs' worth of `OptionSpec` tables, three checked-in JSON fixtures, a
+renderer, a generated README table and a drift test, all in service of an agreement
+that a single description makes free.
 
-So `catalog --json` flows driver → server, and the operation enum flows server →
-driver. Until the server can fetch a catalog from a connected driver, the near-term
-mechanism is a test: QPI-UI checks its catalog against a checked-in
-`catalog --json` fixture and fails when they disagree, so changing the device set
-becomes a deliberate act rather than a silent divergence.
+What the driver keeps is what only it can know:
+
+- **Which devices this particular build has.** `qpi-driver devices` reads its own
+  registry — the honest answer for a node, since it depends on the extras installed,
+  the entry points present and, in Go, what was compiled in. Names only; a name is
+  enough to run one.
+- **Whether the options it was given make sense.** The builder reads what it
+  understands and the CLI reports the rest (§5).
+
+The driver is not another client of QPI-UI. It receives work and reports results; it
+does not ask the server about itself. If a driver-side view of the catalog ever
+becomes genuinely necessary, the server should serve it over the connection the driver
+already has, authenticated by the token it already holds — but nothing needs it today,
+and adding it would invert the relationship for no gain.
 
 ## 10. Security
 
@@ -369,8 +366,7 @@ Maintained separately from this RFC, as with RFC 0001 §11: per-phase objectives
 status, definition-of-done checklists and verification commands. The sequence is
 Python internals first (registry, schemas, extension routes), then the command
 grammar across all three SDKs together with the installers and snippet generators,
-then Go and TypeScript parity, then the catalog drift check, then documentation,
-then coverage gates.
+then Go and TypeScript parity, then documentation, then coverage gates.
 
 ## 13. Decisions
 
@@ -382,21 +378,23 @@ Recorded here rather than in a separate ADR, per the RFC conventions.
    mechanism sufficient.
 2. **One CLI verb, `start`, with the operation as a value.** A new operation
    should cost a table entry, not a subcommand in three languages. §4.
-3. **Devices are data plus a builder, and the builder returns an unstarted
-   driver.** Testability and a single `run` in the SDK. §5, §7.
+3. **A device is a name, an operation and a builder, and the builder returns an
+   unstarted driver.** Testability and a single `run` in the SDK. §5, §7.
 4. **Three registration routes, one registry** — built-in, entry point, import
    path — and no fourth mechanism for "custom drivers", because a custom driver is
    a custom device. §6.
 5. **Import paths follow Pydantic's `ImportString`**, accepting `module:attr` and
    `module.attr`; a device value is an import path when it contains `.` or `:`.
    §6.
-6. **The option schema is declared, and unknown options are errors.** Silently
-   ignoring a mistyped option is worse than refusing to start. §5.
+6. **There is no option schema; reading an option is what declares it, and an option
+   nothing read is an error.** Silently ignoring a mistyped option is worse than
+   refusing to start — and the reads are already the only complete description of
+   what a device accepts. §5.
 7. **`--operation` gets no short form**, because `-o` is `--option` and `-O`
    beside it is a hazard. §4.
-8. **Operations flow server → SDK; the device catalog flows SDK → server**, with a
-   fixture-based drift check until a driver can advertise its catalog on the wire.
-   §9.
+8. **QPI-UI holds the whole catalog; the driver publishes none.** One description
+   rather than two kept in step by a script. Reverses an earlier decision here; §9
+   records why. §9.
 9. **Break once, with a published migration table**, rather than carrying
    deprecated aliases through a pre-1.0 project. §11.
 
