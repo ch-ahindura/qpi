@@ -3,14 +3,22 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("qpi-driver")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.1.2"
+    __version__ = "0.2.0"
 
 from qpi_driver.builtins.bluefors_gen1 import (
     BlueforsGen1Driver,
 )
-from qpi_driver.builtins.qpu import QpuDriver, run_driver
+from qpi_driver.builtins import (
+    DeviceBuilder,
+    DeviceSpec,
+    Operation,
+    Options,
+    load_installed_devices,
+    register,
+)
+from qpi_driver.builtins.qpu import QpuDriver
 from qpi_driver.events import Event, EventType
-from qpi_driver.executors.base import Executor
+from qpi_driver.executors.base import CircuitPayload, Executor, JobPayload
 from qpi_driver.executors.mock import MockExecutor
 from qpi_driver.executors.presto import PrestoExecutor
 from qpi_driver.executors.qblox import QbloxExecutor
@@ -24,16 +32,33 @@ from qpi_driver.sdk import QpiDriver
 
 __all__ = [
     "__version__",
-    "run_driver",
     "Event",
     "EventType",
     "QpiDriver",
     "QpuDriver",
     "BlueforsGen1Driver",
+    "DeviceBuilder",
+    "DeviceSpec",
+    "Operation",
+    "Options",
+    "load_installed_devices",
+    "register",
+    "CircuitPayload",
     "Executor",
+    "JobPayload",
     "MockExecutor",
     "QiskitAerExecutor",
     "QuantifyExecutor",
     "QbloxExecutor",
     "PrestoExecutor",
 ]
+
+# Devices installed from elsewhere, registered last so nothing downstream can tell
+# them apart from a built-in (RFC 0003 §6).
+#
+# Here, and not in `qpi_driver.builtins`, because a device imports the SDK: loading
+# one before every name above is bound means importing a third party's module against
+# a half-initialised `qpi_driver`, which is an ImportError it gets blamed for. By this
+# line the package a device imports is complete. Importing any `qpi_driver` submodule
+# runs this file first, so there is no route into the registry that skips it.
+load_installed_devices()

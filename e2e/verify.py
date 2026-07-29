@@ -1468,10 +1468,10 @@ def test_driver_snippet_connection():
     print("[verify]   Testing direct connection...")
     qpi_addr_direct = BASE
     cmd_direct = [
-        sys.executable, "-m", "qpi_driver.cli", "process",
+        sys.executable, "-m", "qpi_driver.cli", "start",
+        "--operation", "process",
         "--ca-fingerprint", fingerprint,
         "--qpi-addr", qpi_addr_direct,
-        "--name", f"{qpu_name}_direct",
         "--device", executor,
         *sdk_flags,
     ]
@@ -1530,10 +1530,10 @@ def test_driver_snippet_connection():
 
     qpi_addr_proxy = f"https://localhost:{proxy_port}"
     cmd_proxy = [
-        sys.executable, "-m", "qpi_driver.cli", "process",
+        sys.executable, "-m", "qpi_driver.cli", "start",
+        "--operation", "process",
         "--ca-fingerprint", fingerprint,
         "--qpi-addr", qpi_addr_proxy,
-        "--name", f"{qpu_name}_proxy",
         "--device", executor,
         *sdk_flags,
     ]
@@ -1561,15 +1561,19 @@ def test_driver_snippet_connection():
 _BLUEFORS_CHANNELS = "mapper.bf.tmc:K,mapper.bf.pmc:mbar"
 
 
-def _monitor_flags(name, token, fingerprint, mock_port):
+def _monitor_flags(token, fingerprint, mock_port):
     """The qpi-driver CLI flags for the bluefors_gen1 monitor. Identical across
     languages — the Go (cobra) and TypeScript (commander) CLIs share the Python
-    CLI's interface (universal flags + repeatable -o options)."""
+    CLI's interface (universal flags + repeatable -o options).
+
+    No name among them: the driver learns its display label from the
+    drivers/connect response, so the token is the whole of what it asserts.
+    """
     return [
-        "monitor",
+        "start",
+        "--operation", "monitor",
         "--device", "bluefors_gen1",
         "--qpi-addr", BASE,
-        "--name", name,
         "--token", token,
         "--ca-fingerprint", fingerprint,
         "-o", f"base_url=http://127.0.0.1:{mock_port}",
@@ -1578,24 +1582,24 @@ def _monitor_flags(name, token, fingerprint, mock_port):
     ]
 
 
-def _python_monitor_cmd(qpi_dir, name, token, fingerprint, mock_port):
+def _python_monitor_cmd(qpi_dir, token, fingerprint, mock_port):
     env = os.environ.copy()
     env["PYTHONPATH"] = os.path.join(qpi_dir, "qpi-driver", "py")
     argv = [sys.executable, "-m", "qpi_driver.cli"] + _monitor_flags(
-        name, token, fingerprint, mock_port
+        token, fingerprint, mock_port
     )
     return argv, env, os.path.join(qpi_dir, "qpi-driver", "py")
 
 
-def _typescript_monitor_cmd(qpi_dir, name, token, fingerprint, mock_port):
+def _typescript_monitor_cmd(qpi_dir, token, fingerprint, mock_port):
     cli = os.path.join(qpi_dir, "qpi-driver", "js", "dist", "builtins", "cli.js")
-    argv = ["node", cli] + _monitor_flags(name, token, fingerprint, mock_port)
+    argv = ["node", cli] + _monitor_flags(token, fingerprint, mock_port)
     return argv, os.environ.copy(), qpi_dir
 
 
-def _go_monitor_cmd(qpi_dir, name, token, fingerprint, mock_port):
+def _go_monitor_cmd(qpi_dir, token, fingerprint, mock_port):
     argv = ["go", "run", "./qpi-driver"] + _monitor_flags(
-        name, token, fingerprint, mock_port
+        token, fingerprint, mock_port
     )
     return argv, os.environ.copy(), os.path.join(qpi_dir, "qpi-driver", "go")
 
@@ -1705,7 +1709,7 @@ def _run_bluefors_case(admin_session, mock_bluefors_server, qpi_dir, language, b
     mock_server, _ = mock_bluefors_server.start(0)
     mock_port = mock_server.server_address[1]
 
-    argv, env, cwd = build_cmd(qpi_dir, name, token, fingerprint, mock_port)
+    argv, env, cwd = build_cmd(qpi_dir, token, fingerprint, mock_port)
     proc = subprocess.Popen(
         argv,
         env=env,

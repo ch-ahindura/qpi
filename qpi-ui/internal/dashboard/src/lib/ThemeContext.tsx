@@ -78,27 +78,36 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     return savedTheme !== "light";
   });
 
+  // Fetches the active theme without touching isLoading up front, so it is safe
+  // to call from an effect body: every setState happens in a promise callback.
+  const loadTheme = useCallback(
+    () =>
+      fetch("/api/theme/active")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to fetch theme");
+          return res.json();
+        })
+        .then((data: ThemeRecord) => {
+          setTheme(data);
+        })
+        .catch((err) => {
+          console.error("Error fetching theme:", err);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        }),
+    [],
+  );
+
   const refreshTheme = useCallback(() => {
     setIsLoading(true);
-    fetch("/api/theme/active")
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch theme");
-        return res.json();
-      })
-      .then((data: ThemeRecord) => {
-        setTheme(data);
-      })
-      .catch((err) => {
-        console.error("Error fetching theme:", err);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
-  }, []);
+    void loadTheme();
+  }, [loadTheme]);
 
+  // Initial load; isLoading already starts as true.
   useEffect(() => {
-    refreshTheme();
-  }, [refreshTheme]);
+    void loadTheme();
+  }, [loadTheme]);
 
   useEffect(() => {
     if (isDark) {
@@ -216,7 +225,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
     loadThemeCSS();
     loadThemeJS();
-  }, [theme?.id, isLoading]);
+  }, [theme?.id, theme?.updated, isLoading]);
 
   const value: ThemeContextValue = {
     theme,

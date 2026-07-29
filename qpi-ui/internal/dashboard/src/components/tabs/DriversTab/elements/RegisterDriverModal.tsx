@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { X, Copy, Check } from "lucide-react";
+import { DEVICE_LANGUAGES } from "@/types";
 import type {
   CreateDriverRequest,
   CreateDriverResponse,
@@ -9,6 +10,8 @@ import type {
 } from "@/types";
 
 const KNOWN_EVENTS = ["JobDispatch", "JobResult", "CryostatReading"];
+
+const LANGUAGES: DriverLanguage[] = ["python", "typescript", "go"];
 
 interface Props {
   qpus: QPU[];
@@ -30,6 +33,17 @@ export function RegisterDriverModal({ qpus, onClose, onRegister }: Props) {
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
   const isCustom = kind === "custom";
+  const availableLanguages = DEVICE_LANGUAGES[kind];
+
+  // Changing the kind can strip the language out from under the form — pick qblox
+  // while go is selected and there is no such Go driver to register. Fall back to
+  // the first language that does ship it rather than letting the server say no.
+  const chooseKind = (next: DriverKind) => {
+    setKind(next);
+    if (!DEVICE_LANGUAGES[next].includes(language)) {
+      setLanguage(DEVICE_LANGUAGES[next][0]);
+    }
+  };
 
   const toggleEvent = (event: string) => {
     setEvents((prev) =>
@@ -242,7 +256,7 @@ export function RegisterDriverModal({ qpus, onClose, onRegister }: Props) {
             <select
               data-testid="driver-kind-select"
               value={kind}
-              onChange={(e) => setKind(e.target.value as DriverKind)}
+              onChange={(e) => chooseKind(e.target.value as DriverKind)}
               className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white rounded px-3 py-2 focus:outline-none focus:border-zinc-500 transition-colors"
             >
               <option value="mock">mock (Local Simulator)</option>
@@ -267,9 +281,18 @@ export function RegisterDriverModal({ qpus, onClose, onRegister }: Props) {
               onChange={(e) => setLanguage(e.target.value as DriverLanguage)}
               className="w-full bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-white rounded px-3 py-2 focus:outline-none focus:border-zinc-500 transition-colors"
             >
-              <option value="python">python</option>
-              <option value="typescript">typescript</option>
-              <option value="go">go</option>
+              {LANGUAGES.map((l) => (
+                <option
+                  key={l}
+                  value={l}
+                  disabled={!availableLanguages.includes(l)}
+                >
+                  {l}
+                  {availableLanguages.includes(l)
+                    ? ""
+                    : ` (no ${kind} device in this SDK)`}
+                </option>
+              ))}
             </select>
           </div>
 

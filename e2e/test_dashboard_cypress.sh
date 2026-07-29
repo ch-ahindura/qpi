@@ -17,7 +17,7 @@ echo ""
 
 # Ensure dashboard dependencies are installed, including Cypress, and compiled
 echo "[e2e] Preparing React dashboard..."
-(cd "${PROJECT_ROOT}/qpi-ui/internal/dashboard" && npm install --no-package-lock)
+(cd "${PROJECT_ROOT}/qpi-ui/internal/dashboard" && npm ci)
 
 echo "[e2e] Compiling static assets..."
 (cd "${PROJECT_ROOT}/qpi-ui/internal/dashboard" && npm run build)

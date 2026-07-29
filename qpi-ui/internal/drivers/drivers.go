@@ -1,15 +1,21 @@
 // Package drivers is QPI-UI's catalog of registerable driver backends: which
-// kinds exist, how each is installed and launched, and which events it takes
-// part in (RFC 0001 §3, §7).
+// kinds exist, how each is installed and launched, which `-o` options each takes,
+// and which events it participates in (RFC 0001 §3, §7).
 //
-// A backend is described by a data-only Spec, and the whole catalog is a
-// Registry of Specs. Adding a new backend — a new executor or a new monitor —
-// means registering one Spec in catalog.go; no other server code changes. A
-// backend's operation (the CLI subcommand — `qpi-driver process --device
-// <kind>` or `qpi-driver monitor --device <kind>`) and its options are just
-// Spec fields, so a differently-shaped backend is more data rather than a new
-// branch.
+// This is *the* catalog. The driver SDKs publish none — a device there is a name
+// and a builder, nothing more — because two descriptions of the same device is one
+// to keep in step by hand (RFC 0003 §9). An operator picks a device and fills in its
+// options here, and the command this package renders is what launches it.
+//
+// A backend is described by a data-only Spec, and the whole catalog is a Registry of
+// Specs. Adding a new backend — a new executor or a new monitor — means registering
+// one Spec in catalog.go; no other server code changes. A backend's operation
+// (`qpi-driver start --operation process --device <kind>`, or `--operation monitor`)
+// and its options are just Spec fields, so a differently-shaped backend is more data
+// rather than a new branch.
 package drivers
+
+import "sort"
 
 // Language is an SDK language a driver can be written in (RFC 0001 §2).
 type Language string
@@ -35,7 +41,7 @@ const (
 )
 
 // Operation is what a driver does — the category it belongs to — and doubles as
-// the qpi-driver CLI subcommand that runs it: a Process driver runs jobs pushed
+// what `qpi-driver start --operation` is given: a Process driver runs jobs pushed
 // to it (a QPU), a Monitor driver reports upward on its own schedule (a
 // cryostat monitor). New operations are new constants here (RFC 0001 §4, §7).
 type Operation string
@@ -45,15 +51,27 @@ const (
 	Monitor Operation = "monitor"
 )
 
-// deviceFlag is the universal CLI flag naming the specific backend within an
-// operation, e.g. `--device qblox` or `--device bluefors_gen1`.
-const deviceFlag = "--device"
-
-// Option is one `-o key=value` setting a monitor kind needs, carrying an
-// example value so the setup snippets show a ready-to-edit command.
+// Option is one `-o key=value` setting a kind reads: what the dashboard's
+// registration form asks for, and what the rendered setup command fills in. The
+// device on the other end reads whichever of these keys it understands and reports
+// any it does not (RFC 0003 §9).
 type Option struct {
-	Key     string
+	// Key is the option name as typed, e.g. "channels".
+	Key string
+	// Help is one line describing it, as the SDK's help does.
+	Help string
+	// Required reports whether omitting it is an error.
+	Required bool
+	// Default is the value the driver uses when it is absent, written as it would
+	// be typed. Empty means there is no default.
+	Default string
+	// Example is a ready-to-paste value, and the input to the rendered snippets.
 	Example string
+	// InSnippet reports whether the rendered setup snippet should pre-fill this
+	// option. An option the driver already defaults sensibly is schema-only: it
+	// belongs in the catalog, but putting it in a copy-pasted command would invite
+	// an operator to change something they have no reason to.
+	InSnippet bool
 }
 
 // Spec is the data-only description of one official driver backend: how it is
@@ -62,8 +80,8 @@ type Option struct {
 // they run code the operator writes.
 type Spec struct {
 	Kind Kind
-	// Operation is what this backend does, and the CLI subcommand that runs it:
-	// `qpi-driver <Operation> --device <kind> …`.
+	// Operation is what this backend does, and what the CLI is told to run:
+	// `qpi-driver start --operation <Operation> --device <kind> …`.
 	Operation Operation
 	// Extra is the qpi-driver Python extra that ships this backend, e.g.
 	// "qpi-driver[cli,qblox]". Empty means the base CLI extra (mock, presto).
@@ -75,6 +93,22 @@ type Spec struct {
 	// shown pre-filled in the snippets. Nil when the operation's defaults are
 	// enough (e.g. an executor).
 	Options []Option
+	// Languages are the SDKs that ship this device. Which devices a build has is
+	// the SDK's business and it differs between them — only the Python SDK has a
+	// process device — so a kind is registerable in a language only if that
+	// language's SDK can actually run it. Empty would mean a device no SDK ships.
+	// `qpi-driver devices` on the node is what confirms this list.
+	Languages []Language
+}
+
+// ShipsIn reports whether this backend is one the given language's SDK can run.
+func (s Spec) ShipsIn(language Language) bool {
+	for _, l := range s.Languages {
+		if l == language {
+			return true
+		}
+	}
+	return false
 }
 
 // Registry is the set of official driver backends QPI-UI knows about, keyed by
@@ -107,6 +141,30 @@ func (r *Registry) KnownKind(kind Kind) bool {
 	}
 	_, ok := r.specs[kind]
 	return ok
+}
+
+// ShipsIn reports whether kind can be run by language's SDK. Custom ships in
+// every language — it is code the operator writes against the SDK, so the SDK
+// having no such device is the point.
+func (r *Registry) ShipsIn(kind Kind, language Language) bool {
+	if kind == Custom {
+		return true
+	}
+	spec, ok := r.specs[kind]
+	return ok && spec.ShipsIn(language)
+}
+
+// KindsIn returns the official kinds language's SDK ships, sorted, so an error
+// about an unavailable one can say what is available instead.
+func (r *Registry) KindsIn(language Language) []Kind {
+	kinds := make([]Kind, 0, len(r.specs))
+	for kind, spec := range r.specs {
+		if spec.ShipsIn(language) {
+			kinds = append(kinds, kind)
+		}
+	}
+	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
+	return kinds
 }
 
 // Kinds returns every official kind registered in the catalog, in no

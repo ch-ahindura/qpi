@@ -61,7 +61,13 @@ def test_resolve_executor():
 
 
 def test_custom_executor_resolution():
-    """Verify resolver successfully supports custom user-defined executors."""
+    """An executor the SDK does not ship is used by passing the class itself.
+
+    There is no registry to add it to: the class is the identifier. Its name is
+    derived from the class name, which is what makes the derivation worth
+    asserting here rather than with a builtin — ``MockExecutor`` derives the
+    name ``mock``, which is indistinguishable from its registry key.
+    """
 
     from qpi_driver.executors.base import JobPayload
 
@@ -72,9 +78,17 @@ def test_custom_executor_resolution():
         def process_result(self, dataset: xr.Dataset, job_id: str) -> dict:
             return {}
 
-    customs: dict[str, type[Executor]] = {"dummy": DummyExecutor}
-    exec_inst = resolve_executor("dummy", custom_executors=customs)
+    exec_inst = resolve_executor(DummyExecutor)
     assert isinstance(exec_inst, DummyExecutor)
+    assert exec_inst.name == "dummy"
+
+    # An explicit name, and any other constructor kwarg, still wins.
+    exec_inst = resolve_executor(DummyExecutor, name="cryo-qpu")
+    assert exec_inst.name == "cryo-qpu"
+
+    # An unregistered *name* is still an error — the class is the only route in.
+    with pytest.raises(ValueError, match="Unknown executor name"):
+        resolve_executor("dummy")
 
 
 def test_placeholder_executors_raise_not_implemented():
@@ -277,3 +291,36 @@ measure q[1] -> c[1];"""
     assert sum(counts.values()) == 20
     assert len(counts) == 4
     assert counts["10"] == 20
+
+
+def test_close_is_a_no_op_by_default():
+    """An executor with nothing to release need not implement close()."""
+    from qpi_driver.executors import MockExecutor
+
+    MockExecutor(name="mock").close()  # must not raise
+
+
+def test_the_mock_executor_binds_circuit_parameters():
+    """A parameterised circuit is bound before transpiling, not sent as-is."""
+    from qpi_driver.executors import MockExecutor
+    from qpi_driver.executors.base import CircuitPayload, JobPayload
+
+    qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+input float[64] theta;
+qubit[1] q;
+bit[1] c;
+rx(theta) q[0];
+c[0] = measure q[0];
+"""
+    payload = JobPayload(
+        circuits=[CircuitPayload(circuit=qasm, parameter_values=[[0.0]])],
+        id="parameterised",
+        shots=8,
+    )
+
+    dataset = MockExecutor(name="mock").execute(payload)
+    results = MockExecutor(name="mock").process_result(dataset, "parameterised")
+
+    assert results["success"] is True
+    assert sum(results["counts"].values()) == 8

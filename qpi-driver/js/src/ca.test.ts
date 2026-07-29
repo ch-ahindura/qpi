@@ -39,8 +39,13 @@ describe("CA pinning", () => {
     expect(() => verifyFingerprint(CERT, "deadbeef")).toThrow(/does not match/);
   });
 
-  test("verifyFingerprint skips the check when no fingerprint is pinned", () => {
-    expect(() => verifyFingerprint(CERT, "")).not.toThrow();
+  test("verifyFingerprint refuses to run without a pinned fingerprint", () => {
+    // It used to return quietly here, which made an unpinned connection reachable
+    // by leaving an argument out — the kind of opt-out a copy-pasted command hits
+    // by accident (RFC 0003 §10). There is now no way to skip the check.
+    expect(() => verifyFingerprint(CERT, "")).toThrow(
+      /a CA fingerprint is required/,
+    );
   });
 
   test("pemToDer rejects non-PEM input", () => {

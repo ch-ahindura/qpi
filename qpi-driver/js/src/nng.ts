@@ -23,6 +23,13 @@ export const PROTO_PULL = 81;
 const HEADER_SIZE = 8;
 const LENGTH_PREFIX_SIZE = 8;
 
+/**
+ * How long a dial may take, from TCP connect through the TLS and SP handshakes.
+ * Matches the Python SDK's `timeout=10` and the Go SDK's
+ * `http.Client{Timeout: 10 * time.Second}`.
+ */
+export const DIAL_TIMEOUT_MS = 10_000;
+
 /** The pipeline role this end plays: a source (PUSH) or a sink (PULL). */
 export type Role = "push" | "pull";
 
@@ -116,6 +123,12 @@ export interface DialOptions {
   ca: string;
   /** Server name for SNI and certificate validation. */
   servername: string;
+  /**
+   * Deadline for the whole dial. Defaults to {@link DIAL_TIMEOUT_MS}, which is
+   * what a driver uses; there is deliberately no CLI flag for it. Only tests
+   * pass a shorter one, to avoid waiting out the real deadline.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -136,10 +149,34 @@ export class PipelineSocket {
     this.peerProto = role === "push" ? PROTO_PULL : PROTO_PUSH;
   }
 
-  /** Connect, exchange SP headers, and resolve once the handshake completes. */
+  /**
+   * Connect, exchange SP headers, and resolve once the handshake completes.
+   *
+   * The whole dial is under one deadline (`opts.timeoutMs`, 10s by default).
+   * `tls.connect` has no timeout of its own beyond the OS TCP timeout, so a
+   * peer that accepts the connection and then goes quiet — a firewall dropping
+   * packets mid-handshake, or a server that completes TLS and never sends its
+   * SP header — would otherwise leave this promise pending forever, hanging the
+   * driver inside `run()` rather than failing it.
+   */
   dial(opts: DialOptions): Promise<void> {
+    const timeoutMs = opts.timeoutMs ?? DIAL_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
       let settled = false;
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const settle = (err?: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(deadline);
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      };
+
       const socket = tls.connect(
         {
           host: opts.host,
@@ -153,6 +190,19 @@ export class PipelineSocket {
         },
       );
       this.socket = socket;
+
+      deadline = setTimeout(() => {
+        const stage = socket.authorized
+          ? "the SP handshake did not complete"
+          : "the TLS handshake did not complete";
+        socket.destroy();
+        settle(
+          new Error(
+            `qpi-driver: dialling the ${this.role} channel at ${opts.host}:${opts.port} ` +
+              `timed out after ${timeoutMs}ms: ${stage}`,
+          ),
+        );
+      }, timeoutMs);
 
       socket.on("data", (chunk: Buffer) => {
         this.assembler.push(chunk);
@@ -169,27 +219,18 @@ export class PipelineSocket {
             }
           } catch (err) {
             socket.destroy();
-            if (!settled) {
-              settled = true;
-              reject(err);
-            }
+            settle(err as Error);
             return;
           }
           this.assembler.consume(HEADER_SIZE);
           this.handshakeDone = true;
-          if (!settled) {
-            settled = true;
-            resolve();
-          }
+          settle();
         }
         this.deliver();
       });
 
       socket.on("error", (err: Error) => {
-        if (!settled) {
-          settled = true;
-          reject(err);
-        }
+        settle(err);
       });
     });
   }

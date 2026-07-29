@@ -50,6 +50,7 @@ class Connection:
         ca_file: Path to the pinned root CA certificate used for TLS.
     """
 
+    name: str
     host: str
     in_port: int
     out_port: int
@@ -62,7 +63,9 @@ class QpiDriver(ABC):
     Attributes:
         qpi_addr: Full URL of the QPI-UI server.
         token: The driver's access token; identifies it (and its QPU) to QPI-UI.
-        name: Human-readable name for this driver.
+        name: The display label QPI-UI has this driver registered under, used to
+            tag emitted events. It comes from the ``drivers/connect`` response,
+            so it is empty until :meth:`run` has connected.
         ca_fingerprint: Expected SHA-256 of the server root CA, pinned over TLS.
         ca_file_path: Where the downloaded root CA certificate is written.
         recv_timeout_ms: How long the inbound receive loop blocks per attempt
@@ -73,14 +76,13 @@ class QpiDriver(ABC):
         self,
         qpi_addr: str,
         token: str,
-        name: str,
         ca_fingerprint: str = "",
         ca_file_path: str = "./bin/qpi.ca.pem",
         recv_timeout_ms: int = DEFAULT_RECV_TIMEOUT_MS,
     ) -> None:
         self.qpi_addr = qpi_addr
         self.token = token
-        self.name = name
+        self.name = ""
         self.ca_fingerprint = ca_fingerprint
         self.ca_file_path = ca_file_path
         self.recv_timeout_ms = recv_timeout_ms
@@ -122,6 +124,8 @@ class QpiDriver(ABC):
         callbacks, then blocks on the inbound receive loop.
         """
         conn = self._connect()
+        # The server owns the label, so the driver only knows it from here on.
+        self.name = conn.name
 
         tls_config = TLSConfig(
             TLSConfig.MODE_CLIENT,
@@ -216,10 +220,15 @@ class QpiDriver(ABC):
         (and, transitively, its QPU), and QPI-UI returns the NNG ports and host.
         What differs between drivers is only which events they handle and emit,
         not how they connect (RFC 0001 §3, §8).
+
+        The token is the whole of the identity asserted here. The driver's display
+        label comes back in the response rather than going out in the request: it
+        belongs to the admin who typed it into the dashboard, and a driver sending
+        one meant every restart silently overwrote what they chose.
         """
         resp = requests.post(
             f"{self.qpi_addr}/api/op/drivers/connect",
-            json={"token": self.token, "name": self.name},
+            json={"token": self.token},
             timeout=10,
         )
         resp.raise_for_status()
@@ -229,6 +238,7 @@ class QpiDriver(ABC):
             self.qpi_addr, self.ca_fingerprint, Path(self.ca_file_path)
         )
         return Connection(
+            name=data.get("name", ""),
             host=data["nng_host"],
             in_port=int(data["nng_in_port"]),
             out_port=int(data["nng_out_port"]),

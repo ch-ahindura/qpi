@@ -17,6 +17,7 @@ from qpi_driver.builtins.bluefors_gen1 import (
     parse_channels,
 )
 from qpi_driver.events import Event, EventType
+from qpi_driver.options import Options
 
 
 class FakeSocket:
@@ -60,7 +61,6 @@ def _driver(**kwargs) -> BlueforsGen1Driver:
     defaults = dict(
         qpi_addr="http://localhost:8090",
         token="t",
-        name="bluefors-gen1-monitor",
         bluefors_base_url="http://localhost:49099",
         channels={"mapper.bf.tmc": "K"},
         poll_interval=0.01,
@@ -81,7 +81,7 @@ def test_read_channel_parses_latest_valid_value():
     driver = _driver()
 
     with patch("requests.get", return_value=_bluefors_response("0.0123")) as get:
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     url = get.call_args.args[0]
     assert url == "http://localhost:49099/values/mapper/bf/tmc"
@@ -92,7 +92,7 @@ def test_read_channel_sends_api_key_query_param():
     driver = _driver(api_key="secret-key")
 
     with patch("requests.get", return_value=_bluefors_response("1.0")) as get:
-        driver._read_channel("mapper.bf.tmc", "K")
+        driver.read_channel("mapper.bf.tmc", "K")
 
     assert get.call_args.kwargs["params"] == {"key": "secret-key"}
 
@@ -101,7 +101,7 @@ def test_read_channel_reports_error_status_on_http_failure(caplog):
     driver = _driver()
 
     with patch("requests.get", side_effect=ConnectionError("boom")):
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     assert reading == {"value": None, "unit": "K", "status": "ERROR"}
     assert "failed to read channel" in caplog.text
@@ -114,7 +114,7 @@ def test_read_channel_reports_error_status_on_malformed_response():
     bad_resp.json.return_value = {"unexpected": "shape"}
 
     with patch("requests.get", return_value=bad_resp):
-        reading = driver._read_channel("mapper.bf.tmc", "K")
+        reading = driver.read_channel("mapper.bf.tmc", "K")
 
     assert reading["status"] == "ERROR"
     assert reading["value"] is None
@@ -165,6 +165,35 @@ def test_poll_emits_partial_readings_when_some_channels_fail():
     assert readings["mapper.bf.tstill"]["status"] == "ERROR"
 
 
+def test_a_supplied_channel_reader_is_the_seam():
+    """A monitor for different control software reuses everything but the read.
+
+    Composition, not inheritance — the same way every `process` device is the one
+    QPU driver over a different `Executor`. The timer, one bad channel not losing
+    the rest of the tick, and the CryostatReading event all stay.
+    """
+    asked: list[str] = []
+
+    def gen2_reader(channel: str, unit: str) -> dict:
+        asked.append(channel)
+        return {"value": 0.02, "unit": unit, "status": "OK"}
+
+    driver = _driver(channels={"gen2.temperature": "K"}, read_channel=gen2_reader)
+    driver._out_sock = FakeSocket()
+
+    # No `requests` patching: the supplied reader never reaches the network.
+    driver._poll()
+
+    assert asked == ["gen2.temperature"]
+    sent = json.loads(driver._out_sock.sent[0])
+    assert sent["type"] == "CryostatReading"
+    assert sent["payload"]["readings"]["gen2.temperature"] == {
+        "value": 0.02,
+        "unit": "K",
+        "status": "OK",
+    }
+
+
 def test_normalize_channels_accepts_list_dict_or_none():
     assert normalize_channels(None) == {}
     assert normalize_channels(["mapper.bf.tmc"]) == {"mapper.bf.tmc": ""}
@@ -175,23 +204,27 @@ def _common_options() -> dict:
     return dict(
         qpi_addr="http://localhost:8090",
         token="t",
-        name="cryostat-1",
         ca_fingerprint="fp",
         ca_file_path="./bin/qpi.ca.pem",
         recv_timeout_ms=200,
     )
 
 
+def _options(**raw: str) -> Options:
+    """The raw ``-o`` strings this device is handed, as the CLI hands them over."""
+    return Options(raw)
+
+
 def test_build_from_options_reads_all_keys():
     driver = build_from_options(
         **_common_options(),
-        options={
-            "base_url": "http://cryo:49099",
-            "channels": "mapper.bf.tmc:K,mapper.bf.pmc:mbar",
-            "api_key": "secret",
-            "poll_interval": "2.5",
-            "timeout": "7",
-        },
+        options=_options(
+            base_url="http://cryo:49099",
+            channels="mapper.bf.tmc:K,mapper.bf.pmc:mbar",
+            api_key="secret",
+            poll_interval="2.5",
+            timeout="7",
+        ),
     )
 
     assert isinstance(driver, BlueforsGen1Driver)
@@ -202,9 +235,30 @@ def test_build_from_options_reads_all_keys():
     assert driver.timeout == 7.0
 
 
-def test_build_from_options_requires_channels():
-    with pytest.raises(ValueError, match="channels"):
-        build_from_options(**_common_options(), options={"base_url": "http://x"})
+def test_defaults_every_key_but_channels():
+    """Only the channels are unknowable in advance, so only they are required."""
+    driver = build_from_options(
+        **_common_options(), options=_options(channels="mapper.bf.tmc")
+    )
+
+    assert driver.bluefors_base_url == "http://127.0.0.1:49099"
+    assert driver.api_key == ""
+    assert driver.poll_interval == 5.0
+    assert driver.timeout == 5.0
+
+
+def test_channels_are_required():
+    """It refuses to build without channels, naming the option."""
+    with pytest.raises(ValueError, match="'channels'"):
+        build_from_options(**_common_options(), options=_options(base_url="http://x"))
+
+
+def test_an_option_this_monitor_does_not_read_is_left_unread():
+    """What the device reads is its whole schema, so the CLI can flag the rest."""
+    options = _options(channels="mapper.bf.tmc", pol_interval="2")
+    build_from_options(**_common_options(), options=options)
+
+    assert options.unread() == ("pol_interval",)
 
 
 def test_parse_channels_handles_optional_units():
@@ -215,3 +269,15 @@ def test_parse_channels_handles_optional_units():
         "mapper.bf.pmc": "mbar",
         "mapper.bf.flow": "",
     }
+
+
+def test_parse_channels_ignores_empty_segments():
+    """A trailing comma or a stray space is not a channel named "".
+
+    Worth tolerating: these strings are typed into unit files by hand.
+    """
+    assert parse_channels("mapper.bf.tmc:K, ,mapper.bf.pmc:mbar,") == {
+        "mapper.bf.tmc": "K",
+        "mapper.bf.pmc": "mbar",
+    }
+    assert parse_channels("") == {}

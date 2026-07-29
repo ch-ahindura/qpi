@@ -38,6 +38,7 @@ Requires **Go ≥ 1.21**.
 
 ## Quick Start
 
+<!-- docs-check: compile=go-client-quickstart -->
 ```go
 package main
 

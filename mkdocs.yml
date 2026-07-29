@@ -55,6 +55,8 @@ nav:
   - RFCs:
       - Overview: rfcs/README.md
       - 0001 Driver Framework: rfcs/0001-driver-framework.md
+      - 0002 Dashboard Theming: rfcs/0002-dashboard-theming.md
+      - 0003 Driver Extensibility: rfcs/0003-driver-extensibility.md
   - Changelog: changelog.md
 
 markdown_extensions:

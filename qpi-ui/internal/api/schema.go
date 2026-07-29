@@ -447,9 +447,18 @@ func (dcr *DriverCreateResponse) ToMap() map[string]any {
 // DriverConnectRequest represents the JSON payload for POST /api/op/drivers/connect.
 // Uses "token" (not "access_token") to match the field DriverCreateResponse
 // returns it under, since a driver's own DB field is "token".
+//
+// The token is the whole of a driver's identity: it is what the record is looked up
+// by, and transitively what says which QPU the driver belongs to (RFC 0001 §8). A
+// driver therefore asserts nothing else about itself here, and learns its display
+// name from DriverConnectResponse instead.
+//
+// Host and Version are the two fields a driver could usefully report and none of
+// the three SDKs sends either, so they are dead on the wire today; they stay
+// accepted because a driver reporting where it runs and what it runs is worth
+// having, not because anything reads them.
 type DriverConnectRequest struct {
 	AccessToken string `json:"token" validate:"required"`
-	Name        string `json:"name,omitempty"`
 	Host        string `json:"host,omitempty"`
 	Version     string `json:"version,omitempty"`
 }
@@ -461,7 +470,6 @@ func (dcr *DriverConnectRequest) SetDefaults() {
 func (dcr *DriverConnectRequest) ToMap() map[string]any {
 	return map[string]any{
 		"token":   dcr.AccessToken,
-		"name":    dcr.Name,
 		"host":    dcr.Host,
 		"version": dcr.Version,
 	}
@@ -469,7 +477,12 @@ func (dcr *DriverConnectRequest) ToMap() map[string]any {
 
 // DriverConnectResponse represents the JSON payload returned by POST /api/op/drivers/connect.
 type DriverConnectResponse struct {
-	Status     string `json:"status"`
+	Status string `json:"status"`
+	// Name is the display label an admin gave this driver in the dashboard. It goes
+	// out rather than in: the driver puts it in the `driver` field of every outbound
+	// envelope and in its own logs, so it has to agree with what an operator reading
+	// the dashboard sees, and only the server knows that.
+	Name       string `json:"name"`
 	NNGInPort  int    `json:"nng_in_port"`
 	NNGOutPort int    `json:"nng_out_port"`
 	TLSHash    string `json:"tls_hash"`
@@ -484,6 +497,7 @@ func (dcr *DriverConnectResponse) SetDefaults() {
 func (dcr *DriverConnectResponse) ToMap() map[string]any {
 	return map[string]any{
 		"status":       dcr.Status,
+		"name":         dcr.Name,
 		"nng_in_port":  dcr.NNGInPort,
 		"nng_out_port": dcr.NNGOutPort,
 		"tls_hash":     dcr.TLSHash,

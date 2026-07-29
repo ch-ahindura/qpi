@@ -552,10 +552,3 @@ Logo and favicon uploads are constrained by:
 9. **File-based logo/favicon via PocketBase file fields.** This reuses
    PocketBase's existing file storage, thumbnailing, and CDN-friendly serving,
    rather than inventing a custom upload flow.
-
-## 9. Implementation plan
-
-The phased implementation plan — per-phase objectives, status, remaining
-work, definition-of-done checklists, verification commands, and recommended
-cost-effective models — is maintained in
-[`.agents/ROADMAP.md`](../../.agents/ROADMAP.md), separately from this RFC.

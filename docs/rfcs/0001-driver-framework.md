@@ -33,6 +33,15 @@ the matching client half to fill in.
 QPI-UI has a handler for each event it receives; the SDK lets a driver handle events it receives and emit
 events of its own.
 
+> **Superseded in part by [RFC 0003 — Driver Extensibility](./0003-driver-extensibility.md).**
+> The framework below stands unchanged — a driver still subclasses the SDK base,
+> implements `handle_event`, and calls `emit` and `every`. What RFC 0003 changes is
+> how a driver is *named and launched*: the vocabulary is now **operation** (what a
+> driver does — a closed set QPI-UI has handlers for) and **device** (the backend
+> implementing it — an open set anyone can add to), and every driver is started with
+> one verb, `qpi-driver start --operation <op> --device <device>`. Read RFC 0003 for
+> that layer; this RFC for the framework it sits on.
+
 ## 3. How it works
 
 ```mermaid
@@ -156,6 +165,14 @@ dataclass client-side).
   "payload": { }                 // shape depends on type; validated by the handler
 }
 ```
+
+`driver` is informational on the way **up** and authoritative on the way **down**.
+QPI-UI parses an inbound envelope's `driver` and then ignores it, keying everything
+off the socket the event arrived on: an event's driver is the one whose NNG port
+delivered it, which is not something a driver gets to claim (`nng_driver.go`). On an
+outbound envelope the server fills the field with the driver's **ID**. The SDKs put
+their display label there — the one `drivers/connect` returned — so it is worth
+reading as a label in a log, not as an identifier.
 
 ## 7. Data model
 

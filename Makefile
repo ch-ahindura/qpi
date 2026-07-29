@@ -1,7 +1,13 @@
-.PHONY: all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard test-e2e-driver-framework
+.PHONY: test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
 
-VERSION ?= 0.1.2
+VERSION ?= 0.2.0
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
+
+# Scratch locations for the documentation checks. Under bin/, which is already
+# ignored, so a failed run leaves nothing in the working tree for git to notice.
+DOCS_EXAMPLE_VENV := bin/.docs-example-venv
+DOCS_SITE_VENV := bin/.docs-site-venv
+DOCS_SITE_OUT := bin/.docs-site
 
 all: build
 
@@ -42,7 +48,69 @@ serve-docs:
 # Test targets
 # ---------------------------------------------------------------------------
 
-test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-e2e
+test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-docs test-e2e
+
+# ---------------------------------------------------------------------------
+# Documentation, tested rather than proof-read.
+#
+# Every check here exists because the thing it checks was wrong at some point and
+# nothing said so: a `make` target that only existed in .PHONY, a `pip install` path
+# with no pyproject.toml in it, a config file named with the wrong extension, a
+# TypeScript block that did not type-check, an executor example that could not be
+# instantiated, and an entry-point device that was silently skipped because loading it
+# raced the SDK's own import. Documentation drifts in one direction only — nobody
+# re-runs the command they copied a block from — so the only fix that holds is a
+# failing build.
+#
+# Split into four steps so a failure names which kind of claim broke.
+# ---------------------------------------------------------------------------
+test-docs: test-docs-static test-docs-snippets test-docs-example test-docs-site
+
+# The static claims: make targets, repository paths, links, and the CLI flags every
+# document names, checked against each SDK's own --help.
+test-docs-static:
+	@echo "Checking the documentation's claims about this repository..."
+	(cd qpi-driver/js && npm ci --silent && npm run --silent build)
+	$(UV) sync --project qpi-driver/py --extra cli
+	$(UV) run --project qpi-driver/py python scripts/check_docs.py
+
+# The code blocks: Python executed against the real SDK, Go and TypeScript compiled.
+test-docs-snippets:
+	@echo "Running the documentation's Python snippets and the CLI transcripts..."
+	$(UV) run --project qpi-driver/py python -m pytest \
+		qpi-driver/py/tests/test_docs.py qpi-driver/py/tests/test_docs_snippets.py -v
+	@echo "Compiling the documentation's Go and TypeScript snippets..."
+	bash scripts/check_doc_snippets.sh
+
+# The entry-point route end to end: install the example against *this* SDK and ask the
+# CLI whether the device arrived. Only ever exercised with `entry_points` mocked
+# before, which is how a circular import that skipped every installed device survived.
+test-docs-example:
+	@echo "Installing examples/custom_device and checking the CLI can run it..."
+	rm -rf $(DOCS_EXAMPLE_VENV)
+	$(UV) venv --python 3.12 $(DOCS_EXAMPLE_VENV)
+	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet "./qpi-driver/py[cli]"
+	VIRTUAL_ENV=$(DOCS_EXAMPLE_VENV) $(UV) pip install --quiet --no-deps \
+		./qpi-driver/py/examples/custom_device
+	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver devices 2>&1 | grep -q "quantum_x" \
+		|| { echo "FAILED: the installed example's device is not registered"; exit 1; }
+	@# A skipped entry point is a warning, not an error, so the exit code alone would
+	@# not have caught it: the warning itself has to be absent.
+	$(DOCS_EXAMPLE_VENV)/bin/qpi-driver devices 2>&1 \
+		| grep -q "skipping device entry point" \
+		&& { echo "FAILED: the installed example's entry point was skipped"; exit 1; } \
+		|| echo "OK: quantum_x is registered, with no skipped entry point"
+	rm -rf $(DOCS_EXAMPLE_VENV)
+
+# The site itself: a broken nav entry or a dead internal link. `docs.yml` only runs on
+# a v* tag, so without this nothing validates the documentation on a pull request.
+test-docs-site:
+	@echo "Building the documentation site (--strict)..."
+	rm -rf $(DOCS_SITE_VENV)
+	$(UV) venv --python 3.12 $(DOCS_SITE_VENV)
+	VIRTUAL_ENV=$(DOCS_SITE_VENV) $(UV) pip install --quiet mkdocs-material "mkdocstrings[python]"
+	$(DOCS_SITE_VENV)/bin/mkdocs build --strict --site-dir $(DOCS_SITE_OUT)
+	rm -rf $(DOCS_SITE_VENV) $(DOCS_SITE_OUT)
 
 test-go: build-dashboard
 	@echo "Running Go unit tests (server)..."
@@ -54,15 +122,29 @@ test-go-minimal:
 
 test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox
 
+# The framework modules the coverage floor applies to: the SDK, the CLI, the device
+# registry and its options, and the executors that need no hardware. Everything else
+# is reported but not gated — see cov-py.
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
+PY_COV_MIN := 96
+
 test-py-base:
 	@echo "Running Python driver tests with base deps only (mock executor)..."
 	$(UV) sync --project qpi-driver/py --dev
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
+# The gated run. It is the [cli] extra's because that one imports the most: the base
+# run skips every CLI test, so a floor there would be measuring a smaller program.
 test-py-cli:
 	@echo "Running Python driver tests with [cli] extra..."
 	$(UV) sync --project qpi-driver/py --extra cli --dev
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
+	(cd qpi-driver/py && $(UV) run pytest tests/ -v --cov --cov-report=)
+	@echo "Enforcing $(PY_COV_MIN)% coverage on the framework modules..."
+	(cd qpi-driver/py && $(UV) run coverage report \
+		--include='$(PY_COV_INCLUDE)' --fail-under=$(PY_COV_MIN))
+	@echo "Coverage of the hardware executors, for information only:"
+	-(cd qpi-driver/py && $(UV) run coverage report \
+		--include='qpi_driver/executors/qblox/*,qpi_driver/executors/quantify/*,qpi_driver/executors/presto/*,qpi_driver/executors/qiskit_aer/*,qpi_driver/executors/utils/*,qpi_driver/compat/*')
 
 test-py-aer:
 	@echo "Running Python driver tests with [aer] extra..."
@@ -108,9 +190,27 @@ test-js-driver:
 	@echo "Running JS/TS driver SDK tests..."
 	(cd qpi-driver/js && npm ci && npm test)
 
+# The Go packages the coverage floor applies to: the device registry and the CLI over
+# it, both of which need no server. The base SDK (driver.go: Run, recvLoop, the TLS
+# dialling) and `qpi-driver/main.go` are reported but not gated — the first needs a
+# live server and is covered by `make test-e2e-driver`, and the second is `main`,
+# which no in-process test can call. `cli.Execute` is inside a gated package but
+# calls os.Exit, hence 94 rather than 96.
+GO_COV_GATED := ./devices/... ./cli/...
+GO_COV_MIN := 94
+
 test-go-driver:
 	@echo "Running Go driver SDK tests..."
 	(cd qpi-driver/go && go test -race -v ./...)
+	@echo "Enforcing $(GO_COV_MIN)% coverage on $(GO_COV_GATED)..."
+	(cd qpi-driver/go && go test -coverprofile=/tmp/qpi-go-cov.out $(GO_COV_GATED) >/dev/null \
+		&& go tool cover -func=/tmp/qpi-go-cov.out | tail -1 \
+		&& go tool cover -func=/tmp/qpi-go-cov.out | awk -v min=$(GO_COV_MIN) '\
+			/^total:/ { got = $$3 + 0; \
+				if (got < min) { printf "Coverage failure: total of %s is less than %d%%\n", $$3, min; exit 1 } \
+				printf "Coverage OK: %s\n", $$3 }')
+	@echo "Coverage of the base SDK transport, for information only:"
+	-(cd qpi-driver/go && go test -cover ./... | grep coverage)
 
 test-go-driver-minimal:
 	@echo "Running Go driver SDK tests..."
@@ -157,9 +257,12 @@ lint-go: build-dashboard
 	(cd qpi-ui && go vet ./...)
 	(cd qpi-ui && gofmt -l -d .)
 
+# scripts/ too: it holds the two Python tools this repository runs on itself, and an
+# unformatted one is the same kind of drift as an unformatted SDK file.
 lint-py:
 	@echo "Linting Python driver files..."
-	$(UV) run --project qpi-driver/py ruff check qpi-driver/py/
+	$(UV) run --project qpi-driver/py ruff check qpi-driver/py/ scripts/
+	$(UV) run --project qpi-driver/py ruff format --check qpi-driver/py/ scripts/
 
 lint-js:
 	@echo "Linting JS client files..."
@@ -199,8 +302,8 @@ format-go:
 
 format-py:
 	@echo "Formatting and sorting imports for Python driver files..."
-	$(UV) run --project qpi-driver/py ruff format qpi-driver/py/
-	$(UV) run --project qpi-driver/py ruff check --select I --fix qpi-driver/py/
+	$(UV) run --project qpi-driver/py ruff format qpi-driver/py/ scripts/
+	$(UV) run --project qpi-driver/py ruff check --select I --fix qpi-driver/py/ scripts/
 
 format-js:
 	@echo "Formatting JS client files..."

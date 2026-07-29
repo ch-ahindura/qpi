@@ -582,6 +582,15 @@ func handleDriverCreate(re *core.RequestEvent) error {
 	if !drivers.KnownLanguage(language) {
 		return re.Error(http.StatusBadRequest, fmt.Sprintf("unknown language %q", req.Language), nil)
 	}
+	// Which devices exist is the SDK's business and it differs between them: only
+	// the Python SDK has a process device. Registering, say, kind=mock with
+	// language=go used to succeed and hand the operator setup commands for a
+	// `--device mock` the Go binary has never heard of.
+	if !drivers.Default.ShipsIn(kind, language) {
+		return re.Error(http.StatusBadRequest, fmt.Sprintf(
+			"the %s SDK ships no %q device; it ships %s. Write it yourself against the SDK with kind=custom, or use a language whose SDK has it",
+			req.Language, req.Kind, joinKinds(drivers.Default.KindsIn(language))), nil)
+	}
 
 	events := drivers.Default.Events(kind)
 	if kind == drivers.Custom {
@@ -663,9 +672,10 @@ func handleDriverConnect(re *core.RequestEvent) error {
 		return re.Error(http.StatusForbidden, "driver is currently disabled by administrator", nil)
 	}
 
-	if req.Name != "" {
-		driver.Name = req.Name
-	}
+	// The driver does not get to rename itself. Name is a display label an admin
+	// typed in the dashboard; writing it from the connect body meant every restart
+	// of a driver launched with a --name silently overwrote it, and nothing looks a
+	// driver up by name anyway — the token is the identity.
 	if req.Host != "" {
 		driver.Host = req.Host
 	}
@@ -704,6 +714,7 @@ func handleDriverConnect(re *core.RequestEvent) error {
 
 	resp := DriverConnectResponse{
 		Status:     "success",
+		Name:       driver.Name,
 		NNGInPort:  driver.NNGInPort,
 		NNGOutPort: driver.NNGOutPort,
 		TLSHash:    cfg.GetTlsCaHash(),

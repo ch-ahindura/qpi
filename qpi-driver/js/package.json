@@ -1,6 +1,6 @@
 {
   "name": "qpi-driver",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "TypeScript/JavaScript SDK for building QPI quantum platform drivers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,6 +15,10 @@
     "./builtins/bluefors-gen1": {
       "types": "./dist/builtins/bluefors-gen1.d.ts",
       "default": "./dist/builtins/bluefors-gen1.js"
+    },
+    "./devices": {
+      "types": "./dist/devices.d.ts",
+      "default": "./dist/devices.js"
     }
   },
   "files": [

@@ -2,18 +2,22 @@ import importlib.metadata
 from pathlib import Path
 from typing import Annotated
 
-from qpi_driver.builtins import MONITOR_DRIVERS, PROCESS_DRIVERS, DriverRunner
+from qpi_driver.builtins import Operation, devices as registered_devices, resolve_device
 from qpi_driver.compat import typer
+from qpi_driver.options import Options
 from qpi_driver.paths import validate_safe_path
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS
 
 app = None
 if typer.IS_TYPER_INSTALLED:
-    app = typer.Typer(help="Quantum Processing Interface (QPI) Driver CLI")
+    app = typer.Typer(
+        help="Quantum Processing Interface (QPI) Driver CLI",
+        rich_markup_mode="rich",
+    )
 
-    # Universal options shared by every operation subcommand, defined once so a
-    # new operation reuses them rather than redeclaring their flags/env/help. An
-    # operation's own settings go through --option / -o instead (RFC 0001 §4).
+    # Universal options `start` shares across every operation, defined once so a
+    # new operation reuses them rather than redeclaring their flags/env/help. A
+    # device's own settings go through --option / -o instead (RFC 0001 §4).
     QpiAddrOpt = Annotated[
         str,
         typer.Option(
@@ -32,13 +36,15 @@ if typer.IS_TYPER_INSTALLED:
             help="Access token identifying this driver to the QPI server",
         ),
     ]
-    NameOpt = Annotated[
-        str,
+    # No short form for --operation: -o is --option, and -O beside it would be a
+    # hazard on a command line that is usually written once into a unit file
+    # (RFC 0003 §13.7).
+    OperationOpt = Annotated[
+        Operation,
         typer.Option(
-            "--name",
-            "-n",
-            envvar="QPI_DRIVER_NAME",
-            help="Human-readable name for this driver",
+            "--operation",
+            envvar="QPI_OPERATION",
+            help="What this driver does: run jobs pushed to it, or report upward.",
         ),
     ]
     DeviceOpt = Annotated[
@@ -47,7 +53,9 @@ if typer.IS_TYPER_INSTALLED:
             "--device",
             "-d",
             envvar="QPI_DEVICE",
-            help="Which backend to run within the operation (e.g. mock, qblox, bluefors_gen1)",
+            help="Which backend to run within the operation (e.g. mock, qblox, "
+            "bluefors_gen1), or an import path. `qpi-driver devices` lists the ones "
+            "this install has.",
         ),
     ]
     CaFileOpt = Annotated[
@@ -67,10 +75,10 @@ if typer.IS_TYPER_INSTALLED:
         typer.Option(
             "--option",
             "-o",
-            help="Operation-specific config as key=value, repeatable — e.g. "
-            "-o data_dir=./bin/data (process) or "
-            "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar (monitor). "
-            "See the chosen device for the keys it reads.",
+            help="A setting of the chosen device, as key=value, repeatable — "
+            "e.g. -o data_dir=./bin/data. Which keys a device reads is the "
+            "device's own business; QPI-UI's registration form is where they "
+            "are documented and filled in.",
         ),
     ]
     RecvTimeoutOpt = Annotated[
@@ -82,7 +90,7 @@ if typer.IS_TYPER_INSTALLED:
         ),
     ]
 
-    def _ca_fingerprint_option() -> str:
+    def _ca_fingerprint_option():
         return typer.Option(
             default=...,
             envvar="QPI_CA_FINGERPRINT",
@@ -90,84 +98,64 @@ if typer.IS_TYPER_INSTALLED:
         )
 
     @app.command()
-    def process(
-        device: DeviceOpt = "mock",
+    def start(
+        operation: OperationOpt,
+        device: DeviceOpt,
         qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
         token: TokenOpt = "",
-        name: NameOpt = "qpu_sim_01",
         ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
         ca_fingerprint: str = _ca_fingerprint_option(),
         options: OptionsOpt = None,
         recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
     ):
         """
-        Run a process driver — a QPU that executes jobs pushed to it (RFC 0001 §4).
+        Run a driver: one --operation, on one --device within it (RFC 0001 §4).
 
-        Executor runtime settings are passed as -o options: data_dir, is_dummy,
-        job_timeout, quantify_hardware_config, quantify_device_config.
+        One verb rather than a subcommand per operation, because everything about
+        launching a driver is the same whichever operation it is — and because a
+        third party can add a device, but only QPI-UI can add an operation.
+
+        QPI-UI is where a driver is registered and where the command to run it —
+        this operation, this device, these -o options — is generated. Run
+        `qpi-driver devices` to see which devices this install has.
         """
-        _run_operation(
-            PROCESS_DRIVERS,
-            "process",
+        _start(
+            operation,
             device=device,
             qpi_addr=qpi_addr,
             token=token,
-            name=name,
             ca_file=ca_file,
             ca_fingerprint=ca_fingerprint,
             options=options,
             recv_timeout_ms=recv_timeout_ms,
         )
 
-    @app.command()
-    def monitor(
-        device: DeviceOpt = "bluefors_gen1",
-        qpi_addr: QpiAddrOpt = "http://127.0.0.1:8090",
-        token: TokenOpt = "",
-        name: NameOpt = "qpi-monitor",
-        ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
-        ca_fingerprint: str = _ca_fingerprint_option(),
-        options: OptionsOpt = None,
-        recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
-    ):
-        """
-        Run a monitor driver — one that only reports upward on its own schedule
-        and never handles JobDispatch (RFC 0001 §4, §7).
-
-        The device's settings are passed as -o options, e.g. for bluefors_gen1:
-        -o base_url=... -o channels=path:unit,... -o api_key=...
-        """
-        _run_operation(
-            MONITOR_DRIVERS,
-            "monitor",
-            device=device,
-            qpi_addr=qpi_addr,
-            token=token,
-            name=name,
-            ca_file=ca_file,
-            ca_fingerprint=ca_fingerprint,
-            options=options,
-            recv_timeout_ms=recv_timeout_ms,
-        )
-
-    def _run_operation(
-        registry: dict[str, DriverRunner],
-        operation: str,
+    def _start(
+        operation: Operation,
         *,
         device: str,
         qpi_addr: str,
         token: str,
-        name: str,
         ca_file: Path,
         ca_fingerprint: str,
         options: list[str] | None,
         recv_timeout_ms: int,
     ) -> None:
-        """Look up a device's runner in *registry* and run it, or exit with an error.
+        """Build the driver for *device* within *operation* and run it.
 
-        Shared by every operation subcommand: the operation is the command name,
-        the device selects the backend, and the runner reads its own config from
-        the parsed -o options.
+        Shared by every operation: the device selects the backend and its builder
+        reads the -o options it understands, returning the unstarted driver that
+        gets started here. Anything rejected along the way — an unknown device, a
+        missing or unreadable value — surfaces as a ``ValueError`` and becomes a
+        one-line CLI error rather than a traceback.
+
+        An option no device read is reported after the build rather than checked
+        against a declared list beforehand: the device's own code is the only
+        description of what it accepts.
+
+        There is no name to resolve: a driver's display label belongs to the admin
+        who registered it in the dashboard, and the ``drivers/connect`` response
+        hands it over.
         """
         if not token:
             typer.echo(
@@ -177,27 +165,23 @@ if typer.IS_TYPER_INSTALLED:
             )
             raise typer.Exit(code=1)
 
-        runner = registry.get(device)
-        if runner is None:
-            typer.echo(
-                f"Error: unknown {operation} device {device!r}. "
-                f"Known devices: {', '.join(sorted(registry))}.",
-                err=True,
-            )
+        # Usage errors, reported before the banner so they are the first thing on
+        # screen: which device, and whether the -o syntax parses at all.
+        try:
+            spec = resolve_device(operation, device)
+            parsed = Options(_split_options(options or []))
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
 
         _validate_safe_path(ca_file, "--ca-file")
         typer.rich_print(_banner())
-        # import logging
-        # logging.basicConfig(level=logging.INFO)
 
         try:
-            runner(
-                device=device,
-                options=_parse_options(options or []),
+            driver = spec.build(
+                options=parsed,
                 qpi_addr=qpi_addr,
                 token=token,
-                name=name,
                 ca_fingerprint=ca_fingerprint,
                 ca_file_path=ca_file.as_posix(),
                 recv_timeout_ms=recv_timeout_ms,
@@ -205,6 +189,41 @@ if typer.IS_TYPER_INSTALLED:
         except ValueError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(code=1)
+
+        unread = parsed.unread()
+        if unread:
+            label = "options" if len(unread) > 1 else "option"
+            typer.echo(
+                f"Error: unknown {label} {', '.join(repr(k) for k in unread)} for "
+                f"{operation.value} device {device!r}.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        driver.run()
+
+    @app.command()
+    def devices(
+        operation: Annotated[
+            Operation | None,
+            typer.Option(
+                "--operation",
+                help="Show only this operation's devices, instead of all of them.",
+            ),
+        ] = None,
+    ):
+        """
+        List the devices this install can run, by operation.
+
+        Names only, and only what is actually registered here — which is the useful
+        question after installing a distribution of devices, or writing one. What a
+        device does and which -o options it takes is documented where a driver is
+        registered, in QPI-UI.
+        """
+        wanted = list(Operation) if operation is None else [operation]
+        for op in wanted:
+            names = [spec.name for spec in registered_devices(op)]
+            typer.echo(f"{op.value}: {', '.join(names) or 'none'}")
 
     @app.command()
     def version():
@@ -217,7 +236,7 @@ if typer.IS_TYPER_INSTALLED:
         try:
             return importlib.metadata.version("qpi-driver")
         except importlib.metadata.PackageNotFoundError:
-            return "0.1.2"
+            return "0.2.0"
 
     def _banner():
         """Renders the banner at the top of the CLI"""
@@ -240,11 +259,11 @@ if typer.IS_TYPER_INSTALLED:
             padding=(1, 2),
         )
 
-    def _parse_options(pairs: list[str]) -> dict[str, str]:
-        """Turn repeatable ``-o key=value`` options into a dict.
+    def _split_options(pairs: list[str]) -> dict[str, str]:
+        """Turn repeatable ``-o key=value`` options into a dict of raw strings.
 
-        Each device reads the keys it cares about from the result, so the CLI
-        stays generic across operations and devices.
+        Only the syntax is the CLI's business; what the keys mean and what type
+        each value is belong to the device that reads them.
         """
         options: dict[str, str] = {}
         for pair in pairs:

@@ -11,6 +11,24 @@ def validate_safe_path(path: Path, name: str) -> None:
     somewhere sensitive) is rejected. *name* names the offending option for the
     error message.
     """
+    if not is_safe_path(path):
+        raise ValueError(f"path for {name} ({path}) is not in a safe location")
+
+
+def as_safe_dir(raw: str) -> Path:
+    """Parse *raw* as a directory a driver may write to (RFC 0003 §5, §10).
+
+    The parser of an ``-o`` option does not know what the option is called, so
+    the message names the path and leaves naming the option to the caller.
+    """
+    path = Path(raw)
+    if not is_safe_path(path):
+        raise ValueError(f"{path} is not in a safe location")
+    return path
+
+
+def is_safe_path(path: Path) -> bool:
+    """Whether *path* is inside somewhere a driver may read and write."""
     resolved = path.resolve().as_posix()
     permitted_folders = (
         Path("/var/qpi-driver").resolve().as_posix(),
@@ -24,9 +42,9 @@ def validate_safe_path(path: Path, name: str) -> None:
 
     for folder in permitted_folders:
         if resolved.startswith(folder):
-            return
+            return True
     for folder in permitted_parent_dirs:
         if resolved != folder and resolved.startswith(folder):
-            return
+            return True
 
-    raise ValueError(f"path for {name} ({path}) is not in a safe location")
+    return False

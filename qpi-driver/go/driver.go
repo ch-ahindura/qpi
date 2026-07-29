@@ -35,15 +35,14 @@ const DefaultRecvTimeout = 200 * time.Millisecond
 const defaultCAFilePath = "./bin/qpi.ca.pem"
 
 // Config holds the connection settings a driver needs to reach QPI-UI. The
-// zero value is not usable; at minimum QpiAddr, Token, and Name are required.
+// zero value is not usable; at minimum QpiAddr and Token are required.
 type Config struct {
 	// QpiAddr is the full URL of the QPI-UI server, e.g. "https://qpi.example.com".
 	QpiAddr string
 	// Token is the driver's access token; it identifies the driver (and its
-	// QPU) to QPI-UI.
+	// QPU) to QPI-UI. There is no name field: a driver's display label belongs to
+	// the admin who typed it into the dashboard, and the handshake returns it.
 	Token string
-	// Name is a human-readable name for this driver.
-	Name string
 	// CaFingerprint is the expected SHA-256 (hex) of the server root CA,
 	// pinned over TLS. When empty, the fingerprint check is skipped.
 	CaFingerprint string
@@ -79,6 +78,7 @@ type Driver interface {
 // driver directly.
 type Base struct {
 	cfg      Config
+	name     string
 	handler  Handler
 	out      mangos.Socket
 	emitMu   sync.Mutex
@@ -95,9 +95,10 @@ type periodicTask struct {
 
 func (b *Base) base() *Base { return b }
 
-// DriverName is the human-readable name this driver connected under, used to
-// tag emitted events. It is set once [Run] has been called.
-func (b *Base) DriverName() string { return b.cfg.Name }
+// DriverName is the display label QPI-UI has this driver registered under, used
+// to tag emitted events. It comes from the drivers/connect response, so it is
+// empty until [Run] has connected.
+func (b *Base) DriverName() string { return b.name }
 
 // Emit sends an event upward to QPI-UI over the outbound NNG channel. Delivery
 // is best-effort: if nothing is listening the event is dropped rather than
@@ -144,6 +145,8 @@ func Run(d Driver, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	// The server owns the label, so the driver only knows it from here on.
+	b.name = conn.name
 
 	tlsConfig, err := buildTLSConfig(conn)
 	if err != nil {
@@ -285,6 +288,7 @@ func (b *Base) shutdown() {
 
 // connection holds the transport coordinates resolved during the handshake.
 type connection struct {
+	name    string
 	host    string
 	inPort  int
 	outPort int
@@ -293,10 +297,10 @@ type connection struct {
 
 type connectRequest struct {
 	Token string `json:"token"`
-	Name  string `json:"name"`
 }
 
 type connectResponse struct {
+	Name       string `json:"name"`
 	NNGHost    string `json:"nng_host"`
 	NNGInPort  int    `json:"nng_in_port"`
 	NNGOutPort int    `json:"nng_out_port"`
@@ -308,7 +312,7 @@ type connectResponse struct {
 // only which events it handles and emits (RFC 0001 §3, §8).
 func connect(cfg Config) (*connection, error) {
 	addr := normalizeQpiAddr(cfg.QpiAddr)
-	body, err := json.Marshal(connectRequest{Token: cfg.Token, Name: cfg.Name})
+	body, err := json.Marshal(connectRequest{Token: cfg.Token})
 	if err != nil {
 		return nil, fmt.Errorf("qpidriver: encoding connect request: %w", err)
 	}
@@ -339,6 +343,7 @@ func connect(cfg Config) (*connection, error) {
 	}
 
 	return &connection{
+		name:    data.Name,
 		host:    data.NNGHost,
 		inPort:  data.NNGInPort,
 		outPort: data.NNGOutPort,

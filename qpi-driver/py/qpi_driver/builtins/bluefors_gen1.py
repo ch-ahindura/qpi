@@ -16,24 +16,41 @@ names, depend on how a given system's mappers are configured, so they are
 supplied as configuration rather than hard-coded.
 
 Ships as an officially maintained driver — install with
-``qpi-driver[cli,bluefors_gen1]`` and run with ``qpi-driver monitor --device
-bluefors_gen1`` (see ``qpi_driver.cli``), the same tier as the qblox/quantify
-executors.
+``qpi-driver[cli,bluefors_gen1]`` and run with ``qpi-driver start --operation
+monitor --device bluefors_gen1`` (see ``qpi_driver.cli``), the same tier as the
+qblox/quantify executors.
 """
 
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import requests
 
 from qpi_driver.builtins.qpu import _normalize_qpi_addr
+from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.events import Event, EventType
+from qpi_driver.options import Options
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 
 log = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL = 5.0
 DEFAULT_TIMEOUT = 5.0
+
+# Reads one channel of a cryostat's value tree, given its path and display unit, and
+# returns ``{"value": float | None, "unit": str, "status": str}``.
+#
+# This is the part of a cryostat monitor that is specific to one control API, and the
+# only part: the timer, one bad channel not losing the rest of the tick, and the
+# CryostatReading event are the same whatever is being read. Passing a different
+# reader to `BlueforsGen1Driver` is therefore the whole of what a monitor for
+# different control software has to write — the same way every `process` device is the
+# one QPU driver over a different `Executor`.
+#
+# A reader must not raise: a channel it cannot read is a ``None`` value with an
+# ``"ERROR"`` status, which is how the driver knows to carry on with the others.
+ChannelReader = Callable[[str, str], dict[str, Any]]
 
 
 class BlueforsGen1Driver(QpiDriver):
@@ -49,15 +66,16 @@ class BlueforsGen1Driver(QpiDriver):
             parameter (Bluefors reference §3.5.1).
         poll_interval: Seconds between polls.
         timeout: HTTP timeout per channel read, in seconds.
+        read_channel: What reads one channel; see :data:`ChannelReader`. Defaults to
+            the Gen. 1 Control API read, which is what ``bluefors_base_url``,
+            ``api_key`` and ``timeout`` configure. A monitor for other control
+            software supplies its own and leaves those alone.
     """
-
-    OPERATION = "monitor"
 
     def __init__(
         self,
         qpi_addr: str = "http://127.0.0.1:8090",
         token: str = "",
-        name: str = "bluefors-gen1-monitor",
         bluefors_base_url: str = "http://127.0.0.1:49099",
         channels: dict[str, str] | list[str] | None = None,
         api_key: str = "",
@@ -66,11 +84,11 @@ class BlueforsGen1Driver(QpiDriver):
         ca_fingerprint: str = "",
         ca_file_path: str = "./bin/qpi.ca.pem",
         recv_timeout_ms: int = DEFAULT_RECV_TIMEOUT_MS,
+        read_channel: ChannelReader | None = None,
     ) -> None:
         super().__init__(
             qpi_addr=_normalize_qpi_addr(qpi_addr),
             token=token,
-            name=name,
             ca_fingerprint=ca_fingerprint,
             ca_file_path=ca_file_path,
             recv_timeout_ms=recv_timeout_ms,
@@ -80,6 +98,7 @@ class BlueforsGen1Driver(QpiDriver):
         self.api_key = api_key
         self.poll_interval = poll_interval
         self.timeout = timeout
+        self.read_channel: ChannelReader = read_channel or self._read_gen1_channel
 
         self.every(self.poll_interval, self._poll)
 
@@ -105,7 +124,7 @@ class BlueforsGen1Driver(QpiDriver):
         """
         readings: dict[str, dict[str, Any]] = {}
         for channel, unit in self.channels.items():
-            readings[channel] = self._read_channel(channel, unit)
+            readings[channel] = self.read_channel(channel, unit)
 
         if not any(r["status"] != "ERROR" for r in readings.values()):
             log.warning(
@@ -121,13 +140,15 @@ class BlueforsGen1Driver(QpiDriver):
             )
         )
 
-    def _read_channel(self, channel: str, unit: str) -> dict[str, Any]:
-        """Read a single value-tree channel from the Bluefors Control API.
+    def _read_gen1_channel(self, channel: str, unit: str) -> dict[str, Any]:
+        """Read a single value-tree channel from the Bluefors Gen. 1 Control API.
 
         Mirrors the "values" endpoint example in the Bluefors reference: GET
         the endpoint path (channel with dots replaced by slashes) and read
         ``data.content.latest_valid_value``, falling back to
         ``latest_value`` if there is no recent valid sample.
+
+        The default :data:`ChannelReader`, and the only Gen. 1-specific code here.
         """
         url = f"{self.bluefors_base_url}/values/{channel.replace('.', '/')}"
         params = {"key": self.api_key} if self.api_key else {}
@@ -177,61 +198,36 @@ def build_from_options(
     *,
     qpi_addr: str,
     token: str,
-    name: str,
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
-    options: dict[str, str],
+    options: Options,
 ) -> BlueforsGen1Driver:
-    """Build a driver from the CLI's generic ``-o key=value`` options.
+    """Build an unstarted driver from its ``-o`` options.
 
-    Recognised keys: ``channels`` (required, ``path[:unit],...``), ``base_url``,
-    ``api_key``, ``poll_interval``, ``timeout``. Raising ``ValueError`` lets the
-    CLI report a bad option uniformly, without knowing anything Bluefors-specific.
+    The options this monitor reads are the ones read here. Only ``channels`` is
+    unknowable in advance — which channels a system exposes depends on how its
+    mappers are configured (see the module docstring) — so it is the one with no
+    default and the one whose absence is an error.
     """
-    channels = options.get("channels", "")
-    if not channels:
-        raise ValueError(
-            "bluefors_gen1 needs a 'channels' option, e.g. "
-            "-o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar"
-        )
     return BlueforsGen1Driver(
         qpi_addr=qpi_addr,
         token=token,
-        name=name,
-        bluefors_base_url=options.get("base_url", "http://127.0.0.1:49099"),
-        channels=parse_channels(channels),
-        api_key=options.get("api_key", ""),
-        poll_interval=float(options.get("poll_interval", DEFAULT_POLL_INTERVAL)),
-        timeout=float(options.get("timeout", DEFAULT_TIMEOUT)),
+        bluefors_base_url=options.get_str("base_url", "http://127.0.0.1:49099"),
+        channels=parse_channels(
+            options.require("channels", "mapper.bf.tmc:K,mapper.bf.pmc:mbar")
+        ),
+        api_key=options.get_str("api_key"),
+        poll_interval=options.get_float("poll_interval", DEFAULT_POLL_INTERVAL),
+        timeout=options.get_float("timeout", DEFAULT_TIMEOUT),
         ca_fingerprint=ca_fingerprint,
         ca_file_path=ca_file_path,
         recv_timeout_ms=recv_timeout_ms,
     )
 
 
-def run_monitor(
-    *,
-    device: str,
-    options: dict[str, str],
-    qpi_addr: str,
-    token: str,
-    name: str,
-    ca_fingerprint: str,
-    ca_file_path: str,
-    recv_timeout_ms: int,
-) -> None:
-    """Run the Bluefors Gen. 1 monitor, config from -o options.
-
-    The uniform runner the `monitor` operation registry dispatches to; *device*
-    is always ``bluefors_gen1`` here. See :func:`build_from_options` for the keys.
-    """
-    build_from_options(
-        qpi_addr=qpi_addr,
-        token=token,
-        name=name,
-        ca_fingerprint=ca_fingerprint,
-        ca_file_path=ca_file_path,
-        recv_timeout_ms=recv_timeout_ms,
-        options=options,
-    ).run()
+DEVICE_SPEC = DeviceSpec(
+    name="bluefors_gen1",
+    operation=Operation.MONITOR,
+    build=build_from_options,
+)

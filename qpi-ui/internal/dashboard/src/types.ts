@@ -100,6 +100,25 @@ export type DriverKind =
 
 export type DriverLanguage = "python" | "typescript" | "go";
 
+/**
+ * Which SDKs ship each official device, mirroring `drivers.Spec.Languages` on the
+ * server (`qpi-ui/internal/drivers/catalog.go`).
+ *
+ * Only the Python SDK has a `process` device, so a Go or TypeScript driver can only
+ * be `bluefors_gen1` — or `custom`, which is code the operator writes against the
+ * SDK and so exists in every language. `POST /api/op/drivers/create` rejects any
+ * other pairing; this is what keeps the form from offering it in the first place.
+ */
+export const DEVICE_LANGUAGES: Record<DriverKind, DriverLanguage[]> = {
+  mock: ["python"],
+  qiskit_aer: ["python"],
+  quantify: ["python"],
+  qblox: ["python"],
+  presto: ["python"],
+  bluefors_gen1: ["python", "typescript", "go"],
+  custom: ["python", "typescript", "go"],
+};
+
 export interface Driver {
   id: string;
   name: string;

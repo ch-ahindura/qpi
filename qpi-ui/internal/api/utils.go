@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"qpi/internal/config"
 	"qpi/internal/db"
+	"qpi/internal/drivers"
 	"strconv"
 	"strings"
 	"time"
@@ -161,6 +162,19 @@ func saveToDb[T db.DbModel](app core.App, item T) error {
 	}
 
 	return nil
+}
+
+// joinKinds renders driver kinds for an error message an operator reads, so an
+// SDK with no built-in devices says so rather than trailing off after "it ships".
+func joinKinds(kinds []drivers.Kind) string {
+	if len(kinds) == 0 {
+		return "no built-in devices"
+	}
+	names := make([]string, len(kinds))
+	for i, kind := range kinds {
+		names[i] = strconv.Quote(string(kind))
+	}
+	return strings.Join(names, ", ")
 }
 
 // getAddrFromReq extracts the scheme and host from a request to build the full QPI address

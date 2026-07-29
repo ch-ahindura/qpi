@@ -26,17 +26,44 @@ QPI is a distributed quantum control stack architecture designed to manage, sche
 
 It consists of three main components:
 1. **Server (`qpi-ui`)**: A Go-based server that manages the job queue, user time-slot bookings, and dispatches jobs to available QPUs. It includes a built-in React web dashboard.
-2. **QPU Driver (`qpi-driver`)**: A Python daemon that runs alongside the actual quantum hardware (or simulator), executing incoming jobs from the Server and returning results.
+2. **Drivers (`qpi-driver`)**: A framework, with SDKs in Python, Go and TypeScript, for the daemons that run alongside lab equipment and exchange typed events with the server. A QPU is one kind of driver; a cryostat monitor is another.
 3. **Clients**: SDKs (Python, Go, JS) for end-users to submit OpenQASM (or Qiskit) quantum jobs over the network.
 
 ```mermaid
 flowchart LR
     User[Clients] -->|Submit Quantum Jobs| Server
-    Server -->|Dispatch Jobs| Driver1[QPI Driver]
-    Server -->|Dispatch Jobs| Driver2[QPI Driver]
+    Server -->|Dispatch Jobs| Driver1[Driver: process]
+    Server -->|Dispatch Jobs| Driver2[Driver: process]
+    Driver3[Driver: monitor] -->|Report readings| Server
     Driver1 -->|Control| Hardware1[Physical QPU]
     Driver2 -->|Control| Hardware2[Simulated QPU]
+    Driver3 -->|Poll| Hardware3[Cryostat]
 ```
+
+### Operations and devices
+
+A driver is described by two things, and the difference between them is the whole
+extensibility story (see [RFC 0003](https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md)):
+
+- An **operation** is what the driver *does*, and it is a contract with the server:
+  `process` runs jobs pushed to it and reports results; `monitor` reports readings
+  upward on its own schedule. The server must have a handler for each, so the set is
+  closed — a new operation is a coordinated change across the server and the SDKs.
+- A **device** is the *backend* implementing an operation — an executor for
+  `process` (`mock`, `qiskit_aer`, `quantify`, `qblox`), a piece of lab hardware for
+  `monitor` (`bluefors_gen1`). The set is open: anyone can add one without touching
+  the SDK, and `--device` then runs it exactly like a built-in.
+
+So every driver is launched the same way — one verb, one operation, one device:
+
+```bash
+qpi-driver start --operation process --device qblox   …   # a QPU
+qpi-driver start --operation monitor --device bluefors_gen1   …   # a cryostat
+```
+
+There is deliberately no separate "custom driver" mechanism. Because an operation is
+already a contract the server implements, a custom driver is always a custom
+*device* of an existing operation, and one concept covers it.
 
 ## Installation & Quick Start
 
@@ -49,12 +76,12 @@ The server is available as a single executable binary, as well as native OS pack
 #### Standalone Binary (macOS & Linux)
 Download the binary for your platform, make it executable, and run:
 ```bash
-# macOS (replace 0.1.2 with the version you wish to install)
-curl -LO https://github.com/sopherapps/qpi/releases/download/v0.1.2/qpi-0.1.2-darwin-amd64
-chmod +x qpi-0.1.2-darwin-amd64 && mv qpi-0.1.2-darwin-amd64 qpi
+# macOS (replace 0.2.0 with the version you wish to install)
+curl -LO https://github.com/sopherapps/qpi/releases/download/v0.2.0/qpi-0.2.0-darwin-amd64
+chmod +x qpi-0.2.0-darwin-amd64 && mv qpi-0.2.0-darwin-amd64 qpi
 
 # Linux (standalone binary)
-curl -L https://github.com/sopherapps/qpi/releases/download/v0.1.2/qpi-0.1.2-linux-amd64.tar.gz | tar -xz
+curl -L https://github.com/sopherapps/qpi/releases/download/v0.2.0/qpi-0.2.0-linux-amd64.tar.gz | tar -xz
 
 # Start the server
 ./qpi serve
@@ -63,8 +90,8 @@ curl -L https://github.com/sopherapps/qpi/releases/download/v0.1.2/qpi-0.1.2-lin
 #### Native Linux Packages (Ubuntu, Debian, Fedora, Alpine)
 For Debian/Ubuntu, download and install the `.deb` package:
 ```bash
-wget https://github.com/sopherapps/qpi/releases/download/v0.1.2/qpi_0.1.2_amd64.deb
-sudo apt install ./qpi_0.1.2_amd64.deb
+wget https://github.com/sopherapps/qpi/releases/download/v0.2.0/qpi_0.2.0_amd64.deb
+sudo apt install ./qpi_0.2.0_amd64.deb
 ```
 *(Note: Installing the package automatically registers and starts `qpi.service` under systemd (or OpenRC on Alpine) to run the server in the background on port `8090`)*
 
@@ -92,7 +119,7 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/i
   QPI_TOKEN="<your-qpu-token>" \
   QPI_ADDR="http://127.0.0.1:8090" \
   CA_FINGERPRINT="<fingerprint>" \
-  QPU_NAME="qpu-1" \
+  SERVICE_NAME="qpu-1" \
   OPERATION="process" \
   DEVICE="mock" \
   bash
@@ -105,11 +132,10 @@ Ensure Python 3.12 is installed, then install using `pip` or `uv`:
 uv tool install "qpi-driver[cli]"
 
 # Start the driver daemon
-qpi-driver process \
+qpi-driver start --operation process \
   --qpi-addr http://127.0.0.1:8090 \
   --token "<YOUR_ACCESS_TOKEN>" \
   --ca-fingerprint "<YOUR_CA_FINGERPRINT>" \
-  --name "qpu-1" \
   --device "mock"
 ```
 
@@ -135,7 +161,7 @@ print(job)
 The architecture consists of four primary components under the hood:
 1. **PocketBase Go Server (`qpi-ui/main.go`):** Extends PocketBase with Go, handling job queues, session-based bookings, and real-time job dispatching. Actively listens for LAN connections on dynamically allocated network ports.
 2. **React SPA Dashboard (`qpi-ui/internal/dashboard`):** Single-page application built with Vite, React 19, TypeScript, and Tailwind CSS. It is served directly from the server (via `//go:embed`) at `/` for viewing jobs, allocating QPU time, scheduling announcements, managing bookings, and observing calibration telemetry.
-3. **Python QPU Driver (`qpi-driver`):** Runs on isolated hardware nodes controlling the QPU. Uses Python's `multiprocessing` library to isolate network handling, quantum circuit compilation/simulation, and translation into separate processes.
+3. **Drivers (`qpi-driver`):** Run on isolated hardware nodes. A `process` driver (a QPU) isolates job execution in a worker subprocess, so a heavy or crashing executor never blocks its receive loop; a `monitor` driver just polls its hardware on a timer. Both exchange the same typed events with the server.
 4. **QPI Clients (Python, JavaScript, Go):** SDKs for submitting jobs to the quantum computer using OpenQASM specification (and Qiskit circuits if one uses the Python client)
 
 To optimize performance and simplify communication over multiprocessing queues, the worker process executes the quantum job, processes the resulting `xarray` dataset into a Qiskit-compatible result dictionary using the executor's `process_result()` method, and directly sends the results via the queue to the result sender process. This removes file-system serialization overhead.
@@ -149,10 +175,10 @@ graph TD
         Recovery[Recovery Engine]
     end
 
-    subgraph python_driver [Python QPU Driver Package]
+    subgraph python_driver [Driver: process operation]
         MainProc[Main Process: NNG PULL]
         Worker[Worker Process: Executor]
-        ResultSender[Result Sender Process: NNG PUSH]
+        ResultSender[Result-pump thread: NNG PUSH]
     end
 
     %% Client Interactions
@@ -287,20 +313,20 @@ A QPU is a `process` driver; pick the backend with the `--device` / `-d` option.
 Runs simulated measurements without external physics dependencies.
 ```bash
 # Install the package with cli extra
-pip install ./qpi-driver[cli]
+pip install "./qpi-driver/py[cli]"
 
 # Start the driver using the mock device
-qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "mock"
+qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "mock"
 ```
 
 #### 2. Qiskit Aer Simulator
 Runs realistic circuit simulations using Qiskit Aer.
 ```bash
 # Install the package with simulator extras
-pip install ./qpi-driver[cli,aer]
+pip install "./qpi-driver/py[cli,aer]"
 
 # Start the driver using the qiskit_aer device
-qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qiskit_aer"
+qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qiskit_aer"
 ```
 
 #### 3. Quantify Executor (Qblox Cluster)
@@ -308,15 +334,15 @@ Compiles and runs circuits using `quantify-scheduler`.
 * **Dummy/Simulation Mode**: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
   ```bash
   # Install the package with quantify extra
-  pip install ./qpi-driver[cli,quantify]
+  pip install "./qpi-driver/py[cli,quantify]"
 
   # Start driver in dummy mode
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o is_dummy=true -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 
 #### 4. Qblox Executor (Qblox Cluster)
@@ -324,32 +350,38 @@ Compiles and runs circuits using `qblox-scheduler`.
 * **Dummy/Simulation Mode**: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
   ```bash
   # Install the package with qblox extra
-  pip install ./qpi-driver[cli,qblox]
+  pip install "./qpi-driver/py[cli,qblox]"
 
   # Start driver in dummy mode
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o is_dummy=true -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 * **Real Hardware Mode**: Compiles and deploys to actual physical Qblox hardware.
   ```bash
   # Start driver with a hardware config file
-  qpi-driver process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=quantify.hardware.example.json -o quantify_device_config=quantify.device.example.json
+  qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 
 ### CLI Usage
-The package exposes a command-line interface via `typer`. A driver is run by its operation subcommand — `process` (a QPU) or `monitor` (e.g. a cryostat) — on a specific `--device`. Options can be passed as flags or fall back to their environment variables.
+The package exposes a command-line interface via `typer`. A driver is run with one verb, `start`: `--operation` says what it does — `process` (a QPU) or `monitor` (e.g. a cryostat) — and `--device` which backend within it. Options can be passed as flags or fall back to their environment variables.
 
 Universal options (shared by every operation):
 * `-a`, `--qpi-addr`: Full URL of the QPI server (env: `QPI_ADDR`, default: `http://127.0.0.1:8090`).
 * `-t`, `--token`: Access token identifying the driver (env: `QPI_ACCESS_TOKEN`, required).
-* `-n`, `--name`: Human-readable name for this driver (env: `QPI_DRIVER_NAME`).
 * `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1` (env: `QPI_DEVICE`).
 * `--ca-file`: Path to the downloaded root CA certificate of the server (env: `QPI_CA_FILE`, default: `./bin/qpi.ca.pem`).
 * `--ca-fingerprint`: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: `QPI_CA_FINGERPRINT`, required).
-* `-o`, `--option`: Operation-specific config as `key=value`, repeatable.
+* `-o`, `--option`: A setting of the chosen device as `key=value`, repeatable.
 
-`process` options (`-o`): `data_dir` (default `./bin/data`), `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`, `use_sdk` (run on the experimental driver framework).
+`process` options (`-o`): `data_dir` (default `./bin/data`), `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`.
 
 `monitor` options (`-o`) for `bluefors_gen1`: `channels` (required, `path[:unit],…`), `base_url`, `api_key`, `poll_interval`, `timeout`.
+
+The dashboard is where these are documented and filled in — registering a driver
+generates the command that launches it, with its options in place — and it is the only
+place they are described: a device in an SDK is a name and a builder, so there is no
+second list to fall out of step ([RFC 0003 §9](https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md)).
+`qpi-driver devices` on the node says which devices that build can run. An `-o` key no
+device reads is an error rather than a setting silently ignored.
 
 ---
 
@@ -370,6 +402,10 @@ make test-py
 # Run dashboard Cypress E2E tests (PocketBase + Driver + Cypress)
 make test-e2e-dashboard
 
+# Check the documentation against the code: the make targets and paths it names,
+# its Python/Go/TypeScript snippets, the custom-device example, and the site
+make test-docs
+
 # Run linters across Go, Python driver, JS client, and dashboard codebases
 make lint
 
@@ -379,8 +415,6 @@ make format
 # Clean database, build artifacts, cache files
 make clean
 ```
-
-## TODOs
 
 ## License
 

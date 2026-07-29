@@ -60,6 +60,12 @@ type Snippets struct {
 //     command and a stub to extend, in the chosen language (RFC 0001 §5).
 //   - An official driver is run, not written, so it gets the prefilled
 //     systemd + manual-CLI commands.
+//
+// A kind the chosen language's SDK does not ship gets the install command alone.
+// Rendering `--device mock` for a Go binary that has no such device produces a
+// command that exits 1 the first time it is pasted, and nothing about it says why;
+// handleDriverCreate rejects the combination before it gets this far, and this is
+// the belt to that braces.
 func (r *Registry) Snippets(kind Kind, language Language, p Params) Snippets {
 	if kind == Custom {
 		return Snippets{
@@ -67,7 +73,7 @@ func (r *Registry) Snippets(kind Kind, language Language, p Params) Snippets {
 			Stub:    stub(language),
 		}
 	}
-	if spec, ok := r.Lookup(kind); ok {
+	if spec, ok := r.Lookup(kind); ok && spec.ShipsIn(language) {
 		return officialSnippets(spec, p, language)
 	}
 	return Snippets{Install: installCommand(language)}
@@ -85,7 +91,6 @@ func officialSnippets(spec Spec, p Params, l Language) Snippets {
 		Device:        string(spec.Kind),
 		Operation:     string(spec.Operation),
 		Extra:         shellQuote(spec.extra()),
-		Subcommand:    spec.subcommand(),
 		OptionsEnv:    optionsEnv(spec.Options),
 		Options:       cliOptions(spec.Options),
 	}
@@ -103,31 +108,38 @@ func (s Spec) extra() string {
 	return baseCliExtra
 }
 
-// subcommand is the `qpi-driver` invocation that launches this backend, with
-// the device already bound, e.g. "process --device qblox" or
-// "monitor --device bluefors_gen1".
-func (s Spec) subcommand() string {
-	return fmt.Sprintf("%s %s %s", s.Operation, deviceFlag, s.Kind)
+// snippetOptions are the options a rendered command should pre-fill: the ones the
+// driver cannot default for the operator. The rest are catalog-only — see
+// [Option.InSnippet].
+func snippetOptions(opts []Option) []Option {
+	shown := make([]Option, 0, len(opts))
+	for _, opt := range opts {
+		if opt.InSnippet {
+			shown = append(shown, opt)
+		}
+	}
+	return shown
 }
 
-// cliOptions renders an operation's per-kind config as trailing `-o key=value`
-// CLI flags, or "" when there are none.
+// cliOptions renders a kind's config as trailing `-o key=value` CLI flags, or ""
+// when none of them belong in a snippet.
 func cliOptions(opts []Option) string {
 	var b strings.Builder
-	for _, opt := range opts {
+	for _, opt := range snippetOptions(opts) {
 		fmt.Fprintf(&b, " %s %s=%s", optionFlag, opt.Key, opt.Example)
 	}
 	return b.String()
 }
 
-// optionsEnv renders an operation's per-kind config as the DRIVER_OPTIONS
-// environment variable install-systemd.sh reads, or "" when there are none.
+// optionsEnv renders a kind's config as the DRIVER_OPTIONS environment variable
+// install-systemd.sh reads, or "" when none of them belong in a snippet.
 func optionsEnv(opts []Option) string {
-	if len(opts) == 0 {
+	shown := snippetOptions(opts)
+	if len(shown) == 0 {
 		return ""
 	}
-	pairs := make([]string, len(opts))
-	for i, opt := range opts {
+	pairs := make([]string, len(shown))
+	for i, opt := range shown {
 		pairs[i] = opt.Key + "=" + opt.Example
 	}
 	return fmt.Sprintf(" DRIVER_OPTIONS='%s'", strings.Join(pairs, ";"))

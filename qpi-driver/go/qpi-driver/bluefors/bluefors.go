@@ -34,8 +34,6 @@ const (
 	DefaultPollInterval = 5 * time.Second
 	// DefaultTimeout is the per-channel HTTP read timeout.
 	DefaultTimeout = 5 * time.Second
-	// DefaultName is the driver name used when none is supplied.
-	DefaultName = "bluefors-gen1-monitor"
 )
 
 // Options configures the Bluefors monitor. Channels maps a value-tree channel
@@ -53,6 +51,17 @@ type Options struct {
 	PollInterval time.Duration
 	// Timeout is the per-channel HTTP timeout. Defaults to DefaultTimeout.
 	Timeout time.Duration
+	// ReadChannel, when set, replaces how one channel is read.
+	//
+	// Go has no inheritance, so this is the seam a monitor for different control
+	// software reuses this driver through — Bluefors Gen. 2, say, which has its own
+	// API. Everything around the read stays: the timer, one bad channel not losing
+	// the rest of the tick, and the CryostatReading event. Only the call to the
+	// instrument changes. Nil means the built-in Gen. 1 read.
+	//
+	// It must not panic: a channel it cannot read is a nil Value with an "ERROR"
+	// Status, which is how the caller knows to keep going.
+	ReadChannel func(channel, unit string) Reading
 }
 
 // Driver polls Bluefors Gen. 1 Control API channels and emits readings on a
@@ -65,10 +74,11 @@ type Driver struct {
 	pollInterval time.Duration
 	timeout      time.Duration
 	client       *http.Client
+	read         func(channel, unit string) Reading
 }
 
-// reading is one channel's latest value in the emitted payload.
-type reading struct {
+// Reading is one channel's latest value in the emitted payload.
+type Reading struct {
 	Value  *float64 `json:"value"`
 	Unit   string   `json:"unit"`
 	Status string   `json:"status"`
@@ -100,6 +110,10 @@ func New(opts Options) *Driver {
 		timeout:      opts.Timeout,
 		client:       &http.Client{Timeout: opts.Timeout},
 	}
+	d.read = opts.ReadChannel
+	if d.read == nil {
+		d.read = d.readChannel
+	}
 	d.Every(d.pollInterval, d.poll)
 	return d
 }
@@ -116,10 +130,10 @@ func (d *Driver) HandleEvent(event qpidriver.Event) {
 // than aborting the tick, so one bad channel does not lose the rest. If every
 // channel fails, nothing is emitted this tick.
 func (d *Driver) poll() {
-	readings := make(map[string]reading, len(d.channels))
+	readings := make(map[string]Reading, len(d.channels))
 	anyOK := false
 	for channel, unit := range d.channels {
-		r := d.readChannel(channel, unit)
+		r := d.read(channel, unit)
 		readings[channel] = r
 		if r.Status != "ERROR" {
 			anyOK = true
@@ -156,7 +170,9 @@ type bfSample struct {
 // mirroring the "values" endpoint example in the reference: GET the endpoint
 // path (channel with dots replaced by slashes) and read
 // content.latest_valid_value, falling back to latest_value.
-func (d *Driver) readChannel(channel, unit string) reading {
+//
+// This is what Options.ReadChannel replaces.
+func (d *Driver) readChannel(channel, unit string) Reading {
 	endpoint := fmt.Sprintf("%s/values/%s", d.baseURL, strings.ReplaceAll(channel, ".", "/"))
 	if d.apiKey != "" {
 		endpoint += "?" + url.Values{"key": {d.apiKey}}.Encode()
@@ -165,9 +181,9 @@ func (d *Driver) readChannel(channel, unit string) reading {
 	value, status, err := d.fetchSample(endpoint)
 	if err != nil {
 		log.Printf("[bluefors] failed to read channel %s: %v", channel, err)
-		return reading{Value: nil, Unit: unit, Status: "ERROR"}
+		return Reading{Value: nil, Unit: unit, Status: "ERROR"}
 	}
-	return reading{Value: value, Unit: unit, Status: status}
+	return Reading{Value: value, Unit: unit, Status: status}
 }
 
 func (d *Driver) fetchSample(endpoint string) (*float64, string, error) {

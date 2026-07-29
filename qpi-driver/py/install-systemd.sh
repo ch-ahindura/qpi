@@ -27,33 +27,65 @@ fi
 echo "Installing for user: $REAL_USER (Home: $REAL_HOME)"
 echo ""
 
-# 1. Prompt for configuration if not provided via environment
-while [ -z "$QPI_TOKEN" ]; do read -p "Enter QPI Access Token: " QPI_TOKEN; done
-while [ -z "$QPI_ADDR" ]; do read -p "Enter QPI Server Address (e.g. https://qpi.sopherapps.se): " QPI_ADDR; done
-while [ -z "$CA_FINGERPRINT" ]; do read -p "Enter CA Fingerprint: " CA_FINGERPRINT; done
-while [ -z "$QPU_NAME" ]; do read -p "Enter QPU Name (e.g. rigetti-aspen-1): " QPU_NAME; done
+# 1. Configuration comes from the environment; a prompt fills in the rest.
+#
+# Prompting needs a terminal on stdin, and one of the two documented invocations
+# has none: `curl … | sudo bash` puts the script itself on stdin, so a `read` there
+# reaches EOF at once and returns non-zero — which under `set -e` ends the install
+# with nothing printed and no service written. So nothing is prompted for unless
+# there is a terminal to answer it. Piped, a value with a default takes its
+# default, and one without names the variable to set instead of exiting silently.
+#
+# The interactive form, `sudo bash -c "$(curl …)"`, keeps the terminal on stdin,
+# because the script arrives as an argument rather than on the pipe.
+require() { # require VAR PROMPT — for a value the installer cannot invent
+    local name="$1" prompt="$2"
+    while [ -z "${!name}" ]; do
+        if [ ! -t 0 ]; then
+            echo "Error: $name is not set, and there is no terminal to ask on." >&2
+            echo "Set it in the environment ($name=…), or install interactively:" >&2
+            echo "  sudo bash -c \"\$(curl -LsSf <installer-url>)\"" >&2
+            exit 1
+        fi
+        read -rp "$prompt" "$name"
+    done
+}
 
-# A driver is run by its OPERATION (the CLI subcommand: process | monitor) on a
+ask() { # ask VAR PROMPT — for a value whose default the caller applies below
+    local name="$1" prompt="$2"
+    if [ -z "${!name}" ] && [ -t 0 ]; then
+        read -rp "$prompt" "$name"
+    fi
+}
+
+require QPI_TOKEN "Enter QPI Access Token: "
+require QPI_ADDR "Enter QPI Server Address (e.g. https://qpi.sopherapps.se): "
+require CA_FINGERPRINT "Enter CA Fingerprint: "
+# Names the unit file, its journal identifier and its data directory — not the
+# driver. A driver's display label is the one an admin typed into the dashboard,
+# and the drivers/connect response hands it over.
+require SERVICE_NAME "Enter a name for this service (e.g. cryostat-1): "
+
+# A driver is run by its OPERATION (the --operation flag: process | monitor) on a
 # specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
 # presto); a monitor reports upward (bluefors_gen1). Both are launched the same
-# way: `qpi-driver <operation> --device <device> … -o key=value`.
-[ -z "$OPERATION" ] && read -p "Enter Operation (process, monitor) [process]: " OPERATION
+# way: `qpi-driver start --operation <operation> --device <device> … -o key=value`.
+ask OPERATION "Enter Operation (process, monitor) [process]: "
 OPERATION=${OPERATION:-process}
-[ -z "$DEVICE" ] && read -p "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: " DEVICE
+ask DEVICE "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: "
 DEVICE=${DEVICE:-mock}
 
-# FIXME: this may not only be for monitor operations
-# A monitor's config (e.g. bluefors_gen1's base_url/channels) is passed as
-# generic DRIVER_OPTIONS ("key=value;key=value"). A process auto-fills its own
-# runtime options (data dir, quantify configs) below, so it is not prompted.
-if [ "$OPERATION" = "monitor" ]; then
-    [ -z "$DRIVER_OPTIONS" ] && read -p "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K): " DRIVER_OPTIONS
-fi
+# A driver's device settings (e.g. bluefors_gen1's base_url/channels, or a process
+# device's job_timeout) are passed as generic DRIVER_OPTIONS ("key=value;key=value"),
+# rendered as -o flags below. This applies to any operation — a process device reads
+# -o keys too, and only the ones this installer manages itself (the data dir and the
+# quantify configs) are filled in for it. Leave blank for a device that needs none.
+ask DRIVER_OPTIONS "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K), or leave blank: "
 
 # The version of qpi-driver to install.
 # This should match the qpi-ui version if provided via environment variable.
 QPI_DRIVER_VERSION="${QPI_DRIVER_VERSION:-}"
-QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${QPU_NAME}"}"
+QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${SERVICE_NAME}"}"
 QPI_CA_FILE="${QPI_CA_FILE:-"${QPI_DATA_DIR}/qpi.ca.pem"}"
 QPI_QUANTIFY_DEVICE_CONFIG="${QPI_QUANTIFY_DEVICE_CONFIG:-"${QPI_DATA_DIR}/quantify.device.yml"}"
 QPI_QUANTIFY_HARDWARE_CONFIG="${QPI_QUANTIFY_HARDWARE_CONFIG:-"${QPI_DATA_DIR}/quantify.hardware.json"}"
@@ -95,7 +127,7 @@ fi
 
 
 # 4. Create systemd unit file
-SERVICE_FILE="/etc/systemd/system/${QPU_NAME}.qpi-driver.service"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.qpi-driver.service"
 echo "Creating systemd service at $SERVICE_FILE..."
 
 # Every operation is launched the same way: `qpi-driver <operation> --device
@@ -104,7 +136,12 @@ echo "Creating systemd service at $SERVICE_FILE..."
 # DRIVER_OPTIONS (how a monitor gets its base_url/channels) are appended after.
 OPT_ARGS=""
 add_opt() {
-    [ -n "$1" ] && OPT_ARGS="$OPT_ARGS \\
+    # `return 0` rather than `[ -n "$1" ] && …`, whose false test would make the
+    # function itself return non-zero and take `set -e` with it: a DRIVER_OPTIONS
+    # of ";base_url=…" splits into an empty first field, and a stray semicolon
+    # should not end the install without a word.
+    [ -n "$1" ] || return 0
+    OPT_ARGS="$OPT_ARGS \\
         -o $1"
 }
 
@@ -121,15 +158,15 @@ for _opt in "${_DRIVER_OPTS[@]}"; do
     add_opt "$_opt"
 done
 
-EXEC_START_CMD="$QPI_DRIVER_BIN $OPERATION \\
+EXEC_START_CMD="$QPI_DRIVER_BIN start \\
+        --operation \"$OPERATION\" \\
         --device \"$DEVICE\" \\
         --ca-fingerprint $CA_FINGERPRINT \\
-        --qpi-addr $QPI_ADDR \\
-        --name \"$QPU_NAME\"$OPT_ARGS"
+        --qpi-addr $QPI_ADDR$OPT_ARGS"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=QPI Driver Service ($QPU_NAME)
+Description=QPI Driver Service ($SERVICE_NAME)
 After=network.target
 
 [Service]
@@ -148,7 +185,7 @@ User=$REAL_USER
 # Journalctl logging configuration
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${QPU_NAME}.qpi-driver
+SyslogIdentifier=${SERVICE_NAME}.qpi-driver
 
 [Install]
 WantedBy=multi-user.target
@@ -158,13 +195,13 @@ EOF
 echo "Reloading systemd daemon..."
 systemctl daemon-reload
 
-echo "Enabling and starting ${QPU_NAME}.qpi-driver.service..."
-systemctl enable "${QPU_NAME}.qpi-driver.service"
-systemctl start "${QPU_NAME}.qpi-driver.service"
+echo "Enabling and starting ${SERVICE_NAME}.qpi-driver.service..."
+systemctl enable "${SERVICE_NAME}.qpi-driver.service"
+systemctl start "${SERVICE_NAME}.qpi-driver.service"
 
 echo "=========================================="
 echo "Installation complete!"
 echo "Service status:"
-systemctl status "${QPU_NAME}.qpi-driver.service" --no-pager || true
+systemctl status "${SERVICE_NAME}.qpi-driver.service" --no-pager || true
 echo "=========================================="
-echo "To view logs, run: journalctl -u ${QPU_NAME}.qpi-driver.service -f"
+echo "To view logs, run: journalctl -u ${SERVICE_NAME}.qpi-driver.service -f"

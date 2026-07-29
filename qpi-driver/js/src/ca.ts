@@ -25,12 +25,16 @@ export function fingerprintOf(pem: string): string {
 }
 
 /**
- * Verify a downloaded PEM certificate against the pinned fingerprint. An empty
- * expected fingerprint skips the check; a mismatch throws.
+ * Verify a downloaded PEM certificate against the pinned fingerprint. A mismatch
+ * throws, and so does a missing fingerprint: there is deliberately no way to skip
+ * the check, since an opt-out from TLS pinning reachable by leaving an argument out
+ * is one a copy-pasted command hits by accident (RFC 0003 §10).
  */
 export function verifyFingerprint(pem: string, expected: string): void {
   if (!expected) {
-    return;
+    throw new Error(
+      "qpi-driver: a CA fingerprint is required to verify the downloaded root CA",
+    );
   }
   const got = fingerprintOf(pem);
   if (got.toLowerCase() !== expected.toLowerCase()) {

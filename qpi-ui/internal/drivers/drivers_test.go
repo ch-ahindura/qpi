@@ -76,12 +76,17 @@ func TestSnippetsExecutor(t *testing.T) {
 		t.Errorf("expected no bare-install/stub for an official build, got %+v", s)
 	}
 	for _, snippet := range []string{s.Systemd, s.ManualCLI} {
-		if !strings.Contains(snippet, "tok_abc") || !strings.Contains(snippet, "qpu_1") {
-			t.Errorf("expected snippet to carry token and name, got %q", snippet)
+		if !strings.Contains(snippet, "tok_abc") {
+			t.Errorf("expected snippet to carry the token, got %q", snippet)
 		}
 	}
-	if !strings.Contains(s.ManualCLI, "process --device qblox") {
-		t.Errorf("expected process subcommand, got %q", s.ManualCLI)
+	// The name reaches the systemd snippet, which uses it to name the unit, and not
+	// the manual command, which no longer has anywhere to put it.
+	if !strings.Contains(s.Systemd, "SERVICE_NAME='qpu_1'") {
+		t.Errorf("expected SERVICE_NAME in the systemd snippet, got %q", s.Systemd)
+	}
+	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
+		t.Errorf("expected the process start command, got %q", s.ManualCLI)
 	}
 	if !strings.Contains(s.ManualCLI, "qpi-driver[cli,qblox]") {
 		t.Errorf("expected qblox extra, got %q", s.ManualCLI)
@@ -105,17 +110,26 @@ func TestSnippetsMonitor(t *testing.T) {
 	if s.Install != "" || s.Stub != "" {
 		t.Errorf("expected no bare-install/stub for an official build, got %+v", s)
 	}
-	if !strings.Contains(s.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected monitor subcommand, got %q", s.ManualCLI)
+	if !strings.Contains(s.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", s.ManualCLI)
 	}
-	if strings.Contains(s.ManualCLI, "process --device") {
+	if strings.Contains(s.ManualCLI, "--operation process") {
 		t.Errorf("expected monitor not to use the process operation, got %q", s.ManualCLI)
 	}
 	if !strings.Contains(s.ManualCLI, "-o base_url=") || !strings.Contains(s.ManualCLI, "-o channels=") {
 		t.Errorf("expected -o options in the manual CLI, got %q", s.ManualCLI)
 	}
-	if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='base_url=") {
+	// channels first: it is the one option with no default, so it leads.
+	if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='channels=") ||
+		!strings.Contains(s.Systemd, ";base_url=") {
 		t.Errorf("expected DRIVER_OPTIONS env in the systemd snippet, got %q", s.Systemd)
+	}
+	// The options the driver defaults sensibly stay out of a copy-pasted command.
+	for _, key := range []string{"api_key", "poll_interval", "timeout"} {
+		if strings.Contains(s.Systemd, key) || strings.Contains(s.ManualCLI, key) {
+			t.Errorf("expected %q to be catalog-only, not in a snippet: %q / %q",
+				key, s.Systemd, s.ManualCLI)
+		}
 	}
 	if !strings.Contains(s.Systemd, "OPERATION=monitor DEVICE=bluefors_gen1") {
 		t.Errorf("expected OPERATION/DEVICE in the systemd snippet, got %q", s.Systemd)
@@ -135,29 +149,73 @@ func TestSnippetsCustomHasNoOfficialBuild(t *testing.T) {
 	}
 }
 
-// TestSnippetsOfficialGoUsesGoInstall proves an official Go driver resolves the
-// per-language official run snippets — installed via `go install` — rather than
-// a bare SDK install + stub (RFC 0001 Phase 4).
-func TestSnippetsOfficialGoUsesGoInstall(t *testing.T) {
-	s := Default.Snippets(Qblox, Go, Params{Name: "x", Token: "t", QpiAddr: "u", CaFingerprint: "f"})
-	if s.Install != "" || s.Stub != "" {
-		t.Errorf("expected no bare-install/stub for an official Go build, got %+v", s)
+// TestSnippetsRenderNoDeviceTheLanguageLacks is the case that used to render a
+// working-looking command that could never work: qblox is a process device and only
+// the Python SDK has one, so `--device qblox` against a `go install`-ed binary exits
+// 1 the first time it is pasted. handleDriverCreate rejects the combination now, and
+// nothing here renders it either.
+func TestSnippetsRenderNoDeviceTheLanguageLacks(t *testing.T) {
+	p := Params{Name: "x", Token: "t", QpiAddr: "u", CaFingerprint: "f"}
+
+	for _, language := range []Language{Go, TypeScript} {
+		s := Default.Snippets(Qblox, language, p)
+		if s.Systemd != "" || s.ManualCLI != "" {
+			t.Errorf("%s: expected no run snippets for a device this SDK has not got, got %+v",
+				language, s)
+		}
+		if s.Install == "" {
+			t.Errorf("%s: expected the SDK install command, got %+v", language, s)
+		}
+		if strings.Contains(s.Install, "qblox") {
+			t.Errorf("%s: expected nothing about qblox in %q", language, s.Install)
+		}
 	}
-	if !strings.Contains(s.ManualCLI, "go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver") {
-		t.Errorf("expected a `go install` manual CLI, got %q", s.ManualCLI)
+
+	// Python does have it, and is unaffected.
+	s := Default.Snippets(Qblox, Python, p)
+	if !strings.Contains(s.ManualCLI, "start --operation process --device qblox") {
+		t.Errorf("expected the process start command for Python, got %q", s.ManualCLI)
 	}
-	if !strings.Contains(s.ManualCLI, "process --device qblox") {
-		t.Errorf("expected the process subcommand, got %q", s.ManualCLI)
+}
+
+// TestShipsInKnowsWhichSdkHasWhat covers the lookup handleDriverCreate gates on.
+// Custom is registerable in every language by definition: it is code the operator
+// writes against the SDK, so the SDK having no such device is the point.
+func TestShipsInKnowsWhichSdkHasWhat(t *testing.T) {
+	cases := []struct {
+		kind     Kind
+		language Language
+		want     bool
+	}{
+		{Qblox, Python, true},
+		{Qblox, Go, false},
+		{Qblox, TypeScript, false},
+		{Mock, Go, false},
+		{BlueforsGen1, Python, true},
+		{BlueforsGen1, Go, true},
+		{BlueforsGen1, TypeScript, true},
+		{Custom, Go, true},
+		{Custom, TypeScript, true},
+		{Kind("no_such_device"), Python, false},
 	}
-	if !strings.Contains(s.Systemd, "/go/install-systemd.sh") {
-		t.Errorf("expected the Go install-systemd.sh URL, got %q", s.Systemd)
+	for _, c := range cases {
+		if got := Default.ShipsIn(c.kind, c.language); got != c.want {
+			t.Errorf("ShipsIn(%q, %q) = %v, want %v", c.kind, c.language, got, c.want)
+		}
+	}
+
+	if kinds := Default.KindsIn(Go); len(kinds) != 1 || kinds[0] != BlueforsGen1 {
+		t.Errorf("KindsIn(go) = %v, want just [bluefors_gen1]", kinds)
+	}
+	if kinds := Default.KindsIn(Python); len(kinds) != len(Default.Kinds()) {
+		t.Errorf("KindsIn(python) = %v, want every registered kind", kinds)
 	}
 }
 
 // TestSnippetsBlueforsPerLanguage proves the bluefors_gen1 monitor resolves
 // official per-language run snippets — `go install` / `npm install -g` in the
-// manual CLI, the language's install-systemd.sh, and the monitor subcommand
-// with its -o options — for Go and TypeScript (RFC 0001 §7, Phase 4).
+// manual CLI, the language's install-systemd.sh, and the monitor start
+// command with its -o options — for Go and TypeScript (RFC 0001 §7, Phase 4).
 func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	p := Params{Name: "cryostat-1", Token: "tok", QpiAddr: "https://qpi.example.com", CaFingerprint: "f"}
 
@@ -168,8 +226,8 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	if !strings.Contains(goSnips.ManualCLI, "go install github.com/sopherapps/qpi/qpi-driver/go/qpi-driver") {
 		t.Errorf("expected a `go install` manual CLI, got %q", goSnips.ManualCLI)
 	}
-	if !strings.Contains(goSnips.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected the monitor subcommand, got %q", goSnips.ManualCLI)
+	if !strings.Contains(goSnips.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", goSnips.ManualCLI)
 	}
 	if !strings.Contains(goSnips.Systemd, "/go/install-systemd.sh") {
 		t.Errorf("expected the Go install-systemd.sh URL, got %q", goSnips.Systemd)
@@ -179,8 +237,8 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 	if !strings.Contains(tsSnips.ManualCLI, "npm install -g qpi-driver") {
 		t.Errorf("expected an `npm install -g` manual CLI, got %q", tsSnips.ManualCLI)
 	}
-	if !strings.Contains(tsSnips.ManualCLI, "monitor --device bluefors_gen1") {
-		t.Errorf("expected the monitor subcommand, got %q", tsSnips.ManualCLI)
+	if !strings.Contains(tsSnips.ManualCLI, "start --operation monitor --device bluefors_gen1") {
+		t.Errorf("expected the monitor start command, got %q", tsSnips.ManualCLI)
 	}
 	if !strings.Contains(tsSnips.Systemd, "/js/install-systemd.sh") {
 		t.Errorf("expected the TS install-systemd.sh URL, got %q", tsSnips.Systemd)
@@ -188,12 +246,17 @@ func TestSnippetsBlueforsPerLanguage(t *testing.T) {
 }
 
 // TestNameIsShellQuoted guards against a driver name breaking out of the shell
-// command an operator pastes and runs.
+// command an operator pastes and runs. The name no longer reaches the driver at
+// all — it names the systemd unit — but it still reaches a shell, as SERVICE_NAME.
 func TestNameIsShellQuoted(t *testing.T) {
 	s := Default.Snippets(Qblox, Python, Params{
 		Name: "a'; rm -rf /", Token: "t", QpiAddr: "u", CaFingerprint: "f",
 	})
-	if !strings.Contains(s.ManualCLI, `--name 'a'\''; rm -rf /'`) {
-		t.Errorf("expected the name's single quote to be shell-escaped, got %q", s.ManualCLI)
+	if !strings.Contains(s.Systemd, `SERVICE_NAME='a'\''; rm -rf /'`) {
+		t.Errorf("expected the name's single quote to be shell-escaped, got %q", s.Systemd)
+	}
+	// And nothing renders a --name any more.
+	if strings.Contains(s.ManualCLI, "--name") || strings.Contains(s.Systemd, "--name") {
+		t.Errorf("expected no --name in either snippet, got %q / %q", s.ManualCLI, s.Systemd)
 	}
 }
