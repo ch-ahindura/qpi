@@ -1,6 +1,6 @@
 # RFC 0004 — Calibration Tuners
 
-- **Status:** Draft
+- **Status:** Accepted — implemented except where §7 and §9 say otherwise
 - **Author:** Martin Ahindura
 - **Created:** 2026-07-30
 - **Depends on:** RFC 0001 (driver framework, events), RFC 0003 (operations and devices)
@@ -89,7 +89,7 @@ Recorded here rather than in a separate ADR, per the RFC conventions.
 | v1 scope | Full DAG (steps 1–16), individually disableable |
 | Package location | New `tuners/` at same level as `executors/`, mirroring its structure |
 | Dispatch transport | A `calibration_requests` collection the existing driver dispatcher polls — **not** a direct socket write from an HTTP handler. §6.8 |
-| Result persistence | The existing `events` trace log, as `CryostatReading` does. No new collection in v1. §6.8 |
+| Result persistence | A `calibration_results` collection. This reverses an earlier decision here in favour of the events log; §6.8 records why. |
 | pyproject.toml | Alias extras `quantify_tuner`/`qblox_tuner` pointing at the scheduler extras, following the existing `qiskit_aer = ["qpi-driver[aer]"]` precedent; the fitting dependencies go into the `quantify` and `qblox` extras themselves. §6.9 |
 
 ### Why a new operation rather than a new device
@@ -113,16 +113,15 @@ worth paying only because the two alternatives are worse:
 The distinguishing property is genuinely the *contract*, not the backend, which
 is exactly what RFC 0003 says an operation is.
 
-**Rejected.** *A dedicated `calibration_results` collection in v1*: the events
-log already carries `CryostatReading` for the same reason, and a new collection
-costs a model, a migration, a config key and access rules before it earns
-anything (§6.8 records what to do when it does earn it). *Writing calibration
-parameters back through QPI-UI*: the device YAML is read by the `process` driver
-on the same node, so a round trip through the server would add a network
-partition between a file's two local users for no gain. *Deriving the DAG from
-the routines' `depends_on` alone at import time*: it is derived from them, but
-the enabled set comes from `calibration.yml`, so the graph is built per run
-rather than once per process.
+**Rejected.** *Writing calibration parameters back through QPI-UI*: the device
+YAML is read by the `process` driver on the same node, so a round trip through
+the server would add a network partition between a file's two local users for no
+gain. *Deriving the DAG from the routines' `depends_on` alone at import time*: it
+is derived from them, but the enabled set comes from `calibration.yml`, so the
+graph is built per run rather than once per process. *One set of routines per
+scheduler*: the two expose the same gate vocabulary, so the duplication buys
+nothing and costs a second copy to keep in step — §6.2 records what to do with
+the differences that are real.
 
 ## 5. How it works
 
@@ -206,104 +205,121 @@ it (RFC 0003 §8) rather than report an empty list.
 
 ### 6.2 Tuners package (`qpi_driver/tuners/`)
 
-Mirrors the `executors/` structure:
+Mirrors the `executors/` structure, with one deliberate difference: **there is
+one set of routines, not one per scheduler.**
+
+quantify-scheduler and qblox-scheduler expose the same gate vocabulary — `Rxy`,
+`X`, `Reset`, `Measure`, `CZ`, `IdlePulse`, `SquarePulse`, `SetClockFrequency` —
+under two import paths. A routine composed against that vocabulary is therefore
+backend-agnostic already, and a per-backend copy would be sixteen more files to
+keep in step for no gain. Two seams carry everything that genuinely differs:
+
+- **`base/backend.py`** — a `SchedulerBackend` binds one scheduler's operation
+  classes and knows how to turn a finished schedule into a dataset. quantify
+  compiles and drives an instrument coordinator; qblox hands the schedule to a
+  `HardwareAgent`. That is the whole of the difference in execution.
+- **`base/device.py`** — the device models are not the same shape. quantify
+  builds on qcodes, where a parameter is callable (`element.rxy.amp180()`);
+  qblox uses pydantic, where it is a plain attribute. They also disagree on
+  names: the DRAG coefficient is `motzoi` in one and `beta` in the other. A
+  routine names the concept and this module finds whichever the device has.
 
 ```
 qpi_driver/tuners/
-├── __init__.py                    # Tuner base, resolve_tuner()
+├── __init__.py                    # Tuner, resolve_tuner()
 ├── base/
-│   ├── __init__.py                # Abstract Tuner class
-│   ├── config.py                  # CalibrationConfig model (from calibration.yml)
-│   ├── dag.py                     # CalibrationDAG — dependency graph + topological sort
-│   ├── report.py                  # CalibrationReport, BenchmarkResult
-│   └── routines.py                # CalibrationRoutine ABC + routine registry
-├── quantify/                      # quantify_tuner device
-│   ├── __init__.py                # QuantifyTuner
-│   ├── config.py                  # Reuses/imports from executors/quantify/config.py
-│   ├── elements/
-│   │   └── __init__.py
-│   └── routines/
-│       ├── __init__.py            # ALL_ROUTINES registry
-│       ├── resonator_spectroscopy.py
-│       ├── resonator_punchout.py
-│       ├── qubit_spectroscopy.py
-│       ├── rabi.py
-│       ├── ramsey.py
-│       ├── t1.py
-│       ├── t2_echo.py
-│       ├── drag.py
-│       ├── allxy.py
-│       ├── fine_amplitude.py
-│       ├── flux_spectroscopy.py
-│       ├── cz_chevron.py
-│       ├── conditional_phase.py
-│       └── benchmarks/
-│           ├── __init__.py
-│           ├── rb.py              # Standard Clifford RB
-│           ├── interleaved_rb.py  # Interleaved RB
-│           └── allxy_check.py     # Quick AllXY fidelity smoke test
-├── qblox/                         # qblox_tuner device (same structure)
-│   ├── __init__.py                # QbloxTuner
-│   ├── config.py
-│   ├── elements/
-│   │   └── __init__.py
-│   └── routines/                  # Mirrors quantify/routines/
-│       ├── __init__.py
-│       ├── ...
-│       └── benchmarks/
-│           └── ...
-├── fitting/                       # Shared fitting utilities (backend-agnostic)
+│   ├── __init__.py                # Tuner ABC — the DAG walk and write-back live here
+│   ├── backend.py                 # SchedulerBackend: the operations a routine composes
+│   ├── config.py                  # CalibrationConfig (from calibration.yml)
+│   ├── dag.py                     # CalibrationDAG — graph, topological sort, the walk
+│   ├── device.py                  # Reading/writing device parameters across both models
+│   ├── report.py                  # CalibrationReport, RoutineResult, BenchmarkResult
+│   └── routines.py                # CalibrationRoutine ABC
+├── routines/                      # ONE set, shared by every tuner
+│   ├── __init__.py                # ROUTINE_CLASSES, all_routines(), routine_names()
+│   ├── spectroscopy.py            # resonator, punchout, qubit, flux
+│   ├── single_qubit.py            # rabi, ramsey, t1, t2_echo, drag, allxy, fine_amplitude
+│   ├── two_qubit.py               # cz_chevron, conditional_phase
+│   └── benchmarks.py              # rb, interleaved_rb, allxy_check
+├── quantify/__init__.py           # QuantifyTuner + QuantifyBackend
+├── qblox/__init__.py              # QbloxTuner + QbloxBackend
+├── fitting/                       # Backend-agnostic curve fits
 │   ├── __init__.py
-│   ├── lorentzian.py
-│   ├── cosine.py
-│   ├── exponential.py
-│   └── chevron.py
+│   ├── core.py                    # FitError, range guards, dataset access
+│   ├── lorentzian.py              # spectroscopy, punchout
+│   ├── cosine.py                  # rabi, ramsey, drag, fine amplitude
+│   ├── exponential.py             # t1, t2, RB decay
+│   └── chevron.py                 # CZ chevron, conditional phase
 └── utils/
     ├── __init__.py
-    ├── persistence.py             # Atomic YAML write-back
-    └── clifford.py                # Clifford group generation for RB
+    ├── persistence.py             # Verified, atomic YAML write-back (§10)
+    └── clifford.py                # The single-qubit Clifford group, for RB
 ```
+
+A tuner therefore supplies a backend and a device, and inherits the DAG walk,
+the routines, the fitting and the write-back. Adding a third scheduler is a
+`SchedulerBackend` and a `Tuner`; it is not sixteen more experiments.
 
 ### 6.3 Tuner abstract base class
 
 ```python
 class Tuner(ABC):
-    """Abstract base for all calibration/tuning backends. Mirrors Executor."""
+    """Runs calibration routines against a quantum device and updates it."""
 
-    def __init__(self, name: str, **kwargs): self.name = name
+    def __init__(self, name: str, **kwargs): ...
 
+    @property
     @abstractmethod
+    def backend(self) -> SchedulerBackend: ...
+
+    @property
+    @abstractmethod
+    def device(self) -> Any: ...
+
     def calibrate(self, config: CalibrationConfig) -> CalibrationReport: ...
-
-    @abstractmethod
-    def check_fidelity(self, config: CalibrationConfig) -> dict[str, float]: ...
-
-    @abstractmethod
     def recalibrate(self, qubits: list[str], config: CalibrationConfig) -> CalibrationReport: ...
-
+    def check_fidelity(self, config: CalibrationConfig) -> CalibrationReport: ...
     def close(self) -> None: ...
 ```
+
+The three entry points are the same DAG walk over different subsets — the whole
+enabled graph, the routines downstream of some qubits, the benchmarks alone — so
+they are implemented once on the base class rather than per tuner.
+
+`check_fidelity` returns a `CalibrationReport` rather than a bare
+`dict[str, float]` so that every mode emits the same payload shape;
+`CalibrationReport.fidelities()` is what reduces it to the per-target numbers a
+threshold is compared against, taking the worst protocol per target because a
+drift check should fire on the worst evidence it has.
 
 ### 6.4 Calibration routine interface
 
 ```python
-@dataclass
 class CalibrationRoutine(ABC):
     """One node in the calibration DAG."""
 
     name: str
     depends_on: tuple[str, ...] = ()
     targets: Literal["qubits", "edges"] = "qubits"
+    updates: tuple[str, ...] = ()      # device parameters written
+    benchmark: bool = False            # whether its result is a gate fidelity
 
     @abstractmethod
-    def build_schedule(self, target, device, config) -> Schedule: ...
+    def build_schedule(self, target, device, config, backend) -> Schedule: ...
 
     @abstractmethod
-    def analyse(self, dataset, target, device) -> dict[str, Any]: ...
+    def analyse(self, dataset, target, device, config) -> dict[str, Any]: ...
 
-    @abstractmethod
     def apply(self, device, target, params) -> None: ...
 ```
+
+`benchmark` is declared rather than inferred from an empty `updates`: T1 writes
+no device parameter either, and recording it as a benchmark would put a `None`
+fidelity in front of the drift check.
+
+`analyse` **raises** rather than returning zeros when it cannot fit. This is the
+difference between a calibration that fails and one that quietly writes
+`t1 = 0.0` to the device as though it had measured it.
 
 ### 6.5 CalibrateDriver (`builtins/calibrate.py`)
 
@@ -477,36 +493,51 @@ already in `running`.
 
 #### Receiving a result
 
-`handleCalibrationResult` validates the payload and calls `appendEvent`, exactly
-as `handleCryostatReading` does. Note what the `CryostatReading` pattern actually
-*is*: it appends to the single `events` trace log and updates no domain record —
-it creates no per-type collection. A dedicated `calibration_results` collection
-would be a departure from it, not an instance of it, and it is deferred (§4).
+`handleCalibrationResult` validates the payload — as `handleCryostatReading`
+rejects a reading with no readings, this rejects a report with no mode or status
+— and stores it in a `calibration_results` collection, attributed to both the
+driver that sent it and the QPU that driver belongs to.
 
-When trend queries over months of reports outgrow the events log, promoting it
-means all of: a `CalibrationResult` model in `internal/db/models.go` with the
-struct tags the migrator reads, a collection in `internal/db/migrate.go`,
-`DefaultCalibrationResultsCollection` plus its flag and its `GetCollectionName`
-case in `internal/config/config.go`, and public-read/superuser-CUD access rules
-mirroring `qpus` (RFC 0001 §9). The fields would be:
+**Why a collection rather than the events log.** An earlier version of this RFC
+deferred it: `CryostatReading` appends to the shared `events` trace log and
+creates no per-type collection, and a new collection costs a model, a migration,
+a config key and access rules. Two things settled it the other way. The dashboard
+panel below is a *history list* and a *fidelity trend*, which is a query over
+months of reports rather than a tail of recent events — exactly the case the
+deferral named as the trigger for promoting it. And retention is different in
+kind: a calibration report is far larger and far rarer than a cryostat reading,
+so the events log's prune policy, tuned for a monitor emitting every few seconds,
+would discard the reports on entirely the wrong schedule. Sharing the log would
+have meant a second retention rule inside it, which is most of a collection
+without the query.
+
+The full cost is therefore paid, and is: a `CalibrationResult` model in
+`internal/db/models.go` with the struct tags the migrator reads, a collection in
+`internal/db/migrate.go`, `DefaultCalibrationResultsCollection` plus its flag and
+its `GetCollectionName` case in `internal/config/config.go`, and
+authenticated-read/superuser-CUD access rules.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `driver` | relation | Driver that produced this result |
-| `qpu` | relation | QPU that driver belongs to, as the events log records |
-| `timestamp` | date | When calibration completed |
-| `duration_s` | number | How long calibration took |
+| `qpu` | relation | QPU that driver belongs to |
+| `timestamp` | date | When the calibration completed |
+| `duration_s` | number | How long it took |
 | `mode` | text | `"full"`, `"partial"`, or `"fidelity_check"` |
-| `qubit_results` | json | Per-qubit calibrated parameters |
-| `edge_results` | json | Per-edge calibrated parameters |
+| `backend` | text | Which scheduler ran it |
+| `routine_results` | json | Per-routine, per-target fitted parameters |
 | `benchmarks` | json | Fidelity metrics |
+| `errors` | json | What failed, per routine and target |
 | `status` | text | `"success"`, `"partial_failure"`, `"failed"` |
 
-Until then the same fields travel as the event payload, and the events log's
-existing retention and pruning (`docs/driver/operations.md`) applies to them.
-Retention is worth a second look before this ships: a calibration report is
-much larger than a cryostat reading and much rarer, so a prune policy tuned for
-the latter will discard the former on the wrong schedule.
+The payload's fields are **flat**, beside `job_id` — the handler unmarshals the
+event payload straight into `CalibrationResultPayload`. Nested under a `results`
+key it parses without error and leaves every field at its zero value, saving a
+blank row for a calibration that really ran; a test asserts the shape in both
+languages.
+
+A report also closes out the queued request it answers, which is what lets the
+dispatcher offer the next one.
 
 #### Dashboard (v1 — minimal)
 
@@ -514,13 +545,11 @@ A calibration status panel showing: last calibration timestamp, per-qubit
 fidelity metrics, calibration history list, and a "Trigger Calibration" button.
 Full dashboard design (trend graphs, drift plots, DAG progress) is deferred.
 
-The panel reads the events log, filtered to `CalibrationResult`, the way the
-cryostat charts read `CryostatReading` (`dashboard/src/types.ts` documents that
-`payload.readings` shape). Two incidental things to settle while there: the
-`QPU` interface carries a `calibration_data?: unknown` field that no collection
-on the server actually has — it is vestigial and should be removed rather than
-quietly repurposed as this feature's hook — and the "Trigger Calibration" button
-must be admin-gated to match the endpoint (§10).
+The panel reads `calibration_results`. The "Trigger Calibration" button must be
+admin-gated to match the endpoint (§10). One incidental thing to settle while
+there: the `QPU` interface carried a `calibration_data?: unknown` field that no
+collection on the server has — vestigial, and removed rather than quietly
+repurposed as this feature's hook.
 
 ### 6.9 Dependencies
 
@@ -548,11 +577,17 @@ Use the dummy Cluster from `qblox-instruments` to verify each routine's
 `build_schedule()` produces a valid, compilable `Schedule`. The dummy Cluster
 returns all-zeros — this validates compilation, not analysis.
 
-### Tier 3: Physics simulation (optional, scqubits)
+### Tier 3: Physics simulation (optional, scqubits) — not yet implemented
 
-Use [scqubits](https://scqubits.readthedocs.io/) (BSD-3) to generate
-physically realistic synthetic acquisition data. Tests requiring it are marked
-`@pytest.mark.scqubits` and skipped when not installed.
+Use [scqubits](https://scqubits.readthedocs.io/) (BSD-3) to generate physically
+realistic synthetic acquisition data, so a routine can be tested end to end —
+schedule, acquisition, fit, write-back — without hardware. Tests requiring it
+would be marked `@pytest.mark.scqubits` and skipped when it is absent.
+
+This is the gap between "the fits are correct and the schedules compile", which
+tiers 1 and 2 establish, and "the routines measure what they claim to", which
+only hardware or a physical simulation can. §9's manual verification is the
+other half of that answer.
 
 ### Test files
 
@@ -680,7 +715,28 @@ frequencies, coherence times, gate fidelities. The events log is public-read
 decision to make explicitly before this ships, not to inherit by putting them
 in a collection that already had one.
 
-## 11. Implementation plan
+## 11. What is built, and what is not
+
+Implemented: the operation and event types across all three SDKs and the server;
+the tuners package, the sixteen routines, the fitting and the Clifford group; the
+verified write-back; the calibrate driver with its drift check; the dispatch
+queue, endpoint and result handler; the catalog entries and the docs.
+
+Not implemented, deliberately:
+
+- **Tier 3 physics simulation** (§7). Tiers 1 and 2 show the fits recover known
+  parameters and the schedules compile against both dummy clusters. Neither
+  shows a routine measures what it claims to on a real chip.
+- **The dashboard panel** (§6.8). The data it needs is stored and queryable; the
+  React work is not done.
+- **Hardware validation** (§9). No routine here has been run against a physical
+  transmon. Until the manual verification in §9 has been done on a lab node, the
+  honest description of this feature is "complete and untested against
+  hardware" — the failure modes that remain are the ones a dummy cluster cannot
+  show, above all whether each routine's schedule produces the physics its fit
+  assumes.
+
+## 12. Implementation plan
 
 Maintained separately from this RFC, as with RFC 0001 §11 and RFC 0003 §12. The
 sequence that falls out of the above: the operation and event types across all
