@@ -541,15 +541,31 @@ dispatcher offer the next one.
 
 #### Dashboard (v1 — minimal)
 
-A calibration status panel showing: last calibration timestamp, per-qubit
-fidelity metrics, calibration history list, and a "Trigger Calibration" button.
-Full dashboard design (trend graphs, drift plots, DAG progress) is deferred.
+An admin-only Calibration tab reading `calibration_results` for what the chip
+looks like and `calibration_requests` for whether something is running. The two
+are separate for a reason: a calibration takes hours, and the queued request is
+the only thing that can say "in progress" during the gap before a report exists.
 
-The panel reads `calibration_results`. The "Trigger Calibration" button must be
-admin-gated to match the endpoint (§10). One incidental thing to settle while
-there: the `QPU` interface carried a `calibration_data?: unknown` field that no
-collection on the server has — vestigial, and removed rather than quietly
-repurposed as this feature's hook.
+It shows measured fidelity per target, the current parameters, and the run
+history, and it queues a calibration through the endpoint above. Three details
+are load-bearing rather than cosmetic:
+
+- **Each target is judged against the threshold that governs it** — the
+  two-qubit one for an edge, the one-qubit one for a qubit. A CZ an order of
+  magnitude worse than a single-qubit gate is normal; holding it to the 1Q
+  threshold would make the panel cry wolf and train operators to ignore it.
+- **Parameters are grouped by qubit, not by routine.** "What does q0 look like
+  now" is the question an operator has; a routine spans every target while a
+  target spans only a handful of routines.
+- **The trigger modal defaults to the drift check**, not the full run. It is the
+  common case, it is cheap, and it changes nothing — whereas a mis-clicked full
+  calibration costs hours of QPU time.
+
+Trend graphs, drift plots and live DAG progress are still deferred.
+
+One incidental thing settled while there: the `QPU` interface carried a
+`calibration_data?: unknown` field that no collection on the server has —
+vestigial, and removed rather than quietly repurposed as this feature's hook.
 
 ### 6.9 Dependencies
 
@@ -720,15 +736,14 @@ in a collection that already had one.
 Implemented: the operation and event types across all three SDKs and the server;
 the tuners package, the sixteen routines, the fitting and the Clifford group; the
 verified write-back; the calibrate driver with its drift check; the dispatch
-queue, endpoint and result handler; the catalog entries and the docs.
+queue, endpoint and result handler; the catalog entries; the dashboard panel; and
+the docs.
 
 Not implemented, deliberately:
 
 - **Tier 3 physics simulation** (§7). Tiers 1 and 2 show the fits recover known
   parameters and the schedules compile against both dummy clusters. Neither
   shows a routine measures what it claims to on a real chip.
-- **The dashboard panel** (§6.8). The data it needs is stored and queryable; the
-  React work is not done.
 - **Hardware validation** (§9). No routine here has been run against a physical
   transmon. Until the manual verification in §9 has been done on a lab node, the
   honest description of this feature is "complete and untested against
