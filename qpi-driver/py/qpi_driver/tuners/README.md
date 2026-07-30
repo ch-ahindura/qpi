@@ -8,7 +8,7 @@ The `calibrate` operation is how a QPI node keeps up: it runs calibration
 experiments against the chip, fits the results, and writes the fitted parameters
 back to the same `quantify.device.yml` the `process` driver reads for every job.
 
-Design and rationale: [RFC 0004](../../../../docs/rfcs/0004-calibration-tuners.md).
+Design and rationale: [RFC 0004](https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0004-calibration-tuners.md).
 
 ## Running one
 
@@ -78,7 +78,7 @@ on a chip without one they are pure failure noise.
 
 ## Configuring it
 
-See [`calibration.example.yml`](../../calibration.example.yml). The shortest
+See [`calibration.example.yml`](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/calibration.example.yml). The shortest
 useful file is just `target_qubits` — every routine is enabled unless it says
 otherwise, and every sweep has a default.
 

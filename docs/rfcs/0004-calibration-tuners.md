@@ -630,10 +630,11 @@ testable without a lab: the tuner is resolved by name, class *or instance*
 (RFC 0003 §7) means the whole event path can be asserted with no server and no
 hardware.
 
-There is no `make test-py-calibrate` target to add. The tier-1 files run under
-`test-py-base`, the tier-2 file runs under the two existing scheduler targets,
-and adding a sixth target would mean a sixth environment that installs a
-scheduler in order to run tests that do not need one. §9 is corrected to match.
+There is deliberately **no** dedicated calibration target. The tier-1 files run
+under `test-py-base`, the tier-2 file runs under the two existing scheduler
+targets, and a sixth target would mean a sixth environment that installs a
+scheduler in order to run tests that do not need one. §9 lists the targets that
+actually cover this feature.
 
 ## 8. CLI usage
 
