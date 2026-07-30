@@ -35,6 +35,7 @@ class Operation(str, Enum):
 
     PROCESS = "process"
     MONITOR = "monitor"
+    CALIBRATE = "calibrate"
 
 
 # A device builder takes the ``-o`` options plus the universal transport arguments

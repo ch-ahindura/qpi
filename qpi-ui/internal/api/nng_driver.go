@@ -35,6 +35,7 @@ var driverEventRegistry = func() *EventRegistry {
 	registry := NewEventRegistry()
 	registry.Register(EventJobResult, handleDriverJobResult)
 	registry.Register(EventCryostatReading, handleCryostatReading)
+	registry.Register(EventCalibrationResult, handleCalibrationResult)
 	return registry
 }()
 
@@ -378,5 +379,29 @@ func appendEvent(app core.App, driverID, qpuID string, event *Event) error {
 	if err := saveToDb(app, record); err != nil {
 		return fmt.Errorf("cannot persist %s event: %w", event.Type, err)
 	}
+	return nil
+}
+
+// handleCalibrationResult handles the result of a calibration operation.
+func handleCalibrationResult(ctx context.Context, app core.App, qpuID string, event *Event) error {
+	var result CalibrationResultPayload
+	if err := json.Unmarshal(event.Payload, &result); err != nil {
+		return fmt.Errorf("cannot parse CalibrationResult payload: %w", err)
+	}
+
+	record := &db.CalibrationResult{
+		Driver:         driverIDFromContext(ctx),
+		Timestamp:      result.Timestamp,
+		DurationS:      result.DurationS,
+		Mode:           result.Mode,
+		RoutineResults: result.RoutineResults,
+		Benchmarks:     result.Benchmarks,
+		Status:         result.Status,
+	}
+
+	if err := saveToDb(app, record); err != nil {
+		return fmt.Errorf("cannot save calibration result: %w", err)
+	}
+	log.Printf("[DriverListener %s] calibration %s %s", driverIDFromContext(ctx), result.Mode, result.Status)
 	return nil
 }

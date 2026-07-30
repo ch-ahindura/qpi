@@ -20,8 +20,9 @@ driver is described:
 
 - An **operation** is what a driver *does*, and it is a contract with the server:
   `process` runs jobs pushed to it and returns results (a QPU); `monitor` reports
-  readings upward on its own schedule (a cryostat, say). QPI-UI must have a handler
-  for each, so there are exactly these two.
+  readings upward on its own schedule (a cryostat, say); `calibrate` executes
+  calibration routines to track parameter drift (a tuner). QPI-UI must have a handler
+  for each, so there are exactly these three.
 - A **device** is the particular backend implementing an operation —
   `qblox` is a `process` device. Anyone can add one; that is what "Adding a
   device of your own" below is about.
@@ -53,6 +54,14 @@ pip install "qpi-driver[aer]"
 
 ```bash
 pip install "qpi-driver[quantify]"
+```
+
+### With Calibration Tuner support
+
+```bash
+pip install "qpi-driver[quantify_tuner]"
+# or
+pip install "qpi-driver[qblox_tuner]"
 ```
 
 Requires **Python ≥ 3.12, < 3.13**.
@@ -461,6 +470,8 @@ imports at compile time, so a device there is registered in your own `main`.
 
 The one `monitor` device is `bluefors_gen1`, a cryostat monitor for Bluefors Control
 Software Gen. 1, shipped by `[bluefors_gen1]`.
+
+The `calibrate` devices are `quantify_tuner` and `qblox_tuner`, for running automated parameter calibration DAGs against hardware. See the [Tuners Framework Reference](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md) for how to set up calibration rules, config files, and write custom routines.
 
 ---
 

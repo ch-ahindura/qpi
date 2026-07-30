@@ -7,6 +7,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+- Added `calibrate` operation support to `qpi-driver` and `qpi-ui` (RFC 0004).
+- Added builtin calibration tuners (`quantify_tuner` and `qblox_tuner`) for executing complex calibration DAGs and automated persistence to track parameter drift.
+- Introduced `calibration_results` collection to the QPI-UI Server for persisting calibration metrics and benchmarking reports.
 ## [0.2.0] - 2026-07-29
 
 ### Migration

@@ -168,12 +168,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [faviconUrl]);
 
   useEffect(() => {
-    console.log("ThemeContext useEffect triggered! isLoading:", isLoading, "theme?.id:", theme?.id, "theme?.updated:", theme?.updated);
+    console.log(
+      "ThemeContext useEffect triggered! isLoading:",
+      isLoading,
+      "theme?.id:",
+      theme?.id,
+      "theme?.updated:",
+      theme?.updated,
+    );
     if (isLoading) return;
 
     const loadThemeCSS = async () => {
       try {
-        const url = theme?.updated ? `/api/theme/css?v=${theme.updated}` : "/api/theme/css";
+        const url = theme?.updated
+          ? `/api/theme/css?v=${theme.updated}`
+          : "/api/theme/css";
         console.log("Fetching theme CSS from:", url);
         const res = await fetch(url);
         let styleEl = document.getElementById(
@@ -188,7 +197,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         const cssText = await res.text();
-        console.log("QPI Theme CSS fetched from:", url, "Length:", cssText.length);
+        console.log(
+          "QPI Theme CSS fetched from:",
+          url,
+          "Length:",
+          cssText.length,
+        );
         if (!styleEl) {
           styleEl = document.createElement("style");
           styleEl.id = "qpi-theme-css";
@@ -207,7 +221,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
           oldScript.remove();
         }
 
-        const url = theme?.updated ? `/api/theme/js?v=${theme.updated}` : "/api/theme/js";
+        const url = theme?.updated
+          ? `/api/theme/js?v=${theme.updated}`
+          : "/api/theme/js";
         const res = await fetch(url);
         if (res.status === 204) {
           return;

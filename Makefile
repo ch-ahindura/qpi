@@ -169,6 +169,11 @@ test-py-qblox:
 	fi
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
+test-py-calibrate:
+	@echo "Running Python driver calibration tuner tests (import checks only)..."
+	$(UV) sync --project qpi-driver/py --extra quantify_tuner --extra qblox_tuner --dev
+	$(UV) run --project qpi-driver/py python -c "import qpi_driver.tuners"
+
 test-js-client:
 	@echo "Running JS client tests..."
 	(cd qpi-client/js && npm ci && npm test)

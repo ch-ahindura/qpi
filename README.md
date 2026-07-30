@@ -47,10 +47,10 @@ extensibility story (see [RFC 0003](https://github.com/sopherapps/qpi/blob/main/
 
 - An **operation** is what the driver *does*, and it is a contract with the server:
   `process` runs jobs pushed to it and reports results; `monitor` reports readings
-  upward on its own schedule. The server must have a handler for each, so the set is
+  upward on its own schedule; `calibrate` executes calibration routines to track parameter drift on quantum hardware. The server must have a handler for each, so the set is
   closed — a new operation is a coordinated change across the server and the SDKs.
 - A **device** is the *backend* implementing an operation — an executor for
-  `process` (`mock`, `qiskit_aer`, `quantify`, `qblox`), a piece of lab hardware for
+  `process` (`mock`, `qiskit_aer`, `quantify`, `qblox`), a tuner for `calibrate` (`quantify_tuner`, `qblox_tuner`), a piece of lab hardware for
   `monitor` (`bluefors_gen1`). The set is open: anyone can add one without touching
   the SDK, and `--device` then runs it exactly like a built-in.
 
@@ -59,6 +59,7 @@ So every driver is launched the same way — one verb, one operation, one device
 ```bash
 qpi-driver start --operation process --device qblox   …   # a QPU
 qpi-driver start --operation monitor --device bluefors_gen1   …   # a cryostat
+qpi-driver start --operation calibrate --device quantify_tuner … # a calibrator
 ```
 
 There is deliberately no separate "custom driver" mechanism. Because an operation is
@@ -250,6 +251,7 @@ The server exposes both **custom HTTP routes** and **PocketBase collection endpo
 | `GET`  | `/api/jobs` | Authenticated | Lists jobs for the authenticated user. |
 | `GET`  | `/api/jobs/{id}` | Authenticated | Retrieves a specific job. |
 | `POST` | `/api/jobs/{id}/cancel` | Authenticated | Cancels a pending job. |
+| `POST` | `/api/calibrate` | Superuser | Dispatches a calibration routine to a connected tuner. |
 | `GET`  | `/api/qpus` | Public | Lists all registered QPUs. |
 | `GET`  | `/api/qpus/{name}` | Public | Retrieves a specific QPU. |
 | `POST` | `/api/tokens` | Authenticated | Creates a new API token. |
@@ -270,6 +272,7 @@ All collection endpoints follow the standard PocketBase REST pattern: `/api/coll
 | `qpus` | Public read; superuser CUD | QPU hardware records with status, ports, and config. |
 | `time_slots` | Owner-only CRUD; superuser bypass | Calendar reservations linked to `users`. |
 | `quantum_jobs` | Public read; authenticated create | Job queue with payload, status, and results. |
+| `calibration_results` | Public read | Results and telemetry from hardware calibration runs. |
 | `qpu_time_requests` | Owner-only CRUD; superuser update | Requests for additional QPU time (pending/approved/rejected). |
 | `notifications` | Authenticated read (visibility-filtered); superuser CUD | Admin announcements with broadcast/targeted reach, time windows, and dismiss tracking. |
 
@@ -303,6 +306,8 @@ Built-in executors include:
 * `QiskitAerExecutor` (`qiskit_aer`): Runs quantum circuit simulations using `qiskit-aer`.
 * `QuantifyExecutor` (`quantify`): Executes quantum circuits using `quantify-scheduler` and a Qblox cluster compiler.
 * `QbloxExecutor` (`qblox`): Executes quantum circuits using `qblox-scheduler` and a Qblox cluster compiler.
+* `QuantifyTuner` (`quantify_tuner`): Calibrates quantum chips via `quantify-scheduler`.
+* `QbloxTuner` (`qblox_tuner`): Calibrates quantum chips via `qblox-scheduler`.
 * Placeholder executors: `PrestoExecutor` (`presto`).
 
 ### Running the Driver for Each Executor
@@ -359,6 +364,23 @@ Compiles and runs circuits using `qblox-scheduler`.
   ```bash
   # Start driver with a hardware config file
   qpi-driver start --operation process --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
+  ```
+
+### 5. Calibration Tuners
+Executes calibration DAG routines to fix parameter drift.
+* **Quantify Tuner**:
+  ```bash
+  # Install the package with quantify_tuner extra
+  pip install "./qpi-driver/py[cli,quantify_tuner]"
+
+  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify_tuner" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
+  ```
+* **Qblox Tuner**:
+  ```bash
+  # Install the package with qblox_tuner extra
+  pip install "./qpi-driver/py[cli,qblox_tuner]"
+
+  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox_tuner" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
   ```
 
 ### CLI Usage

@@ -32,9 +32,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 if has_typer:
-    from typer.testing import CliRunner
-
     from qpi_driver.cli import app
+    from typer.testing import CliRunner
 
     # TERM=dumb keeps Rich from colouring the output, which CI would otherwise
     # turn on and break every match against it. See tests/test_cli.py.

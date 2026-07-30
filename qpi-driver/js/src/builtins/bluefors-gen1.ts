@@ -68,10 +68,7 @@ export interface Reading {
  * It must not reject: a channel it cannot read is a `null` value with an `"ERROR"`
  * status, which is how the driver knows to carry on with the others.
  */
-export type ChannelReader = (
-  channel: string,
-  unit: string,
-) => Promise<Reading>;
+export type ChannelReader = (channel: string, unit: string) => Promise<Reading>;
 
 /** Polls Bluefors Gen. 1 Control API channels and emits readings on a timer. */
 export class BlueforsGen1Driver extends QpiDriver {

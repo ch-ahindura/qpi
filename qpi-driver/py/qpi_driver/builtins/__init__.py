@@ -16,10 +16,11 @@ built-ins, so nothing downstream can tell them apart
 (:mod:`qpi_driver.builtins.discovery`).
 """
 
-from qpi_driver.builtins import bluefors_gen1, qpu
+from qpi_driver.builtins import bluefors_gen1, calibrate, qpu
 from qpi_driver.builtins.bluefors_gen1 import (
     BlueforsGen1Driver,
 )
+from qpi_driver.builtins.calibrate import CalibrateDriver
 from qpi_driver.builtins.qpu import QpuDriver
 from qpi_driver.builtins.registry import (
     DeviceBuilder,
@@ -31,7 +32,7 @@ from qpi_driver.builtins.registry import (
 )
 from qpi_driver.options import Options
 
-for _spec in (*qpu.DEVICE_SPECS, bluefors_gen1.DEVICE_SPEC):
+for _spec in (*qpu.DEVICE_SPECS, bluefors_gen1.DEVICE_SPEC, *calibrate.DEVICE_SPECS):
     register(_spec)
 
 # Imported last, and after registration: discovery reaches back into `qpu` for the
@@ -55,6 +56,7 @@ from qpi_driver.builtins.discovery import (  # noqa: E402
 __all__ = [
     "QpuDriver",
     "BlueforsGen1Driver",
+    "CalibrateDriver",
     "DeviceBuilder",
     "DeviceSpec",
     "ENTRY_POINT_GROUP",

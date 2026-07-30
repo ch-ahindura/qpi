@@ -5,9 +5,6 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.2.0"
 
-from qpi_driver.builtins.bluefors_gen1 import (
-    BlueforsGen1Driver,
-)
 from qpi_driver.builtins import (
     DeviceBuilder,
     DeviceSpec,
@@ -16,6 +13,10 @@ from qpi_driver.builtins import (
     load_installed_devices,
     register,
 )
+from qpi_driver.builtins.bluefors_gen1 import (
+    BlueforsGen1Driver,
+)
+from qpi_driver.builtins.calibrate import CalibrateDriver
 from qpi_driver.builtins.qpu import QpuDriver
 from qpi_driver.events import Event, EventType
 from qpi_driver.executors.base import CircuitPayload, Executor, JobPayload
@@ -25,6 +26,7 @@ from qpi_driver.executors.qblox import QbloxExecutor
 from qpi_driver.executors.qiskit_aer import QiskitAerExecutor
 from qpi_driver.executors.quantify import QuantifyExecutor
 from qpi_driver.sdk import QpiDriver
+from qpi_driver.tuners import Tuner
 
 # The Python SDK lives at `qpi-driver/py/`, alongside the TypeScript
 # (`qpi-driver/js/`) and Go (`qpi-driver/go/`) SDKs, mirroring qpi-client's
@@ -37,6 +39,7 @@ __all__ = [
     "QpiDriver",
     "QpuDriver",
     "BlueforsGen1Driver",
+    "CalibrateDriver",
     "DeviceBuilder",
     "DeviceSpec",
     "Operation",
@@ -51,6 +54,7 @@ __all__ = [
     "QuantifyExecutor",
     "QbloxExecutor",
     "PrestoExecutor",
+    "Tuner",
 ]
 
 # Devices installed from elsewhere, registered last so nothing downstream can tell

@@ -31,13 +31,15 @@ const (
 type Kind string
 
 const (
-	Mock         Kind = "mock"
-	QiskitAer    Kind = "qiskit_aer"
-	Quantify     Kind = "quantify"
-	Qblox        Kind = "qblox"
-	Presto       Kind = "presto"
-	BlueforsGen1 Kind = "bluefors_gen1"
-	Custom       Kind = "custom"
+	Mock          Kind = "mock"
+	QiskitAer     Kind = "qiskit_aer"
+	Quantify      Kind = "quantify"
+	Qblox         Kind = "qblox"
+	Presto        Kind = "presto"
+	BlueforsGen1  Kind = "bluefors_gen1"
+	QuantifyTuner Kind = "quantify_tuner"
+	QbloxTuner    Kind = "qblox_tuner"
+	Custom        Kind = "custom"
 )
 
 // Operation is what a driver does — the category it belongs to — and doubles as
@@ -47,8 +49,9 @@ const (
 type Operation string
 
 const (
-	Process Operation = "process"
-	Monitor Operation = "monitor"
+	Process   Operation = "process"
+	Monitor   Operation = "monitor"
+	Calibrate Operation = "calibrate"
 )
 
 // Option is one `-o key=value` setting a kind reads: what the dashboard's
