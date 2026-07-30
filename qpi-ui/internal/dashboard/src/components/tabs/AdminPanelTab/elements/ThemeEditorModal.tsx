@@ -25,7 +25,9 @@ export function ThemeEditorModal({ theme, onClose }: Props) {
 
   const handlePreview = () => {
     // 1. Apply Custom CSS
-    let previewStyleEl = document.getElementById("qpi-theme-css-preview") as HTMLStyleElement | null;
+    let previewStyleEl = document.getElementById(
+      "qpi-theme-css-preview",
+    ) as HTMLStyleElement | null;
     if (!previewStyleEl) {
       previewStyleEl = document.createElement("style");
       previewStyleEl.id = "qpi-theme-css-preview";

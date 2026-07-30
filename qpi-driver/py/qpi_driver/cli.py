@@ -2,7 +2,8 @@ import importlib.metadata
 from pathlib import Path
 from typing import Annotated
 
-from qpi_driver.builtins import Operation, devices as registered_devices, resolve_device
+from qpi_driver.builtins import Operation, resolve_device
+from qpi_driver.builtins import devices as registered_devices
 from qpi_driver.compat import typer
 from qpi_driver.options import Options
 from qpi_driver.paths import validate_safe_path

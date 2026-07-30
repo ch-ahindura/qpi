@@ -3,9 +3,11 @@ package drivers
 // Event-type names a backend can participate in. They mirror the wire event
 // types in package api; a test in that package asserts they stay in step.
 const (
-	eventJobDispatch     = "JobDispatch"
-	eventJobResult       = "JobResult"
-	eventCryostatReading = "CryostatReading"
+	eventJobDispatch       = "JobDispatch"
+	eventJobResult         = "JobResult"
+	eventCryostatReading   = "CryostatReading"
+	eventCalibrateDispatch = "CalibrateDispatch"
+	eventCalibrationResult = "CalibrationResult"
 )
 
 // processOptions are the `-o` keys every process device reads. All of them have
@@ -68,6 +70,64 @@ func processSpec(kind Kind, extra string) Spec {
 	}
 }
 
+func calibrateOptions() []Option {
+	return []Option{
+		{
+			Key:     "calibration_config",
+			Help:    "Path to the calibration configuration YAML.",
+			Default: "./calibration.yml",
+			Example: "./calibration.yml",
+		},
+		{
+			Key:     "quantify_hardware_config",
+			Help:    "Path to the quantify hardware configuration JSON.",
+			Default: "./quantify.hardware.json",
+			Example: "./quantify.hardware.json",
+		},
+		{
+			Key:     "quantify_device_config",
+			Help:    "Path to the quantify device configuration YAML.",
+			Default: "./quantify.device.yml",
+			Example: "./quantify.device.yml",
+		},
+		{
+			Key:     "is_dummy",
+			Help:    "Run against the vendor's dummy instruments instead of real hardware.",
+			Default: "false",
+			Example: "true",
+		},
+		{
+			Key:     "monitor_interval",
+			Help:    "Seconds between periodic RB fidelity checks.",
+			Default: "0",
+			Example: "1800",
+		},
+		{
+			Key:     "fidelity_threshold",
+			Help:    "1Q gate fidelity recalibration trigger.",
+			Default: "0.999",
+			Example: "0.999",
+		},
+		{
+			Key:     "fidelity_2q_threshold",
+			Help:    "2Q gate fidelity threshold.",
+			Default: "0.99",
+			Example: "0.99",
+		},
+	}
+}
+
+func calibrateSpec(kind Kind, extra string) Spec {
+	return Spec{
+		Kind:      kind,
+		Operation: Calibrate,
+		Extra:     extra,
+		Events:    []string{eventCalibrateDispatch, eventCalibrationResult},
+		Options:   calibrateOptions(),
+		Languages: []Language{Python},
+	}
+}
+
 // Default is the catalog the server uses — the only catalog there is. Register a
 // new backend by adding one
 // line here — a processSpec for a QPU-shaped kind, or a Spec with
@@ -78,6 +138,8 @@ var Default = NewRegistry(
 	processSpec(QiskitAer, "qpi-driver[cli,aer]"),
 	processSpec(Quantify, "qpi-driver[cli,quantify]"),
 	processSpec(Qblox, "qpi-driver[cli,qblox]"),
+	calibrateSpec(QuantifyTuner, "qpi-driver[cli,quantify_tuner]"),
+	calibrateSpec(QbloxTuner, "qpi-driver[cli,qblox_tuner]"),
 	Spec{
 		Kind:      BlueforsGen1,
 		Operation: Monitor,

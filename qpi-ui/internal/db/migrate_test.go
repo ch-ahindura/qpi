@@ -15,15 +15,16 @@ import (
 // the setup every other db/api test uses.
 func testConfig() *config.AppConfig {
 	return &config.AppConfig{
-		CollectionQPUs:            config.DefaultQpusCollection,
-		CollectionTimeSlots:       config.DefaultTimeSlotsCollection,
-		CollectionQuantumJobs:     config.DefaultQuantumJobsCollection,
-		CollectionAPITokens:       config.DefaultAPITokensCollection,
-		CollectionNotifications:   config.DefaultNotificationsCollection,
-		CollectionQPUTimeRequests: config.DefaultQPUTimeRequestsCollection,
-		CollectionDrivers:         config.DefaultDriversCollection,
-		CollectionEvents:          config.DefaultEventsCollection,
-		CollectionThemes:          config.DefaultThemesCollection,
+		CollectionQPUs:               config.DefaultQpusCollection,
+		CollectionTimeSlots:          config.DefaultTimeSlotsCollection,
+		CollectionQuantumJobs:        config.DefaultQuantumJobsCollection,
+		CollectionAPITokens:          config.DefaultAPITokensCollection,
+		CollectionNotifications:      config.DefaultNotificationsCollection,
+		CollectionQPUTimeRequests:    config.DefaultQPUTimeRequestsCollection,
+		CollectionDrivers:            config.DefaultDriversCollection,
+		CollectionEvents:             config.DefaultEventsCollection,
+		CollectionThemes:             config.DefaultThemesCollection,
+		CollectionCalibrationResults: config.DefaultCalibrationResultsCollection,
 	}
 }
 

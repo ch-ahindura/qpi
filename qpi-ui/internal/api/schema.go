@@ -24,11 +24,15 @@ const (
 	// appends it to the `events` trace log for the dashboard to chart
 	// (RFC 0001 §7, Phase 3).
 	EventCryostatReading EventType = "CryostatReading"
+	// EventCalibrateDispatch is pushed to trigger calibration.
+	EventCalibrateDispatch EventType = "CalibrateDispatch"
+	// EventCalibrationResult is emitted by a calibration tuner with results.
+	EventCalibrationResult EventType = "CalibrationResult"
 )
 
 // AllEventTypes lists every event type QPI-UI knows about in this version.
 // Registration validates a custom driver's chosen events against this list.
-var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading}
+var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading, EventCalibrateDispatch, EventCalibrationResult}
 
 // isKnownEventType reports whether eventType is one QPI-UI has a handler for.
 func isKnownEventType(eventType EventType) bool {
@@ -129,6 +133,70 @@ func (crp *CryostatReadingPayload) SetDefaults() {
 func (crp *CryostatReadingPayload) ToMap() map[string]any {
 	return map[string]any{
 		"readings": crp.Readings,
+	}
+}
+
+// CalibrateDispatchPayload represents the payload to start calibration.
+type CalibrateDispatchPayload struct {
+	Mode         string   `json:"mode"`
+	TargetQubits []string `json:"target_qubits,omitempty"`
+	TargetEdges  []string `json:"target_edges,omitempty"`
+}
+
+func (cdp *CalibrateDispatchPayload) SetDefaults() {
+}
+
+// ToMap converts the DTO to a map of field values
+func (cdp *CalibrateDispatchPayload) ToMap() map[string]any {
+	return map[string]any{
+		"mode":          cdp.Mode,
+		"target_qubits": cdp.TargetQubits,
+		"target_edges":  cdp.TargetEdges,
+	}
+}
+
+// RoutineResult represents the result of a single routine execution.
+type RoutineResult struct {
+	RoutineName string         `json:"routine_name"`
+	Target      string         `json:"target"`
+	Parameters  map[string]any `json:"parameters"`
+	Timestamp   string         `json:"timestamp"`
+	DurationS   float64        `json:"duration_s"`
+}
+
+// BenchmarkResult represents the result of a benchmark.
+type BenchmarkResult struct {
+	Protocol     string         `json:"protocol"`
+	Target       string         `json:"target"`
+	Fidelity     *float64       `json:"fidelity"`
+	ErrorPerGate *float64       `json:"error_per_gate"`
+	RawData      map[string]any `json:"raw_data"`
+}
+
+// CalibrationResultPayload is the payload of a CalibrationResult event.
+type CalibrationResultPayload struct {
+	Timestamp      string            `json:"timestamp"`
+	DurationS      float64           `json:"duration_s"`
+	Mode           string            `json:"mode"`
+	RoutineResults []RoutineResult   `json:"routine_results"`
+	Benchmarks     []BenchmarkResult `json:"benchmarks"`
+	Status         string            `json:"status"`
+	Errors         []string          `json:"errors"`
+}
+
+func (crp *CalibrationResultPayload) SetDefaults() {
+}
+
+// ToMap converts the DTO to a map of field values
+func (crp *CalibrationResultPayload) ToMap() map[string]any {
+	return map[string]any{
+		"timestamp":       crp.Timestamp,
+		"duration_s":      crp.DurationS,
+		"mode":            crp.Mode,
+		"routine_results": crp.RoutineResults,
+		"benchmarks":      crp.Benchmarks,
+		"status":          crp.Status,
+		"errors":          crp.Errors,
 	}
 }
 

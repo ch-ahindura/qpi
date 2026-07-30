@@ -16,17 +16,18 @@ import (
 // driver framework enabled, mirroring handleDriverCreate/Connect's expectations.
 func testConfig() *config.AppConfig {
 	return &config.AppConfig{
-		CollectionQPUs:            config.DefaultQpusCollection,
-		CollectionTimeSlots:       config.DefaultTimeSlotsCollection,
-		CollectionQuantumJobs:     config.DefaultQuantumJobsCollection,
-		CollectionAPITokens:       config.DefaultAPITokensCollection,
-		CollectionNotifications:   config.DefaultNotificationsCollection,
-		CollectionQPUTimeRequests: config.DefaultQPUTimeRequestsCollection,
-		CollectionDrivers:         config.DefaultDriversCollection,
-		CollectionEvents:          config.DefaultEventsCollection,
-		CollectionThemes:          config.DefaultThemesCollection,
-		PortRangeStart:            6100,
-		PortRangeEnd:              6200,
+		CollectionQPUs:               config.DefaultQpusCollection,
+		CollectionTimeSlots:          config.DefaultTimeSlotsCollection,
+		CollectionQuantumJobs:        config.DefaultQuantumJobsCollection,
+		CollectionAPITokens:          config.DefaultAPITokensCollection,
+		CollectionNotifications:      config.DefaultNotificationsCollection,
+		CollectionQPUTimeRequests:    config.DefaultQPUTimeRequestsCollection,
+		CollectionDrivers:            config.DefaultDriversCollection,
+		CollectionEvents:             config.DefaultEventsCollection,
+		CollectionThemes:             config.DefaultThemesCollection,
+		CollectionCalibrationResults: config.DefaultCalibrationResultsCollection,
+		PortRangeStart:               6100,
+		PortRangeEnd:                 6200,
 	}
 }
 

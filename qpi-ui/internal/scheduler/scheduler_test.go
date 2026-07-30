@@ -15,17 +15,18 @@ import (
 // retention window, mirroring the collection names every other test uses.
 func retentionConfig(retention time.Duration) *config.AppConfig {
 	return &config.AppConfig{
-		CollectionQPUs:            config.DefaultQpusCollection,
-		CollectionTimeSlots:       config.DefaultTimeSlotsCollection,
-		CollectionQuantumJobs:     config.DefaultQuantumJobsCollection,
-		CollectionAPITokens:       config.DefaultAPITokensCollection,
-		CollectionNotifications:   config.DefaultNotificationsCollection,
-		CollectionQPUTimeRequests: config.DefaultQPUTimeRequestsCollection,
-		CollectionDrivers:         config.DefaultDriversCollection,
-		CollectionEvents:          config.DefaultEventsCollection,
-		CollectionThemes:          config.DefaultThemesCollection,
-		EventsRetention:           retention,
-		EventsPruneInterval:       time.Hour,
+		CollectionQPUs:               config.DefaultQpusCollection,
+		CollectionTimeSlots:          config.DefaultTimeSlotsCollection,
+		CollectionQuantumJobs:        config.DefaultQuantumJobsCollection,
+		CollectionAPITokens:          config.DefaultAPITokensCollection,
+		CollectionNotifications:      config.DefaultNotificationsCollection,
+		CollectionQPUTimeRequests:    config.DefaultQPUTimeRequestsCollection,
+		CollectionDrivers:            config.DefaultDriversCollection,
+		CollectionEvents:             config.DefaultEventsCollection,
+		CollectionThemes:             config.DefaultThemesCollection,
+		CollectionCalibrationResults: config.DefaultCalibrationResultsCollection,
+		EventsRetention:              retention,
+		EventsPruneInterval:          time.Hour,
 	}
 }
 

@@ -66,6 +66,9 @@ func EnsureSchema(app core.App) error {
 	if err := ensureThemesCollection(app, cfg); err != nil {
 		return fmt.Errorf("themes collection: %w", err)
 	}
+	if err := ensureCalibrationResultsCollection(app, cfg); err != nil {
+		return fmt.Errorf("calibration_results collection: %w", err)
+	}
 
 	log.Println("[QPI] Schema OK")
 	return nil
@@ -315,6 +318,24 @@ func ensureThemesCollection(app core.App, cfg *config.AppConfig) error {
 	// Public read (dashboard needs theme before login), superuser-only CUD (RFC 0002 §3.4).
 	col.ListRule = types.Pointer("")
 	col.ViewRule = types.Pointer("")
+	col.CreateRule = nil
+	col.UpdateRule = nil
+	col.DeleteRule = nil
+
+	return app.Save(col)
+}
+
+// ensureCalibrationResultsCollection creates the `calibration_results` collection storing
+// calibration results returned by a calibration tuner.
+func ensureCalibrationResultsCollection(app core.App, cfg *config.AppConfig) error {
+	col, err := initCollection(app, cfg.CollectionCalibrationResults, &CalibrationResult{})
+	if err != nil {
+		return err
+	}
+
+	// Public read (maybe auth only?), superuser-only CUD (written by server)
+	col.ListRule = types.Pointer("@request.auth.id != \"\"")
+	col.ViewRule = types.Pointer("@request.auth.id != \"\"")
 	col.CreateRule = nil
 	col.UpdateRule = nil
 	col.DeleteRule = nil

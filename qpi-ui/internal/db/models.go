@@ -722,3 +722,81 @@ func (t *Theme) RefreshFromRecord(record *core.Record) error {
 
 	return nil
 }
+
+// CalibrationResult represents a calibration result in the database.
+type CalibrationResult struct {
+	ID             string  `json:"id" db:"id"`
+	Driver         string  `json:"driver" db:"driver" type:"relation" required:"true" maxSelect:"1" collection:"drivers"`
+	Timestamp      string  `json:"timestamp" db:"timestamp" type:"date" required:"true"`
+	DurationS      float64 `json:"duration_s" db:"duration_s" min:"0.0"`
+	Mode           string  `json:"mode" db:"mode" type:"select" required:"true" maxSelect:"1" values:"full,partial,fidelity_check"`
+	RoutineResults any     `json:"routine_results" db:"routine_results" type:"json"`
+	Benchmarks     any     `json:"benchmarks" db:"benchmarks" type:"json"`
+	Status         string  `json:"status" db:"status" type:"select" required:"true" maxSelect:"1" values:"success,partial_failure,failed"`
+	Created        string  `json:"created" db:"created" type:"autodate" onCreate:"true"`
+}
+
+// ToRecord converts this model into a pocketbase record
+func (cr *CalibrationResult) ToRecord(app core.App) (*core.Record, error) {
+	if cr == nil {
+		return nil, nil
+	}
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return nil, err
+	}
+
+	col_name := cfg.CollectionCalibrationResults
+	col, err := app.FindCollectionByNameOrId(col_name)
+	if err != nil {
+		return nil, fmt.Errorf("error finding collection %s: %w", col_name, err)
+	}
+
+	record, err := getOrCreateRecord(app, col_name, cr.ID, col)
+	if err != nil {
+		return nil, err
+	}
+	record.Set("driver", cr.Driver)
+	record.Set("timestamp", cr.Timestamp)
+	record.Set("duration_s", cr.DurationS)
+	record.Set("mode", cr.Mode)
+	record.Set("status", cr.Status)
+	record.Set("created", cr.Created)
+
+	if cr.RoutineResults != nil {
+		resultsJSON, err := json.Marshal(cr.RoutineResults)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling routine_results: %w", err)
+		}
+		record.Set("routine_results", resultsJSON)
+	}
+
+	if cr.Benchmarks != nil {
+		benchmarksJSON, err := json.Marshal(cr.Benchmarks)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling benchmarks: %w", err)
+		}
+		record.Set("benchmarks", benchmarksJSON)
+	}
+
+	return record, nil
+}
+
+// RefreshFromRecord updates this model using the values from a pocketbase record
+func (cr *CalibrationResult) RefreshFromRecord(record *core.Record) error {
+	if cr == nil || record == nil {
+		return errors.New("cannot refresh from nil record")
+	}
+
+	cr.ID = record.Id
+	cr.Driver = record.GetString("driver")
+	cr.Timestamp = record.GetString("timestamp")
+	cr.DurationS = record.GetFloat("duration_s")
+	cr.Mode = record.GetString("mode")
+	cr.RoutineResults = record.Get("routine_results")
+	cr.Benchmarks = record.Get("benchmarks")
+	cr.Status = record.GetString("status")
+	cr.Created = record.GetString("created")
+
+	return nil
+}

@@ -43,6 +43,7 @@ nav:
       - Python Driver:
           - Overview: driver/python.md
           - API Reference: driver/python_api.md
+      - Calibration Tuners: driver/tuners.md
       - Go Driver: driver/go.md
       - JavaScript Driver: driver/javascript.md
       - Operations Runbook: driver/operations.md
@@ -57,6 +58,7 @@ nav:
       - 0001 Driver Framework: rfcs/0001-driver-framework.md
       - 0002 Dashboard Theming: rfcs/0002-dashboard-theming.md
       - 0003 Driver Extensibility: rfcs/0003-driver-extensibility.md
+      - 0004 Calibration Tuners: rfcs/0004-calibration-tuners.md
   - Changelog: changelog.md
 
 markdown_extensions:

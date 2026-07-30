@@ -345,7 +345,9 @@ export class Options {
     if (raw === undefined) return fallback;
     const value = Number(raw.trim());
     if (!Number.isInteger(value)) {
-      throw new Error(`bad value for -o ${key}: '${raw}' is not a whole number`);
+      throw new Error(
+        `bad value for -o ${key}: '${raw}' is not a whole number`,
+      );
     }
     return value;
   }

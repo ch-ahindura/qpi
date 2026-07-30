@@ -35,7 +35,6 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
-
 from qpi_driver import Executor, JobPayload
 from qpi_driver.builtins.qpu import device_spec
 

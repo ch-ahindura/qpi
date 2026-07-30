@@ -31,12 +31,18 @@ aer = ["qiskit-aer>=0.14.0"]
 qiskit_aer = ["qpi-driver[aer]"]
 quantify = [
     "quantify-scheduler",
-    "qblox-instruments<1.3.0"
+    "qblox-instruments<1.3.0",
+    "scipy>=1.11",
+    "lmfit>=1.3"
 ]
 qblox = [
     "qblox-scheduler",
-    "qblox-instruments<1.3.0"
+    "qblox-instruments<1.3.0",
+    "scipy>=1.11",
+    "lmfit>=1.3"
 ]
+quantify_tuner = ["qpi-driver[quantify]"]
+qblox_tuner = ["qpi-driver[qblox]"]
 bluefors_gen1 = []
 mock = []
 presto = []
@@ -63,6 +69,10 @@ where = ["."]
 include = ["qpi_driver*"]
 
 [tool.uv]
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
 override-dependencies = [
     "pyqt5-qt5>=5.15.10",
     "pyqt5>=5.15.10",

@@ -1,0 +1,39 @@
+# QPI Calibration Configuration Example
+# RFC: Calibrate Driver Phase 6
+target_qubits: ["q0", "q1", "q2", "q3"]
+target_edges: ["q0-q1", "q1-q2", "q2-q3"]
+
+routines:
+  resonator_spectroscopy:
+    enabled: true
+    params:
+      freq_span: 10e6
+      freq_step: 100e3
+  
+  qubit_spectroscopy:
+    enabled: true
+    params:
+      freq_span: 40e6
+      freq_step: 500e3
+      
+  rabi_oscillations:
+    enabled: true
+    params:
+      amps: [0.1, 0.2, 0.3, 0.4, 0.5]
+      
+  t1_experiment:
+    enabled: true
+    params:
+      delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 50e-6, 100e-6]
+      
+  ramsey_experiment:
+    enabled: true
+    params:
+      delays: [0, 5e-6, 10e-6, 15e-6, 20e-6, 30e-6]
+      detuning: 1e6
+
+monitoring:
+  rb_depths: [1, 10, 20, 50, 100]
+  n_circuits_per_depth: 20
+  shots: 1024
+  allxy_as_smoke_test: true

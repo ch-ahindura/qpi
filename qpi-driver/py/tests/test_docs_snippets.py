@@ -34,7 +34,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
 from qpi_driver.builtins import registry
 from qpi_driver.sdk import QpiDriver
 
