@@ -8,9 +8,68 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ## [Unreleased]
 
 ### Added
-- Added `calibrate` operation support to `qpi-driver` and `qpi-ui` (RFC 0004).
-- Added builtin calibration tuners (`quantify_tuner` and `qblox_tuner`) for executing complex calibration DAGs and automated persistence to track parameter drift.
-- Introduced `calibration_results` collection to the QPI-UI Server for persisting calibration metrics and benchmarking reports.
+
+**A third operation, `calibrate`** (RFC 0004). A tuner runs calibration
+experiments against a transmon chip, fits the results, and writes the fitted
+parameters back to the same `quantify.device.yml` the `process` driver reads for
+every job. It registers as its own driver, beside the QPU rather than inside it.
+
+```bash
+qpi-driver start --operation calibrate --device quantify_tuner \
+    -o calibration_config=./calibration.yml \
+    -o quantify_device_config=./quantify.device.yml
+```
+
+- Two devices: `quantify_tuner` (quantify-scheduler) and `qblox_tuner`
+  (qblox-scheduler), installed by the `[quantify_tuner]` and `[qblox_tuner]`
+  extras. Both run the same sixteen routines — the two schedulers share a gate
+  vocabulary, so the experiments are written once and a backend supplies only the
+  schedule class and a way to run one.
+- The routine graph runs from resonator spectroscopy through Rabi, Ramsey, T1,
+  T2 echo, DRAG, AllXY and fine amplitude to randomized benchmarking, plus flux
+  spectroscopy, the CZ chevron, conditional phase and interleaved RB for
+  flux-tunable couplers. Ordering comes entirely from each routine's declared
+  dependencies.
+- `calibration.yml` says which routines run and over what. A routine the file
+  does not mention **runs**: defaulting to disabled would make an empty file mean
+  "calibrate nothing", and a run that does nothing raises nothing, so it would
+  report success. A routine name matching no routine is a startup error, so a
+  typo cannot silently disable an experiment.
+- **Drift monitoring.** With `-o drift_check_interval=1800` a tuner benchmarks on
+  its own schedule and queues a partial recalibration of the qubits whose
+  fidelity has fallen below `fidelity_threshold` — or `fidelity_2q_threshold`,
+  for an edge, since a CZ an order of magnitude worse than a single-qubit gate is
+  normal rather than drift.
+- `POST /api/op/calibrate/dispatch` (admin-only) queues a calibration, and the
+  new `calibration_requests` collection is the queue the driver's dispatcher
+  polls. Queueing rather than sending is what makes a request survive a restart,
+  requeue on a send error, and run when an offline driver reconnects. A tuner
+  runs one calibration at a time.
+- `calibration_results` stores each report: fitted parameters per routine and
+  target, benchmark fidelities, and what failed. It is its own collection rather
+  than part of the `events` log, so `eventsRetention` does not prune it.
+- **A Calibration tab** in the dashboard, admin-only: measured fidelity per
+  target against the threshold that governs it, the current parameters grouped by
+  qubit, run history, and a trigger form defaulting to the cheap drift check
+  rather than the multi-hour full run.
+- `calibrate` is in the Go and TypeScript SDK operation enums too, with their
+  event types, though only the Python SDK ships a tuner (RFC 0003 §8).
+
+**Write-back safety** (RFC 0004 §10). A tuner writes the file every subsequent
+job reads, so: nothing is written unless a routine produced a result; a failed
+run writes nothing at all; the candidate file is verified to read back as written
+before anything is replaced; and the previous file is kept as
+`quantify.device.yml.prev` so a calibration that makes things worse can be undone
+without a second run. Fitted values outside the sweep that produced them are
+treated as failed fits, not as new parameters.
+
+### Changed
+- `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
+  seconds rather than minutes when iterating on one tab.
+- The dashboard's `QPU` type no longer carries `calibration_data`, a field no
+  collection on the server ever had.
+
+
 ## [0.2.0] - 2026-07-29
 
 ### Migration

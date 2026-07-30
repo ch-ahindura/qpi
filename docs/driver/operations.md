@@ -154,6 +154,45 @@ All four exit 1 before the driver connects to anything, so a `Restart=on-failure
 unit will loop on them — check `systemctl status` rather than waiting for the
 dashboard to show the driver online.
 
+## Running a calibration on a production node
+
+A `calibrate` driver differs operationally from the other two in one way that
+matters: it writes a file the QPU beside it reads. Everything below follows from
+that.
+
+**Queue one, don't send one.** `POST /api/op/calibrate/dispatch` (admin-only)
+adds a row to `calibration_requests`; the driver's dispatcher picks it up on its
+next tick. That indirection is deliberate — a request survives a server restart,
+is requeued on a send error, and runs when a driver that was offline reconnects.
+The dashboard's Calibration tab is the same call with a form in front of it.
+
+```bash
+curl -X POST "$QPI_ADDR/api/op/calibrate/dispatch" \
+  -H "Authorization: $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"driver_id": "<driver-id>", "mode": "fidelity_check"}'
+```
+
+**One at a time.** A tuner runs a single calibration; a second is not dispatched
+until the first reports. A `full` run is hours, so prefer `fidelity_check`
+(minutes, changes nothing) to find out whether a full run is warranted.
+
+**The device file has a backup.** Every successful write-back leaves the previous
+file as `quantify.device.yml.prev`. If a calibration makes fidelity worse, that
+is the fastest way back — restore it and restart the `process` driver, rather
+than waiting on another calibration:
+
+```bash
+cp quantify.device.yml.prev quantify.device.yml
+```
+
+A failed calibration writes nothing at all, so a `.prev` older than the last run
+means the last run failed.
+
+**Retention does not apply to calibration reports.** `calibration_results` is its
+own collection, not part of the `events` log, so `eventsRetention` leaves it
+alone. Reports are rare and small in number; if they ever need pruning it is a
+separate decision, made deliberately.
+
 ## Troubleshooting
 
 **The `events` table keeps growing.** Confirm `eventsRetention > 0` and that the
@@ -170,6 +209,21 @@ dropped by design.
 **Pruning deleted too much / too little.** `eventsRetention` is the only lever;
 it takes effect on the next `eventsPruneInterval` tick without a restart only if
 supplied via config reload — otherwise restart the server after changing it.
+
+**A calibration is stuck in `running`.** The request is released when its report
+arrives, so a request that never leaves `running` means the tuner died mid-run —
+check the driver's journal. Nothing was written to the device file (a failed run
+does not write), so the QPU is unaffected. Set the row's status to `failed` in
+the admin UI to let the next calibration through.
+
+**The tuner will not start: "calibration config not found".** Deliberate.
+`-o calibration_config=` must point at a real file, because a tuner with nothing
+to run would otherwise report success having measured nothing.
+
+**Every routine failed with a fit error.** Expected against a dummy cluster,
+which returns no real data — the fits refuse rather than writing zeros to the
+device. Against real hardware it means the sweep ranges in `calibration.yml` do
+not bracket the feature being measured.
 
 ## Verify
 

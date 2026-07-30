@@ -251,7 +251,7 @@ The server exposes both **custom HTTP routes** and **PocketBase collection endpo
 | `GET`  | `/api/jobs` | Authenticated | Lists jobs for the authenticated user. |
 | `GET`  | `/api/jobs/{id}` | Authenticated | Retrieves a specific job. |
 | `POST` | `/api/jobs/{id}/cancel` | Authenticated | Cancels a pending job. |
-| `POST` | `/api/calibrate` | Superuser | Dispatches a calibration routine to a connected tuner. |
+| `POST` | `/api/op/calibrate/dispatch` | Superuser | Queues a calibration for a tuner driver to pick up. |
 | `GET`  | `/api/qpus` | Public | Lists all registered QPUs. |
 | `GET`  | `/api/qpus/{name}` | Public | Retrieves a specific QPU. |
 | `POST` | `/api/tokens` | Authenticated | Creates a new API token. |
@@ -272,7 +272,8 @@ All collection endpoints follow the standard PocketBase REST pattern: `/api/coll
 | `qpus` | Public read; superuser CUD | QPU hardware records with status, ports, and config. |
 | `time_slots` | Owner-only CRUD; superuser bypass | Calendar reservations linked to `users`. |
 | `quantum_jobs` | Public read; authenticated create | Job queue with payload, status, and results. |
-| `calibration_results` | Public read | Results and telemetry from hardware calibration runs. |
+| `calibration_results` | Authenticated read; superuser CUD | Reports from calibration runs: fitted parameters, benchmark fidelities and errors. |
+| `calibration_requests` | Authenticated read; superuser CUD | The queue of calibrations waiting for, or being run by, a tuner driver. |
 | `qpu_time_requests` | Owner-only CRUD; superuser update | Requests for additional QPU time (pending/approved/rejected). |
 | `notifications` | Authenticated read (visibility-filtered); superuser CUD | Admin announcements with broadcast/targeted reach, time windows, and dismiss tracking. |
 
@@ -367,29 +368,60 @@ Compiles and runs circuits using `qblox-scheduler`.
   ```
 
 ### 5. Calibration Tuners
-Executes calibration DAG routines to fix parameter drift.
-* **Quantify Tuner**:
+Runs calibration experiments against the chip, fits the results, and writes the fitted
+parameters back to the same `quantify.device.yml` the `process` driver reads for every
+job. A tuner registers as its own driver, separate from the QPU driver on the same node.
+
+`calibration_config` is the one option worth setting deliberately: it says which routines
+run and over what. A tuner cannot start without it — a calibration with nothing to run
+would report success having measured nothing, so its absence is a startup error rather
+than a default.
+
+* **Quantify Tuner** (quantify-scheduler):
   ```bash
   # Install the package with quantify_tuner extra
   pip install "./qpi-driver/py[cli,quantify_tuner]"
 
-  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify_tuner" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
+  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify_tuner" -o calibration_config=qpi-driver/py/calibration.example.yml -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml -o is_dummy=true
   ```
-* **Qblox Tuner**:
+* **Qblox Tuner** (qblox-scheduler):
   ```bash
   # Install the package with qblox_tuner extra
   pip install "./qpi-driver/py[cli,qblox_tuner]"
 
-  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox_tuner" -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
+  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "qblox_tuner" -o calibration_config=qpi-driver/py/calibration.example.yml -o quantify_hardware_config=qpi-driver/py/quantify.hardware.example.json -o quantify_device_config=qpi-driver/py/quantify.device.example.yml
+  ```
+* **With drift monitoring**: give the tuner an interval and it benchmarks on its own
+  schedule, recalibrating the qubits whose fidelity has fallen below threshold. Edges are
+  judged against the two-qubit threshold and qubits against the one-qubit one.
+  ```bash
+  qpi-driver start --operation calibrate --token "my-super-secret-token-12345" --ca-fingerprint "<fingerprint>" --device "quantify_tuner" -o calibration_config=qpi-driver/py/calibration.example.yml -o drift_check_interval=1800 -o fidelity_threshold=0.999 -o fidelity_2q_threshold=0.99
   ```
 
+**Triggering one from the server.** Admins can queue a calibration from the dashboard's
+Calibration tab, or directly:
+
+```bash
+curl -X POST "$QPI_ADDR/api/op/calibrate/dispatch" \
+  -H "Authorization: $ADMIN_TOKEN" -H "Content-Type: application/json" \
+  -d '{"driver_id": "<driver-id>", "mode": "fidelity_check"}'
+```
+
+`mode` is one of `fidelity_check` (benchmarks only — minutes, changes nothing), `partial`
+(re-runs the routines downstream of `target_qubits`), or `full` (the whole graph, hours).
+The request is queued rather than sent: it survives a restart and runs when an offline
+driver reconnects. A tuner runs one calibration at a time.
+
+See the [Calibration Tuners reference](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md)
+for the routine graph, the `calibration.yml` format, and how the device file is written back.
+
 ### CLI Usage
-The package exposes a command-line interface via `typer`. A driver is run with one verb, `start`: `--operation` says what it does — `process` (a QPU) or `monitor` (e.g. a cryostat) — and `--device` which backend within it. Options can be passed as flags or fall back to their environment variables.
+The package exposes a command-line interface via `typer`. A driver is run with one verb, `start`: `--operation` says what it does — `process` (a QPU), `monitor` (e.g. a cryostat) or `calibrate` (a tuner) — and `--device` which backend within it. Options can be passed as flags or fall back to their environment variables.
 
 Universal options (shared by every operation):
 * `-a`, `--qpi-addr`: Full URL of the QPI server (env: `QPI_ADDR`, default: `http://127.0.0.1:8090`).
 * `-t`, `--token`: Access token identifying the driver (env: `QPI_ACCESS_TOKEN`, required).
-* `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1` (env: `QPI_DEVICE`).
+* `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1`, `quantify_tuner` (env: `QPI_DEVICE`).
 * `--ca-file`: Path to the downloaded root CA certificate of the server (env: `QPI_CA_FILE`, default: `./bin/qpi.ca.pem`).
 * `--ca-fingerprint`: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: `QPI_CA_FINGERPRINT`, required).
 * `-o`, `--option`: A setting of the chosen device as `key=value`, repeatable.

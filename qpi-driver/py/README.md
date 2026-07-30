@@ -471,7 +471,37 @@ imports at compile time, so a device there is registered in your own `main`.
 The one `monitor` device is `bluefors_gen1`, a cryostat monitor for Bluefors Control
 Software Gen. 1, shipped by `[bluefors_gen1]`.
 
-The `calibrate` devices are `quantify_tuner` and `qblox_tuner`, for running automated parameter calibration DAGs against hardware. See the [Tuners Framework Reference](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md) for how to set up calibration rules, config files, and write custom routines.
+## Tuner Backends
+
+The `calibrate` devices run calibration experiments against a chip, fit the results, and
+write the fitted parameters back to the device YAML the `process` driver reads.
+
+| Backend | Description | Extra |
+|---------|-------------|-------|
+| `quantify_tuner` | Calibration through quantify-scheduler | `[quantify_tuner]` |
+| `qblox_tuner` | Calibration through qblox-scheduler | `[qblox_tuner]` |
+
+```bash
+qpi-driver start --operation calibrate --device quantify_tuner \
+    -o calibration_config=./calibration.yml \
+    -o quantify_device_config=./quantify.device.yml \
+    -o quantify_hardware_config=./quantify.hardware.json
+```
+
+`calibration_config` is the only option a tuner cannot start without: it says which
+routines run and over what. A calibration with nothing to run would report success
+having measured nothing, so its absence is a startup error rather than a default.
+
+Add `-o drift_check_interval=1800` and the tuner benchmarks on its own schedule,
+recalibrating the qubits whose fidelity has fallen below `fidelity_threshold` (or
+`fidelity_2q_threshold`, for an edge).
+
+Both tuners run the same routines: the two schedulers share a gate vocabulary, so the
+experiments are written once and a backend supplies only the schedule class and a way to
+run one. See the
+[Calibration Tuners reference](https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md)
+for the routine graph, the `calibration.yml` format, how the device file is written back,
+and how to add a tuner of your own.
 
 ---
 
@@ -479,6 +509,9 @@ The `calibrate` devices are `quantify_tuner` and `qblox_tuner`, for running auto
 
 This is the `process` operation's architecture — a QPU driver. A `monitor` needs
 none of it: it has no worker, because it runs no jobs, and just polls on a timer.
+A `calibrate` driver has the same shape as a QPU — a worker subprocess and a result
+pump — because a calibration is as capable of hanging or crashing as a job, and rather
+more likely to, since it runs for hours rather than seconds.
 
 Execution happens in a *subprocess* so a heavy or crashing executor can never block
 or take down the receive loop. Results come back over a queue and are emitted by a
