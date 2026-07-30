@@ -1,75 +1,221 @@
-"""Device configuration persistence utilities."""
+"""Writing calibration back to the device YAML (RFC 0004 §10).
 
+This file is the trust boundary. A tuner writes ``quantify.device.yml``; the
+`process` driver on the same node reads it for every job. Getting it wrong does
+not fail the calibration — it fails every job afterwards, and looks like drift.
+
+Three rules follow, and all three are enforced here rather than left to callers:
+
+**Write the schema the loader reads.** ``load_quantum_device`` iterates the
+top-level mapping as ``element_name -> {element_type, submodule: {param: value}}``.
+Anything else — a compilation config, say — parses as YAML and then fails as a
+device.
+
+**Never emit a tag ``safe_load`` cannot read.** The loader uses ``yaml.safe_load``,
+so ``yaml.dump`` of live objects produces a file unreadable by the only thing
+that reads it. Everything written here is a plain scalar.
+
+**Prove it loads before replacing the original.** The candidate is written to a
+temporary file and loaded back through the real loader; only a file that
+survives that becomes the device config. The previous file is kept beside it, so
+a calibration that makes things worse can be undone without a second run.
+"""
+
+import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from qpi_driver.tuners.base.device import (
+    construction_args,
+    parameters_of,
+    submodules_of,
+)
 
-def save_device_config(device: Any, path: Path) -> None:
-    """Serialise QuantumDevice parameters to YAML atomically.
+log = logging.getLogger(__name__)
 
-    Writes to a .tmp file first, then uses os.replace() for atomicity.
-    The YAML format matches the quantify.device.example.yml schema.
+#: The key ``load_quantum_device`` reads a device element's class from.
+ELEMENT_TYPE_PROP = "element_type"
+
+#: Suffix of the copy kept beside the device config before it is overwritten.
+BACKUP_SUFFIX = ".prev"
+
+#: qcodes parameters that describe the instrument rather than the calibration.
+_UNCALIBRATED = frozenset({"IDN"})
+
+
+class PersistenceError(Exception):
+    """The calibration could not be written back safely."""
+
+
+def serialise_device(device: Any) -> dict[str, Any]:
+    """A ``QuantumDevice`` as the mapping ``load_quantum_device`` accepts."""
+    config: dict[str, Any] = {}
+    for name in device.elements():
+        config[name] = _serialise_component(device.get_element(name))
+    for name in device.edges():
+        config[name] = _serialise_component(device.get_edge(name))
+    return config
+
+
+def _serialise_component(component: Any) -> dict[str, Any]:
+    """One element or edge: its class path, then its submodules' parameters."""
+    cls = type(component)
+    data: dict[str, Any] = {
+        ELEMENT_TYPE_PROP: {
+            "path": f"{cls.__module__}.{cls.__qualname__}",
+            "args": construction_args(component),
+        }
+    }
+
+    for submodule_name, submodule in submodules_of(component).items():
+        parameters = _serialise_parameters(submodule)
+        if parameters:
+            data[submodule_name] = parameters
+
+    data.update(_serialise_parameters(component))
+    return data
+
+
+def _serialise_parameters(owner: Any) -> dict[str, Any]:
+    """Readable, plain-scalar parameters of *owner*.
+
+    A parameter that cannot be read, or whose value is not a YAML scalar, is
+    skipped rather than coerced: ``str()`` of a live object round-trips into a
+    string the loader would then push back into a numeric parameter.
     """
-    config_dict = {}
-    if hasattr(device, "generate_compilation_config"):
-        # Generate quantify compilation config as a base if possible
-        config_dict = device.generate_compilation_config().model_dump()
-    else:
-        # Fallback to manual serialization
-        config_dict["name"] = device.name
-        config_dict["elements"] = {}
-        if hasattr(device, "elements"):
-            for name, element in device.elements().items():
-                config_dict["elements"][name] = serialize_device_element(element)
-        config_dict["edges"] = {}
-        if hasattr(device, "edges"):
-            for name, edge in device.edges().items():
-                config_dict["edges"][name] = serialize_edge(edge)
-
-    # Write atomically
-    dir_path = path.parent
-    dir_path.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.NamedTemporaryFile(
-        "w", dir=dir_path, delete=False, suffix=".tmp"
-    ) as tmp_file:
-        yaml.dump(config_dict, tmp_file, default_flow_style=False)
-        tmp_name = tmp_file.name
-
-    os.replace(tmp_name, path)
+    values: dict[str, Any] = {}
+    for name, value in parameters_of(owner).items():
+        if name in _UNCALIBRATED:
+            continue
+        if value is None or isinstance(value, (bool, int, float, str)):
+            values[name] = value
+        elif isinstance(value, (list, tuple)) and all(
+            isinstance(v, (int, float, str, bool, type(None))) for v in value
+        ):
+            values[name] = list(value)
+    return values
 
 
-def serialize_device_element(element: Any) -> dict:
-    """Extract calibration parameters from a DeviceElement into a dict."""
-    data = {}
-    if hasattr(element, "parameters"):
-        for param_name, param in element.parameters.items():
-            try:
-                val = param.get()
-                if isinstance(val, (int, float, str, bool, list, dict)):
-                    data[param_name] = val
-                else:
-                    data[param_name] = str(val)
-            except Exception:
-                pass
-    return data
+def save_device_config(device: Any, path: Path, *, keep_backup: bool = True) -> None:
+    """Write *device*'s calibration to *path*, atomically and only if it reloads.
+
+    Args:
+        device: the in-memory ``QuantumDevice`` the routines have updated.
+        path: the device config to replace.
+        keep_backup: copy the previous file to ``<path>.prev`` first.
+
+    Raises:
+        PersistenceError: if the serialised device does not load back. The
+            original file is left exactly as it was.
+    """
+    path = Path(path)
+    config = serialise_device(device)
+    if not config:
+        raise PersistenceError(
+            "refusing to write an empty device config — the device has no elements"
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = tempfile.NamedTemporaryFile(
+        "w", dir=path.parent, delete=False, suffix=".tmp", prefix=path.name + "."
+    )
+    candidate = Path(handle.name)
+    try:
+        with handle as tmp:
+            yaml.safe_dump(config, tmp, default_flow_style=False, sort_keys=False)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+
+        _verify_loads(candidate, config)
+
+        if keep_backup and path.exists():
+            shutil.copy2(path, path.with_suffix(path.suffix + BACKUP_SUFFIX))
+        os.replace(candidate, path)
+        log.info("wrote calibrated device config to %s", path)
+    except Exception:
+        candidate.unlink(missing_ok=True)
+        raise
 
 
-def serialize_edge(edge: Any) -> dict:
-    """Extract calibration parameters from an Edge into a dict."""
-    data = {}
-    if hasattr(edge, "parameters"):
-        for param_name, param in edge.parameters.items():
-            try:
-                val = param.get()
-                if isinstance(val, (int, float, str, bool, list, dict)):
-                    data[param_name] = val
-                else:
-                    data[param_name] = str(val)
-            except Exception:
-                pass
-    return data
+def _verify_loads(candidate: Path, expected: dict[str, Any]) -> None:
+    """Check *candidate* is readable as a device config, or raise.
+
+    Read back with the loader's own ``yaml.safe_load`` and compared against what
+    was dumped — which is what catches an emitted tag ``safe_load`` refuses, or a
+    value mangled on the way out.
+
+    The elements are then checked structurally rather than instantiated. qcodes
+    keeps a global registry of instrument names, so constructing ``q0`` a second
+    time while the live device still holds it raises regardless of whether the
+    file is good — the check would fail on every correct write. Structure is
+    what is actually at risk here: the class each element names came from a live
+    instance of that class, so it constructs; what a bad write gets wrong is the
+    shape, and that is verified exactly.
+    """
+    try:
+        with open(candidate) as f:
+            reloaded = yaml.safe_load(f)
+    except Exception as exc:
+        raise PersistenceError(
+            f"refusing to write {candidate.name}: it does not parse as safe YAML "
+            f"({exc}). The existing config is unchanged."
+        ) from exc
+
+    if not _equivalent(reloaded, expected):
+        raise PersistenceError(
+            f"refusing to write {candidate.name}: it does not read back as written. "
+            "The existing config is unchanged."
+        )
+
+    for name, element in (reloaded or {}).items():
+        if not isinstance(element, dict) or ELEMENT_TYPE_PROP not in element:
+            raise PersistenceError(
+                f"refusing to write {candidate.name}: element {name!r} has no "
+                f"{ELEMENT_TYPE_PROP!r}, so the loader would reject it. "
+                "The existing config is unchanged."
+            )
+        path = element[ELEMENT_TYPE_PROP].get("path")
+        if not isinstance(path, str) or "." not in path:
+            raise PersistenceError(
+                f"refusing to write {candidate.name}: element {name!r} has an "
+                f"unusable {ELEMENT_TYPE_PROP}.path ({path!r}). "
+                "The existing config is unchanged."
+            )
+
+
+def _equivalent(left: Any, right: Any) -> bool:
+    """Structural equality, counting NaN as equal to NaN.
+
+    An uncalibrated qcodes parameter reads as NaN, and NaN never equals itself,
+    so a plain ``==`` would report every freshly loaded device as corrupted.
+    """
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(
+            _equivalent(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _equivalent(a, b) for a, b in zip(left, right)
+        )
+    if isinstance(left, float) and isinstance(right, float):
+        return left == right or (left != left and right != right)
+    return left == right
+
+
+def restore_backup(path: Path) -> None:
+    """Put ``<path>.prev`` back, undoing the last write-back.
+
+    Raises:
+        PersistenceError: if there is no backup to restore.
+    """
+    path = Path(path)
+    backup = path.with_suffix(path.suffix + BACKUP_SUFFIX)
+    if not backup.exists():
+        raise PersistenceError(f"no backup at {backup} to restore")
+    shutil.copy2(backup, path)
+    log.info("restored %s from %s", path, backup)

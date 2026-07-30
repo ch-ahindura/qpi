@@ -53,6 +53,7 @@ try:
     )
     from quantify_scheduler.operations.pulse_library import (
         IdlePulse,
+        SetClockFrequency,
         ShiftClockPhase,
         SquarePulse,
     )
@@ -88,6 +89,8 @@ except ImportError as exp:
     class DeviceElement(BasicCompatClass): ...
 
     class ShiftClockPhase(BasicCompatClass): ...
+
+    class SetClockFrequency(BasicCompatClass): ...
 
     class SquarePulse(BasicCompatClass): ...
 

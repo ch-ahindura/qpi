@@ -40,7 +40,11 @@ try:
         Y,
         Z,
     )
-    from qblox_scheduler.operations.pulse_library import ShiftClockPhase, SquarePulse
+    from qblox_scheduler.operations.pulse_library import (
+        SetClockFrequency,
+        ShiftClockPhase,
+        SquarePulse,
+    )
     from qblox_scheduler.qblox.hardware_agent import (
         QbloxHardwareCompilationConfig,  # noqa: F401
     )
@@ -73,6 +77,8 @@ except ImportError as exp:
     class DeviceElement(BasicCompatClass): ...
 
     class ShiftClockPhase(BasicCompatClass): ...
+
+    class SetClockFrequency(BasicCompatClass): ...
 
     class SchedulerSubmodule(BasicCompatClass): ...
 

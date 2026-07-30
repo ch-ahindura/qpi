@@ -144,9 +144,10 @@ def _imported_spec(operation: Operation, path: str) -> DeviceSpec:
     """Adapt whatever *path* imports into a device of *operation*.
 
     What the object has to be is already what a device means for that operation
-    (RFC 0003 §6): for ``process`` a device is an executor, for ``monitor`` it is
-    the driver itself. Either operation also takes a :class:`DeviceSpec`, which is
-    how someone who wants a declared option schema and a ``--help`` entry gets one.
+    (RFC 0003 §6): for ``process`` a device is an executor, for ``calibrate`` it is
+    a tuner, for ``monitor`` it is the driver itself. Every operation also takes a
+    :class:`DeviceSpec`, which is how someone who wants a declared option schema
+    and a ``--help`` entry gets one.
     """
     imported = import_object(path)
 
@@ -165,6 +166,22 @@ def _imported_spec(operation: Operation, path: str) -> DeviceSpec:
             return qpu.device_spec(path, executor=imported, pass_through=True)
         raise ValueError(
             f"{path!r} is not usable as a process device: expected an Executor "
+            "subclass or instance, or a DeviceSpec"
+        )
+
+    if operation is Operation.CALIBRATE:
+        # Checked before the callable fallback below: a Tuner subclass is
+        # callable, so without this it would be mistaken for a device builder
+        # and called with the transport arguments.
+        from qpi_driver.builtins import calibrate
+        from qpi_driver.tuners import Tuner
+
+        if isinstance(imported, Tuner) or (
+            isinstance(imported, type) and issubclass(imported, Tuner)
+        ):
+            return calibrate.device_spec(path, tuner=imported, pass_through=True)
+        raise ValueError(
+            f"{path!r} is not usable as a calibrate device: expected a Tuner "
             "subclass or instance, or a DeviceSpec"
         )
 

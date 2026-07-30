@@ -20,6 +20,7 @@ from qpi_driver.builtins.discovery import (
 from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.executors import Executor
 from qpi_driver.options import Options
+from qpi_driver.tuners import Tuner
 
 # Something importable to point an import path at. `import_object` is given
 # `tests.test_discovery:FakeExecutor` and has to find these.
@@ -56,6 +57,22 @@ FAKE_PROCESS_SPEC = DeviceSpec(
 def fake_builder(**kwargs):
     """A monitor device builder: it returns a driver rather than running one."""
     return kwargs
+
+
+class FakeTuner(Tuner):
+    """A tuner defined in a test module, i.e. one the SDK knows nothing about."""
+
+    def __init__(self, name: str = "fake", **options):
+        super().__init__(name)
+        self.options = options
+
+    @property
+    def backend(self):
+        return None
+
+    @property
+    def device(self):
+        return None
 
 
 NOT_A_DEVICE = "just a string"
@@ -286,3 +303,27 @@ def test_an_entry_point_reusing_a_name_is_skipped(empty_registry):
 
 
 BOTH_SPECS = (FAKE_MONITOR_SPEC, FAKE_PROCESS_SPEC)
+
+
+def test_resolve_device_wraps_an_imported_tuner():
+    """A tuner is what a `calibrate` device is, as an executor is for `process`."""
+    spec = resolve_device(Operation.CALIBRATE, "tests.test_discovery:FakeTuner")
+
+    assert spec.operation is Operation.CALIBRATE
+    assert spec.name == "tests.test_discovery:FakeTuner"
+
+    driver = spec.build(
+        options=Options({}),
+        qpi_addr="http://localhost:8090",
+        token="t",
+        ca_fingerprint="",
+        ca_file_path="./bin/qpi.ca.pem",
+        recv_timeout_ms=200,
+    )
+    assert driver.tuner is FakeTuner
+
+
+def test_an_imported_calibrate_device_must_be_a_tuner():
+    """A Tuner subclass is callable, so it must be checked before the builder fallback."""
+    with pytest.raises(ValueError, match="not usable as a calibrate device"):
+        resolve_device(Operation.CALIBRATE, "tests.test_discovery:fake_builder")

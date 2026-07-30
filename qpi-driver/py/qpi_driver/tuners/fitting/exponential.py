@@ -1,87 +1,111 @@
-"""Exponential fitting utilities."""
+"""Exponential fits: T1, T2 echo, and randomized-benchmarking decay."""
 
 import logging
 
 import numpy as np
 from scipy.optimize import curve_fit
 
-logger = logging.getLogger(__name__)
+from .core import FitError, align, require_in_range, require_positive
+
+log = logging.getLogger(__name__)
 
 
 def exponential_decay(
-    t: np.ndarray | float, A: float, tau: float, offset: float
+    t: np.ndarray | float, amplitude: float, tau: float, offset: float
 ) -> np.ndarray | float:
-    """A * exp(-t/tau) + offset"""
-    return A * np.exp(-t / tau) + offset
+    """``A·exp(-t/τ) + c``."""
+    return amplitude * np.exp(-t / tau) + offset
+
+
+def _fit_exponential(x: np.ndarray, y: np.ndarray, *, what: str) -> tuple[float, ...]:
+    span = float(x[-1] - x[0]) or 1.0
+    offset_guess = float(y[-1])
+    amplitude_guess = float(y[0]) - offset_guess or 1.0
+
+    last_error: Exception | None = None
+    for tau_guess in (span / 3.0, span, span / 10.0):
+        try:
+            popt, _ = curve_fit(
+                exponential_decay,
+                x,
+                y,
+                p0=[amplitude_guess, tau_guess, offset_guess],
+                maxfev=20000,
+            )
+            return tuple(float(v) for v in popt)
+        except Exception as exc:  # noqa: BLE001 - reported below if all seeds fail
+            last_error = exc
+
+    raise FitError(f"could not fit {what}: {last_error}")
+
+
+def _fit_coherence(
+    delays: np.ndarray, signal: np.ndarray, *, key: str, what: str
+) -> dict[str, float]:
+    """Shared body of :func:`fit_t1` and :func:`fit_t2` — same curve, different name."""
+    x, y = align(delays, signal, what=what)
+    amplitude, tau, _offset = _fit_exponential(x, y, what=what)
+
+    value = require_positive(abs(tau), what=what)
+    # A time constant far beyond the window was never observed, only extrapolated.
+    require_in_range(value, 0.0, float(np.max(x)) * 10, what=what)
+    return {key: value, "amplitude": float(amplitude)}
 
 
 def fit_t1(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
-    """Fit exponential decay to T1 data.
-    Returns: {'t1': float, 'amplitude': float}"""
-    try:
-        offset_guess = float(signal[-1]) if len(signal) > 0 else 0.0
-        A_guess = float(signal[0]) - offset_guess if len(signal) > 0 else 1.0
-        tau_guess = float(delays[-1]) / 3.0 if len(delays) > 0 else 1.0
-
-        p0 = [A_guess, tau_guess, offset_guess]
-        popt, _ = curve_fit(exponential_decay, delays, signal, p0=p0)
-
-        return {"t1": float(popt[1]), "amplitude": float(popt[0])}
-    except Exception as e:
-        logger.error(f"Failed to fit T1 data: {e}")
-        return {"t1": 0.0, "amplitude": 0.0}
+    """Fit a T1 relaxation curve. Returns ``{'t1', 'amplitude'}``."""
+    return _fit_coherence(delays, signal, key="t1", what="T1")
 
 
 def fit_t2(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
-    """Fit exponential decay to T2 echo data.
-    Returns: {'t2': float, 'amplitude': float}"""
-    try:
-        offset_guess = float(signal[-1]) if len(signal) > 0 else 0.0
-        A_guess = float(signal[0]) - offset_guess if len(signal) > 0 else 1.0
-        tau_guess = float(delays[-1]) / 3.0 if len(delays) > 0 else 1.0
-
-        p0 = [A_guess, tau_guess, offset_guess]
-        popt, _ = curve_fit(exponential_decay, delays, signal, p0=p0)
-
-        return {"t2": float(popt[1]), "amplitude": float(popt[0])}
-    except Exception as e:
-        logger.error(f"Failed to fit T2 data: {e}")
-        return {"t2": 0.0, "amplitude": 0.0}
+    """Fit a T2 echo curve. Returns ``{'t2', 'amplitude'}``."""
+    return _fit_coherence(delays, signal, key="t2", what="T2")
 
 
-def _rb_decay(m: np.ndarray, A: float, r: float, B: float) -> np.ndarray:
-    return A * (r**m) + B
+def fit_rb_decay(
+    depths: np.ndarray, survival: np.ndarray, n_qubits: int = 1
+) -> dict[str, float]:
+    """Fit a randomized-benchmarking decay.
 
+    Fits ``p(m) = A·r^m + B`` and converts the depolarising parameter to an
+    average gate fidelity ``F = 1 - (1-r)(d-1)/d`` with ``d = 2^n``, per Magesan
+    et al., PRA 85, 042311 (2012) (arXiv:1109.6887).
 
-def fit_rb_decay(depths: np.ndarray, survival: np.ndarray) -> dict[str, float]:
-    """Fit A * r^m + B to RB survival probability.
-    Returns: {'depolarizing_param': float, 'fidelity': float, 'error_per_gate': float}
-    fidelity = 1 - (1-r)(d-1)/d where d=2 for single qubit"""
-    try:
-        B_guess = float(survival[-1]) if len(survival) > 0 else 0.5
-        A_guess = float(survival[0]) - B_guess if len(survival) > 0 else 0.5
-        r_guess = 0.9
+    Returns ``{'fidelity', 'error_per_gate', 'decay_rate'}``.
+    """
+    x, y = align(depths, survival, what="RB decay")
 
-        p0 = [A_guess, r_guess, B_guess]
-        # bounds to ensure 0 <= r <= 1
-        popt, _ = curve_fit(
-            _rb_decay,
-            depths,
-            survival,
-            p0=p0,
-            bounds=([-np.inf, 0, -np.inf], [np.inf, 1, np.inf]),
-        )
+    def rb_model(m, a, r, b):
+        return a * np.power(r, m) + b
 
-        r_fit = float(popt[1])
-        d = 2  # dimension for single qubit
-        fidelity = 1 - (1 - r_fit) * (d - 1) / d
-        epg = 1 - fidelity
+    last_error: Exception | None = None
+    for r_guess in (0.99, 0.9, 0.999):
+        try:
+            popt, _ = curve_fit(
+                rb_model,
+                x,
+                y,
+                p0=[float(y[0]) - float(y[-1]) or 0.5, r_guess, float(y[-1])],
+                bounds=([-2.0, 0.0, -1.0], [2.0, 1.0, 2.0]),
+                maxfev=20000,
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - reported below if all seeds fail
+            last_error = exc
+    else:
+        raise FitError(f"could not fit RB decay: {last_error}")
 
-        return {
-            "depolarizing_param": r_fit,
-            "fidelity": fidelity,
-            "error_per_gate": epg,
-        }
-    except Exception as e:
-        logger.error(f"Failed to fit RB data: {e}")
-        return {"depolarizing_param": 0.0, "fidelity": 0.0, "error_per_gate": 1.0}
+    decay = float(popt[1])
+    if not 0.0 < decay <= 1.0:
+        raise FitError(f"RB decay parameter {decay:.6g} is outside (0, 1]")
+
+    dimension = 2**n_qubits
+    error_per_gate = (1.0 - decay) * (dimension - 1) / dimension
+    fidelity = 1.0 - error_per_gate
+
+    require_in_range(fidelity, 0.0, 1.0, what="RB fidelity")
+    return {
+        "fidelity": fidelity,
+        "error_per_gate": error_per_gate,
+        "decay_rate": decay,
+    }

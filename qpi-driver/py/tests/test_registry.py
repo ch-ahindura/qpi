@@ -30,13 +30,15 @@ def _spec(name: str, operation: Operation = Operation.PROCESS) -> DeviceSpec:
     return DeviceSpec(name=name, operation=operation, build=lambda **_: None)
 
 
-def test_operations_are_a_closed_pair():
-    """The operations are exactly the two QPI-UI has handlers for.
+def test_operations_are_a_closed_set():
+    """The operations are exactly the ones QPI-UI has handlers for.
 
     Devices are the extensible half; operations are not, so asserting the whole
-    set is the point here rather than a brittleness (RFC 0003 §13.1).
+    set is the point here rather than a brittleness (RFC 0003 §13.1). Adding one
+    is meant to fail here, and in the Go and TypeScript SDKs' equivalents, until
+    every side of the contract has been updated together (RFC 0004 §6.1).
     """
-    assert [op.value for op in Operation] == ["process", "monitor"]
+    assert [op.value for op in Operation] == ["process", "monitor", "calibrate"]
 
 
 def test_a_device_is_a_name_an_operation_and_a_builder():

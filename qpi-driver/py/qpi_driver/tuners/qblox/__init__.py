@@ -1,30 +1,81 @@
-"""Qblox Tuner implementation."""
+"""The ``qblox_tuner`` device: calibration through qblox-scheduler.
+
+The routines are the same ones ``quantify_tuner`` runs — the two schedulers
+share a gate vocabulary, so only the schedule class and the execution path
+differ, and both live in :class:`QbloxBackend`.
+"""
 
 import logging
 from pathlib import Path
 from typing import Any
 
-from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED, HardwareAgent
+import xarray as xr
+
+from qpi_driver.compat.qblox import (
+    CZ,
+    IS_QBLOX_SCHEDULER_INSTALLED,
+    BinMode,
+    HardwareAgent,
+    IdlePulse,
+    Instrument,
+    Measure,
+    Reset,
+    Rxy,
+    Rz,
+    SetClockFrequency,
+    SquarePulse,
+    TimeableSchedule,
+    X,
+    Y,
+)
 from qpi_driver.executors.qblox.config import (
     load_quantify_hardware_config,
     load_quantum_device,
 )
-from qpi_driver.tuners.base import CalibrationConfig, CalibrationReport, Tuner
-from qpi_driver.tuners.base.dag import CalibrationDAG
-from qpi_driver.tuners.utils.persistence import save_device_config
+from qpi_driver.tuners.base import SchedulerBackend, Tuner
 
-from .routines import ALL_ROUTINES
+log = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
+
+class QbloxBackend(SchedulerBackend):
+    """qblox-scheduler's operations, run through a ``HardwareAgent``."""
+
+    name = "qblox"
+
+    Schedule = TimeableSchedule
+    Reset = Reset
+    Measure = Measure
+    Rxy = Rxy
+    X = X
+    Y = Y
+    Rz = Rz
+    CZ = CZ
+    IdlePulse = IdlePulse
+    SquarePulse = SquarePulse
+    SetClockFrequency = SetClockFrequency
+    BinMode = BinMode
+    drag_parameter = "beta"
+
+    def __init__(self, agent: Any) -> None:
+        self._agent = agent
+
+    def new_schedule(self, name: str, repetitions: int = 1) -> Any:
+        return TimeableSchedule(name=name, repetitions=repetitions)
+
+    def run(self, schedule: Any) -> xr.Dataset:
+        # The agent owns compilation and execution together, which is the whole
+        # of the difference from quantify's separate compiler and coordinator.
+        return self._agent.run(schedule)
 
 
 class QbloxTuner(Tuner):
-    """Tuner subclass for interacting with qblox-scheduler."""
+    """Calibrates a transmon chip through qblox-scheduler."""
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "QbloxTuner":
         if not IS_QBLOX_SCHEDULER_INSTALLED:
             raise ImportError(
-                "qblox-scheduler is not installed. Install the [qblox] extra to use QbloxTuner."
+                "qblox-scheduler is not installed. Install the [qblox_tuner] "
+                "extra to use QbloxTuner."
             )
         return super().__new__(cls)
 
@@ -32,64 +83,46 @@ class QbloxTuner(Tuner):
         self,
         name: str = "qblox_tuner",
         quantify_hardware_config: Path | dict | Any = Path("quantify.hardware.json"),
-        quantify_device_config: Path | dict = Path("quantify.device.json"),
+        quantify_device_config: Path | dict = Path("quantify.device.yml"),
         is_dummy: bool = False,
-        data_dir: Path = Path("data"),
+        data_dir: Path = Path("bin/data"),
         **kwargs: Any,
     ) -> None:
         super().__init__(name, **kwargs)
         self._is_dummy = is_dummy
-        self._data_dir = data_dir
+        self._data_dir = Path(data_dir)
 
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
         self._device = load_quantum_device(name=name, config=quantify_device_config)
-
         self._agent = HardwareAgent(
             hardware_configuration=hardware_config,
             quantum_device_configuration=self._device,
             create_dummy_connections=is_dummy,
-            output_dir=data_dir,
+            output_dir=self._data_dir,
         )
+        self._backend = QbloxBackend(self._agent)
+
         self._device_config_path = (
-            quantify_device_config
-            if isinstance(quantify_device_config, Path)
-            else Path("quantify.device.json")
+            Path(quantify_device_config)
+            if isinstance(quantify_device_config, (str, Path))
+            else None
         )
 
-    def calibrate(self, config: CalibrationConfig) -> CalibrationReport:
-        """Run full calibration."""
-        dag = CalibrationDAG(ALL_ROUTINES, config)
-        report = dag.run(self._device, self._agent, None, config)
-        save_device_config(self._device, self._device_config_path)
-        return report
+    @property
+    def backend(self) -> SchedulerBackend:
+        return self._backend
 
-    def check_fidelity(self, config: CalibrationConfig) -> dict[str, float]:
-        """Check fidelity of qubits."""
-        fidelities = {}
-        # Simple fidelity check via RB
-        rb_routine = next(r for r in ALL_ROUTINES if r.name == "rb")
-        for q in config.target_qubits:
-            schedule = rb_routine.build_schedule(
-                q, self._device, config.get_routine("rb")
-            )
-            ds = self._agent.run(schedule)
-            res = rb_routine.analyse(ds, q, self._device)
-            fidelities[q] = res.get("fidelity", 0.0)
-        return fidelities
-
-    def recalibrate(
-        self, qubits: list[str], config: CalibrationConfig
-    ) -> CalibrationReport:
-        """Recalibrate specific qubits."""
-        dag = CalibrationDAG(ALL_ROUTINES, config)
-        report = dag.run(self._device, self._agent, None, config)
-        save_device_config(self._device, self._device_config_path)
-        return report
+    @property
+    def device(self) -> Any:
+        return self._device
 
     def close(self) -> None:
-        """Release resources."""
         try:
-            self._agent.instrument_coordinator.close()
-        except Exception:
-            pass
+            self._agent.close()
+        except Exception:  # noqa: BLE001 - shutdown is best-effort
+            log.debug("could not close the hardware agent")
+        try:
+            Instrument.close_all()
+        except Exception:  # noqa: BLE001 - shutdown is best-effort
+            log.debug("could not close all instruments")

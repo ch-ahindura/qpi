@@ -1,39 +1,93 @@
-# QPI Calibration Configuration Example
-# RFC: Calibrate Driver Phase 6
-target_qubits: ["q0", "q1", "q2", "q3"]
-target_edges: ["q0-q1", "q1-q2", "q2-q3"]
+# Example calibration config for the `calibrate` operation (RFC 0004 §6.6).
+#
+# Pass it with `-o calibration_config=./calibration.yml`.
+#
+# Every routine is enabled unless it says otherwise, and every sweep has a
+# working default — so the shortest useful file is just `target_qubits`. A
+# routine name that matches no routine is a startup error, not a silent no-op,
+# so a typo here is caught before any hardware is touched.
+
+target_qubits: [q0, q1, q2]
+target_edges: [q0_q1, q1_q2]
+
+# Wall-clock ceiling for one routine on one target. A routine that hangs on an
+# instrument would otherwise hang the worker for the life of the driver.
+routine_timeout_s: 900
 
 routines:
+  # --- Spectroscopy: find the resonator, its power, and the qubit ---
   resonator_spectroscopy:
-    enabled: true
-    params:
-      freq_span: 10e6
-      freq_step: 100e3
-  
-  qubit_spectroscopy:
-    enabled: true
-    params:
-      freq_span: 40e6
-      freq_step: 500e3
-      
-  rabi_oscillations:
-    enabled: true
-    params:
-      amps: [0.1, 0.2, 0.3, 0.4, 0.5]
-      
-  t1_experiment:
-    enabled: true
-    params:
-      delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 50e-6, 100e-6]
-      
-  ramsey_experiment:
-    enabled: true
-    params:
-      delays: [0, 5e-6, 10e-6, 15e-6, 20e-6, 30e-6]
-      detuning: 1e6
+    # Either an explicit list of frequencies, or a span about the value
+    # currently in quantify.device.yml — the latter being what a
+    # recalibration wants, since it only has to find where the peak moved to.
+    span: 20e6
+    points: 51
+    shots: 1024
 
+  resonator_punchout:
+    amplitudes: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
+    span: 20e6
+    points: 31
+
+  qubit_spectroscopy:
+    span: 40e6
+    points: 51
+    # Deliberately weak: saturating the transition broadens the line and hides
+    # the centre this routine exists to find.
+    drive_amp: 0.01
+
+  # --- Single-qubit gates ---
+  rabi:
+    amplitudes: [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+
+  ramsey:
+    delays: [4e-9, 1e-6, 2e-6, 3e-6, 4e-6, 5e-6, 7e-6, 10e-6]
+    artificial_detuning: 1e6
+
+  t1:
+    delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 60e-6, 80e-6, 100e-6]
+
+  t2_echo:
+    delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 60e-6, 80e-6, 100e-6]
+
+  drag:
+    motzois: [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]
+
+  allxy: {}
+
+  fine_amplitude:
+    repetitions: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25]
+
+  # --- Benchmarks: measured, never written back ---
+  rb:
+    depths: [1, 2, 4, 8, 16, 32, 64]
+    circuits_per_depth: 10
+    # Seeded so a rerun benchmarks the same circuits; an unseeded RB would move
+    # under the drift check it exists to feed.
+    seed: 20260730
+
+  allxy_check: {}
+
+  # --- Two-qubit gates. Disabled by default: they need target_edges and a
+  # flux-tunable coupler, and on a chip without one they are pure failure noise.
+  flux_spectroscopy:
+    enabled: false
+    flux_offsets: [-0.2, -0.1, 0.0, 0.1, 0.2]
+
+  cz_chevron:
+    enabled: false
+    amplitudes: [0.1, 0.2, 0.3, 0.4, 0.5]
+    durations: [20e-9, 60e-9, 100e-9, 140e-9, 180e-9]
+
+  conditional_phase:
+    enabled: false
+
+  interleaved_rb:
+    enabled: false
+
+# What the periodic drift check runs, when `-o drift_check_interval` is set.
 monitoring:
-  rb_depths: [1, 10, 20, 50, 100]
-  n_circuits_per_depth: 20
-  shots: 1024
+  rb_depths: [1, 10, 50]
+  n_circuits_per_depth: 10
+  shots: 512
   allxy_as_smoke_test: true

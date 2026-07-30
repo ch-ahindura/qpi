@@ -1,29 +1,80 @@
-"""Quantify Tuner implementation."""
+"""The ``quantify_tuner`` device: calibration through quantify-scheduler."""
 
 import logging
 from pathlib import Path
 from typing import Any
 
-from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED, SerialCompiler
-from qpi_driver.executors.quantify.config import load_instrument_coordinator
-from qpi_driver.tuners.base import CalibrationConfig, CalibrationReport, Tuner
-from qpi_driver.tuners.base.dag import CalibrationDAG
-from qpi_driver.tuners.utils.persistence import save_device_config
+import xarray as xr
 
-from .config import load_quantify_hardware_config, load_quantum_device
-from .routines import ALL_ROUTINES
-from .routines import routine_registry as routine_registry
+from qpi_driver.compat.quantify import (
+    CZ,
+    IS_QUANTIFY_INSTALLED,
+    BinMode,
+    IdlePulse,
+    Instrument,
+    Measure,
+    Reset,
+    Rxy,
+    Rz,
+    Schedule,
+    SerialCompiler,
+    SetClockFrequency,
+    SquarePulse,
+    X,
+    Y,
+)
+from qpi_driver.executors.quantify.config import (
+    load_instrument_coordinator,
+    load_quantify_hardware_config,
+    load_quantum_device,
+)
+from qpi_driver.tuners.base import SchedulerBackend, Tuner
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
+
+
+class QuantifyBackend(SchedulerBackend):
+    """quantify-scheduler's operations, and its compile/prepare/retrieve cycle."""
+
+    name = "quantify"
+
+    Schedule = Schedule
+    Reset = Reset
+    Measure = Measure
+    Rxy = Rxy
+    X = X
+    Y = Y
+    Rz = Rz
+    CZ = CZ
+    IdlePulse = IdlePulse
+    SquarePulse = SquarePulse
+    SetClockFrequency = SetClockFrequency
+    BinMode = BinMode
+    drag_parameter = "motzoi"
+
+    def __init__(self, compiler: Any, instrument_coordinator: Any) -> None:
+        self._compiler = compiler
+        self._instrument_coordinator = instrument_coordinator
+
+    def new_schedule(self, name: str, repetitions: int = 1) -> Any:
+        return Schedule(name, repetitions=repetitions)
+
+    def run(self, schedule: Any) -> xr.Dataset:
+        compiled = self._compiler.compile(schedule)
+        self._instrument_coordinator.prepare(compiled)
+        self._instrument_coordinator.start()
+        self._instrument_coordinator.wait_done(timeout_sec=60)
+        return self._instrument_coordinator.retrieve_acquisition()
 
 
 class QuantifyTuner(Tuner):
-    """Tuner subclass for interacting with Quantify-scheduler."""
+    """Calibrates a transmon chip through quantify-scheduler."""
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "QuantifyTuner":
         if not IS_QUANTIFY_INSTALLED:
             raise ImportError(
-                "quantify-scheduler is not installed. Install the [quantify] extra to use QuantifyTuner."
+                "quantify-scheduler is not installed. Install the [quantify_tuner] "
+                "extra to use QuantifyTuner."
             )
         return super().__new__(cls)
 
@@ -31,73 +82,53 @@ class QuantifyTuner(Tuner):
         self,
         name: str = "quantify_tuner",
         quantify_hardware_config: Path | dict | Any = Path("quantify.hardware.json"),
-        quantify_device_config: Path | dict = Path("quantify.device.json"),
+        quantify_device_config: Path | dict = Path("quantify.device.yml"),
         is_dummy: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(name, **kwargs)
         self._is_dummy = is_dummy
+
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
         self._device = load_quantum_device(name=name, config=quantify_device_config)
+        self._device.hardware_config(hardware_config)
         self._instrument_coordinator = load_instrument_coordinator(
             f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
         )
-        self._device.hardware_config(hardware_config)
         self._compiler = SerialCompiler(
             name=f"{name}_compiler", quantum_device=self._device
         )
+        self._backend = QuantifyBackend(self._compiler, self._instrument_coordinator)
+
+        # Only a path can be written back to. A device handed over as a dict came
+        # from somewhere this tuner does not know, so there is nothing to update.
         self._device_config_path = (
-            quantify_device_config
-            if isinstance(quantify_device_config, Path)
-            else Path("quantify.device.json")
+            Path(quantify_device_config)
+            if isinstance(quantify_device_config, (str, Path))
+            else None
         )
 
-    def calibrate(self, config: CalibrationConfig) -> CalibrationReport:
-        """Run full calibration."""
-        dag = CalibrationDAG(ALL_ROUTINES, config)
-        report = dag.run(
-            self._device, self._instrument_coordinator, self._compiler, config
-        )
-        save_device_config(self._device, self._device_config_path)
-        return report
+    @property
+    def backend(self) -> SchedulerBackend:
+        return self._backend
 
-    def check_fidelity(self, config: CalibrationConfig) -> dict[str, float]:
-        """Check fidelity of qubits."""
-        fidelities = {}
-        # Simple fidelity check via RB
-        rb_routine = next(r for r in ALL_ROUTINES if r.name == "rb")
-        for q in config.target_qubits:
-            schedule = rb_routine.build_schedule(
-                q, self._device, config.get_routine("rb")
-            )
-            compiled = self._compiler.compile(schedule)
-            self._instrument_coordinator.prepare(compiled)
-            self._instrument_coordinator.start()
-            ds = self._instrument_coordinator.retrieve_acquisition()
-            res = rb_routine.analyse(ds, q, self._device)
-            fidelities[q] = res.get("fidelity", 0.0)
-        return fidelities
-
-    def recalibrate(
-        self, qubits: list[str], config: CalibrationConfig
-    ) -> CalibrationReport:
-        """Recalibrate specific qubits."""
-        dag = CalibrationDAG(ALL_ROUTINES, config)
-        targets = [r.name for r in ALL_ROUTINES]
-        _ = dag.partial_order(targets)
-        report = dag.run(
-            self._device, self._instrument_coordinator, self._compiler, config
-        )
-        save_device_config(self._device, self._device_config_path)
-        return report
+    @property
+    def device(self) -> Any:
+        return self._device
 
     def close(self) -> None:
-        """Release resources."""
-        for component in self._instrument_coordinator.components:
-            self._instrument_coordinator.remove_component(component.name)
-            component.close()
-        try:
-            self._instrument_coordinator.close()
-        except Exception:
-            pass
+        # Mirrors QuantifyExecutor.close: components are detached and closed
+        # individually before the coordinator itself, and every step is
+        # best-effort — a shutdown that raises leaves instruments held open.
+        for component in list(getattr(self._instrument_coordinator, "components", [])):
+            try:
+                self._instrument_coordinator.remove_component(component.name)
+                component.close()
+            except Exception:  # noqa: BLE001 - shutdown is best-effort
+                log.debug("could not close component %s", component)
+        for shutdown in (self._instrument_coordinator.close, Instrument.close_all):
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001 - shutdown is best-effort
+                log.debug("could not run %s", shutdown)

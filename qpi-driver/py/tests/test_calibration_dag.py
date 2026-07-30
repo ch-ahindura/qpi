@@ -1,0 +1,291 @@
+"""The routine graph and the walk over it (RFC 0004 §5).
+
+These run with stub routines and a fake backend: the ordering, the failure
+handling and the refusal to report success having done nothing are all
+properties of the DAG, not of any scheduler.
+"""
+
+from typing import Any
+
+import numpy as np
+import pytest
+import xarray as xr
+from qpi_driver.tuners.base.backend import SchedulerBackend
+from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
+from qpi_driver.tuners.base.dag import CalibrationDAG
+from qpi_driver.tuners.base.routines import (
+    CalibrationRoutine,
+    RoutineError,
+    linear_setpoints,
+    setpoints_of,
+)
+from qpi_driver.tuners.routines import all_routines, routine_names
+
+
+class FakeBackend(SchedulerBackend):
+    """Records the schedules it was given and hands back a fixed dataset."""
+
+    name = "fake"
+
+    def __init__(self, dataset: xr.Dataset | None = None) -> None:
+        self.ran: list[Any] = []
+        self._dataset = (
+            dataset if dataset is not None else xr.Dataset({"y": ("x", [1.0, 2.0])})
+        )
+
+    def new_schedule(self, name: str, repetitions: int = 1) -> Any:
+        return {"name": name, "ops": []}
+
+    def run(self, schedule: Any) -> xr.Dataset:
+        self.ran.append(schedule)
+        return self._dataset
+
+
+class StubRoutine(CalibrationRoutine):
+    """A routine that succeeds, recording where it ran."""
+
+    def __init__(self, name, depends_on=(), targets="qubits", benchmark=False):
+        self.name = name
+        self.depends_on = depends_on
+        self.targets = targets
+        self.benchmark = benchmark
+        self.applied: list[tuple[str, dict]] = []
+
+    def build_schedule(self, target, device, config, backend):
+        return backend.new_schedule(self.name)
+
+    def analyse(self, dataset, target, device, config):
+        return {"fidelity": 0.999, "value": 1.0}
+
+    def apply(self, device, target, params):
+        self.applied.append((target, params))
+
+
+class FailingRoutine(StubRoutine):
+    def analyse(self, dataset, target, device, config):
+        raise RoutineError("could not fit")
+
+
+def _config(**kwargs) -> CalibrationConfig:
+    kwargs.setdefault("target_qubits", ["q0"])
+    return CalibrationConfig(**kwargs)
+
+
+# --- ordering -----------------------------------------------------------------
+
+
+def test_execution_order_is_topological():
+    dag = CalibrationDAG(
+        [
+            StubRoutine("c", depends_on=("b",)),
+            StubRoutine("a"),
+            StubRoutine("b", depends_on=("a",)),
+        ],
+        _config(),
+    )
+    assert dag.execution_order() == ["a", "b", "c"]
+
+
+def test_a_cycle_is_reported():
+    dag = CalibrationDAG(
+        [StubRoutine("a", depends_on=("b",)), StubRoutine("b", depends_on=("a",))],
+        _config(),
+    )
+    with pytest.raises(ValueError, match="cycle detected"):
+        dag.execution_order()
+
+
+def test_a_dependency_on_an_unknown_routine_is_reported():
+    """A typo in depends_on would silently drop an edge and reorder the walk."""
+    dag = CalibrationDAG([StubRoutine("a", depends_on=("ghost",))], _config())
+    with pytest.raises(ValueError, match="depends on unknown routine"):
+        dag.execution_order()
+
+
+def test_a_disabled_routine_is_dropped_but_its_dependents_keep_their_order():
+    config = _config(routines={"b": RoutineConfig(enabled=False)})
+    dag = CalibrationDAG(
+        [
+            StubRoutine("a"),
+            StubRoutine("b", depends_on=("a",)),
+            StubRoutine("c", depends_on=("b",)),
+        ],
+        config,
+    )
+    assert dag.execution_order() == ["a", "c"]
+
+
+def test_partial_order_includes_everything_downstream():
+    """Recalibrating a routine invalidates what was tuned from it."""
+    dag = CalibrationDAG(
+        [
+            StubRoutine("a"),
+            StubRoutine("b", depends_on=("a",)),
+            StubRoutine("c", depends_on=("b",)),
+        ],
+        _config(),
+    )
+    assert dag.partial_order(["b"]) == ["b", "c"]
+    assert dag.partial_order(["a"]) == ["a", "b", "c"]
+
+
+def test_the_real_graph_matches_the_rfc_dependency_table():
+    dag = CalibrationDAG(all_routines(), _config())
+    order = dag.execution_order()
+
+    assert order[0] == "resonator_spectroscopy"
+    assert order.index("rabi") < order.index("ramsey")
+    assert order.index("ramsey") < order.index("drag")
+    assert order.index("drag") < order.index("fine_amplitude")
+    assert order.index("fine_amplitude") < order.index("rb")
+    assert order.index("cz_chevron") < order.index("conditional_phase")
+    assert order.index("conditional_phase") < order.index("interleaved_rb")
+
+
+def test_every_routine_name_is_unique():
+    names = [r.name for r in all_routines()]
+    assert len(names) == len(set(names)) == len(routine_names())
+
+
+# --- the walk -----------------------------------------------------------------
+
+
+def test_a_clean_walk_reports_success_and_applies_each_routine():
+    routines = [StubRoutine("a"), StubRoutine("b", depends_on=("a",))]
+    report = CalibrationDAG(routines, _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+
+    assert report.status == "success"
+    assert [r.routine_name for r in report.routine_results] == ["a", "b"]
+    assert routines[0].applied == [("q0", {"fidelity": 0.999, "value": 1.0})]
+
+
+def test_running_nothing_is_a_failure_not_a_success():
+    """A run that measured nothing must never report success."""
+    config = _config(routines={"a": RoutineConfig(enabled=False)})
+    report = CalibrationDAG([StubRoutine("a")], config).run(
+        device=None, backend=FakeBackend(), config=config
+    )
+
+    assert report.status == "failed"
+    assert "every routine is disabled" in report.errors[0]
+
+
+def test_no_target_qubits_is_a_failure():
+    config = CalibrationConfig(target_qubits=[])
+    report = CalibrationDAG([StubRoutine("a")], config).run(
+        device=None, backend=FakeBackend(), config=config
+    )
+    assert report.status == "failed"
+    assert "no target_qubits" in report.errors[0]
+
+
+def test_edge_routines_with_no_edges_configured_leave_nothing_run():
+    config = _config(target_edges=[])
+    report = CalibrationDAG([StubRoutine("cz", targets="edges")], config).run(
+        device=None, backend=FakeBackend(), config=config
+    )
+    assert report.status == "failed"
+    assert "target edges" in report.errors[0]
+
+
+def test_one_failing_routine_does_not_abandon_the_rest():
+    routines = [FailingRoutine("a"), StubRoutine("b")]
+    report = CalibrationDAG(routines, _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+
+    assert report.status == "partial_failure"
+    assert [r.routine_name for r in report.routine_results] == ["b"]
+    assert "a[q0]: could not fit" in report.errors[0]
+
+
+def test_every_routine_failing_is_a_failure():
+    report = CalibrationDAG([FailingRoutine("a")], _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+    assert report.status == "failed"
+
+
+def test_a_benchmark_is_recorded_as_a_benchmark():
+    report = CalibrationDAG([StubRoutine("rb", benchmark=True)], _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+    assert [b.protocol for b in report.benchmarks] == ["rb"]
+    assert report.fidelities() == {"q0": 0.999}
+
+
+def test_a_non_benchmark_records_no_fidelity():
+    """T1 writes nothing either; only a benchmark has a fidelity to compare."""
+    report = CalibrationDAG([StubRoutine("t1")], _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+    assert report.benchmarks == []
+    assert report.fidelities() == {}
+
+
+def test_the_only_subset_runs_just_those_routines():
+    routines = [StubRoutine("a"), StubRoutine("b")]
+    report = CalibrationDAG(routines, _config()).run(
+        device=None, backend=FakeBackend(), config=_config(), only=["b"]
+    )
+    assert [r.routine_name for r in report.routine_results] == ["b"]
+
+
+def test_a_routine_over_its_timeout_is_failed():
+    config = _config()
+    config.routine_timeout_s = -1.0  # anything measurable exceeds it
+    report = CalibrationDAG([StubRoutine("a")], config).run(
+        device=None, backend=FakeBackend(), config=config
+    )
+    assert report.status == "failed"
+    assert "routine_timeout_s" in report.errors[0]
+
+
+def test_the_report_names_its_backend():
+    report = CalibrationDAG([StubRoutine("a")], _config()).run(
+        device=None, backend=FakeBackend(), config=_config()
+    )
+    assert report.backend == "fake"
+
+
+# --- setpoint helpers ---------------------------------------------------------
+
+
+def test_linear_setpoints_span_the_range_inclusively():
+    assert linear_setpoints(0.0, 1.0, 5) == [0.0, 0.25, 0.5, 0.75, 1.0]
+    assert linear_setpoints(3.0, 9.0, 1) == [3.0]
+
+
+def test_setpoints_fall_back_to_the_default():
+    assert setpoints_of(RoutineConfig(), "amps", [1, 2]) == [1, 2]
+
+
+def test_an_empty_sweep_is_refused():
+    """An empty sweep compiles to an empty schedule and measures nothing."""
+    with pytest.raises(RoutineError, match="non-empty list"):
+        setpoints_of(RoutineConfig(params={"amps": []}), "amps", [1])
+    with pytest.raises(RoutineError, match="non-empty list"):
+        setpoints_of(RoutineConfig(params={"amps": 5}), "amps", [1])
+
+
+def test_a_routine_reprs_as_its_name():
+    assert repr(StubRoutine("rabi")) == "<StubRoutine 'rabi'>"
+
+
+def test_the_backend_idle_helper_appends_an_idle():
+    class Recording(FakeBackend):
+        IdlePulse = staticmethod(lambda duration: ("idle", duration))
+
+    schedule = type(
+        "S", (), {"added": [], "add": lambda self, op: self.added.append(op)}
+    )()
+    Recording().idle(schedule, 1e-6)
+    assert schedule.added == [("idle", 1e-6)]
+
+
+def test_signal_of_handles_a_bare_array():
+    from qpi_driver.tuners.fitting import signal_of
+
+    assert list(signal_of(np.array([1.0, 2.0]))) == [1.0, 2.0]
