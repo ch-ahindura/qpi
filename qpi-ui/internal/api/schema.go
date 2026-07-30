@@ -136,8 +136,47 @@ func (crp *CryostatReadingPayload) ToMap() map[string]any {
 	}
 }
 
-// CalibrateDispatchPayload represents the payload to start calibration.
+// CalibrateDispatchRequest is the body of POST /api/op/calibrate/dispatch.
+type CalibrateDispatchRequest struct {
+	DriverID     string   `json:"driver_id" validate:"required"`
+	Mode         string   `json:"mode"`
+	TargetQubits []string `json:"target_qubits,omitempty"`
+	TargetEdges  []string `json:"target_edges,omitempty"`
+}
+
+func (cdr *CalibrateDispatchRequest) SetDefaults() {
+	if cdr.Mode == "" {
+		cdr.Mode = "full"
+	}
+}
+
+// ToMap converts the DTO to a map of field values
+func (cdr *CalibrateDispatchRequest) ToMap() map[string]any {
+	return map[string]any{
+		"driver_id":     cdr.DriverID,
+		"mode":          cdr.Mode,
+		"target_qubits": cdr.TargetQubits,
+		"target_edges":  cdr.TargetEdges,
+	}
+}
+
+// CalibrateDispatchResponse acknowledges a queued calibration. It is the queued
+// request, not a result: the run itself takes hours and reports back over NNG.
+type CalibrateDispatchResponse struct {
+	ID     string `json:"id"`
+	Driver string `json:"driver"`
+	Mode   string `json:"mode"`
+	Status string `json:"status"`
+}
+
+// CalibrateDispatchPayload is the payload of a CalibrateDispatch event: which
+// calibration to run, and over what (RFC 0004 §6.8).
+//
+// JobID is the queued request's id, which the tuner echoes back on its
+// CalibrationResult — that is what closes the request out and lets the
+// dispatcher offer the next one.
 type CalibrateDispatchPayload struct {
+	JobID        string   `json:"job_id"`
 	Mode         string   `json:"mode"`
 	TargetQubits []string `json:"target_qubits,omitempty"`
 	TargetEdges  []string `json:"target_edges,omitempty"`
@@ -149,6 +188,7 @@ func (cdp *CalibrateDispatchPayload) SetDefaults() {
 // ToMap converts the DTO to a map of field values
 func (cdp *CalibrateDispatchPayload) ToMap() map[string]any {
 	return map[string]any{
+		"job_id":        cdp.JobID,
 		"mode":          cdp.Mode,
 		"target_qubits": cdp.TargetQubits,
 		"target_edges":  cdp.TargetEdges,
@@ -175,9 +215,11 @@ type BenchmarkResult struct {
 
 // CalibrationResultPayload is the payload of a CalibrationResult event.
 type CalibrationResultPayload struct {
+	JobID          string            `json:"job_id"`
 	Timestamp      string            `json:"timestamp"`
 	DurationS      float64           `json:"duration_s"`
 	Mode           string            `json:"mode"`
+	Backend        string            `json:"backend"`
 	RoutineResults []RoutineResult   `json:"routine_results"`
 	Benchmarks     []BenchmarkResult `json:"benchmarks"`
 	Status         string            `json:"status"`

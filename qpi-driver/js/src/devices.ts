@@ -46,6 +46,7 @@ import type { QpiDriver } from "./driver.js";
 export enum Operation {
   Process = "process",
   Monitor = "monitor",
+  Calibrate = "calibrate",
 }
 
 /** The universal transport options every driver is built with. */
@@ -84,7 +85,11 @@ export interface DeviceSpec {
  * Every operation, in the order help and errors list them. Deliberately the same
  * order as the Python and Go SDKs'.
  */
-const allOperations: Operation[] = [Operation.Process, Operation.Monitor];
+const allOperations: Operation[] = [
+  Operation.Process,
+  Operation.Monitor,
+  Operation.Calibrate,
+];
 
 /** Every operation, in declaration order. */
 export function operations(): Operation[] {

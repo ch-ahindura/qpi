@@ -97,20 +97,24 @@ func calibrateOptions() []Option {
 			Example: "true",
 		},
 		{
-			Key:     "monitor_interval",
-			Help:    "Seconds between periodic RB fidelity checks.",
+			// Named for the drift it checks rather than for `monitor`, which is
+			// already an operation — an option on a `calibrate` device that
+			// appears to name a different operation is the kind of collision
+			// this vocabulary is careful about (RFC 0004 §6.5).
+			Key:     "drift_check_interval",
+			Help:    "Seconds between periodic benchmark runs that watch for drift. 0 disables them.",
 			Default: "0",
 			Example: "1800",
 		},
 		{
 			Key:     "fidelity_threshold",
-			Help:    "1Q gate fidelity recalibration trigger.",
+			Help:    "Single-qubit gate fidelity below which a recalibration is triggered.",
 			Default: "0.999",
 			Example: "0.999",
 		},
 		{
 			Key:     "fidelity_2q_threshold",
-			Help:    "2Q gate fidelity threshold.",
+			Help:    "Two-qubit gate fidelity below which a recalibration is triggered.",
 			Default: "0.99",
 			Example: "0.99",
 		},

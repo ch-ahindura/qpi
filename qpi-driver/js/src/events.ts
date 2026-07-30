@@ -17,6 +17,8 @@ export enum EventType {
   JobDispatch = "JobDispatch",
   JobResult = "JobResult",
   CryostatReading = "CryostatReading",
+  CalibrateDispatch = "CalibrateDispatch",
+  CalibrationResult = "CalibrationResult",
 }
 
 /** The wire shape of an envelope, as sent over NNG. */

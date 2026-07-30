@@ -51,12 +51,21 @@ func fakeSpec(name string, operation devices.Operation) devices.DeviceSpec {
 	}
 }
 
-func TestOperationsAreAClosedPair(t *testing.T) {
+func TestOperationsAreAClosedSet(t *testing.T) {
 	// Devices are the extensible half; operations are not, so asserting the whole
-	// set is the point here rather than a brittleness (RFC 0003 §13.1).
+	// set is the point here rather than a brittleness (RFC 0003 §13.1). Adding
+	// one is meant to fail here, and in the Python and TypeScript SDKs'
+	// equivalents, until every side of the contract has moved together
+	// (RFC 0004 §6.1).
+	want := []string{"process", "monitor", "calibrate"}
 	names := devices.OperationNames()
-	if len(names) != 2 || names[0] != "process" || names[1] != "monitor" {
-		t.Fatalf("expected exactly process and monitor, got %v", names)
+	if len(names) != len(want) {
+		t.Fatalf("expected exactly %v, got %v", want, names)
+	}
+	for i, name := range want {
+		if names[i] != name {
+			t.Fatalf("expected exactly %v, got %v", want, names)
+		}
 	}
 	if devices.KnownOperation(devices.Operation("telemetry")) {
 		t.Error("expected an invented operation not to be known")

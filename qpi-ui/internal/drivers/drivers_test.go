@@ -260,3 +260,63 @@ func TestNameIsShellQuoted(t *testing.T) {
 		t.Errorf("expected no --name in either snippet, got %q / %q", s.ManualCLI, s.Systemd)
 	}
 }
+
+// TestCalibrateOptionsMatchTheDriver pins the catalog's `-o` keys to the ones
+// the Python builder reads (RFC 0004 §6.5).
+//
+// Reading an option is what declares it, and an option nothing reads is a
+// startup error (RFC 0003 §13.6) — so a key here that the driver does not read
+// turns a generated setup snippet into a driver that refuses to launch. The
+// list is duplicated rather than derived because the SDK publishes no catalog
+// (RFC 0003 §9); this test is what keeps the two in step.
+func TestCalibrateOptionsMatchTheDriver(t *testing.T) {
+	// Exactly the keys read by build_from_options in
+	// qpi_driver/builtins/calibrate.py.
+	want := map[string]bool{
+		"calibration_config":       true,
+		"quantify_hardware_config": true,
+		"quantify_device_config":   true,
+		"is_dummy":                 true,
+		"drift_check_interval":     true,
+		"fidelity_threshold":       true,
+		"fidelity_2q_threshold":    true,
+	}
+
+	spec, ok := Default.Lookup(QuantifyTuner)
+	if !ok {
+		t.Fatal("expected quantify_tuner in the catalog")
+	}
+
+	got := map[string]bool{}
+	for _, option := range spec.Options {
+		got[option.Key] = true
+		if !want[option.Key] {
+			t.Errorf("catalog offers -o %s, which the calibrate driver does not read", option.Key)
+		}
+	}
+	for key := range want {
+		if !got[key] {
+			t.Errorf("the calibrate driver reads -o %s, which the catalog does not offer", key)
+		}
+	}
+}
+
+// TestBothTunersAreRegisteredForCalibrate proves the two tuner devices are in
+// the catalog, Python-only — no other SDK ships a tuner (RFC 0004 §6.1).
+func TestBothTunersAreRegisteredForCalibrate(t *testing.T) {
+	for _, kind := range []Kind{QuantifyTuner, QbloxTuner} {
+		spec, ok := Default.Lookup(kind)
+		if !ok {
+			t.Fatalf("expected %s in the catalog", kind)
+		}
+		if spec.Operation != Calibrate {
+			t.Errorf("expected %s to be a calibrate device, got %s", kind, spec.Operation)
+		}
+		if !spec.ShipsIn(Python) || spec.ShipsIn(Go) || spec.ShipsIn(TypeScript) {
+			t.Errorf("expected %s to ship in Python only, got %v", kind, spec.Languages)
+		}
+		if len(spec.Events) != 2 || spec.Events[0] != eventCalibrateDispatch || spec.Events[1] != eventCalibrationResult {
+			t.Errorf("expected %s events [CalibrateDispatch, CalibrationResult], got %v", kind, spec.Events)
+		}
+	}
+}

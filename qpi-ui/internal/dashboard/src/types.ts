@@ -12,7 +12,6 @@ export interface QPU {
   nng_command_port: number;
   nng_result_port: number;
   enabled: boolean;
-  calibration_data?: unknown;
 }
 
 export interface JobResult {

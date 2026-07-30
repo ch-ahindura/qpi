@@ -44,6 +44,9 @@ const (
 	Process Operation = "process"
 	// Monitor reports readings upward on the driver's own schedule.
 	Monitor Operation = "monitor"
+	// Calibrate runs calibration routines against a chip and reports the
+	// parameters it produced (RFC 0004).
+	Calibrate Operation = "calibrate"
 )
 
 // DeviceBuilder builds — but does not run — the driver for one device, from the
@@ -67,7 +70,7 @@ type DeviceSpec struct {
 }
 
 // operationNames is every operation, in the order help and errors list them.
-var operationNames = []Operation{Process, Monitor}
+var operationNames = []Operation{Process, Monitor, Calibrate}
 
 // Registry is a set of devices, keyed by operation and then by name. Names are
 // unique per operation rather than globally, since --device is always read in the

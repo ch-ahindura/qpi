@@ -78,6 +78,7 @@ func RegisterRoutes(e *core.ServeEvent, dashboardFS fs.FS) {
 	e.Router.POST("/api/op/drivers/create", handleDriverCreate)
 	e.Router.POST("/api/op/drivers/connect", handleDriverConnect)
 	e.Router.POST("/api/op/drivers/toggle", handleDriverToggle)
+	e.Router.POST("/api/op/calibrate/dispatch", handleCalibrateDispatch)
 
 	// Job CRUD routes
 	e.Router.POST("/api/jobs", handleJobSubmit)
@@ -758,6 +759,74 @@ func handleDriverToggle(re *core.RequestEvent) error {
 	var resp DriverToggleResponse
 	_ = resp.RefreshFromDbModel(&driver)
 	return re.JSON(http.StatusOK, resp)
+}
+
+// handleCalibrateDispatch handles POST /api/op/calibrate/dispatch — queues a
+// calibration for a tuner driver (RFC 0004 §6.8).
+//
+// Admin-only, like the /api/op/* routes around it. A calibration takes a QPU out
+// of service for hours and rewrites the parameters every subsequent job runs
+// against; at user level it would be a denial of service with a plausible cover
+// story (RFC 0004 §10).
+//
+// This queues rather than sends. A driver's PUSH socket lives inside its
+// dispatcher goroutine and nothing here can reach it — and queueing is what makes
+// a calibration requested while the driver is offline run on reconnect instead of
+// being dropped.
+func handleCalibrateDispatch(re *core.RequestEvent) error {
+	cfg, err := config.GetConfigFromApp(re.App)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
+	}
+
+	if !re.HasSuperuserAuth() {
+		return re.Error(http.StatusForbidden, "admin access required", nil)
+	}
+
+	var req CalibrateDispatchRequest
+	if err := parseBody(cfg, re, &req); err != nil {
+		return err
+	}
+
+	if req.Mode == "" {
+		req.Mode = "full"
+	}
+	if req.Mode != "full" && req.Mode != "partial" && req.Mode != "fidelity_check" {
+		return re.Error(http.StatusBadRequest,
+			"mode must be one of full, partial, fidelity_check", nil)
+	}
+	// A partial run with no targets would widen to a full one on the driver,
+	// taking the QPU out for hours nobody asked for.
+	if req.Mode == "partial" && len(req.TargetQubits) == 0 {
+		return re.Error(http.StatusBadRequest,
+			"a partial calibration needs target_qubits", nil)
+	}
+
+	var driver db.Driver
+	if err := db.FindOne(re.App, cfg.CollectionDrivers, req.DriverID, &driver); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return re.Error(http.StatusNotFound, "driver not found", err)
+		}
+		return re.Error(http.StatusInternalServerError, "failed to look up driver", err)
+	}
+
+	request := &db.CalibrationRequest{
+		Driver:       req.DriverID,
+		Mode:         req.Mode,
+		TargetQubits: req.TargetQubits,
+		TargetEdges:  req.TargetEdges,
+		Status:       "pending",
+	}
+	if err := saveToDb(re.App, request); err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to queue calibration", err)
+	}
+
+	return re.JSON(http.StatusAccepted, CalibrateDispatchResponse{
+		ID:     request.ID,
+		Driver: request.Driver,
+		Mode:   request.Mode,
+		Status: request.Status,
+	})
 }
 
 // handleQPUList handles GET /api/qpus — lists all online QPUs.

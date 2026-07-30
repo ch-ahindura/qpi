@@ -42,10 +42,12 @@ beforeEach(() => clearDevices());
 afterAll(() => clearDevices());
 
 describe("operations", () => {
-  it("are exactly the two QPI-UI has handlers for", () => {
+  it("are exactly the ones QPI-UI has handlers for", () => {
     // Devices are the extensible half; operations are not, so asserting the whole
-    // set is the point here rather than a brittleness (RFC 0003 §13.1).
-    expect(operationNames()).toEqual(["process", "monitor"]);
+    // set is the point here rather than a brittleness (RFC 0003 §13.1). Adding
+    // one is meant to fail here, and in the Python and Go SDKs' equivalents,
+    // until every side of the contract has moved together (RFC 0004 §6.1).
+    expect(operationNames()).toEqual(["process", "monitor", "calibrate"]);
   });
 
   it("cannot be mutated through the accessor", () => {

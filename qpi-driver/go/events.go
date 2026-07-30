@@ -32,6 +32,10 @@ const (
 	JobResult EventType = "JobResult"
 	// CryostatReading is emitted by a monitor driver on its own schedule.
 	CryostatReading EventType = "CryostatReading"
+	// CalibrateDispatch is sent by QPI-UI to a calibrate driver: tune this chip.
+	CalibrateDispatch EventType = "CalibrateDispatch"
+	// CalibrationResult is emitted by a calibrate driver once a run finishes.
+	CalibrationResult EventType = "CalibrationResult"
 )
 
 // Event is a single typed message exchanged with QPI-UI in either direction.

@@ -70,6 +70,10 @@ func EnsureSchema(app core.App) error {
 		return fmt.Errorf("calibration_results collection: %w", err)
 	}
 
+	if err := ensureCalibrationRequestsCollection(app, cfg); err != nil {
+		return fmt.Errorf("calibration_requests collection: %w", err)
+	}
+
 	log.Println("[QPI] Schema OK")
 	return nil
 }
@@ -339,6 +343,40 @@ func ensureCalibrationResultsCollection(app core.App, cfg *config.AppConfig) err
 	col.CreateRule = nil
 	col.UpdateRule = nil
 	col.DeleteRule = nil
+
+	return app.Save(col)
+}
+
+// ensureCalibrationRequestsCollection creates the `calibration_requests` collection:
+// the queue a driver's dispatcher polls for calibrations to run (RFC 0004 §6.8).
+//
+// It exists because a driver's PUSH socket lives inside its dispatcher goroutine
+// and no HTTP handler can reach it. Queueing through the database instead means a
+// request survives a restart, is requeued on a send error exactly as a job is, and
+// runs when an offline driver reconnects rather than being dropped.
+func ensureCalibrationRequestsCollection(app core.App, cfg *config.AppConfig) error {
+	col, err := initCollection(app, cfg.CollectionCalibrationRequests, &CalibrationRequest{})
+	if err != nil {
+		return err
+	}
+
+	// Authenticated read, superuser-only CUD. Creation goes through
+	// POST /api/op/calibrate/dispatch, which is admin-only: a calibration takes
+	// a QPU out of service for hours (RFC 0004 §10).
+	col.ListRule = types.Pointer("@request.auth.id != \"\"")
+	col.ViewRule = types.Pointer("@request.auth.id != \"\"")
+	col.CreateRule = nil
+	col.UpdateRule = nil
+	col.DeleteRule = nil
+
+	// The dispatcher polls (driver, status) on every tick, so it is indexed for
+	// the same reason the events log indexes (type, ts).
+	indexName := fmt.Sprintf("idx_%s_driver_status", cfg.CollectionCalibrationRequests)
+	if !hasIndex(col, indexName) {
+		col.Indexes = append(col.Indexes, fmt.Sprintf(
+			"CREATE INDEX `%s` ON `%s` (`driver`, `status`)",
+			indexName, cfg.CollectionCalibrationRequests))
+	}
 
 	return app.Save(col)
 }

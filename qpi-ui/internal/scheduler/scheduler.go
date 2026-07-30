@@ -91,6 +91,47 @@ func recordToQuantumJob(record *core.Record) *db.QuantumJob {
 	return &job
 }
 
+// FetchNextCalibration returns the oldest pending calibration queued for
+// driverID, or nil when there is none or one is already running (RFC 0004 §6.8).
+//
+// One at a time, deliberately: the tuner's worker is single-threaded and a full
+// DAG walk is hours, so a second request queued behind the first would produce a
+// report nobody could connect to a request. It waits instead.
+func FetchNextCalibration(app core.App, driverID string) *db.CalibrationRequest {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		log.Printf("[Scheduler] failed to get config: %v", err)
+		return nil
+	}
+
+	running, _ := app.FindRecordsByFilter(
+		cfg.CollectionCalibrationRequests,
+		"status = 'running' && driver = {:driver}",
+		"+created", 1, 0,
+		dbx.Params{"driver": driverID},
+	)
+	if len(running) > 0 {
+		return nil
+	}
+
+	pending, _ := app.FindRecordsByFilter(
+		cfg.CollectionCalibrationRequests,
+		"status = 'pending' && driver = {:driver}",
+		"+created", 1, 0,
+		dbx.Params{"driver": driverID},
+	)
+	if len(pending) == 0 {
+		return nil
+	}
+
+	var request db.CalibrationRequest
+	if err := request.RefreshFromRecord(pending[0]); err != nil {
+		log.Printf("[Scheduler] failed to convert record to CalibrationRequest: %v", err)
+		return nil
+	}
+	return &request
+}
+
 // eventsPruneBatchSize bounds how many expired events a single prune query
 // pulls, mirroring the recovery engine's batched scan.
 const eventsPruneBatchSize = 500

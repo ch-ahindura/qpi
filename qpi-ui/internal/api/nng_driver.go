@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 	"go.nanomsg.org/mangos/v3"
 	"go.nanomsg.org/mangos/v3/protocol/pull"
 	"go.nanomsg.org/mangos/v3/protocol/push"
@@ -130,6 +131,15 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		// A calibration takes the QPU out of service for hours, so it is
+		// offered before the job queue: dispatching jobs first would mean a
+		// busy QPU never calibrates, which is the state calibration exists to
+		// get it out of (RFC 0004 §6.8).
+		if request := scheduler.FetchNextCalibration(app, driverID); request != nil {
+			dispatchCalibration(app, cfg, sock, driverID, request)
+			continue
 		}
 
 		job := scheduler.FetchNextJob(app, qpuID)
@@ -382,26 +392,126 @@ func appendEvent(app core.App, driverID, qpuID string, event *Event) error {
 	return nil
 }
 
-// handleCalibrationResult handles the result of a calibration operation.
+// dispatchCalibration pushes one queued calibration to its driver and marks it
+// running, requeueing it if the send fails (RFC 0004 §6.8).
+//
+// Mirrors the job path deliberately, including the requeue: a calibration that
+// vanished on a transient socket error would cost hours to notice and hours
+// more to redo.
+func dispatchCalibration(
+	app core.App,
+	cfg *config.AppConfig,
+	sock mangos.Socket,
+	driverID string,
+	request *db.CalibrationRequest,
+) {
+	event, err := NewEvent(driverID, EventCalibrateDispatch, CalibrateDispatchPayload{
+		JobID:        request.ID,
+		Mode:         request.Mode,
+		TargetQubits: toStringSlice(request.TargetQubits),
+		TargetEdges:  toStringSlice(request.TargetEdges),
+	})
+	if err != nil {
+		log.Printf("[DriverDispatcher %s] cannot build calibration dispatch %s: %v", driverID, request.ID, err)
+		setCalibrationStatus(app, cfg, request.ID, "failed")
+		return
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[DriverDispatcher %s] cannot marshal calibration dispatch %s: %v", driverID, request.ID, err)
+		setCalibrationStatus(app, cfg, request.ID, "failed")
+		return
+	}
+
+	if err := sock.Send(payload); err != nil {
+		log.Printf("[DriverDispatcher %s] calibration send error: %v — leaving %s pending", driverID, err, request.ID)
+		return
+	}
+
+	setCalibrationStatus(app, cfg, request.ID, "running")
+	log.Printf("[DriverDispatcher %s] dispatched calibration %s (mode %s)", driverID, request.ID, request.Mode)
+}
+
+// setCalibrationStatus moves a queued calibration to a new status.
+func setCalibrationStatus(app core.App, cfg *config.AppConfig, requestID, status string) {
+	var updated db.CalibrationRequest
+	data := map[string]any{"status": status}
+	if err := db.FindAndUpdateOne(app, cfg.CollectionCalibrationRequests, requestID, &updated, data); err != nil {
+		log.Printf("[DriverDispatcher] failed to mark calibration %s as %s: %v", requestID, status, err)
+	}
+}
+
+// toStringSlice narrows the JSON a queued request stores into the string list
+// the dispatch payload declares.
+func toStringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	case types.JSONRaw:
+		var out []string
+		if err := json.Unmarshal(typed, &out); err == nil {
+			return out
+		}
+	}
+	return nil
+}
+
+// handleCalibrationResult stores a tuner's report and closes out the request it
+// answers (RFC 0004 §6.8).
+//
+// The payload is flat — the driver emits the report's fields at the top level
+// beside job_id — because this unmarshals it directly. Nested under a "results"
+// key it would parse without error and leave every field at its zero value,
+// saving a blank record for a real calibration.
 func handleCalibrationResult(ctx context.Context, app core.App, qpuID string, event *Event) error {
 	var result CalibrationResultPayload
 	if err := json.Unmarshal(event.Payload, &result); err != nil {
 		return fmt.Errorf("cannot parse CalibrationResult payload: %w", err)
 	}
+	// Validated as CryostatReading validates its readings: a report with no
+	// mode or status is not a report, and storing it would put a blank row in
+	// front of whoever is trying to work out what the chip is doing.
+	if result.Mode == "" || result.Status == "" {
+		return fmt.Errorf("CalibrationResult payload has no mode or status")
+	}
 
+	driverID := driverIDFromContext(ctx)
 	record := &db.CalibrationResult{
-		Driver:         driverIDFromContext(ctx),
+		Driver:         driverID,
+		QPU:            qpuID,
 		Timestamp:      result.Timestamp,
 		DurationS:      result.DurationS,
 		Mode:           result.Mode,
+		Backend:        result.Backend,
 		RoutineResults: result.RoutineResults,
 		Benchmarks:     result.Benchmarks,
+		Errors:         result.Errors,
 		Status:         result.Status,
 	}
 
 	if err := saveToDb(app, record); err != nil {
 		return fmt.Errorf("cannot save calibration result: %w", err)
 	}
-	log.Printf("[DriverListener %s] calibration %s %s", driverIDFromContext(ctx), result.Mode, result.Status)
+
+	// Close out the queued request this answers, so the driver's dispatcher
+	// stops treating it as in flight and can offer the next one.
+	if cfg, err := config.GetConfigFromApp(app); err == nil && result.JobID != "" {
+		status := "done"
+		if result.Status == "failed" {
+			status = "failed"
+		}
+		setCalibrationStatus(app, cfg, result.JobID, status)
+	}
+
+	log.Printf("[DriverListener %s] calibration %s %s", driverID, result.Mode, result.Status)
 	return nil
 }

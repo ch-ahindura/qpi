@@ -724,16 +724,43 @@ func (t *Theme) RefreshFromRecord(record *core.Record) error {
 }
 
 // CalibrationResult represents a calibration result in the database.
+//
+// QPU is carried alongside Driver for the same reason the events log carries
+// both: a driver belongs to a QPU, and a calibration report that cannot be
+// attributed to the chip it describes is not much of a record (RFC 0004 §6.8).
 type CalibrationResult struct {
 	ID             string  `json:"id" db:"id"`
 	Driver         string  `json:"driver" db:"driver" type:"relation" required:"true" maxSelect:"1" collection:"drivers"`
+	QPU            string  `json:"qpu" db:"qpu" type:"relation" maxSelect:"1" collection:"qpus"`
 	Timestamp      string  `json:"timestamp" db:"timestamp" type:"date" required:"true"`
 	DurationS      float64 `json:"duration_s" db:"duration_s" min:"0.0"`
 	Mode           string  `json:"mode" db:"mode" type:"select" required:"true" maxSelect:"1" values:"full,partial,fidelity_check"`
+	Backend        string  `json:"backend,omitempty" db:"backend"`
 	RoutineResults any     `json:"routine_results" db:"routine_results" type:"json"`
 	Benchmarks     any     `json:"benchmarks" db:"benchmarks" type:"json"`
+	Errors         any     `json:"errors" db:"errors" type:"json"`
 	Status         string  `json:"status" db:"status" type:"select" required:"true" maxSelect:"1" values:"success,partial_failure,failed"`
 	Created        string  `json:"created" db:"created" type:"autodate" onCreate:"true"`
+}
+
+// CalibrationRequest is one queued calibration, waiting for its driver's
+// dispatcher to pick it up (RFC 0004 §6.8).
+//
+// It is a collection rather than an in-memory channel because a driver's PUSH
+// socket lives inside its dispatcher goroutine and no HTTP handler can reach
+// it — and because a calibration is the slowest thing in the system, so losing
+// one silently is the worst failure available. Queueing it here means it
+// survives a restart, can be requeued on a send error exactly as a job is, and
+// runs when the driver reconnects rather than being dropped.
+type CalibrationRequest struct {
+	ID           string `json:"id" db:"id"`
+	Driver       string `json:"driver" db:"driver" type:"relation" required:"true" maxSelect:"1" collection:"drivers"`
+	Mode         string `json:"mode" db:"mode" type:"select" required:"true" maxSelect:"1" values:"full,partial,fidelity_check"`
+	TargetQubits any    `json:"target_qubits" db:"target_qubits" type:"json"`
+	TargetEdges  any    `json:"target_edges" db:"target_edges" type:"json"`
+	Status       string `json:"status" db:"status" type:"select" required:"true" maxSelect:"1" values:"pending,running,done,failed"`
+	RequestedBy  string `json:"requested_by,omitempty" db:"requested_by" type:"relation" maxSelect:"1" collection:"users"`
+	Created      string `json:"created" db:"created" type:"autodate" onCreate:"true"`
 }
 
 // ToRecord converts this model into a pocketbase record
@@ -757,9 +784,11 @@ func (cr *CalibrationResult) ToRecord(app core.App) (*core.Record, error) {
 		return nil, err
 	}
 	record.Set("driver", cr.Driver)
+	record.Set("qpu", cr.QPU)
 	record.Set("timestamp", cr.Timestamp)
 	record.Set("duration_s", cr.DurationS)
 	record.Set("mode", cr.Mode)
+	record.Set("backend", cr.Backend)
 	record.Set("status", cr.Status)
 	record.Set("created", cr.Created)
 
@@ -779,7 +808,75 @@ func (cr *CalibrationResult) ToRecord(app core.App) (*core.Record, error) {
 		record.Set("benchmarks", benchmarksJSON)
 	}
 
+	if cr.Errors != nil {
+		errorsJSON, err := json.Marshal(cr.Errors)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling errors: %w", err)
+		}
+		record.Set("errors", errorsJSON)
+	}
+
 	return record, nil
+}
+
+// ToRecord converts this model into a pocketbase record
+func (cr *CalibrationRequest) ToRecord(app core.App) (*core.Record, error) {
+	if cr == nil {
+		return nil, nil
+	}
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return nil, err
+	}
+
+	colName := cfg.CollectionCalibrationRequests
+	col, err := app.FindCollectionByNameOrId(colName)
+	if err != nil {
+		return nil, fmt.Errorf("error finding collection %s: %w", colName, err)
+	}
+
+	record, err := getOrCreateRecord(app, colName, cr.ID, col)
+	if err != nil {
+		return nil, err
+	}
+	record.Set("driver", cr.Driver)
+	record.Set("mode", cr.Mode)
+	record.Set("status", cr.Status)
+	record.Set("requested_by", cr.RequestedBy)
+	record.Set("created", cr.Created)
+
+	for field, value := range map[string]any{
+		"target_qubits": cr.TargetQubits,
+		"target_edges":  cr.TargetEdges,
+	} {
+		if value == nil {
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling %s: %w", field, err)
+		}
+		record.Set(field, encoded)
+	}
+
+	return record, nil
+}
+
+// RefreshFromRecord updates this model using the values from a pocketbase record
+func (cr *CalibrationRequest) RefreshFromRecord(record *core.Record) error {
+	if cr == nil || record == nil {
+		return errors.New("cannot refresh from nil record")
+	}
+	cr.ID = record.Id
+	cr.Driver = record.GetString("driver")
+	cr.Mode = record.GetString("mode")
+	cr.Status = record.GetString("status")
+	cr.RequestedBy = record.GetString("requested_by")
+	cr.Created = record.GetString("created")
+
+	cr.TargetQubits = record.Get("target_qubits")
+	cr.TargetEdges = record.Get("target_edges")
+	return nil
 }
 
 // RefreshFromRecord updates this model using the values from a pocketbase record
@@ -793,8 +890,11 @@ func (cr *CalibrationResult) RefreshFromRecord(record *core.Record) error {
 	cr.Timestamp = record.GetString("timestamp")
 	cr.DurationS = record.GetFloat("duration_s")
 	cr.Mode = record.GetString("mode")
+	cr.QPU = record.GetString("qpu")
+	cr.Backend = record.GetString("backend")
 	cr.RoutineResults = record.Get("routine_results")
 	cr.Benchmarks = record.Get("benchmarks")
+	cr.Errors = record.Get("errors")
 	cr.Status = record.GetString("status")
 	cr.Created = record.GetString("created")
 

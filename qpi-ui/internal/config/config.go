@@ -25,96 +25,99 @@ import (
 )
 
 const (
-	appStoreConfigKey                   = "custom_config"
-	DefaultQpusCollection               = "qpus"
-	DefaultTimeSlotsCollection          = "time_slots"
-	DefaultQuantumJobsCollection        = "quantum_jobs"
-	DefaultAPITokensCollection          = "api_tokens"
-	DefaultQPUTimeRequestsCollection    = "qpu_time_requests"
-	DefaultNotificationsCollection      = "notifications"
-	DefaultDriversCollection            = "drivers"
-	DefaultEventsCollection             = "events"
-	DefaultThemesCollection             = "themes"
-	DefaultCalibrationResultsCollection = "calibration_results"
-	DefaultTLSCertFile                  = ".qpi.cert.pem"
-	DefaultTLSKeyFile                   = ".qpi.key"
-	DefaultTLSCaCertFile                = ".qpi.ca.pem"
-	DefaultTLSCaKeyFile                 = ".qpi.ca.key"
+	appStoreConfigKey                    = "custom_config"
+	DefaultQpusCollection                = "qpus"
+	DefaultTimeSlotsCollection           = "time_slots"
+	DefaultQuantumJobsCollection         = "quantum_jobs"
+	DefaultAPITokensCollection           = "api_tokens"
+	DefaultQPUTimeRequestsCollection     = "qpu_time_requests"
+	DefaultNotificationsCollection       = "notifications"
+	DefaultDriversCollection             = "drivers"
+	DefaultEventsCollection              = "events"
+	DefaultThemesCollection              = "themes"
+	DefaultCalibrationResultsCollection  = "calibration_results"
+	DefaultCalibrationRequestsCollection = "calibration_requests"
+	DefaultTLSCertFile                   = ".qpi.cert.pem"
+	DefaultTLSKeyFile                    = ".qpi.key"
+	DefaultTLSCaCertFile                 = ".qpi.ca.pem"
+	DefaultTLSCaKeyFile                  = ".qpi.ca.key"
 )
 
 var DefaultThemeSchema = NewDefaultThemeSchema()
 
 // Package local flags populated by Cobra flag bindings.
 var (
-	flagConfigFile                   string
-	flagCollectionQPUs               string
-	flagCollectionTimeSlots          string
-	flagCollectionQuantumJobs        string
-	flagCollectionAPITokens          string
-	flagCollectionNotifications      string
-	flagCollectionTimeRequests       string
-	flagCollectionDrivers            string
-	flagCollectionEvents             string
-	flagCollectionThemes             string
-	flagCollectionCalibrationResults string
-	flagIdleThreshold                time.Duration
-	flagRecoveryInterval             time.Duration
-	flagJobTimeout                   time.Duration
-	flagDispatchPollInterval         time.Duration
-	flagEventsRetention              time.Duration
-	flagEventsPruneInterval          time.Duration
-	flagEventRateLimit               int
-	flagPortRangeStart               int
-	flagPortRangeEnd                 int
-	flagDisableEmailPasswordAuth     bool
-	flagOAuth2Providers              string // JSON array string
-	flagTLSCertFile                  string
-	flagTLSKeyFile                   string
-	flagTLSCaCertFile                string
-	flagTLSCaKeyFile                 string
-	flagDomainName                   string
-	flagServerPort                   int
-	flagIpAddr                       string
+	flagConfigFile                    string
+	flagCollectionQPUs                string
+	flagCollectionTimeSlots           string
+	flagCollectionQuantumJobs         string
+	flagCollectionAPITokens           string
+	flagCollectionNotifications       string
+	flagCollectionTimeRequests        string
+	flagCollectionDrivers             string
+	flagCollectionEvents              string
+	flagCollectionThemes              string
+	flagCollectionCalibrationResults  string
+	flagCollectionCalibrationRequests string
+	flagIdleThreshold                 time.Duration
+	flagRecoveryInterval              time.Duration
+	flagJobTimeout                    time.Duration
+	flagDispatchPollInterval          time.Duration
+	flagEventsRetention               time.Duration
+	flagEventsPruneInterval           time.Duration
+	flagEventRateLimit                int
+	flagPortRangeStart                int
+	flagPortRangeEnd                  int
+	flagDisableEmailPasswordAuth      bool
+	flagOAuth2Providers               string // JSON array string
+	flagTLSCertFile                   string
+	flagTLSKeyFile                    string
+	flagTLSCaCertFile                 string
+	flagTLSCaKeyFile                  string
+	flagDomainName                    string
+	flagServerPort                    int
+	flagIpAddr                        string
 )
 
 // AppConfig stores application-wide configuration parameters for the QPI server.
 type AppConfig struct {
-	CollectionQPUs               string
-	CollectionTimeSlots          string
-	CollectionQuantumJobs        string
-	CollectionAPITokens          string
-	CollectionQPUTimeRequests    string
-	CollectionNotifications      string
-	CollectionDrivers            string
-	CollectionEvents             string
-	CollectionThemes             string
-	CollectionCalibrationResults string
-	IdleThreshold                time.Duration
-	RecoveryInterval             time.Duration
-	JobTimeout                   time.Duration
-	DispatchPollInterval         time.Duration
-	EventsRetention              time.Duration
-	EventsPruneInterval          time.Duration
-	EventRateLimit               int
-	PortRangeStart               int
-	PortRangeEnd                 int
-	DisableEmailPasswordAuth     bool
-	OAuth2Providers              []core.OAuth2ProviderConfig
-	Validator                    *validator.Validate
-	TlsCertFile                  string
-	TlsKeyFile                   string
-	TlsCaCertFile                string
-	TlsCaKeyFile                 string
-	DomainName                   string
-	ServerPort                   int
-	IpAddr                       string
-	tlsConfig                    *certKeyPair
-	parsedTlsConfig              *tls.Config
-	tlsCaConfig                  *certKeyPair
-	tlsCaHash                    string
-	activeCert                   *tls.Certificate
-	activeTheme                  *ThemeSchema
-	mu                           sync.RWMutex
+	CollectionQPUs                string
+	CollectionTimeSlots           string
+	CollectionQuantumJobs         string
+	CollectionAPITokens           string
+	CollectionQPUTimeRequests     string
+	CollectionNotifications       string
+	CollectionDrivers             string
+	CollectionEvents              string
+	CollectionThemes              string
+	CollectionCalibrationResults  string
+	CollectionCalibrationRequests string
+	IdleThreshold                 time.Duration
+	RecoveryInterval              time.Duration
+	JobTimeout                    time.Duration
+	DispatchPollInterval          time.Duration
+	EventsRetention               time.Duration
+	EventsPruneInterval           time.Duration
+	EventRateLimit                int
+	PortRangeStart                int
+	PortRangeEnd                  int
+	DisableEmailPasswordAuth      bool
+	OAuth2Providers               []core.OAuth2ProviderConfig
+	Validator                     *validator.Validate
+	TlsCertFile                   string
+	TlsKeyFile                    string
+	TlsCaCertFile                 string
+	TlsCaKeyFile                  string
+	DomainName                    string
+	ServerPort                    int
+	IpAddr                        string
+	tlsConfig                     *certKeyPair
+	parsedTlsConfig               *tls.Config
+	tlsCaConfig                   *certKeyPair
+	tlsCaHash                     string
+	activeCert                    *tls.Certificate
+	activeTheme                   *ThemeSchema
+	mu                            sync.RWMutex
 }
 
 // GetCollectionName returns the collection name for a given default collection name.
@@ -173,6 +176,11 @@ func (c *AppConfig) GetCollectionName(name string) string {
 			return c.CollectionCalibrationResults
 		}
 		return DefaultCalibrationResultsCollection
+	case DefaultCalibrationRequestsCollection:
+		if c.CollectionCalibrationRequests != "" {
+			return c.CollectionCalibrationRequests
+		}
+		return DefaultCalibrationRequestsCollection
 	default:
 		return name
 	}
@@ -201,6 +209,8 @@ func (c *AppConfig) GetDefaultCollectionName(name string) string {
 		return DefaultThemesCollection
 	case c.CollectionCalibrationResults:
 		return DefaultCalibrationResultsCollection
+	case c.CollectionCalibrationRequests:
+		return DefaultCalibrationRequestsCollection
 	default:
 		return name
 	}
@@ -426,6 +436,7 @@ func BindFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(&flagCollectionEvents, "events-collection", DefaultEventsCollection, "Collection name for Events")
 	cmd.PersistentFlags().StringVar(&flagCollectionThemes, "themes-collection", DefaultThemesCollection, "Collection name for Themes")
 	cmd.PersistentFlags().StringVar(&flagCollectionCalibrationResults, "calibration-results-collection", DefaultCalibrationResultsCollection, "Collection name for Calibration Results")
+	cmd.PersistentFlags().StringVar(&flagCollectionCalibrationRequests, "calibration-requests-collection", DefaultCalibrationRequestsCollection, "Collection name for queued Calibration Requests")
 	cmd.PersistentFlags().DurationVar(&flagIdleThreshold, "idle-threshold", 5*time.Second, "Idle fallback threshold")
 	cmd.PersistentFlags().DurationVar(&flagRecoveryInterval, "recovery-interval", 10*time.Second, "Stale job recovery check interval")
 	cmd.PersistentFlags().DurationVar(&flagJobTimeout, "job-timeout", 20*time.Second, "Stale job execution timeout")
@@ -442,34 +453,35 @@ func BindFlags(cmd *cobra.Command) {
 // NewDefaultAppConfig returns an AppConfig populated with default collection names and settings.
 func NewDefaultAppConfig() *AppConfig {
 	return &AppConfig{
-		CollectionQPUs:               DefaultQpusCollection,
-		CollectionTimeSlots:          DefaultTimeSlotsCollection,
-		CollectionQuantumJobs:        DefaultQuantumJobsCollection,
-		CollectionAPITokens:          DefaultAPITokensCollection,
-		CollectionQPUTimeRequests:    DefaultQPUTimeRequestsCollection,
-		CollectionNotifications:      DefaultNotificationsCollection,
-		CollectionDrivers:            DefaultDriversCollection,
-		CollectionEvents:             DefaultEventsCollection,
-		CollectionThemes:             DefaultThemesCollection,
-		CollectionCalibrationResults: DefaultCalibrationResultsCollection,
-		IdleThreshold:                5 * time.Second,
-		RecoveryInterval:             10 * time.Second,
-		JobTimeout:                   20 * time.Second,
-		DispatchPollInterval:         1 * time.Second,
-		EventsRetention:              720 * time.Hour,
-		EventsPruneInterval:          1 * time.Hour,
-		EventRateLimit:               100,
-		PortRangeStart:               6000,
-		PortRangeEnd:                 7000,
-		ServerPort:                   8090,
-		DisableEmailPasswordAuth:     false,
-		Validator:                    validator.New(validator.WithRequiredStructEnabled()),
-		TlsCertFile:                  DefaultTLSCertFile,
-		TlsKeyFile:                   DefaultTLSKeyFile,
-		TlsCaCertFile:                DefaultTLSCaCertFile,
-		TlsCaKeyFile:                 DefaultTLSCaKeyFile,
-		IpAddr:                       "127.0.0.1",
-		activeTheme:                  DefaultThemeSchema,
+		CollectionQPUs:                DefaultQpusCollection,
+		CollectionTimeSlots:           DefaultTimeSlotsCollection,
+		CollectionQuantumJobs:         DefaultQuantumJobsCollection,
+		CollectionAPITokens:           DefaultAPITokensCollection,
+		CollectionQPUTimeRequests:     DefaultQPUTimeRequestsCollection,
+		CollectionNotifications:       DefaultNotificationsCollection,
+		CollectionDrivers:             DefaultDriversCollection,
+		CollectionEvents:              DefaultEventsCollection,
+		CollectionThemes:              DefaultThemesCollection,
+		CollectionCalibrationResults:  DefaultCalibrationResultsCollection,
+		CollectionCalibrationRequests: DefaultCalibrationRequestsCollection,
+		IdleThreshold:                 5 * time.Second,
+		RecoveryInterval:              10 * time.Second,
+		JobTimeout:                    20 * time.Second,
+		DispatchPollInterval:          1 * time.Second,
+		EventsRetention:               720 * time.Hour,
+		EventsPruneInterval:           1 * time.Hour,
+		EventRateLimit:                100,
+		PortRangeStart:                6000,
+		PortRangeEnd:                  7000,
+		ServerPort:                    8090,
+		DisableEmailPasswordAuth:      false,
+		Validator:                     validator.New(validator.WithRequiredStructEnabled()),
+		TlsCertFile:                   DefaultTLSCertFile,
+		TlsKeyFile:                    DefaultTLSKeyFile,
+		TlsCaCertFile:                 DefaultTLSCaCertFile,
+		TlsCaKeyFile:                  DefaultTLSCaKeyFile,
+		IpAddr:                        "127.0.0.1",
+		activeTheme:                   DefaultThemeSchema,
 	}
 }
 
@@ -508,32 +520,33 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 			Extra        map[string]any `json:"extra" yaml:"extra"`
 		}
 		var fileCfg struct {
-			CollectionQPUs               *string                     `json:"qpusCollection" yaml:"qpusCollection"`
-			TlsCertFile                  *string                     `json:"tlsCertFile" yaml:"tlsCertFile"`
-			TlsKeyFile                   *string                     `json:"tlsKeyFile" yaml:"tlsKeyFile"`
-			TlsCaCertFile                *string                     `json:"tlsCaCertFile" yaml:"tlsCaCertFile"`
-			TlsCaKeyFile                 *string                     `json:"tlsCaKeyFile" yaml:"tlsCaKeyFile"`
-			ServerPort                   *int                        `json:"serverPort" yaml:"serverPort"`
-			IpAddr                       *string                     `json:"ipAddr" yaml:"ipAddr"`
-			CollectionTimeSlots          *string                     `json:"timeslotsCollection" yaml:"timeslotsCollection"`
-			CollectionQuantumJobs        *string                     `json:"jobsCollection" yaml:"jobsCollection"`
-			CollectionAPITokens          *string                     `json:"apiTokensCollection" yaml:"apiTokensCollection"`
-			CollectionNotifications      *string                     `json:"notificationsCollection" yaml:"notificationsCollection"`
-			CollectionDrivers            *string                     `json:"driversCollection" yaml:"driversCollection"`
-			CollectionEvents             *string                     `json:"eventsCollection" yaml:"eventsCollection"`
-			CollectionThemes             *string                     `json:"themesCollection" yaml:"themesCollection"`
-			CollectionCalibrationResults *string                     `json:"calibrationResultsCollection" yaml:"calibrationResultsCollection"`
-			IdleThreshold                *string                     `json:"idleThreshold" yaml:"idleThreshold"`
-			RecoveryInterval             *string                     `json:"recoveryInterval" yaml:"recoveryInterval"`
-			JobTimeout                   *string                     `json:"jobTimeout" yaml:"jobTimeout"`
-			DispatchPollInterval         *string                     `json:"dispatchPollInterval" yaml:"dispatchPollInterval"`
-			EventsRetention              *string                     `json:"eventsRetention" yaml:"eventsRetention"`
-			EventsPruneInterval          *string                     `json:"eventsPruneInterval" yaml:"eventsPruneInterval"`
-			EventRateLimit               *int                        `json:"eventRateLimit" yaml:"eventRateLimit"`
-			PortRangeStart               *int                        `json:"portRangeStart" yaml:"portRangeStart"`
-			PortRangeEnd                 *int                        `json:"portRangeEnd" yaml:"portRangeEnd"`
-			DisableEmailPasswordAuth     *bool                       `json:"disableEmailPasswordAuth" yaml:"disableEmailPasswordAuth"`
-			OAuth2Providers              []oauth2ProviderConfigLocal `json:"oauth2Providers" yaml:"oauth2Providers"`
+			CollectionQPUs                *string                     `json:"qpusCollection" yaml:"qpusCollection"`
+			TlsCertFile                   *string                     `json:"tlsCertFile" yaml:"tlsCertFile"`
+			TlsKeyFile                    *string                     `json:"tlsKeyFile" yaml:"tlsKeyFile"`
+			TlsCaCertFile                 *string                     `json:"tlsCaCertFile" yaml:"tlsCaCertFile"`
+			TlsCaKeyFile                  *string                     `json:"tlsCaKeyFile" yaml:"tlsCaKeyFile"`
+			ServerPort                    *int                        `json:"serverPort" yaml:"serverPort"`
+			IpAddr                        *string                     `json:"ipAddr" yaml:"ipAddr"`
+			CollectionTimeSlots           *string                     `json:"timeslotsCollection" yaml:"timeslotsCollection"`
+			CollectionQuantumJobs         *string                     `json:"jobsCollection" yaml:"jobsCollection"`
+			CollectionAPITokens           *string                     `json:"apiTokensCollection" yaml:"apiTokensCollection"`
+			CollectionNotifications       *string                     `json:"notificationsCollection" yaml:"notificationsCollection"`
+			CollectionDrivers             *string                     `json:"driversCollection" yaml:"driversCollection"`
+			CollectionEvents              *string                     `json:"eventsCollection" yaml:"eventsCollection"`
+			CollectionThemes              *string                     `json:"themesCollection" yaml:"themesCollection"`
+			CollectionCalibrationResults  *string                     `json:"calibrationResultsCollection" yaml:"calibrationResultsCollection"`
+			CollectionCalibrationRequests *string                     `json:"calibrationRequestsCollection" yaml:"calibrationRequestsCollection"`
+			IdleThreshold                 *string                     `json:"idleThreshold" yaml:"idleThreshold"`
+			RecoveryInterval              *string                     `json:"recoveryInterval" yaml:"recoveryInterval"`
+			JobTimeout                    *string                     `json:"jobTimeout" yaml:"jobTimeout"`
+			DispatchPollInterval          *string                     `json:"dispatchPollInterval" yaml:"dispatchPollInterval"`
+			EventsRetention               *string                     `json:"eventsRetention" yaml:"eventsRetention"`
+			EventsPruneInterval           *string                     `json:"eventsPruneInterval" yaml:"eventsPruneInterval"`
+			EventRateLimit                *int                        `json:"eventRateLimit" yaml:"eventRateLimit"`
+			PortRangeStart                *int                        `json:"portRangeStart" yaml:"portRangeStart"`
+			PortRangeEnd                  *int                        `json:"portRangeEnd" yaml:"portRangeEnd"`
+			DisableEmailPasswordAuth      *bool                       `json:"disableEmailPasswordAuth" yaml:"disableEmailPasswordAuth"`
+			OAuth2Providers               []oauth2ProviderConfigLocal `json:"oauth2Providers" yaml:"oauth2Providers"`
 		}
 
 		var parseErr error
@@ -594,6 +607,9 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 		}
 		if fileCfg.CollectionCalibrationResults != nil {
 			cfg.CollectionCalibrationResults = *fileCfg.CollectionCalibrationResults
+		}
+		if fileCfg.CollectionCalibrationRequests != nil {
+			cfg.CollectionCalibrationRequests = *fileCfg.CollectionCalibrationRequests
 		}
 		if fileCfg.IdleThreshold != nil {
 			if d, err := time.ParseDuration(*fileCfg.IdleThreshold); err == nil {
@@ -724,6 +740,7 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 	cfg.CollectionEvents = resolveString("events-collection", "QPI_EVENTS_COLLECTION", cfg.CollectionEvents)
 	cfg.CollectionThemes = resolveString("themes-collection", "QPI_THEMES_COLLECTION", cfg.CollectionThemes)
 	cfg.CollectionCalibrationResults = resolveString("calibration-results-collection", "QPI_CALIBRATION_RESULTS_COLLECTION", cfg.CollectionCalibrationResults)
+	cfg.CollectionCalibrationRequests = resolveString("calibration-requests-collection", "QPI_CALIBRATION_REQUESTS_COLLECTION", cfg.CollectionCalibrationRequests)
 	cfg.IdleThreshold = resolveDuration("idle-threshold", "QPI_IDLE_THRESHOLD", cfg.IdleThreshold)
 	cfg.RecoveryInterval = resolveDuration("recovery-interval", "QPI_RECOVERY_INTERVAL", cfg.RecoveryInterval)
 	cfg.JobTimeout = resolveDuration("job-timeout", "QPI_JOB_TIMEOUT", cfg.JobTimeout)
