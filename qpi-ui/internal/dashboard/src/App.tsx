@@ -6,6 +6,7 @@ import { OverviewTab } from "./components/tabs/OverviewTab";
 import { QpuRegistryTab } from "./components/tabs/QpuRegistryTab";
 import { DriversTab } from "./components/tabs/DriversTab";
 import { MonitoringTab } from "./components/tabs/MonitoringTab";
+import { CalibrationTab } from "./components/tabs/CalibrationTab";
 import { JobsConsoleTab } from "./components/tabs/JobsConsoleTab";
 import { BookingsTab } from "./components/tabs/BookingsTab";
 import { AdminPanelTab } from "./components/tabs/AdminPanelTab";
@@ -25,6 +26,8 @@ import type {
   CreateDriverRequest,
   CreateDriverResponse,
   EventRow,
+  CalibrationResult,
+  CalibrationRequest,
 } from "./types";
 
 export const App: React.FC = () => {
@@ -43,6 +46,10 @@ export const App: React.FC = () => {
   const [qpus, setQpus] = useState<QPU[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [calibrations, setCalibrations] = useState<CalibrationResult[]>([]);
+  const [calibrationRequests, setCalibrationRequests] = useState<
+    CalibrationRequest[]
+  >([]);
   const [jobs, setJobs] = useState<QuantumJob[]>([]);
   const [bookings, setBookings] = useState<TimeSlot[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -64,6 +71,7 @@ export const App: React.FC = () => {
           "qpus",
           "drivers",
           "monitoring",
+          "calibration",
           "jobs",
           "bookings",
           "settings",
@@ -137,6 +145,35 @@ export const App: React.FC = () => {
       setEvents(records.items as unknown as EventRow[]);
     } catch (err) {
       console.error("Failed to load events:", err);
+    }
+  }, []);
+
+  const loadCalibrations = useCallback(async () => {
+    try {
+      const records = await pb
+        .collection("calibration_results")
+        .getList(1, 100, { sort: "-timestamp", expand: "driver" });
+      setCalibrations(records.items as unknown as CalibrationResult[]);
+    } catch (err) {
+      console.error("Failed to load calibration results:", err);
+    }
+  }, []);
+
+  const loadCalibrationRequests = useCallback(async () => {
+    try {
+      // Only what is still in flight: a calibration takes hours, and this is
+      // what lets the panel say "in progress" during the gap before a report
+      // exists. Finished requests are represented by their report.
+      const records = await pb
+        .collection("calibration_requests")
+        .getList(1, 50, {
+          filter: 'status = "pending" || status = "running"',
+          sort: "-created",
+          expand: "driver",
+        });
+      setCalibrationRequests(records.items as unknown as CalibrationRequest[]);
+    } catch (err) {
+      console.error("Failed to load calibration requests:", err);
     }
   }, []);
 
@@ -252,6 +289,8 @@ export const App: React.FC = () => {
         loadVersion(),
         loadDrivers(),
         loadEvents(),
+        loadCalibrations(),
+        loadCalibrationRequests(),
       ]);
     }
   }, [
@@ -265,6 +304,8 @@ export const App: React.FC = () => {
     loadVersion,
     loadDrivers,
     loadEvents,
+    loadCalibrations,
+    loadCalibrationRequests,
   ]);
 
   // Real-time Subscriptions setup
@@ -303,6 +344,15 @@ export const App: React.FC = () => {
       pb.collection("events").subscribe("*", () => {
         loadEvents();
       });
+      pb.collection("calibration_results").subscribe("*", () => {
+        loadCalibrations();
+        // A report closes out the request it answers, so the in-flight banner
+        // has to be reread here too.
+        loadCalibrationRequests();
+      });
+      pb.collection("calibration_requests").subscribe("*", () => {
+        loadCalibrationRequests();
+      });
     }
 
     return () => {
@@ -315,6 +365,8 @@ export const App: React.FC = () => {
         pb.collection("qpu_time_requests").unsubscribe();
         pb.collection("drivers").unsubscribe();
         pb.collection("events").unsubscribe();
+        pb.collection("calibration_results").unsubscribe();
+        pb.collection("calibration_requests").unsubscribe();
       }
     };
   }, [
@@ -329,6 +381,8 @@ export const App: React.FC = () => {
     loadTimeRequests,
     loadDrivers,
     loadEvents,
+    loadCalibrations,
+    loadCalibrationRequests,
   ]);
 
   // Synchronize auth sessions across tabs (e.g. from /_/)
@@ -401,6 +455,24 @@ export const App: React.FC = () => {
     } catch (err: unknown) {
       alert(`Clear failed: ${(err as Error).message}`);
     }
+  };
+
+  /** Queues a calibration (RFC 0004 §6.8). Admin-only server side: it takes a
+   * QPU out of service for hours and rewrites what every later job runs
+   * against. Optimistically reloads the queue so the in-flight banner appears
+   * without waiting for the realtime round trip. */
+  const handleTriggerCalibration = async (payload: {
+    driver_id: string;
+    mode: string;
+    target_qubits?: string[];
+    target_edges?: string[];
+  }) => {
+    await pb.send("/api/op/calibrate/dispatch", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+    await loadCalibrationRequests();
   };
 
   const handleToggleQpu = async (id: string, enabled: boolean) => {
@@ -577,6 +649,17 @@ export const App: React.FC = () => {
       case "monitoring":
         return isAdmin ? (
           <MonitoringTab events={events} drivers={drivers} />
+        ) : (
+          <div className="text-gray-400 dark:text-zinc-500">Access Denied.</div>
+        );
+      case "calibration":
+        return isAdmin ? (
+          <CalibrationTab
+            drivers={drivers}
+            results={calibrations}
+            requests={calibrationRequests}
+            onTrigger={handleTriggerCalibration}
+          />
         ) : (
           <div className="text-gray-400 dark:text-zinc-500">Access Denied.</div>
         );

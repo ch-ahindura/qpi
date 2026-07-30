@@ -267,6 +267,12 @@ export function RegisterDriverModal({ qpus, onClose, onRegister }: Props) {
               <option value="bluefors_gen1">
                 bluefors_gen1 (Bluefors Gen. 1 Cryostat Monitor)
               </option>
+              <option value="quantify_tuner">
+                quantify_tuner (Calibration, quantify-scheduler)
+              </option>
+              <option value="qblox_tuner">
+                qblox_tuner (Calibration, qblox-scheduler)
+              </option>
               <option value="custom">custom (Bring your own driver)</option>
             </select>
           </div>

@@ -8,6 +8,7 @@ import {
   User,
   Workflow,
   Thermometer,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useTheme } from "../lib/ThemeContext";
 
@@ -37,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ? [
           { id: "drivers", label: "Drivers", icon: Workflow },
           { id: "monitoring", label: "Monitoring", icon: Thermometer },
+          { id: "calibration", label: "Calibration", icon: SlidersHorizontal },
         ]
       : []),
     { id: "jobs", label: "Jobs Console", icon: Terminal },

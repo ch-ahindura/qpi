@@ -234,9 +234,12 @@ test-e2e-client-go:
 	@echo "Running E2E Go client tests..."
 	./e2e/test_client_go.sh
 
+# Pass SPEC=<glob> to run one spec instead of all 42 — the difference between
+# eight seconds and four minutes when iterating on a single tab. e.g.
+#   make test-e2e-dashboard SPEC=cypress/e2e/calibration/calibration-tab.cy.ts
 test-e2e-dashboard:
 	@echo "Running E2E Cypress dashboard tests..."
-	./e2e/test_dashboard_cypress.sh
+	./e2e/test_dashboard_cypress.sh $(if $(SPEC),--spec "$(SPEC)")
 
 test-e2e-dashboard-visual:
 	@echo "Running E2E Cypress dashboard tests..."

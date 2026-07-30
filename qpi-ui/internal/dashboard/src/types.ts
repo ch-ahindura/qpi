@@ -95,7 +95,13 @@ export type DriverKind =
   | "qblox"
   | "presto"
   | "bluefors_gen1"
+  | "quantify_tuner"
+  | "qblox_tuner"
   | "custom";
+
+/** The tuner devices, i.e. the drivers that implement the `calibrate`
+ * operation (RFC 0004 §6.1). */
+export const TUNER_KINDS: DriverKind[] = ["quantify_tuner", "qblox_tuner"];
 
 export type DriverLanguage = "python" | "typescript" | "go";
 
@@ -115,6 +121,9 @@ export const DEVICE_LANGUAGES: Record<DriverKind, DriverLanguage[]> = {
   qblox: ["python"],
   presto: ["python"],
   bluefors_gen1: ["python", "typescript", "go"],
+  // Only the Python SDK ships a tuner, as only it ships a process device.
+  quantify_tuner: ["python"],
+  qblox_tuner: ["python"],
   custom: ["python", "typescript", "go"],
 };
 
@@ -213,4 +222,58 @@ export interface ThemeRecord {
   custom_css?: string;
   custom_js?: string;
   updated?: string;
+}
+
+/** One routine's outcome on one target, inside a calibration report. */
+export interface RoutineResult {
+  routine_name: string;
+  target: string;
+  parameters: Record<string, unknown>;
+  timestamp: string;
+  duration_s: number;
+}
+
+/** A fidelity measurement. Benchmarks calibrate nothing; their number is what
+ * the drift check compares against its threshold (RFC 0004 §6.7). */
+export interface BenchmarkResult {
+  protocol: string;
+  target: string;
+  fidelity: number | null;
+  error_per_gate: number | null;
+  raw_data?: Record<string, unknown>;
+}
+
+/** A row from the `calibration_results` collection (RFC 0004 §6.8). */
+export interface CalibrationResult {
+  id: string;
+  driver: string;
+  qpu: string;
+  timestamp: string;
+  duration_s: number;
+  mode: "full" | "partial" | "fidelity_check";
+  backend?: string;
+  routine_results: RoutineResult[];
+  benchmarks: BenchmarkResult[];
+  errors: string[];
+  status: "success" | "partial_failure" | "failed";
+  created: string;
+  expand?: {
+    driver?: Driver;
+  };
+}
+
+/** A queued calibration waiting for, or being run by, its driver's dispatcher
+ * (RFC 0004 §6.8). "running" is how the dashboard knows a calibration is in
+ * flight — the run itself takes hours and reports back over NNG. */
+export interface CalibrationRequest {
+  id: string;
+  driver: string;
+  mode: "full" | "partial" | "fidelity_check";
+  target_qubits?: string[];
+  target_edges?: string[];
+  status: "pending" | "running" | "done" | "failed";
+  created: string;
+  expand?: {
+    driver?: Driver;
+  };
 }
