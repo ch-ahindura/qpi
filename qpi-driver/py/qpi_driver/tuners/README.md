@@ -131,6 +131,16 @@ and a way to run one; it does not reimplement the experiments.
 ## Status
 
 The routines build real swept schedules and compile against both schedulers'
-dummy clusters, and the fits recover known parameters from synthetic data. They
-have not been validated against physical hardware — the manual verification
-steps in RFC 0004 §9 are what remain before this is trustworthy in a lab.
+dummy clusters. The fits are checked three ways: against synthetic data, against
+a physics simulator (`make test-py-sim`, which builds the transmon from a real
+Hamiltonian with scqubits and integrates the master equation with qutip), and —
+for randomized benchmarking — against sequences composed from this package's own
+Clifford decomposition and evolved as unitaries.
+
+Two gaps remain, and they are the ones that matter:
+
+- The simulator supplies the acquisition rather than interpreting the compiled
+  schedule, so a schedule that does not produce the physics its fit assumes
+  would still pass.
+- Nothing here has been run against physical hardware. The manual verification
+  in RFC 0004 §9 is what remains before this is trustworthy in a lab.

@@ -593,17 +593,35 @@ Use the dummy Cluster from `qblox-instruments` to verify each routine's
 `build_schedule()` produces a valid, compilable `Schedule`. The dummy Cluster
 returns all-zeros — this validates compilation, not analysis.
 
-### Tier 3: Physics simulation (optional, scqubits) — not yet implemented
+### Tier 3: Physics simulation (scqubits + qutip)
 
-Use [scqubits](https://scqubits.readthedocs.io/) (BSD-3) to generate physically
-realistic synthetic acquisition data, so a routine can be tested end to end —
-schedule, acquisition, fit, write-back — without hardware. Tests requiring it
-would be marked `@pytest.mark.scqubits` and skipped when it is absent.
+Tiers 1 and 2 leave a gap that matters. Tier 1 generates its data from the same
+analytic form the fit assumes — a decaying cosine in, a decaying cosine fitted —
+so it proves the optimiser converges but not that the model is the right one.
+Tier 2 proves a schedule compiles, and the dummy cluster returns no data at all.
 
-This is the gap between "the fits are correct and the schedules compile", which
-tiers 1 and 2 establish, and "the routines measure what they claim to", which
-only hardware or a physical simulation can. §9's manual verification is the
-other half of that answer.
+Tier 3 closes it. [scqubits](https://scqubits.readthedocs.io/) (BSD-3)
+diagonalises a real Cooper-pair-box Hamiltonian for the transmon's levels, and
+`qutip` integrates the Lindblad master equation for the time-domain responses.
+Nothing is generated from a fitting model, so a routine that recovers the
+simulator's parameters has been tested against physics rather than against
+itself. Tests are marked `@pytest.mark.scqubits`, live in the `sim` dependency
+group, and skip when it is absent.
+
+**Tolerances are part of the design here.** A loose one makes a test that passes
+without discriminating. Fitting a *Gaussian* decay to this simulator's
+exponential relaxation still recovers T1 to within 7%, so a 15% tolerance would
+accept the wrong physical model — the one thing this tier exists to reject. Each
+tolerance is set from the measured accuracy of the correct model (T1 to 0.01%,
+the Ramsey fringe to 0.004%, f01 to 3 kHz) with margin, and no looser. Swapping
+the exponential decay for a Gaussian passes tier 1 and fails tier 3, which is
+the whole argument for having it.
+
+**What it does not cover.** The simulator supplies the acquisition; it does not
+interpret the compiled schedule. So this tier validates that each *fit model*
+describes real physics — not that each *schedule* produces it. Closing that
+second gap needs a simulator driven by the compiled programme, which is a larger
+piece of work and is not done. Hardware remains the only answer for it (§9).
 
 ### Test files
 
@@ -623,6 +641,8 @@ therefore part of the design, not bookkeeping:
 | `tests/test_clifford.py` | 1 | `test-py-base` | Clifford group generation + inverse correctness |
 | `tests/test_calibrate_driver.py` | 1 | `test-py-base` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
 | `tests/test_tuner_routines.py` | 2 | `test-py-quantify` + `test-py-qblox` | Schedule compilation for each routine |
+| `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries |
+| `tests/simulation.py` | 3 | — | The transmon simulator itself |
 
 Keeping the driver's own tests in tier 1 is what makes `CalibrateDriver`
 testable without a lab: the tuner is resolved by name, class *or instance*
@@ -672,6 +692,7 @@ write-back contract, and the reason §10 treats that file as the trust boundary.
 make test-py-base        # Fitting, DAG, config, Clifford, persistence, driver lifecycle
 make test-py-quantify    # quantify_tuner routine compilation (dummy Cluster)
 make test-py-qblox       # qblox_tuner routine compilation (dummy Cluster)
+make test-py-sim         # the routines against scqubits/qutip physics
 make test-go             # Event routing, handler, dispatcher queue, catalog invariants
 make test-go-driver      # Go SDK: operations are no longer a closed pair
 make test-js-driver      # TypeScript SDK: same
@@ -742,9 +763,11 @@ the docs.
 
 Not implemented, deliberately:
 
-- **Tier 3 physics simulation** (§7). Tiers 1 and 2 show the fits recover known
-  parameters and the schedules compile against both dummy clusters. Neither
-  shows a routine measures what it claims to on a real chip.
+- **Schedule-level simulation** (§7). Tier 3 validates each fit model against
+  physics, but the simulator supplies the acquisition rather than interpreting
+  the compiled schedule — so a schedule that does not produce the physics its
+  fit assumes would still pass. That needs a simulator driven by the compiled
+  programme.
 - **Hardware validation** (§9). No routine here has been run against a physical
   transmon. Until the manual verification in §9 has been done on a lab node, the
   honest description of this feature is "complete and untested against

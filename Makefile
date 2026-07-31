@@ -120,7 +120,7 @@ test-go-minimal:
 	@echo "Running Go server unit tests..."
 	(cd qpi-ui && go test -race -cover ./...)
 
-test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox
+test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox test-py-sim
 
 # The framework modules the coverage floor applies to: the SDK, the CLI, the device
 # registry and its options, and the executors that need no hardware. Everything else
@@ -168,6 +168,15 @@ test-py-qblox:
 		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
 	fi
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
+
+# Tier 3 of the calibration testing strategy (RFC 0004 §7): the routines against
+# acquisition data generated from a real transmon Hamiltonian (scqubits) and the
+# Lindblad master equation (qutip), rather than from the analytic form each fit
+# already assumes. Needs no scheduler — it supplies the acquisition itself.
+test-py-sim:
+	@echo "Running Python calibration tests against the physics simulator..."
+	$(UV) sync --project qpi-driver/py --group sim --dev
+	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_physics_simulation.py -v
 
 test-js-client:
 	@echo "Running JS client tests..."

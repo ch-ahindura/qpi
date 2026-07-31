@@ -53,6 +53,14 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.3.0",
 ]
+# Tier 3 of the calibration testing strategy (RFC 0004 §7): physically realistic
+# acquisition data, so a routine is tested against physics rather than against
+# the analytic form its own fit assumes. Test-only, and a group rather than an
+# extra because nothing shipped to a user needs it.
+sim = [
+    "scqubits>=4.0",
+    "qutip>=5.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/sopherapps/qpi"
@@ -63,6 +71,11 @@ Changelog = "https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md"
 
 [project.scripts]
 qpi-driver = "qpi_driver.cli:app"
+
+[tool.pytest.ini_options]
+markers = [
+    "scqubits: needs the [sim] dependency group — physics-backed acquisition data (RFC 0004 §7, tier 3)",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

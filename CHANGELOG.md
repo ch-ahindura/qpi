@@ -63,6 +63,21 @@ before anything is replaced; and the previous file is kept as
 without a second run. Fitted values outside the sweep that produced them are
 treated as failed fits, not as new parameters.
 
+**A physics simulator for the calibration tests** (RFC 0004 §7, tier 3). The
+routines are now checked against acquisition data generated from a real transmon
+Hamiltonian (`scqubits`) and the Lindblad master equation (`qutip`), rather than
+from the analytic form each fit already assumes. `make test-py-sim` runs it; the
+dependencies live in the `sim` dependency group and the tests skip without them.
+
+This catches a class of error the other tiers cannot. Fitting a *Gaussian* decay
+to exponential relaxation passes tier 1 — which generates its data from the same
+function it fits — and fails tier 3, because the master equation's relaxation is
+genuinely exponential. Randomized benchmarking is exercised end to end against
+real unitaries: sequences composed from this package's own Clifford
+decomposition, closed with the computed recovery gate, and depolarised by a
+known amount, with a control test proving the decay disappears when the recovery
+gate is removed.
+
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
   seconds rather than minutes when iterating on one tab.
