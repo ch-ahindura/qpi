@@ -46,6 +46,34 @@ def _frequency_sweep(
     return linear_setpoints(centre - span / 2, centre + span / 2, points)
 
 
+def _require_resolved_line(linewidth: float, frequencies: list[float]) -> None:
+    """Refuse a line the sweep was too coarse to have seen.
+
+    A Lorentzian narrower than the spacing between setpoints did not appear in
+    the data: whatever the fit converged on came from noise between the points,
+    and it comes with a small linewidth and a confident centre. That is the
+    worst shape a wrong answer can take here, because the centre is written
+    straight to the device as f01 and every gate afterwards is driven at it.
+
+    Seen in practice: narrowing the line to 63 kHz while the sweep still stepped
+    5 MHz made the routine report a frequency 377 MHz from the qubit, with a
+    tidy fit and no complaint.
+
+    Raises:
+        RoutineError: naming both numbers, since the fix is a finer sweep.
+    """
+    if len(frequencies) < 2:
+        return
+    step = abs(frequencies[1] - frequencies[0])
+    if linewidth < step:
+        raise RoutineError(
+            f"fitted linewidth {linewidth:.4g} Hz is narrower than the "
+            f"{step:.4g} Hz spacing of the sweep, so the line was never "
+            "measured — the fit is of the noise between setpoints. Scan the "
+            "same span with more points, or narrow the span."
+        )
+
+
 def _current_clock(device: Any, target: str, clock: str) -> float:
     """The frequency currently configured for *clock* on *target*."""
     value = read_path(device.get_element(target), f"clock_freqs.{clock}")
@@ -176,8 +204,19 @@ class QubitSpectroscopy(CalibrationRoutine):
             config, device, target, "f01", default_span=40e6
         )
         clock = f"{target}.01"
-        # A deliberately weak, long drive: saturating the transition broadens the
-        # line and hides the centre this routine exists to find.
+        # A weak drive at the calibrated pulse shape, deliberately.
+        #
+        # A long square saturation tone is what textbook two-tone spectroscopy
+        # uses, and it does resolve the line far better — 63 kHz against 13.6
+        # MHz, measured. It was tried here and backed out, because this routine's
+        # job in the graph is to *locate* a qubit across hundreds of MHz, and a
+        # square tone's response is a sinc: over a coarse sweep the Lorentzian
+        # fit latches onto a side lobe and lands 91 MHz out. The DRAG envelope is
+        # smooth and has no lobes to catch.
+        #
+        # Precision is not lost by that choice, it is delegated: `ramsey` runs
+        # after `rabi` and refines f01 to hertz. Spectroscopy finds the qubit,
+        # Ramsey measures it — which is what the dependency order already says.
         drive_amp = float(config.get("drive_amp", 0.01))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
@@ -198,7 +237,9 @@ class QubitSpectroscopy(CalibrationRoutine):
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
-        return fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
+        fitted = fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
+        _require_resolved_line(fitted["linewidth"], self._frequencies)
+        return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(

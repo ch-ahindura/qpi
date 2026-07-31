@@ -24,6 +24,7 @@ import numpy as np
 import pytest
 
 from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.fitting import FitError, fit_rb_decay
 from qpi_driver.tuners.routines import all_routines
 
@@ -101,12 +102,16 @@ def test_scanning_the_wrong_window_cannot_invent_the_right_answer(simulator):
     """A sweep that does not bracket the line gives a bounded wrong answer, or none.
 
     This is the common mistake on hardware, and it is worth being precise about
-    what the routine guarantees. It does *not* detect a bad sweep range — flat,
-    noisy data can still fit a spurious Lorentzian. What the range guard
-    guarantees is that the answer is confined to the window actually measured,
-    so the routine can never report a frequency it never scanned, and the error
-    is bounded by the operator's own sweep rather than by the optimiser's
-    imagination.
+    what the routine guarantees. There is no direct check for "you scanned the
+    wrong range" — the routine cannot know where the qubit was supposed to be.
+    Two things bound the damage instead, and either is an acceptable outcome:
+
+    - The fit refuses. Flat noise fits a spurious Lorentzian, but a spurious one
+      is narrow, and a line narrower than the sweep's own step size is one that
+      was never measured — which is what the resolution guard rejects.
+    - The answer is confined to the window actually scanned, so the routine can
+      never report a frequency it did not look at, and the error is bounded by
+      the operator's own sweep rather than by the optimiser's imagination.
     """
     spectroscopy = routine("qubit_spectroscopy")
     device = device_for(simulator)
@@ -125,7 +130,7 @@ def test_scanning_the_wrong_window_cannot_invent_the_right_answer(simulator):
 
     try:
         fitted = spectroscopy.analyse(acquisition, "q0", device, config)
-    except FitError:
+    except (FitError, RoutineError):
         return  # refusing outright is the other acceptable outcome
 
     assert min(scanned) <= fitted["clock_freq_01"] <= max(scanned), (
