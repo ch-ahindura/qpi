@@ -53,6 +53,28 @@ def write_path(component: Any, dotted: str, value: Any) -> None:
     write(owner, name, value)
 
 
+def element_names(device: Any) -> list[str]:
+    """The device's qubit names, however this scheduler exposes them."""
+    return _names(getattr(device, "elements", None))
+
+
+def edge_names(device: Any) -> list[str]:
+    """The device's edge names, however this scheduler exposes them.
+
+    quantify's ``QuantumDevice.elements``/``edges`` are methods returning names;
+    qblox's are dicts of name to object. Calling the wrong one raises
+    ``'dict' object is not callable`` — which is how the qblox write-back was
+    found to have never worked.
+    """
+    return _names(getattr(device, "edges", None))
+
+
+def _names(accessor: Any) -> list[str]:
+    if accessor is None:
+        return []
+    return list(accessor() if callable(accessor) else accessor)
+
+
 def parameters_of(owner: Any) -> dict[str, Any]:
     """Every readable parameter of *owner* as plain values.
 
@@ -73,11 +95,10 @@ def submodules_of(owner: Any) -> dict[str, Any]:
     return dict(getattr(owner, "submodules", None) or {})
 
 
-def construction_args(component: Any) -> list[str]:
-    """The positional arguments *component*'s class is rebuilt from.
+def edge_endpoints(component: Any) -> tuple[str, str] | None:
+    """The two element names an edge joins, or ``None`` for a plain element.
 
-    An element takes its own name; an edge takes the two elements it joins. The
-    two schedulers differ over whether those are public attributes, so both
+    The two schedulers differ over whether those are public attributes, so both
     spellings are tried.
     """
     for parent_attr, child_attr in (
@@ -87,8 +108,61 @@ def construction_args(component: Any) -> list[str]:
         parent = getattr(component, parent_attr, None)
         child = getattr(component, child_attr, None)
         if parent and child:
-            return [str(parent), str(child)]
-    return [component.name]
+            return str(parent), str(child)
+    return None
+
+
+def phase_correction_names(edge: Any) -> tuple[str, str] | None:
+    """The two parameters an edge's CZ holds its virtual-Z corrections in.
+
+    The schedulers disagree on the spelling, and neither is ``phase_correction``:
+    quantify's `CompositeSquareEdge` names them after the qubits
+    (``q0_phase_correction``), qblox's after the roles
+    (``parent_phase_correction``). Asking the edge which it has is the only way
+    to write to it that works on both — and writing to a name neither uses is
+    how the conditional-phase routine came to apply nothing at all.
+
+    Returns ``(parent_name, child_name)``, or ``None`` for an edge with no CZ
+    corrections to set.
+    """
+    cz = getattr(edge, "cz", None)
+    endpoints = edge_endpoints(edge)
+    if cz is None or endpoints is None:
+        return None
+
+    parent, child = endpoints
+    for names in (
+        (f"{parent}_phase_correction", f"{child}_phase_correction"),
+        ("parent_phase_correction", "child_phase_correction"),
+    ):
+        if all(hasattr(cz, name) for name in names):
+            return names
+    return None
+
+
+def construction_args(component: Any) -> list[str]:
+    """The positional arguments *component*'s class is rebuilt from.
+
+    An element takes its own name. An edge takes none: its two endpoints go
+    through :func:`construction_kwargs` instead, because qblox's edges are
+    pydantic models and pydantic accepts no positional arguments at all — a
+    file written with them parses and then fails to instantiate.
+    """
+    return [] if edge_endpoints(component) else [component.name]
+
+
+def construction_kwargs(component: Any) -> dict[str, str]:
+    """The keyword arguments *component*'s class is rebuilt from.
+
+    Named rather than positional for edges, which is the spelling both
+    schedulers accept — quantify's qcodes edge takes them either way and
+    qblox's pydantic one only this way.
+    """
+    endpoints = edge_endpoints(component)
+    if endpoints is None:
+        return {}
+    parent, child = endpoints
+    return {"parent_element_name": parent, "child_element_name": child}
 
 
 def _walk(component: Any, dotted: str) -> tuple[Any, str]:

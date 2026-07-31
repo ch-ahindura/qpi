@@ -227,6 +227,11 @@ def fit_conditional_phase(
         "conditional_phase": float(conditional),
         "phase_correction": float(correction),
         "contrast": float(contrast),
+        # The ground fringe's own phase is the *single-qubit* phase the CZ left
+        # on the measured qubit — the thing the edge's virtual-Z corrections
+        # exist to cancel, and a different quantity from the conditional phase.
+        # Reported rather than discarded because nothing else measures it.
+        "reference_phase": float(low_phase),
     }
 
 

@@ -32,6 +32,9 @@ import yaml
 
 from qpi_driver.tuners.base.device import (
     construction_args,
+    construction_kwargs,
+    edge_names,
+    element_names,
     parameters_of,
     submodules_of,
 )
@@ -44,8 +47,30 @@ ELEMENT_TYPE_PROP = "element_type"
 #: Suffix of the copy kept beside the device config before it is overwritten.
 BACKUP_SUFFIX = ".prev"
 
-#: qcodes parameters that describe the instrument rather than the calibration.
-_UNCALIBRATED = frozenset({"IDN"})
+#: Parameters that describe the instrument rather than the calibration.
+#:
+#: ``element_type`` and ``name`` are here because qblox's elements are pydantic
+#: models that carry both as ordinary fields, so they come back from
+#: `parameters_of` looking like calibration. Writing them out would overwrite
+#: this module's own ``element_type`` — the mapping of class path and
+#: construction arguments the loader reads — with a bare class name, and the
+#: file would no longer load. quantify's qcodes elements do not have the
+#: collision, which is why it went unnoticed for as long as only quantify was
+#: exercised.
+_UNCALIBRATED = frozenset(
+    {
+        "IDN",
+        ELEMENT_TYPE_PROP,
+        "name",
+        # Structural, not calibration: which class this is and which two qubits
+        # an edge joins. All three are already captured in `element_type`, and
+        # re-emitting them as parameters means the loader tries to *assign* them
+        # to a constructed object — which pydantic's discriminated fields refuse.
+        "edge_type",
+        "parent_element_name",
+        "child_element_name",
+    }
+)
 
 
 class PersistenceError(Exception):
@@ -55,9 +80,9 @@ class PersistenceError(Exception):
 def serialise_device(device: Any) -> dict[str, Any]:
     """A ``QuantumDevice`` as the mapping ``load_quantum_device`` accepts."""
     config: dict[str, Any] = {}
-    for name in device.elements():
+    for name in element_names(device):
         config[name] = _serialise_component(device.get_element(name))
-    for name in device.edges():
+    for name in edge_names(device):
         config[name] = _serialise_component(device.get_edge(name))
     return config
 
@@ -69,6 +94,7 @@ def _serialise_component(component: Any) -> dict[str, Any]:
         ELEMENT_TYPE_PROP: {
             "path": f"{cls.__module__}.{cls.__qualname__}",
             "args": construction_args(component),
+            "kwargs": construction_kwargs(component),
         }
     }
 

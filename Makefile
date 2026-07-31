@@ -196,7 +196,9 @@ test-py-sim:
 # test-py-quantify or test-py-sim.
 test-py-loop:
 	@echo "Running the calibrate/process loop against the simulated chip..."
-	$(UV) sync --project qpi-driver/py --extra quantify --group sim --dev
+	# Both schedulers: the loop is parametrised over them, and syncing only one
+	# silently skips half the tests — which is how qblox stayed a stub.
+	$(UV) sync --project qpi-driver/py --extra quantify --extra qblox --group sim --dev
 	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_calibration_loop.py -v
 

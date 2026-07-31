@@ -390,9 +390,11 @@ class SimulatedBackend(RecordingBackend):
             for op in self._of_kind(schedule, "Rxy")
             if float(op.kwargs.get("theta", 0)) == 90
         ]
-        half = len(phases) // 2
-        # Each point contributes two Rxy: the first at phi=0, the second swept.
-        swept = phases[1:half:2] if half else []
+        # Each point contributes two Rxy — the first at phi=0, the second swept
+        # — and the routine emits four fringes over one sweep, so one quarter of
+        # the pairs is the sweep itself.
+        quarter = len(phases) // 4
+        swept = phases[1:quarter:2] if quarter else []
         if not swept:
             raise NotImplementedError(
                 "a conditional_phase schedule with no swept second pulse cannot "

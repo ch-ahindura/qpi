@@ -98,9 +98,44 @@ def test_an_element_is_written_with_the_class_the_loader_rebuilds_it_from():
 
 
 def test_an_edge_is_written_with_the_two_elements_it_joins():
-    """Its own name is the pair joined; passing that is a TypeError at load time."""
+    """By keyword, not position.
+
+    An edge's own name is not what its class is constructed from — the pair it
+    joins is. Named rather than positional because qblox's edges are pydantic
+    models and pydantic takes no positional arguments at all, so a file written
+    with them parses and then fails to instantiate.
+    """
     config = serialise_device(_device())
-    assert config["q0_q1"][ELEMENT_TYPE_PROP]["args"] == ["q0", "q1"]
+    element_type = config["q0_q1"][ELEMENT_TYPE_PROP]
+
+    assert element_type["args"] == []
+    assert element_type["kwargs"] == {
+        "parent_element_name": "q0",
+        "child_element_name": "q1",
+    }
+
+
+def test_an_element_is_still_written_with_its_own_name():
+    """Only edges move to keywords; a qubit is constructed from its name."""
+    config = serialise_device(_device())
+    assert config["q0"][ELEMENT_TYPE_PROP]["args"] == ["q0"]
+    assert config["q0"][ELEMENT_TYPE_PROP]["kwargs"] == {}
+
+
+def test_structural_fields_are_not_written_as_calibration():
+    """`edge_type` and the endpoints are already in `element_type`.
+
+    qblox's elements are pydantic models carrying both as ordinary fields, so
+    they come back looking like calibration. Writing them out makes the loader
+    try to *assign* them to a constructed object, which its discriminated fields
+    refuse — and the file it just wrote no longer loads.
+    """
+    config = serialise_device(_device())
+    for name, element in config.items():
+        for structural in ("edge_type", "parent_element_name", "child_element_name"):
+            assert structural not in element, (
+                f"{name} wrote {structural} as a calibration parameter"
+            )
 
 
 def test_an_unreadable_parameter_is_skipped_not_stringified():

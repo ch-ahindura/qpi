@@ -63,7 +63,8 @@ jobs:
         elif [ "${{ matrix.extra }}" = "qblox" ]; then
           uv sync --project qpi-driver/py --extra cli --extra qblox --dev
         elif [ "${{ matrix.extra }}" = "sim" ]; then
-          uv sync --project qpi-driver/py --extra cli --extra quantify --group sim --dev
+          # Both schedulers: the loop tests are parametrised over them.
+          uv sync --project qpi-driver/py --extra cli --extra quantify --extra qblox --group sim --dev
         fi
         sudo apt-get update && sudo apt-get install -y zip
 

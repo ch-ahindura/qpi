@@ -497,15 +497,19 @@ class CoupledTransmons:
         duration_ns: float | None = None,
         averages: int = 1,
     ) -> np.ndarray:
-        """A Ramsey on the control across a CZ, with the target down then up.
+        """Four Ramsey fringes across a CZ, as the routine's schedule builds them.
 
-        Reproduces `conditional_phase`'s schedule: π/2 on the control, the CZ,
-        then a second π/2 whose phase is swept — run once with the target in
-        ``|0⟩`` and once in ``|1⟩``. The offset between the two fringes is the
-        conditional phase, and the routine's job is to recover it.
+        π/2 on one qubit, the CZ, then a second π/2 whose phase is swept — with
+        the *other* qubit down and then up. Run for the control and then for the
+        target, which is four fringes in the order the routine reads them back:
+        control-with-target-down, control-with-target-up, then the same pair
+        measured on the target.
 
-        Returns the two fringes concatenated, ground-target first, which is the
-        order the routine reads them back in.
+        The offset within each pair is the conditional phase. The absolute phase
+        of each ground fringe is the *single-qubit* phase the CZ left on the
+        qubit being measured, which is a different quantity and the one the
+        edge's two virtual-Z corrections cancel — so both qubits have to be
+        measured, not one and assumed.
         """
         amplitude = (
             self.resonant_amplitude if flux_amplitude is None else flux_amplitude
@@ -513,28 +517,29 @@ class CoupledTransmons:
         duration = self.cz_duration_ns if duration_ns is None else duration_ns
         offset = np.deg2rad(self.conditional_phase_offset_deg)
 
-        first = self._pulse(90, 0, on_control=True)
-        excite_target = self._pulse(180, 0, on_control=False)
-
         populations: list[float] = []
-        for target_excited in (False, True):
-            for phase in np.asarray(phases_deg, dtype=float):
-                state = self.state(0, 0)
-                if target_excited:
-                    state = excite_target * state
-                state = first * state
-                density = self._evolve(state, amplitude, duration)
-                # The offset stands in for a miscalibrated flux pulse: a phase
-                # on |11> that the physics above did not produce, so a test can
-                # hand the routine a gate that genuinely needs correcting.
-                if target_excited and offset:
-                    phase_gate = self._conditional_phase_gate(offset)
-                    density = phase_gate * density * phase_gate.dag()
-                second = self._pulse(90, float(phase), on_control=True)
-                density = second * density * second.dag()
-                populations.append(
-                    self._population(density, qubit_level=1, on_control=True)
-                )
+        for on_control in (True, False):
+            first = self._pulse(90, 0, on_control=on_control)
+            excite_spectator = self._pulse(180, 0, on_control=not on_control)
+            for spectator_excited in (False, True):
+                for phase in np.asarray(phases_deg, dtype=float):
+                    state = self.state(0, 0)
+                    if spectator_excited:
+                        state = excite_spectator * state
+                    state = first * state
+                    density = self._evolve(state, amplitude, duration)
+                    # The offset stands in for a miscalibrated flux pulse: a
+                    # phase on |11> the physics above did not produce, so a test
+                    # can hand the routine a gate that genuinely needs
+                    # correcting.
+                    if spectator_excited and offset:
+                        phase_gate = self._conditional_phase_gate(offset)
+                        density = phase_gate * density * phase_gate.dag()
+                    second = self._pulse(90, float(phase), on_control=on_control)
+                    density = second * density * second.dag()
+                    populations.append(
+                        self._population(density, qubit_level=1, on_control=on_control)
+                    )
         return self._measure(np.array(populations), averages=averages)
 
     def _conditional_phase_gate(self, phase_rad: float):

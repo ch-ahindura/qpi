@@ -28,19 +28,67 @@ import numpy as np
 import pytest
 import yaml
 
-pytest.importorskip("quantify_scheduler", reason="needs a scheduler extra")
 pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
 pytest.importorskip("qutip", reason="needs the [sim] dependency group")
 
-from qpi_driver.compat.quantify import Instrument  # noqa: E402
+from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED  # noqa: E402
+from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED  # noqa: E402
 from qpi_driver.executors import resolve_executor  # noqa: E402
 from qpi_driver.executors.base import CircuitPayload, JobPayload  # noqa: E402
+from qpi_driver.executors.utils.coupler_bias import bias_settings  # noqa: E402
 from qpi_driver.simulation import GHZ, TransmonSimulator  # noqa: E402
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig  # noqa: E402
 from qpi_driver.tuners.base.device import read_path  # noqa: E402
 from qpi_driver.tuners.routines import routine_names  # noqa: E402
 
 pytestmark = pytest.mark.scqubits
+
+# Every test here runs under both schedulers. The loop is the same loop —
+# calibrate a simulated chip, then run circuits against what the calibration
+# wrote — and the point of parametrising rather than duplicating is that a claim
+# proved for one scheduler and quietly untested for the other is how qblox came
+# to be a stub. quantify-scheduler is being deprecated, so qblox is the one that
+# has to keep passing.
+SCHEDULERS = [
+    pytest.param(
+        "quantify",
+        marks=pytest.mark.skipif(
+            not IS_QUANTIFY_INSTALLED, reason="quantify-scheduler is not installed"
+        ),
+    ),
+    pytest.param(
+        "qblox",
+        marks=pytest.mark.skipif(
+            not IS_QBLOX_SCHEDULER_INSTALLED,
+            reason="qblox-scheduler is not installed",
+        ),
+    ),
+]
+
+
+def close_instruments(scheduler: str) -> None:
+    """Each scheduler keeps its own qcodes instrument registry."""
+    if scheduler == "qblox":
+        from qpi_driver.compat.qblox import Instrument
+    else:
+        from qpi_driver.compat.quantify import Instrument
+    Instrument.close_all()
+
+
+def tuner_for(scheduler: str, **kwargs):
+    if scheduler == "qblox":
+        from qpi_driver.tuners.qblox import QbloxTuner
+
+        return QbloxTuner(**kwargs)
+    from qpi_driver.tuners.quantify import QuantifyTuner
+
+    return QuantifyTuner(**kwargs)
+
+
+@pytest.fixture(params=SCHEDULERS, scope="module")
+def scheduler(request) -> str:
+    return request.param
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -102,18 +150,19 @@ def _sweep(name: str) -> dict:
 
 
 @pytest.fixture(scope="module")
-def calibrated_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+def calibrated_device(
+    scheduler, tmp_path_factory
+) -> tuple[Path, TransmonSimulator, str]:
     """Run a real calibration against the simulator and return what it wrote."""
     simulator = TransmonSimulator()
-    directory = tmp_path_factory.mktemp("loop")
+    directory = tmp_path_factory.mktemp(f"loop_{scheduler}")
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
 
-    from qpi_driver.tuners.quantify import QuantifyTuner
-
-    Instrument.close_all()
-    tuner = QuantifyTuner(
-        name="loop_tuner",
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"loop_tuner_{scheduler}",
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
         quantify_device_config=device,
         is_simulated=True,
@@ -122,17 +171,21 @@ def calibrated_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
     report = tuner.calibrate(calibration_config())
     assert report.status == "success", report.errors
     tuner.close()
-    Instrument.close_all()
-    return device, simulator
+    close_instruments(scheduler)
+    return device, simulator, scheduler
 
 
 def run(
-    device: Path, simulator: TransmonSimulator, qasm: str, shots: int = 400
+    device: Path,
+    simulator: TransmonSimulator,
+    scheduler: str,
+    qasm: str,
+    shots: int = 400,
 ) -> dict:
     """Counts from the executor, over the calibrated file and the same chip."""
-    Instrument.close_all()
+    close_instruments(scheduler)
     executor = resolve_executor(
-        "quantify",
+        scheduler,
         is_simulated=True,
         simulator=simulator,
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
@@ -149,7 +202,7 @@ def run(
 
 def test_the_calibration_finds_the_simulated_chip(calibrated_device):
     """Before trusting any circuit, check the numbers the calibration wrote."""
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     written = yaml.safe_load(device.read_text())["q0"]
 
     # Spectroscopy then Ramsey: the fixture starts 214 MHz out, and what is
@@ -161,12 +214,12 @@ def test_the_calibration_finds_the_simulated_chip(calibrated_device):
 
 
 def test_the_executor_loads_exactly_what_the_tuner_wrote(calibrated_device):
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     written = yaml.safe_load(device.read_text())["q0"]
 
-    Instrument.close_all()
+    close_instruments(scheduler)
     executor = resolve_executor(
-        "quantify",
+        scheduler,
         is_simulated=True,
         simulator=simulator,
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
@@ -202,7 +255,7 @@ def test_a_hadamard_is_an_even_superposition(calibrated_device):
     assert 0.4 < counts["1"] / sum(counts.values()) < 0.6
 
 
-def test_an_uncalibrated_chip_gets_the_answer_wrong(tmp_path):
+def test_an_uncalibrated_chip_gets_the_answer_wrong(scheduler, tmp_path):
     """The whole loop, negated — this is what makes the tests above mean something.
 
     The same X gate on the *uncalibrated* fixture device, whose f01 is 214 MHz
@@ -214,7 +267,7 @@ def test_an_uncalibrated_chip_gets_the_answer_wrong(tmp_path):
     device = tmp_path / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
 
-    counts = run(device, simulator, circuit("x q[0];\n"))
+    counts = run(device, simulator, scheduler, circuit("x q[0];\n"))
     assert counts["1"] / sum(counts.values()) < 0.1, (
         "an X gate 214 MHz off resonance should not excite the qubit"
     )
@@ -229,7 +282,9 @@ def test_an_uncalibrated_chip_gets_the_answer_wrong(tmp_path):
 
 
 @pytest.fixture(scope="module")
-def two_qubit_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+def two_qubit_device(
+    scheduler, tmp_path_factory
+) -> tuple[Path, TransmonSimulator, str]:
     """A device already at the simulator's true parameters, edge included.
 
     Deliberately *not* calibrated by a tuner here. The loop above proves the
@@ -240,7 +295,7 @@ def two_qubit_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
 
     simulator = TransmonSimulator()
     pair = CoupledTransmons()
-    directory = tmp_path_factory.mktemp("twoqubit")
+    directory = tmp_path_factory.mktemp(f"twoqubit_{scheduler}")
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
 
@@ -254,15 +309,27 @@ def two_qubit_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
     # duration a CZ can actually have.
     config["q0_q1"]["cz"]["square_duration"] = round(pair.cz_duration_ns) * 1e-9
     device.write_text(yaml.safe_dump(config))
-    return device, simulator
+    return device, simulator, scheduler
 
 
 TWO_QUBIT_HEAD = 'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[2] q;\nbit[2] c;\n'
 TWO_QUBIT_TAIL = "c[0] = measure q[0];\nc[1] = measure q[1];\n"
 
 
-def run_pair(device: Path, simulator: TransmonSimulator, body: str, shots: int = 400):
-    return run(device, simulator, TWO_QUBIT_HEAD + body + TWO_QUBIT_TAIL, shots=shots)
+def run_pair(
+    device: Path,
+    simulator: TransmonSimulator,
+    scheduler: str,
+    body: str,
+    shots: int = 400,
+):
+    return run(
+        device,
+        simulator,
+        scheduler,
+        TWO_QUBIT_HEAD + body + TWO_QUBIT_TAIL,
+        shots=shots,
+    )
 
 
 def correlation(counts: dict) -> float:
@@ -334,7 +401,7 @@ def test_a_mistimed_cz_does_not_entangle(two_qubit_device):
     were being applied as a nominal gate rather than integrated, this would pass
     identically to the real one.
     """
-    device, simulator = two_qubit_device
+    device, simulator, scheduler = two_qubit_device
     broken = device.parent / "mistimed.device.yml"
     config = yaml.safe_load(device.read_text())
     config["q0_q1"]["cz"]["square_duration"] = (
@@ -342,7 +409,9 @@ def test_a_mistimed_cz_does_not_entangle(two_qubit_device):
     )
     broken.write_text(yaml.safe_dump(config))
 
-    counts = run_pair(broken, simulator, "h q[0];\nh q[1];\ncz q[0], q[1];\nh q[1];\n")
+    counts = run_pair(
+        broken, simulator, scheduler, "h q[0];\nh q[1];\ncz q[0], q[1];\nh q[1];\n"
+    )
     assert correlation(counts) < 0.5, (
         f"half a CZ should not produce an entangled pair, got {counts}"
     )
@@ -362,15 +431,20 @@ def test_a_virtual_z_actually_rotates_the_frame(calibrated_device):
     The delays are not padding: the compiler refuses two phase updates closer
     than 4 ns apart, which is a real constraint of the hardware's NCO.
     """
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     gap = "delay[8ns] q[0];\n"
 
     without = run(
-        device, simulator, circuit("h q[0];\n" + gap + gap + "h q[0];\n"), shots=600
+        device,
+        simulator,
+        scheduler,
+        circuit("h q[0];\n" + gap + gap + "h q[0];\n"),
+        shots=600,
     )
     with_z = run(
         device,
         simulator,
+        scheduler,
         circuit("h q[0];\n" + gap + "rz(pi) q[0];\n" + gap + "h q[0];\n"),
         shots=600,
     )
@@ -387,11 +461,12 @@ def test_a_virtual_z_actually_rotates_the_frame(calibrated_device):
 
 def test_two_virtual_z_gates_compose(calibrated_device):
     """S·S = Z, which only holds if the shifts accumulate rather than replace."""
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     gap = "delay[8ns] q[0];\n"
     counts = run(
         device,
         simulator,
+        scheduler,
         circuit(
             "h q[0];\n" + gap + "s q[0];\n" + gap + "s q[0];\n" + gap + "h q[0];\n"
         ),
@@ -414,6 +489,7 @@ def test_two_virtual_z_gates_compose(calibrated_device):
 def run_at(
     device: Path,
     simulator: TransmonSimulator,
+    scheduler: str,
     qasm: str,
     *,
     meas_level: int,
@@ -421,9 +497,9 @@ def run_at(
     shots: int = 200,
 ) -> dict:
     """The whole result dict, not just counts, since levels 0 and 1 have none."""
-    Instrument.close_all()
+    close_instruments(scheduler)
     executor = resolve_executor(
-        "quantify",
+        scheduler,
         is_simulated=True,
         simulator=simulator,
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
@@ -515,12 +591,18 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
     blob and level 0's settled trace has to point the same way. A level that
     disagrees is reporting a different circuit than the one that ran.
     """
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     qasm = circuit("x q[0];\n")
 
-    counts = run_at(device, simulator, qasm, meas_level=2, shots=200)["counts"]
-    iq = np.asarray(run_at(device, simulator, qasm, meas_level=1, shots=200)["memory"])
-    memory = np.asarray(run_at(device, simulator, qasm, meas_level=0)["memory"])
+    counts = run_at(device, simulator, scheduler, qasm, meas_level=2, shots=200)[
+        "counts"
+    ]
+    iq = np.asarray(
+        run_at(device, simulator, scheduler, qasm, meas_level=1, shots=200)["memory"]
+    )
+    memory = np.asarray(
+        run_at(device, simulator, scheduler, qasm, meas_level=0)["memory"]
+    )
 
     excited_fraction = counts["1"] / sum(counts.values())
     mean_i = float(np.mean(iq[:, 0, 0]))
@@ -541,12 +623,12 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
 
 
 @pytest.fixture(scope="module")
-def coupler_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+def coupler_device(scheduler, tmp_path_factory) -> tuple[Path, TransmonSimulator, str]:
     from qpi_driver.simulation.coupled import CoupledTransmons
 
     simulator = TransmonSimulator()
     pair = CoupledTransmons()
-    directory = tmp_path_factory.mktemp("coupler")
+    directory = tmp_path_factory.mktemp(f"coupler_{scheduler}")
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
 
@@ -566,13 +648,38 @@ def coupler_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
         # What the coupler's Stark shift left on each qubit, handed back. These
         # are single-qubit phases, so no amount of tuning the amplitude or the
         # duration removes them — only these two parameters do.
-        "q1_phase_correction": phases["parent"],
-        "q2_phase_correction": phases["child"],
+        **dict(
+            zip(
+                coupler_correction_names(scheduler),
+                (phases["parent"], phases["child"]),
+            )
+        ),
     }
     # The coupler's DC parking point, which the SPI rack supplies out of band.
     config["q1_q2"]["bias"] = {"parking_current": 0.0009, "source": "spi"}
     device.write_text(yaml.safe_dump(config))
-    return device, simulator
+    return device, simulator, scheduler
+
+
+def set_bias(edge, name: str, value) -> None:
+    """Set a bias parameter, whichever way this scheduler wants it set."""
+    parameter = getattr(edge.bias, name)
+    if callable(parameter):
+        parameter(value)
+    else:
+        setattr(edge.bias, name, value)
+
+
+def coupler_correction_names(scheduler: str) -> tuple[str, str]:
+    """What this scheduler's CZ calls its two virtual-Z corrections.
+
+    quantify names them after the qubits, qblox after the roles. Written out
+    here because the fixture builds the YAML by hand; the routines ask the edge
+    itself through `phase_correction_names`.
+    """
+    if scheduler == "qblox":
+        return "parent_phase_correction", "child_phase_correction"
+    return "q1_phase_correction", "q2_phase_correction"
 
 
 def bell_circuit() -> str:
@@ -588,8 +695,9 @@ def without_corrections(device: Path, tmp_path: Path) -> Path:
     """The same device with both phase corrections zeroed."""
     other = tmp_path / "uncorrected.device.yml"
     config = yaml.safe_load(device.read_text())
-    config["q1_q2"]["cz"]["q1_phase_correction"] = 0.0
-    config["q1_q2"]["cz"]["q2_phase_correction"] = 0.0
+    for name in config["q1_q2"]["cz"]:
+        if name.endswith("phase_correction"):
+            config["q1_q2"]["cz"][name] = 0.0
     other.write_text(yaml.safe_dump(config))
     return other
 
@@ -601,10 +709,10 @@ def test_the_coupler_carries_its_parking_current(coupler_device):
     as much a part of the CZ's calibration as the pulse amplitude, so it belongs
     in the config the tuner writes and the executor reads.
     """
-    device, simulator = coupler_device
-    Instrument.close_all()
+    device, simulator, scheduler = coupler_device
+    close_instruments(scheduler)
     executor = resolve_executor(
-        "quantify",
+        scheduler,
         is_simulated=True,
         simulator=simulator,
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
@@ -612,8 +720,9 @@ def test_the_coupler_carries_its_parking_current(coupler_device):
     )
     edge = executor._device.get_edge("q1_q2")
 
-    assert edge.bias.parking_current() == pytest.approx(0.0009)
-    assert edge.bias.source() == "spi"
+    settings = bias_settings(edge)
+    assert settings["parking_current"] == pytest.approx(0.0009)
+    assert settings["source"] == "spi"
 
 
 def test_the_parking_current_is_bounded(coupler_device):
@@ -623,10 +732,10 @@ def test_the_parking_current_is_bounded(coupler_device):
     and a current that far out is a fat-fingered config rather than an
     operating point.
     """
-    device, simulator = coupler_device
-    Instrument.close_all()
+    device, simulator, scheduler = coupler_device
+    close_instruments(scheduler)
     executor = resolve_executor(
-        "quantify",
+        scheduler,
         is_simulated=True,
         simulator=simulator,
         quantify_hardware_config=FIXTURES / "quantify.hardware.json",
@@ -634,10 +743,12 @@ def test_the_parking_current_is_bounded(coupler_device):
     )
     edge = executor._device.get_edge("q1_q2")
 
+    # Both schedulers validate, and both reject the same way — but one takes the
+    # value through a call and the other through an assignment.
     with pytest.raises(ValueError):
-        edge.bias.parking_current(5e-3)
+        set_bias(edge, "parking_current", 5e-3)
     # And a normal operating value is accepted.
-    edge.bias.parking_current(1.1e-3)
+    set_bias(edge, "parking_current", 1.1e-3)
 
 
 def test_a_cz_over_the_coupler_edge_completes_its_exchange(coupler_device):
@@ -648,13 +759,13 @@ def test_a_cz_over_the_coupler_edge_completes_its_exchange(coupler_device):
     `q1_q2:fl` is for. Getting that wrong applies the coupling between the wrong
     qubits, which is a working-looking gate on the wrong pair.
     """
-    device, simulator = coupler_device
+    device, simulator, scheduler = coupler_device
     qasm = (
         'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[3] q;\nbit[2] c;\n'
         "x q[1];\nx q[2];\ncz q[1], q[2];\n"
         "c[0] = measure q[1];\nc[1] = measure q[2];\n"
     )
-    counts = run(device, simulator, qasm, shots=300)
+    counts = run(device, simulator, scheduler, qasm, shots=300)
     assert counts.get("11", 0) / sum(counts.values()) > 0.9, (
         f"|11> should come back after a full exchange round trip, got {counts}"
     )
@@ -688,8 +799,10 @@ def test_without_its_phase_corrections_the_bell_state_is_wrong(
     corrections and the CZ is still a perfectly good conditional-phase gate —
     the Bell state it builds is simply not the one asked for.
     """
-    device, simulator = coupler_device
-    counts = run(without_corrections(device, tmp_path), simulator, bell_circuit(), 400)
+    device, simulator, scheduler = coupler_device
+    counts = run(
+        without_corrections(device, tmp_path), simulator, scheduler, bell_circuit(), 400
+    )
     aligned = (counts.get("00", 0) + counts.get("11", 0)) / sum(counts.values())
     assert aligned < 0.8, (
         f"uncorrected single-qubit phases should spoil |00> + |11>, got {counts}"
@@ -704,13 +817,13 @@ def test_a_coupler_driven_off_resonance_does_nothing(coupler_device, tmp_path):
     amplitude for the same duration compiles, plays, and performs no gate —
     which is the failure a model with a fixed carrier could not show.
     """
-    device, simulator = coupler_device
+    device, simulator, scheduler = coupler_device
     detuned = tmp_path / "detuned.device.yml"
     config = yaml.safe_load(device.read_text())
     config["q1_q2"]["clock_freqs"]["cz"] += 50e6  # 50 MHz off
     detuned.write_text(yaml.safe_dump(config))
 
-    counts = run(detuned, simulator, bell_circuit(), shots=400)
+    counts = run(detuned, simulator, scheduler, bell_circuit(), shots=400)
     aligned = (counts.get("00", 0) + counts.get("11", 0)) / sum(counts.values())
     assert aligned < 0.8, (
         f"a drive 50 MHz off the sideband should not make a Bell pair, got {counts}"
@@ -727,12 +840,14 @@ def test_a_raw_trace_over_two_qubits_takes_one_run_each(calibrated_device):
     and captures one trace each time, which is what the instrument allows and
     what a lab does by hand.
     """
-    device, simulator = calibrated_device
+    device, simulator, scheduler = calibrated_device
     qasm = (
         'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[2] q;\nbit[2] c;\n'
         "x q[0];\nc[0] = measure q[0];\nc[1] = measure q[1];\n"
     )
-    memory = np.asarray(run_at(device, simulator, qasm, meas_level=0)["memory"])
+    memory = np.asarray(
+        run_at(device, simulator, scheduler, qasm, meas_level=0)["memory"]
+    )
 
     assert memory.shape == (2, 1000, 2), (
         f"expected a 1 us trace per qubit as [I, Q] pairs, got {memory.shape}"
