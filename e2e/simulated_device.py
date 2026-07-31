@@ -23,6 +23,47 @@ import yaml
 FIXTURES = Path(__file__).resolve().parents[1] / "qpi-driver/py/tests/fixtures"
 
 
+def _calibrate_edge(name: str, element: dict, pair) -> None:
+    """Give an edge a working CZ, by whichever mechanism it uses.
+
+    Two edge types, two gates. A `FluxTunableCoupler` drives its coupler at
+    microwave frequency and a sideband bridges ``|11⟩``–``|02⟩``; a stock
+    `CompositeSquareEdge` puts DC flux on a qubit's own port and walks it onto
+    the crossing. They need different amplitudes, durations and drive settings.
+
+    Both need the two ``<qubit>_phase_correction`` values. The single-qubit
+    phase a CZ leaves behind is large — an uncorrected gate is conditional-phase
+    correct and still builds the wrong Bell state — so a device without them is
+    not calibrated, and the dashboard's default circuit is a Bell state.
+    """
+    from qpi_driver.simulation import GHZ
+
+    parent, child = name.split("_", 1)
+    is_coupler = "flux_tunable_coupler" in str(
+        (element.get("element_type") or {}).get("path", "")
+    )
+
+    if is_coupler:
+        amplitude = 0.554
+        drive, duration = pair.parametric_operating_point(amplitude)
+        duration = round(duration)
+        phases = pair.parametric_phases(amplitude, drive, duration)
+        element["clock_freqs"] = {"cz": float(drive * GHZ)}
+    else:
+        amplitude = float(pair.resonant_amplitude)
+        duration = round(pair.cz_duration_ns)
+        phases = pair.dc_phases(amplitude, duration)
+
+    element["cz"] = {
+        "square_amp": float(amplitude),
+        # Whole nanoseconds: the compiler plays on a 1 ns grid and refuses
+        # anything else.
+        "square_duration": float(duration) * 1e-9,
+        f"{parent}_phase_correction": float(phases["parent"]),
+        f"{child}_phase_correction": float(phases["child"]),
+    }
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -34,12 +75,18 @@ def main() -> int:
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(FIXTURES / "quantify.device.yml", destination)
 
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
     simulator = TransmonSimulator()
+    pair = CoupledTransmons()
     config = yaml.safe_load(destination.read_text())
 
     for name, element in config.items():
-        if "_" in name or not isinstance(element, dict):
-            continue  # an edge, not a qubit
+        if not isinstance(element, dict):
+            continue
+        if "_" in name:
+            _calibrate_edge(name, element, pair)
+            continue
         clocks = element.get("clock_freqs")
         if not isinstance(clocks, dict):
             continue

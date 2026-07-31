@@ -453,6 +453,45 @@ class CoupledTransmons:
         degrees = np.rad2deg(conditional) + self.conditional_phase_offset_deg
         return float((degrees + 180.0) % 360.0 - 180.0)
 
+    def dc_phases(
+        self, flux_amplitude: float | None = None, duration_ns: float | None = None
+    ) -> dict[str, float]:
+        """The phases a DC flux CZ leaves, in degrees — the same three as
+        :meth:`parametric_phases`, for the qubit-port gate.
+
+        The control is detuned by hundreds of MHz for the whole pulse, so its
+        single-qubit phase runs to tens of turns. That is not a small correction
+        to make later; without it the gate is conditional-phase-correct and
+        still builds the wrong Bell state.
+        """
+        import qutip
+
+        amplitude = (
+            self.resonant_amplitude if flux_amplitude is None else flux_amplitude
+        )
+        duration = self.cz_duration_ns if duration_ns is None else duration_ns
+
+        propagator = qutip.propagator(
+            self._hamiltonian(amplitude), duration, [], options={"nsteps": 200_000}
+        )
+        if isinstance(propagator, list):
+            propagator = propagator[-1]
+
+        def phase_of(parent_level: int, child_level: int) -> float:
+            ket = self.state(parent_level, child_level)
+            element = ket.dag() * propagator * ket
+            if hasattr(element, "full"):
+                element = element.full()[0, 0]
+            return float(np.angle(complex(element)))
+
+        parent, child = phase_of(1, 0), phase_of(0, 1)
+        conditional = phase_of(1, 1) - parent - child
+        return {
+            "parent": float(np.rad2deg(parent)),
+            "child": float(np.rad2deg(child)),
+            "conditional": float((np.rad2deg(conditional) + 180.0) % 360.0 - 180.0),
+        }
+
     def conditional_phase(
         self,
         phases_deg,
