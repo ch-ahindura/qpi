@@ -135,7 +135,16 @@ def device_for(
                 name=edge,
                 # Offset from the true operating point for the same reason the
                 # qubits are: the routine has to find it, not be handed it.
-                cz={"amp": 0.2, "duration": 60e-9, "phase_correction": 0.0},
+                # The names a real CompositeSquareEdge has. A fake shaped to
+                # the routine instead cannot contradict it, which is how
+                # `cz.amp` survived: the routine wrote it, the fake accepted it,
+                # and no real device was ever asked.
+                cz={
+                    "square_amp": 0.2,
+                    "square_duration": 60e-9,
+                    "q0_phase_correction": 0.0,
+                    "q1_phase_correction": 0.0,
+                },
             )
             for edge in edges
         },

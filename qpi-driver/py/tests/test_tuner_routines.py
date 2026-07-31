@@ -87,6 +87,10 @@ def qblox_tuner(tmp_path_factory):
     tuner.close()
 
 
+def routine(name):
+    return next(r for r in all_routines() if r.name == name)
+
+
 def _build(routine, tuner):
     """Build *routine*'s schedule for the right kind of target."""
     target = "q0" if routine.targets == "qubits" else "q0_q1"
@@ -217,3 +221,60 @@ def test_closing_a_live_tuner_does_not_raise(tuner_name, tmp_path):
     )
     tuner.close()
     tuner.close()  # and again: a driver failing mid-shutdown closes twice
+
+
+@pytest.mark.parametrize("tuner_name", ["quantify", "qblox"])
+def test_the_two_qubit_routines_write_parameters_the_edge_actually_has(tuner_name):
+    """`apply` against a real edge, not a fake shaped like the routine.
+
+    Both two-qubit routines wrote names no device has — `cz.amp` and
+    `cz.duration`, which raised, and `cz.phase_correction`, which was skipped by
+    a `hasattr` guard that was never true. So a chevron that had measured the
+    gate correctly failed at its last step, and the conditional phase applied
+    nothing at all.
+
+    Neither tier-2 nor tier-3 could catch it: tier 2 builds and compiles a
+    schedule without ever calling `apply`, and tier 3's fake device was given
+    the names the routine used. A fake shaped to the code cannot contradict it,
+    so this asserts against the real `QuantumDevice`.
+    """
+    # Its own device rather than the module-scoped tuner's: an earlier test in
+    # this file calls `Instrument.close_all()`, which invalidates the shared
+    # one's edges. Loading here keeps the test independent of its neighbours.
+    if tuner_name == "qblox":
+        if not IS_QBLOX_SCHEDULER_INSTALLED:
+            pytest.skip("qblox-scheduler is not installed")
+        from qpi_driver.compat.qblox import Instrument
+        from qpi_driver.executors.qblox.config import load_quantum_device
+    else:
+        if not IS_QUANTIFY_INSTALLED:
+            pytest.skip("quantify-scheduler is not installed")
+        from qpi_driver.compat.quantify import Instrument
+        from qpi_driver.executors.quantify.config import load_quantum_device
+
+    Instrument.close_all()
+    device = load_quantum_device(
+        name=f"apply_{tuner_name}", config=FIXTURES / "quantify.device.yml"
+    )
+    edge = device.get_edge("q0_q1")
+
+    routine(  # noqa: B018 - the call is the assertion
+        "cz_chevron"
+    ).apply(device, "q0_q1", {"cz_amplitude": 0.377, "cz_duration": 110e-9})
+
+    from qpi_driver.tuners.base.device import phase_correction_names, read_path
+
+    assert read_path(edge, "cz.square_amp") == pytest.approx(0.377)
+    assert read_path(edge, "cz.square_duration") == pytest.approx(110e-9)
+
+    names = phase_correction_names(edge)
+    assert names is not None, "a CZ edge must expose its two phase corrections"
+
+    routine("conditional_phase").apply(
+        device,
+        "q0_q1",
+        {"parent_phase_correction": 12.0, "child_phase_correction": -34.0},
+    )
+    parent_name, child_name = names
+    assert read_path(edge, f"cz.{parent_name}") == pytest.approx(12.0)
+    assert read_path(edge, f"cz.{child_name}") == pytest.approx(-34.0)

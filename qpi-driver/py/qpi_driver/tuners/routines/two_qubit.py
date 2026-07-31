@@ -43,7 +43,7 @@ class CZChevron(CalibrationRoutine):
     name = "cz_chevron"
     depends_on = ("rb", "flux_spectroscopy")
     targets = "edges"
-    updates = ("cz.amp", "cz.duration")
+    updates = ("cz.square_amp", "cz.square_duration")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -96,9 +96,17 @@ class CZChevron(CalibrationRoutine):
         )
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Write the operating point to the names the edge actually has.
+
+        ``square_amp`` and ``square_duration``, not ``amp`` and ``duration``:
+        both schedulers' CZ submodule spells them the first way, and writing the
+        second raised on every real device — so a chevron that had measured the
+        gate correctly failed at the last step, and `conditional_phase` never ran
+        because it depends on this one.
+        """
         edge = device.get_edge(target)
-        write_path(edge, "cz.amp", params["cz_amplitude"])
-        write_path(edge, "cz.duration", params["cz_duration"])
+        write_path(edge, "cz.square_amp", params["cz_amplitude"])
+        write_path(edge, "cz.square_duration", params["cz_duration"])
 
 
 class ConditionalPhase(CalibrationRoutine):
