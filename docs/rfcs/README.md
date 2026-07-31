@@ -12,6 +12,7 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0002](./0002-dashboard-theming.md) | Dashboard Theming | Implemented |
 | [0003](./0003-driver-extensibility.md) | Driver Extensibility | Implemented |
 | [0004](./0004-calibration-tuners.md) | Calibration Tuners | Accepted |
+| [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Draft |
 
 ## Conventions
 
