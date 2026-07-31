@@ -372,7 +372,7 @@ after the machinery.
    order in its own error and cannot be told apart from a gain change. Tier-1 tests
    for the recursion over a fabricated graph; a tier-2 test that every check
    schedule compiles.
-2. **The cheap missing writers.** Partly done.
+2. ~~**The cheap missing writers.**~~ **Done** — though not as planned; the third of them turned out not to be a node at all.
    - `time_of_flight` → `measure.acq_delay`: **done.** Opens the window *with* the
      readout pulse so the dead time lands inside a raw trace, and recovers 148 ns
      against a true 148 on the simulated chip.
