@@ -777,9 +777,10 @@ or user-level trigger would be a denial-of-service with a plausible cover story.
 **Reports are not secrets, but they are inventory.** A `CalibrationResult`
 describes the chip in more detail than anything else QPI stores — per-qubit
 frequencies, coherence times, gate fidelities. The events log is public-read
-(RFC 0001 §9); whether that is the right rule for calibration reports is a
-decision to make explicitly before this ships, not to inherit by putting them
-in a collection that already had one.
+(RFC 0001 §9), and that rule is **not** inherited here: `calibration_results`
+and `calibration_requests` are both authenticated-read, superuser-only CUD. A
+public events log leaks that a calibration happened; a public report leaks the
+chip.
 
 ## 11. What is built, and what is not
 

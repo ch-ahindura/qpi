@@ -337,7 +337,10 @@ func ensureCalibrationResultsCollection(app core.App, cfg *config.AppConfig) err
 		return err
 	}
 
-	// Public read (maybe auth only?), superuser-only CUD (written by server)
+	// Authenticated read, superuser-only CUD. Deliberately *not* the events
+	// log's public read (RFC 0001 §9): a report is a per-qubit inventory of the
+	// chip — frequencies, coherence times, fidelities — and is the most detailed
+	// description of the hardware QPI stores (RFC 0004 §10).
 	col.ListRule = types.Pointer("@request.auth.id != \"\"")
 	col.ViewRule = types.Pointer("@request.auth.id != \"\"")
 	col.CreateRule = nil
