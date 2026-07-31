@@ -157,8 +157,8 @@ what produces it today.
 | `clock_freqs.readout_1` / `_2` | readout optimisation | ❌ nothing |
 | `clock_freqs.readout_2state_opt` / `_3state_opt` | optimal readout | ❌ nothing |
 | `measure.pulse_amp` | every readout | ⚠️ `resonator_punchout` — dressed-regime edge, not fidelity |
-| `measure.acq_rotation` | **every `meas_level=2` shot** | ❌ nothing; absent from the reference config → `0.0` |
-| `measure.acq_threshold` | **every `meas_level=2` shot** | ❌ nothing; absent from the reference config → `0.0` |
+| `measure.acq_rotation` | **every `meas_level=2` shot** | ❌ nothing; absent from a working chip's config → `0.0` |
+| `measure.acq_threshold` | **every `meas_level=2` shot** | ❌ nothing; absent from a working chip's config → `0.0` |
 | `measure.integration_time` | every acquisition | ❌ hand-set (3.6 µs) |
 | `measure.pulse_duration` | every readout | ❌ hand-set (3.8 µs) |
 | `measure.acq_delay` | every acquisition | ❌ hand-set (200 ns) |
@@ -382,7 +382,7 @@ after the machinery.
      write `measure.integration_time`. The ring-up is a floor on that, not an
      optimum: choosing the optimum trades signal-to-noise against relaxation during
      the window, which needs phase 4's discrimination fidelity. Three time constants
-     would have cut the reference config's 1 µs window to 240 ns on a criterion that
+     would have cut the fixture's 1 µs window to 240 ns on a criterion that
      never mentions noise.
    - `qubit_spectroscopy_amplitude`: **blocked**, and the blocker is §13's open
      question rather than effort. There is nowhere to put the value: the transmon

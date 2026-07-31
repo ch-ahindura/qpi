@@ -78,8 +78,8 @@ FLUX_CURVATURE_GHZ = 2.0
 #: the resonance condition is on the drive *frequency*, so amplitude sets how fast
 #: the exchange runs while frequency sets whether it runs at all.
 #:
-#: The value matches the ``clock_freqs.cz`` every edge in the reference device
-#: config carries. Which transition of the coupler-qubit spectrum it actually is
+#: The value matches the ``clock_freqs.cz`` every edge carries in the configuration
+#: of a working chip. Which transition of the coupler-qubit spectrum it actually is
 #: depends on the coupler's own frequency, which this simulator does not model — so
 #: this is a chosen constant, and a routine finding a resonance here has found the
 #: one it was configured to look for.

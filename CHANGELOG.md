@@ -158,7 +158,7 @@ previously reachable.
 **Two more nodes, measuring what was hand-set** (RFC 0005 §7).
 
 `time_of_flight` writes `measure.acq_delay` — how long a readout signal takes to come
-back through the cables. The reference config carries 200 ns there with nothing having
+back through the cables. A working chip's config carries 200 ns there with nothing having
 measured it. The routine opens the acquisition window *with* the readout pulse so the
 dead time lands inside a raw trace, which is the whole trick: leaving the configured
 delay in place would hide exactly the quantity being measured.
@@ -167,7 +167,7 @@ delay in place would hide exactly the quantity being measured.
 `resonator_spectroscopy` fits one from its Lorentzian and discards it. It deliberately
 does **not** write `measure.integration_time`: the ring-up is a floor on that, not an
 optimum, and the optimum trades signal-to-noise against relaxation during the window.
-Three time constants would have cut the reference config's 1 µs window to 240 ns on a
+Three time constants would have cut the fixture's 1 µs window to 240 ns on a
 criterion that never mentions noise.
 
 Both read one trace and share `fit_readout_timing`, because the arrival time and the
@@ -202,7 +202,7 @@ straddles the qubit chain rather than preceding it.
 
 **`f12_spectroscopy`, and an EF drive to run it against** (RFC 0005 §7). The
 `|1⟩`-`|2⟩` transition has been a field on the transmon element all along with nothing
-measuring it: the reference config pins `clock_freqs.f12` 131 MHz from where the
+measuring it: the fixture pins `clock_freqs.f12` 131 MHz from where the
 simulated transmon's actually is, unnoticed for as long as nothing read it. It is the
 input to three-state readout and it sets where `|02⟩` sits for a CZ, so a wrong value
 is not harmless, only silent.
@@ -292,7 +292,7 @@ spectroscopy sweep and the `.12` one, and picking each LO from the fixture's dec
   fixture pinned each readout port's intermediate frequency and let the LO float,
   so moving one of three qubits sharing a QRM_RF asked the module for two LOs and
   every *later* schedule failed to compile. The LO is pinned instead, as the
-  reference hardware config does.
+  configuration a working chip uses does.
 - `qpi-driver`: `resonator_punchout` left the readout pointing where the resonator
   used to be. The resonance moves with readout power — that movement *is* the
   experiment — so settling on a new power invalidated the frequency

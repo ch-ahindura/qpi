@@ -5,7 +5,7 @@ answers the question that comes after: given the two clouds the readout produces
 which line separates them?
 
 That line is `measure.acq_rotation` and `measure.acq_threshold`, and until now
-nothing produced them. They default to zero, the reference device config does not
+nothing produced them. They default to zero, a working chip's device config does not
 carry them at all, and **every** ``meas_level=2`` shot is assigned by comparing a
 rotated real part against them — so the default job path was discriminating with an
 uncalibrated rule. Zero is correct only for a readout chain that happens to place the

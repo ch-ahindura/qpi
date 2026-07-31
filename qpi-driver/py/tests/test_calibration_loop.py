@@ -657,7 +657,7 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
 # goes on a *qubit's* port. `q1_q2` is a `FluxTunableCoupler`: the pulse goes on
 # the coupler's own port, `q1_q2:fl`, and the CZ is lowered into a fresh
 # subschedule. That is a different path through both the compiler and the
-# simulator, and it is the one the reference device config actually uses.
+# simulator, and it is the one a working chip's device config actually uses.
 
 
 @pytest.fixture(scope="module")
@@ -1143,7 +1143,7 @@ def test_the_readout_lands_on_the_resonance_at_the_power_it_chose(fully_calibrat
 def test_the_acquisition_window_opens_when_the_signal_arrives(fully_calibrated):
     """`time_of_flight` measured the wiring's delay, which nothing used to.
 
-    The reference config carries 200 ns here with nothing having measured it. The
+    A working chip's config carries 200 ns here with nothing having measured it. The
     simulated chip's delay is 148 ns, and the routine has to find that by opening the
     window *with* the readout pulse so the dead time lands inside the trace — which
     is the whole trick, since leaving the configured delay in place would hide
@@ -1211,7 +1211,7 @@ def test_the_discriminator_is_measured_rather_than_defaulted(fully_calibrated):
     its own resonance and so returns its own complex response, and the chain then
     rotates the pair. On the simulated chip both land with *positive* real parts, so at
     the defaults of `acq_rotation=0` and `acq_threshold=0` every shot reads ``|1>``.
-    The reference device config does not carry either field at all.
+    A working chip's device config does not carry either field at all.
 
     So the assertion is the fidelity: the fitted rule has to assign shots correctly,
     which the defaults cannot. And the rotation has to be in ``[0, 360)``, because the

@@ -17,8 +17,8 @@ runs.
 Two mechanisms can deliver it, and which one a coupler uses is a property of the
 rack rather than of the chip:
 
-- :class:`SpiRackBias` drives an S4g current source in an SPI rack. This is what
-  the reference configuration uses.
+- :class:`SpiRackBias` drives an S4g current source in an SPI rack. This is what a
+  working chip's rack uses.
 - :class:`QcmBias` holds the same offset on a baseband module output inside the
   cluster, which removes an instrument from the rack.
 

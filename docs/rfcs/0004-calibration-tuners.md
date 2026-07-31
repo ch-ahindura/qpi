@@ -965,7 +965,7 @@ running the same tests under qblox as well as quantify:
   qubits sharing one QRM\_RF agreed on an LO only because their configured readout
   frequencies happened to. Move one by a single kilohertz and the module is asked
   for two LOs at once, and *every later schedule* fails to compile — a long way
-  from the routine that caused it. The reference hardware config does the opposite, pinning
+  from the routine that caused it. A working chip's hardware config does the opposite, pinning
   the LO and letting each qubit's IF differ, which is the arrangement that lets a
   readout frequency be recalibrated at all. The fixture matches it now.
 - **`resonator_punchout` left the readout pointing where the resonator used to

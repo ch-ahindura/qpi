@@ -155,7 +155,7 @@ class TimeOfFlight(_ReadoutTraceRoutine):
 
     A root of the graph: it needs no calibrated parameter, only a readout pulse and a
     raw trace, and everything that acquires afterwards wants the delay it writes.
-    Hand-set until now — 200 ns in the reference config, with nothing measuring it.
+    Hand-set until now — 200 ns in a working chip's config, with nothing measuring it.
     """
 
     name = "time_of_flight"
@@ -188,7 +188,7 @@ class ResonatorRelaxation(_ReadoutTraceRoutine):
     parameter to write is ``measure.integration_time``, and the ring-up is only a
     *floor* on it: the optimum trades signal-to-noise against relaxation during the
     window, which needs the discrimination fidelity of RFC 0005 phase 4 to measure.
-    Three time constants would have shortened the reference config's 1 µs window to
+    Three time constants would have shortened the fixture's 1 µs window to
     240 ns on the strength of a criterion that never mentions noise.
 
     What it reports is the linewidth, and nothing else measures that.
@@ -505,7 +505,7 @@ class F12Spectroscopy(CalibrationRoutine):
     characterisation cannot be done before the qubit chain has begun.
 
     ``clock_freqs.f12`` has been on the element all along and nothing measured it. The
-    reference config pins it 134 MHz from where the simulated transmon's actually is,
+    fixture pins it 134 MHz from where the simulated transmon's actually is,
     and nothing notices, because until now nothing read it either. It is the input to
     three-state readout and it grounds the ``|02>`` leg a CZ works through.
     """
