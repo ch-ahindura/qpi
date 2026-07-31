@@ -89,148 +89,83 @@ benchmark fit that reported the same fidelity for every chip better than about 3
 error per Clifford — which, being below the default drift threshold, would have
 had a healthy chip recalibrating on every check.
 
-**Two-qubit gates in the simulator.** A CZ needs a joint state — two independent
-density matrices cannot be entangled — so the pair is now held in one register
-and the gate falls out of walking the control through the `|11>`–`|02>` avoided
-crossing. A `cz` in a circuit runs against `-o is_simulated=true` instead of
-raising, and `h; cz; h` produces a genuinely entangled pair; half a CZ does not.
-The coupler's exchange strength and flux-to-frequency curve are chosen rather
-than measured, so a two-qubit result means "against a plausible coupler" — the
-one-qubit tier's stronger claim does not carry over.
+**Two-qubit gates in the simulator.** A CZ needs a joint state, so
+`simulation/coupled.py` holds both transmons in one 9-dimensional register and
+integrates the coupler rather than asserting a gate. Both mechanisms the hardware
+has: DC flux on a qubit's port, and a parametric drive on a coupler, where the
+drive *frequency* is the resonance condition. Its exchange rate comes from the
+lab's four calibrated edges rather than being invented; the remaining constants
+are chosen and say so, in the module and in RFC 0004 §7.
 
-Putting the two-qubit routines in front of real physics for the first time found
-three faults in them, all fixed:
-
-- `fit_chevron` looked for the brightest pixel on the chevron. The control reads
-  ≈1 at the CZ *and* everywhere the flux pulse did nothing, so the maximum was as
-  likely to land on an off-resonant row as on the gate. It now locates resonance
-  by oscillation contrast and the duration by the round trip along that row.
-- A chevron sweep can step clean over the crossing: it is a few MHz wide and the
-  default grid moves the control tens of MHz per step, leaving a surface flat to
-  within its noise that a peak-finder still reads a confident answer out of. It
-  now refuses below a minimum contrast, as spectroscopy already does for a line
-  narrower than its own step size.
-- `fit_conditional_phase` took the zero crossing of the two fringes' difference,
-  which sits at half the wanted angle displaced by the control's dynamical phase
-  over the flux pulse — tens of turns, and precisely what having two fringes is
-  for. It now fits each fringe and subtracts. Its correction was also
-  `np.pi - crossing` with the crossing in degrees.
-
-**The coupler CZ, as the hardware actually does it.** A `FluxTunableCoupler`
-parks its coupler with a DC bias current and then drives it at microwave
-frequency, and a sideband of that modulation bridges `|11>`–`|02>`. The drive
-frequency is the resonance condition, not a carrier detail: 50 MHz off and the
-same pulse performs no gate. The exchange rate is taken from the lab's own four
-calibrated edges rather than invented, so a device config off the bench lands
-near a real CZ. The pulse is a `SoftSquarePulse`, matching the tergite
-instruction this element was ported from — a hard square's edges are broadband
-and carry power at the 1–2 transition a CZ spends its duration avoiding.
-
-A Bell state now comes out `|00> + |11>` rather than merely *a* maximally
-entangled pair, because the coupler's Stark shift leaves a single-qubit phase on
-each qubit that only the edge's two `<qubit>_phase_correction` values remove.
-
-**Coupler bias, over SPI or a QCM.** The DC parking current is not part of any
-schedule — quantify's hardware config has no notion of an SPI rack — so the
-driver sets it directly at startup, through whichever mechanism the edge's
-`bias.source` names: an S4g current source over qcodes (`spi`, ramped rather
-than stepped), or the same offset held on a baseband cluster output (`qcm`).
-Switching is a config change. The current is validated to ±3.1 mA, a chip whose
-couplers disagree about the mechanism is refused, and a chip with no tunable
-couplers needs no rack at all. New option: `-o spi_rack_address`.
-
-**qblox is no longer the partial one.** `is_simulated` works there too: its
-`HardwareAgent` compiles offline, so a real agent keeps compilation and the
-simulator takes over only execution — meaning a schedule that would not assemble
-for a cluster still does not assemble here. The multi-qubit raw trace split, the
-`SoftSquarePulse`, the coupler's parking current and wiring, and the tier-2
-compile check are all present on both sides now, and `test_calibration_loop` is
-parametrised over the two rather than duplicated, so every claim is proved for
-both. quantify-scheduler is being deprecated, which makes this the path that has
-to keep working.
-
-A coupler can also declare the transition its CZ drive is meant to bridge
-(`clock_freqs.sideband_gap`), so a chip that has measured its own gap is
-simulated against that rather than against a constant chosen for want of a
-device.
+- `-o is_simulated=true` works on **both** schedulers now. qblox's
+  `HardwareAgent` compiles offline, so a real agent keeps compilation and only
+  execution is simulated — a schedule that would not assemble for a cluster still
+  does not assemble.
+- A coupler edge carries its DC parking current (`bias.parking_current`,
+  validated to ±3.1 mA) and how it is delivered (`bias.source`: `spi` or `qcm`),
+  set at startup over qcodes since no schedule can express it. New option:
+  `-o spi_rack_address`. Switching mechanism is a config change.
+- A coupler edge can declare the transition its CZ drive bridges
+  (`clock_freqs.sideband_gap`), used in place of the simulator's own constant.
+- `is_simulated` is offered by the driver catalog, so the dashboard's
+  registration form can select it.
+- `test_calibration_loop` runs under both schedulers rather than one, and
+  `make test-py-loop` installs both.
 
 ### Fixed
-- `qpi-driver`: The qblox tuner had never completed a calibration. Its
-  write-back walked `device.elements()` and `device.edges()`, which are methods
-  under quantify and *dicts* under qblox, so it raised and every report came
-  back `partial_failure`. What it wrote, qblox could then not read back: edges
-  carried positional constructor arguments and qblox's edges are pydantic models,
-  which take none; and `element_type`, `name`, `edge_type` and the two endpoints
-  were written as if they were calibration, so the loader tried to assign to
-  fields that refuse it.
-- `qpi-driver`: `conditional_phase` applied nothing at all, on either scheduler.
-  It wrote `cz.phase_correction` — a name neither has, quantify naming them
-  after the qubits and qblox after the roles — behind a `hasattr` guard that was
-  therefore never true. Fixing the name exposed the larger gap: those parameters
-  cancel each qubit's *single-qubit* phase, which is not the conditional phase
-  and not derivable from it, so the routine now measures four fringes (a Ramsey
-  on each qubit with the other down and up) instead of two.
+
+- `qpi-driver`: A virtual Z did nothing under `is_simulated` — `ShiftClockPhase`
+  never reached the coordinator, so every `rz`, `z`, `s` and `t` ran as an
+  identity, and a CZ's phase corrections could not work either.
+- `qpi-driver`: `meas_level=0` returned a single sample instead of a time series,
+  and `meas_level=2` returned IQ instead of the instrument's 0/1 — so a
+  raw-waveform job produced a one-point waveform, and every level-2 job silently
+  took the software discrimination path rather than the hardware one.
+- `qpi-driver`: A raw trace over more than one qubit could not be taken at all; a
+  Qblox module scopes one sequencer. The circuit is played once per measured
+  qubit instead, at a cost of N runs for N qubits.
+- `qpi-driver`: The qblox tuner had never completed a calibration. Its write-back
+  called `device.elements()`, which is a *dict* under qblox; what it wrote, qblox
+  could not read back, because edges carried positional constructor arguments and
+  its edges are pydantic models; and `element_type`, `name`, `edge_type` and both
+  endpoints were written as calibration when they are structural.
+- `qpi-driver`: `conditional_phase` applied nothing, on either scheduler — it
+  wrote `cz.phase_correction`, a name neither has, behind a `hasattr` guard that
+  was therefore never true. It now measures four fringes rather than two, because
+  the two corrections cancel each qubit's *single-qubit* phase, which is not the
+  conditional phase.
+- `qpi-driver`: The `drag` routine swept its parameter over ±1.0. That parameter
+  is in seconds; a 20 ns gate wants order 1e-11, and eleven orders out puts the
+  waveform past full scale so the schedule does not compile at all.
+- `qpi-driver`: `fit_chevron` looked for the brightest pixel. The control reads
+  ≈1 wherever the flux pulse did nothing, so the maximum was as likely to sit on
+  an off-resonant row as on the gate; it finds resonance by oscillation contrast
+  now, and refuses a sweep that stepped over the crossing.
+- `qpi-driver`: `fit_conditional_phase` took the zero crossing of the two
+  fringes' difference, which sits at half the wanted angle displaced by the
+  control's dynamical phase over the flux pulse — tens of turns. It fits each
+  fringe and subtracts. Its correction was also `np.pi - crossing` with the
+  crossing in degrees.
+- `qpi-driver`: The coupler's CZ never reached the simulator — `compile_cz`
+  lowers the gate into a fresh subschedule, losing the pair. It is read from the
+  port name (`q1_q2:fl`) now.
 - `qpi-driver`: Both device loaders added elements in file order, so an edge
-  listed before either of its qubits failed to load — and anything that rewrites
-  the YAML alphabetically, which is `yaml.safe_dump`'s default, produced a
-  config that could no longer be read.
-- `qpi-ui`: A failed job rendered nothing at all. The status badge went red and
-  each of the three result tabs reported "No counts data available" while the
-  reason the driver had already sent sat unread in the record. The reason is
-  shown in place of the tabs now.
-- `make test` was red on macOS, and for two unrelated reasons. `uv sync`
-  reinstalls qblox_instruments and macOS strips the signature from its bundled
-  q1asm assembler; only three of the eight targets that sync put it back, so
-  whichever ran last decided whether the next one could assemble. And
-  `test-docs-static` reported 17 documented CLI flags as removed: `check_docs`
-  forces `PYTHONPATH` at the source tree, so `qpi_driver.cli` imports without
-  the `cli` extra, prints a near-empty help and exits 0 — and only a non-zero
-  exit was treated as "could not run".
-- `qpi-driver`: A virtual Z did nothing at all under `is_simulated`.
-  `ShiftClockPhase` never reached the simulated coordinator's pulse walk, so
-  every `rz`, `z`, `s` and `t` ran as an identity — silently, because a frame
-  shift plays no pulse and its absence looks like nothing happening. `h; h` and
-  `h; rz(pi); h` returned the same answer. This also meant a CZ's per-qubit
-  phase corrections, which are `ShiftClockPhase` operations, could never work.
-- `qpi-driver`: The simulated coordinator answered all three acquisition
-  protocols with an integrated IQ point. `meas_level=0` asks for a `Trace` — a
-  time series — and got a single sample, so a raw-waveform job produced a
-  one-point waveform and looked like it had worked. `meas_level=2` asks for
-  `ThresholdedAcquisition`, which the *instrument* discriminates and returns as
-  0/1; handing back IQ still produced correct counts because the executor falls
-  through to software discrimination, so the path every real job takes went
-  untested while a different one passed.
-- `qpi-driver`: A raw trace over more than one qubit could not be taken at all.
-  A Qblox module puts one sequencer into scope mode, so two traces in one
-  schedule do not compile — which made `meas_level=0` unavailable for any
-  circuit measuring more than one qubit, including the dashboard's default. The
-  quantify executor now plays the circuit once per measured qubit and merges the
-  traces, at an honest cost of N runs for N qubits.
-- `qpi-driver`: The coupler's CZ never reached the simulator. `compile_cz`
-  lowers the gate into a fresh subschedule, so the gate-level `device_elements`
-  is gone by the time the flux pulse arrives and the qubit pair could not be
-  identified. The pair is read from the port name (`q1_q2:fl`) instead.
+  listed before its qubits failed — as any alphabetical rewrite of the YAML
+  produces.
+- `qpi-ui`: A failed job rendered nothing at all — a red badge and three tabs
+  each reporting "No counts data available", while the driver's reason sat unread
+  in the record. The reason is shown in place of the tabs.
 - `qpi-ui`: The dashboard's IQ plot mapped both axes onto a hardcoded
-  `-0.5..1.5` window. IQ arrives in whatever units the readout chain produces,
-  so that window is wrong for most devices — against the simulated chip both
-  clusters fall outside it and the tab renders empty. It scales to the data now,
-  over one square window so the distance between the blobs, which is the readout
-  fidelity, is not stretched.
-- `qpi-driver`: The `drag` routine swept its DRAG parameter over -1.0 to 1.0.
-  That parameter is in *seconds* — it scales a time derivative of the pulse
-  envelope — so a 20 ns gate wants values of order 1e-11, which the lab's own
-  device file confirms (-5.4e-11, -1.5e-11). Eleven orders of magnitude out
-  puts the derivative term so far above the carrier that the waveform exceeds
-  full scale, and the schedule does not compile at all. Found by making the
-  qblox tier-2 test compile rather than only build.
-- `qpi-driver`: The qblox tier-2 test asserted only that a routine's schedule
-  was *built*, while the quantify one compiled it — so a schedule that would
-  not compile under qblox passed. `HardwareAgent.compile` is called now, and
-  both backends are held to the same standard.
-- `qpi-ui`: The driver catalog offered `is_dummy` but not `is_simulated`, so the
-  registration form could not offer the simulator although both builders have
-  read the option since it was added. Its cross-check test listed the calibrate
-  driver's options by hand and had gone stale the same way.
+  `-0.5..1.5`. IQ arrives in whatever units the readout chain produces, so most
+  devices' clusters fell outside it and the tab rendered empty. It scales to the
+  data.
+- `make test` was red on macOS: only three of the eight targets that `uv sync`
+  re-applied the code signature `uv` strips from qblox_instruments' q1asm
+  assembler, and `test-docs-static` believed a stub CLI that exits 0 with an
+  empty help, reporting 17 documented flags as removed.
+- `qpi-driver`: The qblox tier-2 test asserted a routine's schedule was *built*
+  but never compiled, so a schedule that would not compile passed. Both backends
+  compile now.
 
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
