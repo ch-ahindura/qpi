@@ -22,12 +22,21 @@ echo "[e2e] Preparing React dashboard..."
 echo "[e2e] Compiling static assets..."
 (cd "${PROJECT_ROOT}/qpi-ui/internal/dashboard" && npm run build)
 
+# The job console is driven by the simulated chip rather than the mock
+# executor. A mock returns a fixed answer and a dummy cluster returns nan, so
+# neither can show a measurement level behaving differently from the others —
+# which is exactly where the dashboard's job results have gone wrong before.
+# `QPI_E2E_SIMULATED` also pulls in the `sim` dependency group and swaps the
+# miscalibrated fixture for one matching the simulated chip.
+export QPI_E2E_SIMULATED=1
+DRIVER_DEVICE="${DRIVER_DEVICE:-quantify}"
+
 build_server
-install_driver
+install_driver "$DRIVER_DEVICE"
 
 start_pocketbase
-seed_database
-start_driver "mock"
+seed_database "$DRIVER_DEVICE"
+start_driver "$DRIVER_DEVICE"
 
 # Allow driver time to register and start polling
 sleep 2

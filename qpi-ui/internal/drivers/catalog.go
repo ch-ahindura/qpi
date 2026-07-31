@@ -39,6 +39,16 @@ func processOptions() []Option {
 			Example: "true",
 		},
 		{
+			Key: "is_simulated",
+			// Not the same thing as is_dummy, and the difference is the whole
+			// point: a dummy cluster returns nan for every acquisition, so it
+			// cannot tell a correct calibration from a wrong one. The simulator
+			// reads the schedule it was given and answers with the physics.
+			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy. quantify only.",
+			Default: "false",
+			Example: "true",
+		},
+		{
 			Key:     "quantify_hardware_config",
 			Help:    "Path to the quantify hardware configuration JSON.",
 			Default: "./quantify.hardware.json",
@@ -93,6 +103,16 @@ func calibrateOptions() []Option {
 		{
 			Key:     "is_dummy",
 			Help:    "Run against the vendor's dummy instruments instead of real hardware.",
+			Default: "false",
+			Example: "true",
+		},
+		{
+			Key: "is_simulated",
+			// Not the same thing as is_dummy, and the difference is the whole
+			// point: a dummy cluster returns nan for every acquisition, so it
+			// cannot tell a correct calibration from a wrong one. The simulator
+			// reads the schedule it was given and answers with the physics.
+			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy. quantify only.",
 			Default: "false",
 			Example: "true",
 		},

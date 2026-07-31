@@ -277,6 +277,7 @@ func TestCalibrateOptionsMatchTheDriver(t *testing.T) {
 		"quantify_hardware_config": true,
 		"quantify_device_config":   true,
 		"is_dummy":                 true,
+		"is_simulated":             true,
 		"drift_check_interval":     true,
 		"fidelity_threshold":       true,
 		"fidelity_2q_threshold":    true,

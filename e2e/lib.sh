@@ -96,6 +96,14 @@ install_driver() {
         # mock and any other executor: cli only
     esac
 
+    # The simulated chip needs scqubits and qutip, which live in the `sim`
+    # dependency group rather than in any extra — a base install must still
+    # import the package without them.
+    if [ "${QPI_E2E_SIMULATED:-0}" = "1" ]; then
+        uv_extras="$uv_extras --group sim"
+        pip_extras="$pip_extras,sim"
+    fi
+
     if command -v uv >/dev/null 2>&1; then
         uv sync --project "${PROJECT_ROOT}/qpi-driver/py" $uv_extras
     else
@@ -204,9 +212,21 @@ start_driver() {
     local py
     py="$(detect_python)"
 
+    # `is_dummy` compiles and runs a schedule and then returns nan for every
+    # acquisition, so a job console driven by it shows the same nothing whatever
+    # the circuit was. `is_simulated` reads the schedule and answers with the
+    # physics, which is the point of pointing the dashboard at it.
+    local mode_opt="-o is_dummy=true"
+    local device_config="${PROJECT_ROOT}/qpi-driver/py/tests/fixtures/quantify.device.yml"
+    if [ "${QPI_E2E_SIMULATED:-0}" = "1" ]; then
+        mode_opt="-o is_simulated=true"
+        device_config="${DATA_DIR}/quantify.device.yml"
+        "$py" "${E2E_DIR}/simulated_device.py" "$device_config"
+    fi
+
     local extra_opts=""
     if [ "$executor" = "quantify" ] || [ "$executor" = "qblox" ]; then
-        extra_opts="-o quantify_hardware_config=${PROJECT_ROOT}/qpi-driver/py/tests/fixtures/quantify.hardware.json -o quantify_device_config=${PROJECT_ROOT}/qpi-driver/py/tests/fixtures/quantify.device.yml"
+        extra_opts="-o quantify_hardware_config=${PROJECT_ROOT}/qpi-driver/py/tests/fixtures/quantify.hardware.json -o quantify_device_config=${device_config}"
     fi
 
     # Fetch the CA fingerprint from the server for TLS verification
@@ -227,7 +247,7 @@ start_driver() {
         --ca-fingerprint "$ca_fingerprint" \
         --ca-file "${PROJECT_ROOT}/bin/qpi.ca.pem" \
         -o data_dir="${PROJECT_ROOT}/bin/data" \
-        -o is_dummy=true \
+        $mode_opt \
         $sdk_opt $extra_opts >"$DRIVER_LOG" 2>&1 &
     DRIVER_PID=$!
 }
