@@ -14,6 +14,7 @@ from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import read_path, write_path
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
+    CheckOutcome,
     RoutineError,
     linear_setpoints,
     setpoints_of,
@@ -125,6 +126,98 @@ class ResonatorSpectroscopy(CalibrationRoutine):
             "clock_freqs.readout",
             params["readout_frequency"],
         )
+
+    #: The readout linewidth the check judges an offset against, in Hz, and how
+    #: much of it the configured frequency may sit away from the peak.
+    #:
+    #: A constant with a config override rather than a value read from the device,
+    #: because there *is* no device field for it: `fit_resonator_spectroscopy`
+    #: measures a linewidth and nothing stores it, since neither scheduler's
+    #: transmon has somewhere to put it. Reading a path no element has would raise
+    #: `ParameterError`, the check would be unevaluable, and — because an
+    #: unevaluable check is deliberately not evidence of drift — it would report
+    #: nothing, forever, in silence. Set ``check_linewidth`` per chip; giving the
+    #: resonator a linewidth field of its own is RFC 0005 §13.
+    CHECK_LINEWIDTH_HZ = 2e6
+    CHECK_MAX_OFFSET_LINEWIDTHS = 0.35
+
+    def build_check_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """Three points across the line: is the configured frequency still its peak?
+
+        This is the check that makes a readout drift *visible*. RFC 0004 excluded
+        the readout chain from any partial recalibration on the grounds that
+        re-running it is expensive — which is true, and left a drift there with no
+        symptom other than every downstream fit quietly getting worse.
+
+        Three acquisitions rather than the sweep's fifty-one, and no fit: the
+        stored frequency should read higher than a probe either side of it. A
+        parabola through the three gives where the peak actually is, which is
+        enough to say *how far* off without locating it precisely.
+        """
+        # One linewidth either side. Wider and the parabola stops describing the
+        # top of the line; narrower and readout noise dominates the difference
+        # between the three points.
+        span = float(config.get("check_span", 0.0)) or 2.0 * self._linewidth(config)
+        centre = _current_clock(device, target, "readout")
+        self._check_frequencies = [centre - span / 2, centre, centre + span / 2]
+        self._check_span = span
+
+        clock = f"{target}.ro"
+        schedule = backend.new_schedule(
+            f"{self.name}_check", repetitions=int(config.get("check_shots", 1024))
+        )
+        for index, frequency in enumerate(self._check_frequencies):
+            schedule.add(backend.Reset(target))
+            schedule.add(
+                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+            )
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse_check(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> CheckOutcome:
+        signal = signal_of(dataset)
+        if signal.size < 3:
+            raise RoutineError(
+                f"readout check expected 3 acquisitions, got {signal.size}"
+            )
+        low, centre, high = (float(signal[i]) for i in range(3))
+        step = self._check_span / 2.0
+
+        # Vertex of the parabola through the three points, in units of *step*.
+        denominator = low - 2.0 * centre + high
+        if abs(denominator) < 1e-12:
+            raise RoutineError(
+                "readout check saw a flat response across the line, so it cannot "
+                "say where the peak is"
+            )
+        shift = 0.5 * (low - high) / denominator
+        offset = abs(float(shift) * step)
+
+        linewidth = self._linewidth(config)
+        fraction = float(
+            config.get("check_max_offset_linewidths", self.CHECK_MAX_OFFSET_LINEWIDTHS)
+        )
+        tolerance = fraction * linewidth
+        return CheckOutcome(
+            passed=offset <= tolerance,
+            margin=offset / max(tolerance, 1e-9),
+            detail=(
+                f"readout sits {offset / 1e3:.0f} kHz from the peak "
+                f"({offset / max(linewidth, 1e-9):.2f} linewidths)"
+            ),
+        )
+
+    def _linewidth(self, config: RoutineConfig) -> float:
+        """The linewidth this check's probe spacing and tolerance scale with, in Hz."""
+        return float(config.get("check_linewidth", self.CHECK_LINEWIDTH_HZ))
 
 
 class ResonatorPunchout(CalibrationRoutine):

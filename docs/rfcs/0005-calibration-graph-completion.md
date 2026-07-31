@@ -255,14 +255,36 @@ Every routine gains an optional `check` alongside `calibrate`. The contract:
 
 Two consequences worth stating in advance:
 
-`RECALIBRATION_ROOTS` disappears. It exists because there was no way to ask whether
-the readout is still good, so the answer was hardcoded to "assume it is". With a
-check on `resonator_spectroscopy` the graph can decide, and a drift that *is* in the
-readout stops being invisible.
+`RECALIBRATION_ROOTS` becomes a fallback rather than the answer, under the name
+`RECALIBRATION_SEEDS`. It existed because there was no way to ask whether the
+readout is still good, so the answer was hardcoded to "assume it is". With a check
+on `resonator_spectroscopy` the graph can decide, and a readout drift stops being
+invisible. It does not disappear outright — with no checks anywhere, blame stops at
+the seed, which reproduces RFC 0004's behaviour exactly and is what makes the whole
+change additive.
 
 Checks make the drift interval cheaper, not just smarter. RFC 0004's drift check
 runs benchmarks and infers; a per-node check measures the parameter, so a failure
 names the node instead of the qubit.
+
+### The asymmetry that makes it safe
+
+*Unknown is not failure.* A node with no check, or whose check raised, is unknown,
+and `diagnose` may not blame it. Without that rule every diagnose would walk to the
+root — since most nodes have no check — and a partial recalibration would cost more
+than a full one.
+
+The rule has a price, and it is worth naming because it was paid immediately: an
+unevaluable check reports **nothing, forever, in silence**. The first version of
+`resonator_spectroscopy`'s check read its tolerance from
+``measure.readout_linewidth``, a path no transmon element has, so `read_path` raised
+`ParameterError` every time and the check was dead on arrival with no failing test.
+The guard is a tier-2 test requiring every check schedule to *build and compile*
+against a real device, since building is where a check reads what it is judging.
+
+That also settles where the linewidth comes from: a constant with a config override,
+because `fit_resonator_spectroscopy` measures a linewidth and nothing stores it —
+neither scheduler's transmon has a field for one. §13 asks whether to add one.
 
 ## 9. Simulator capabilities
 
@@ -339,8 +361,15 @@ parameter. Every node added here inherits that for free.
 Ordered so that each phase is independently mergeable and the risky physics comes
 after the machinery.
 
-1. **Check / calibrate / diagnose.** No new physics. Tier-1 tests only. Deletes
-   `RECALIBRATION_ROOTS`.
+1. ~~**Check / calibrate / diagnose.**~~ **Done.** `CheckOutcome` plus the optional
+   `build_check_schedule`/`analyse_check` pair on every routine;
+   `CalibrationDAG.check` and `.diagnose`; `recalibrate` now asks rather than
+   assumes. Checks implemented for `resonator_spectroscopy` — three points across
+   the line, so a readout drift is visible for the first time — and for `rabi`,
+   which amplifies the error over five pulses because a single pi pulse is second
+   order in its own error and cannot be told apart from a gain change. Tier-1 tests
+   for the recursion over a fabricated graph; a tier-2 test that every check
+   schedule compiles.
 2. **The cheap missing writers.** `qubit_spectroscopy_amplitude`,
    `time_of_flight`, `resonator_relaxation`. Each replaces a hardcoded number with a
    measured one, and the first removes a known signal-to-noise trap.

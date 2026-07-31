@@ -14,6 +14,7 @@ from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
+    CheckOutcome,
     RoutineError,
     linear_setpoints,
     setpoints_of,
@@ -92,6 +93,95 @@ class Rabi(CalibrationRoutine):
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
+
+    #: Repetitions of the pi pulse the check amplifies the error over, and the
+    #: rotation error it tolerates, in radians. Five pulses turn a 3-degree error
+    #: into a 15-degree one, which is the point: a single pi pulse is *second*
+    #: order in its own error, so playing one and reading the population cannot
+    #: distinguish a pulse 5% short from a readout whose gain moved 5%.
+    CHECK_REPETITIONS = 5
+    CHECK_MAX_ROTATION_ERROR = 0.05
+
+    def build_check_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """Amplify any error in the stored `amp180` over a few repetitions.
+
+        Three acquisitions against the sweep's forty-one, and a different
+        experiment rather than a narrower one:
+
+        - two references, ``|0>`` and ``X|0>``, so the verdict is a *fraction* of
+          the measured contrast and survives a change in readout gain;
+        - then ``X90`` followed by N pi pulses. The pre-rotation is what makes the
+          error first order — without it the signal goes as ``cos(n*delta)`` and is
+          flat at ``delta = 0`` — and N is what amplifies it. This is
+          `fine_amplitude`'s trick, borrowed at one setpoint.
+        """
+        repetitions = int(config.get("check_repetitions", self.CHECK_REPETITIONS))
+        schedule = backend.new_schedule(
+            f"{self.name}_check", repetitions=int(config.get("check_shots", 512))
+        )
+        for index, prepare in enumerate((0, 1)):
+            schedule.add(backend.Reset(target))
+            if prepare:
+                schedule.add(backend.X(target))
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+
+        schedule.add(backend.Reset(target))
+        schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
+        for _ in range(repetitions):
+            schedule.add(backend.X(target))
+        schedule.add(
+            backend.Measure(target, acq_index=2, bin_mode=backend.BinMode.AVERAGE)
+        )
+        self._check_repetitions = repetitions
+        return schedule
+
+    def analyse_check(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> CheckOutcome:
+        """Recover the per-pulse rotation error from the amplified sequence.
+
+        ``P(n) = 0.5 * (1 + (-1)^n * sin(n * delta))`` — the model
+        `fit_fine_amplitude` uses — so the amplified point sits at exactly half the
+        contrast when the pulse is right, and its distance from there gives
+        ``delta`` directly.
+        """
+        signal = signal_of(dataset)
+        if signal.size < 3:
+            raise RoutineError(
+                f"pi-pulse check expected 3 acquisitions, got {signal.size}"
+            )
+        ground, excited, amplified = (float(signal[i]) for i in range(3))
+        contrast = excited - ground
+        if abs(contrast) < 1e-9:
+            raise RoutineError(
+                "pi-pulse check saw no contrast between |0> and |1>, so it cannot "
+                "say whether the pulse inverted — the readout is the suspect here, "
+                "not the amplitude"
+            )
+
+        # On the ground-to-excited axis, so a change in readout gain cancels.
+        fraction = (amplified - ground) / contrast
+        repetitions = getattr(self, "_check_repetitions", self.CHECK_REPETITIONS)
+        deviation = min(abs(2.0 * (fraction - 0.5)), 1.0)
+        error = float(np.arcsin(deviation) / max(repetitions, 1))
+
+        tolerance = float(
+            config.get("check_max_rotation_error", self.CHECK_MAX_ROTATION_ERROR)
+        )
+        return CheckOutcome(
+            passed=error <= tolerance,
+            margin=error / max(tolerance, 1e-12),
+            detail=(
+                f"{np.rad2deg(error):.2f} deg per-pulse rotation error over "
+                f"{repetitions} pulses"
+            ),
+        )
 
 
 class Ramsey(CalibrationRoutine):

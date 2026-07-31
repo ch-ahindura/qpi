@@ -62,6 +62,13 @@ class CalibrationReport:
     benchmarks: list[BenchmarkResult] = field(default_factory=list)
     status: str = "success"  # 'success', 'partial_failure', 'failed'
     errors: list[str] = field(default_factory=list)
+    #: What the checks found, when `diagnose` decided the scope of this run
+    #: (RFC 0005 §8). Deliberately **not** in :meth:`to_event_payload`: that
+    #: payload is one contract written twice, asserted against QPI-UI's
+    #: ``CalibrationResultPayload`` in Go and TypeScript, and a field added on one
+    #: side only would fail those tests. Notes are for the operator's log and the
+    #: local report until the server side is extended to carry them.
+    notes: list[str] = field(default_factory=list)
 
     def add_routine(self, result: RoutineResult) -> None:
         self.routine_results.append(result)

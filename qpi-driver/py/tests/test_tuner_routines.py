@@ -128,6 +128,43 @@ def test_every_routine_builds_a_schedule_under_qblox(routine_name, qblox_tuner):
     assert compiled is not None
 
 
+CHECKABLE = [r.name for r in all_routines() if r.has_check]
+
+
+@pytest.mark.parametrize("routine_name", CHECKABLE)
+def test_every_check_schedule_compiles_under_both_schedulers(
+    routine_name, quantify_tuner, qblox_tuner
+):
+    """A check that cannot be built is silent, not failing — so it needs a test here.
+
+    `diagnose` deliberately treats an unevaluable check as *unknown* rather than as
+    drift, because a broken check must not trigger a recalibration. The cost of that
+    choice is that a check which raises every time reports nothing, forever, and no
+    test fails. One did: the first version of `resonator_spectroscopy`'s read its
+    tolerance from ``measure.readout_linewidth``, a path no transmon element has, so
+    `read_path` raised `ParameterError` on every call and the check was dead on
+    arrival.
+
+    Building the check schedule against a real device is what catches that, because
+    that is where a check reads the parameters it is judging.
+    """
+    routine = next(r for r in all_routines() if r.name == routine_name)
+    target = "q0" if routine.targets == "qubits" else "q0_q1"
+    config = RoutineConfig(params=SMALL_SWEEPS.get(routine.name, {}))
+
+    for tuner, compile_with in (
+        (quantify_tuner, lambda s: quantify_tuner._compiler.compile(s)),
+        (qblox_tuner, lambda s: qblox_tuner._agent.compile(s)),
+    ):
+        schedule = routine.build_check_schedule(
+            target, tuner.device, config, tuner.backend
+        )
+        assert schedule is not None, (
+            f"{routine_name} reports has_check but built no check schedule"
+        )
+        assert compile_with(schedule) is not None
+
+
 def test_a_dummy_acquisition_fails_the_routine_rather_than_fitting_zeros(
     quantify_tuner,
 ):

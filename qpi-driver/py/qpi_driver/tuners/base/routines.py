@@ -12,6 +12,7 @@ the same routine runs under quantify-scheduler and qblox-scheduler alike.
 
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import xarray as xr
@@ -29,6 +30,24 @@ class RoutineError(Exception):
     that caused it. A fit that silently returns zeros would be written to the
     device as though it were a measurement (RFC 0004 §10).
     """
+
+
+@dataclass
+class CheckOutcome:
+    """Whether a routine's parameters still hold, and by how much (RFC 0005 §8).
+
+    Attributes:
+        passed: whether the parameters are still within specification.
+        margin: how far inside — or outside — expressed as a fraction of the
+            tolerance the check applied. One is exactly at the limit, so 0.2
+            is comfortable and 3.0 is badly out. Recorded because "failed" on
+            its own does not distinguish drift from a broken instrument.
+        detail: what was measured, for the report and the log.
+    """
+
+    passed: bool
+    margin: float
+    detail: str = ""
 
 
 class CalibrationRoutine(ABC):
@@ -78,6 +97,52 @@ class CalibrationRoutine(ABC):
         measures a fidelity and calibrates nothing. A routine that does
         calibrate overrides this and lists what it writes in :attr:`updates`.
         """
+
+    # --- the check form (RFC 0005 §8) -----------------------------------------
+    #
+    # A check answers "does this parameter still hold?" without re-deriving it.
+    # It is cheap because it is a *different, simpler* experiment, not because it
+    # is the calibration with fewer setpoints: checking a pi pulse means playing
+    # the calibrated one and reading the population, which a narrow Rabi sweep
+    # does not do more cheaply.
+    #
+    # The pair below mirrors `build_schedule`/`analyse` deliberately, so that the
+    # DAG runs both through the same seam and inherits its timeout and error
+    # recording. Returning `None` from the first means this routine has no check,
+    # which is the default and is what makes all of this additive.
+
+    def build_check_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """A short schedule testing whether this routine's parameters still hold.
+
+        ``None`` — the default — means this routine cannot be checked, so its
+        state is *unknown* rather than stale. That distinction is what stops
+        `diagnose` blaming a node it has no evidence against.
+        """
+        return None
+
+    def analyse_check(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> CheckOutcome:
+        """Whether the parameters still hold, from the check schedule's data.
+
+        Only called when :meth:`build_check_schedule` returned a schedule.
+
+        Raises:
+            RoutineError: if the check itself could not be evaluated. That is
+                *not* evidence of drift — an unevaluable check leaves the node
+                unknown, exactly as having no check does.
+        """
+        raise RoutineError(f"{self.name} has no check analysis")
+
+    @property
+    def has_check(self) -> bool:
+        """Whether this routine overrides :meth:`build_check_schedule`."""
+        return (
+            type(self).build_check_schedule
+            is not CalibrationRoutine.build_check_schedule
+        )
 
     @property
     def is_benchmark(self) -> bool:

@@ -13,9 +13,25 @@ from typing import Any
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
-from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
+from qpi_driver.tuners.base.routines import (
+    CalibrationRoutine,
+    CheckOutcome,
+    RoutineError,
+)
 
 log = logging.getLogger(__name__)
+
+
+def _worse_than(candidate: CheckOutcome, incumbent: CheckOutcome) -> bool:
+    """Whether *candidate* is the more alarming of two check outcomes.
+
+    A failure beats a pass whatever the margins say; between two of a kind, the
+    larger margin is the worse one — furthest outside if both failed, closest to
+    the limit if both passed.
+    """
+    if candidate.passed != incumbent.passed:
+        return incumbent.passed
+    return candidate.margin > incumbent.margin
 
 
 class CalibrationDAG:
@@ -95,6 +111,129 @@ class CalibrationDAG:
 
         return [name for name in self.execution_order() if name in affected]
 
+    # --- checking, and deciding what to recalibrate (RFC 0005 §8) --------------
+
+    def check(
+        self,
+        name: str,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        config: CalibrationConfig,
+    ) -> CheckOutcome | None:
+        """Whether routine *name*'s parameters still hold over all of *targets*.
+
+        ``None`` means *unknown* — the routine has no check, or the check could
+        not be evaluated. Unknown is not failure, and the difference is the whole
+        point: `diagnose` may not blame a node it has no evidence against, or a
+        graph with no checks at all would recalibrate from the root every time.
+
+        The worst target wins. A parameter that has drifted on one qubit of five
+        is drift, and reporting the mean would hide it.
+        """
+        routine = self.routines.get(name)
+        if routine is None or not routine.has_check:
+            return None
+
+        routine_config = config.get_routine(name)
+        worst: CheckOutcome | None = None
+        for target in targets:
+            try:
+                schedule = routine.build_check_schedule(
+                    target, device, routine_config, backend
+                )
+                if schedule is None:
+                    continue
+                dataset = backend.run(schedule)
+                outcome = routine.analyse_check(dataset, target, device, routine_config)
+            except Exception:  # noqa: BLE001 - an unevaluable check is not drift
+                log.warning(
+                    "check for %s on %s could not be evaluated; treating as unknown",
+                    name,
+                    target,
+                    exc_info=True,
+                )
+                continue
+            outcome.detail = f"{target}: {outcome.detail}"
+            if worst is None or _worse_than(outcome, worst):
+                worst = outcome
+        return worst
+
+    def diagnose(
+        self,
+        seeds: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        config: CalibrationConfig,
+    ) -> tuple[list[str], list[str]]:
+        """Which routines to recalibrate, given *seeds* as the suspected ones.
+
+        The recursion, following Kelly et al. (arXiv:1803.03226): a node whose
+        check passes is verified and needs nothing. A node whose check fails is a
+        candidate — but if one of its *dependencies* also fails, the dependency is
+        the better suspect and blame moves up. Recalibrating a node whose input is
+        wrong measures the wrong thing twice.
+
+        Blame stops at a node whose failing dependencies are none, which is the
+        shallowest node with evidence against it and no upstream excuse.
+
+        Returns ``(order, notes)`` — the routines to run, in dependency order and
+        including everything downstream of them, and human-readable notes on what
+        the checks found, for the report.
+        """
+        cache: dict[str, CheckOutcome | None] = {}
+        notes: list[str] = []
+
+        def outcome_for(name: str) -> CheckOutcome | None:
+            if name not in cache:
+                targets = self._targets_for(name, config)
+                cache[name] = (
+                    self.check(name, targets, device, backend, config)
+                    if targets
+                    else None
+                )
+                result = cache[name]
+                if result is not None:
+                    notes.append(
+                        f"{name}: {'passed' if result.passed else 'FAILED'} "
+                        f"(margin {result.margin:.2f}) {result.detail}".strip()
+                    )
+            return cache[name]
+
+        def failed(name: str) -> bool:
+            result = outcome_for(name)
+            return result is not None and not result.passed
+
+        blamed: set[str] = set()
+
+        def blame(name: str, seen: frozenset[str]) -> set[str]:
+            if name in seen or name not in self.routines:
+                return set()
+            result = outcome_for(name)
+            if result is not None and result.passed:
+                return set()  # verified good
+            upstream: set[str] = set()
+            for dependency in self.routines[name].depends_on:
+                if failed(dependency):
+                    upstream |= blame(dependency, seen | {name})
+            return upstream or {name}
+
+        for seed in seeds:
+            blamed |= blame(seed, frozenset())
+
+        if not blamed:
+            notes.append("every check passed: nothing to recalibrate")
+            return [], notes
+        return self.partial_order(sorted(blamed)), notes
+
+    def _targets_for(self, name: str, config: CalibrationConfig) -> list[str]:
+        routine = self.routines.get(name)
+        if routine is None:
+            return []
+        return (
+            config.target_qubits if routine.targets == "qubits" else config.target_edges
+        )
+
     def run(
         self,
         device: Any,
@@ -112,7 +251,7 @@ class CalibrationDAG:
         than as a success that measured nothing.
         """
         report = CalibrationReport(
-            timestamp=_now(), duration_s=0.0, mode=mode, backend=backend.name
+            timestamp=utc_timestamp(), duration_s=0.0, mode=mode, backend=backend.name
         )
         started = time.monotonic()
 
@@ -196,7 +335,7 @@ class CalibrationDAG:
                     routine_name=routine.name,
                     target=target,
                     parameters=params,
-                    timestamp=_now(),
+                    timestamp=utc_timestamp(),
                     duration_s=time.monotonic() - started,
                 )
             )
@@ -207,5 +346,6 @@ class CalibrationDAG:
             return False
 
 
-def _now() -> str:
+def utc_timestamp() -> str:
+    """Now, in the millisecond-precision UTC form the report payload uses."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"

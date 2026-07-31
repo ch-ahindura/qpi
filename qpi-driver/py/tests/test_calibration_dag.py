@@ -16,6 +16,7 @@ from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
 from qpi_driver.tuners.base.dag import CalibrationDAG
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
+    CheckOutcome,
     RoutineError,
     linear_setpoints,
     setpoints_of,
@@ -65,6 +66,53 @@ class StubRoutine(CalibrationRoutine):
 class FailingRoutine(StubRoutine):
     def analyse(self, dataset, target, device, config):
         raise RoutineError("could not fit")
+
+
+class CheckableRoutine(StubRoutine):
+    """A stub whose check outcome is scripted rather than measured.
+
+    *verdict* is ``True`` (in spec), ``False`` (out of spec), or ``None`` — no
+    check at all, which is the default for every real routine and is the case the
+    recursion has to treat as *unknown* rather than as failure.
+    """
+
+    def __init__(self, name, depends_on=(), verdict=None, **kwargs):
+        super().__init__(name, depends_on=depends_on, **kwargs)
+        self.verdict = verdict
+        self.checked: list[str] = []
+
+    @property
+    def has_check(self) -> bool:
+        return self.verdict is not None
+
+    def build_check_schedule(self, target, device, config, backend):
+        if self.verdict is None:
+            return None
+        self.checked.append(target)
+        return backend.new_schedule(f"{self.name}_check")
+
+    def analyse_check(self, dataset, target, device, config):
+        return CheckOutcome(
+            passed=bool(self.verdict), margin=0.5 if self.verdict else 2.0
+        )
+
+
+class UnevaluableCheck(CheckableRoutine):
+    """A check that raises. Not evidence of drift — the node stays unknown."""
+
+    def __init__(self, name, depends_on=()):
+        super().__init__(name, depends_on=depends_on, verdict=True)
+
+    def analyse_check(self, dataset, target, device, config):
+        raise RoutineError("the check itself could not be evaluated")
+
+
+def _diagnose(routines, seeds, config=None):
+    dag = CalibrationDAG(routines, config or _config())
+    order, notes = dag.diagnose(
+        seeds, device=None, backend=FakeBackend(), config=config or _config()
+    )
+    return order, notes
 
 
 def _config(**kwargs) -> CalibrationConfig:
@@ -146,6 +194,158 @@ def test_a_partial_recalibration_skips_the_readout_bring_up():
     assert order[0] == "qubit_spectroscopy"
     assert {"rabi", "ramsey", "drag", "fine_amplitude", "rb"} <= set(order)
     assert set(order) < set(dag.execution_order())
+
+
+# --- diagnose (RFC 0005 §8) ----------------------------------------------------
+#
+# Graph logic, so it belongs here: a fabricated graph with scripted check outcomes
+# and no simulator. What is asserted is *which* nodes get recalibrated, because
+# that is the entire value of having checks — the alternative is re-running from
+# the root and hoping.
+
+
+def test_with_no_checks_diagnose_reproduces_the_old_behaviour():
+    """The additive property, and the reason this could ship without a flag.
+
+    No routine had a check before this, so every node's state is unknown, no
+    dependency can be blamed, and blame stops at the seed — which is `partial_order`
+    of the seed, exactly what `recalibrate` did in RFC 0004.
+    """
+    routines = [
+        CheckableRoutine("a"),
+        CheckableRoutine("b", depends_on=("a",)),
+        CheckableRoutine("c", depends_on=("b",)),
+    ]
+    order, _notes = _diagnose(routines, ["b"])
+    assert order == ["b", "c"]
+
+
+def test_a_node_whose_check_passes_is_not_recalibrated():
+    """The cheapest outcome, and one RFC 0004 could not reach at all."""
+    routines = [
+        CheckableRoutine("a", verdict=True),
+        CheckableRoutine("b", depends_on=("a",), verdict=True),
+        CheckableRoutine("c", depends_on=("b",), verdict=True),
+    ]
+    order, notes = _diagnose(routines, ["b"])
+    assert order == []
+    assert any("nothing to recalibrate" in note for note in notes)
+
+
+def test_blame_moves_up_to_the_failing_dependency():
+    """The whole point of the recursion.
+
+    `c` is out of spec, but so is `a` two levels above it. Recalibrating `c` would
+    measure the wrong thing twice, because its input is wrong. Blame stops at `a`,
+    and everything downstream of `a` follows.
+    """
+    routines = [
+        CheckableRoutine("a", verdict=False),
+        CheckableRoutine("b", depends_on=("a",), verdict=False),
+        CheckableRoutine("c", depends_on=("b",), verdict=False),
+    ]
+    order, _notes = _diagnose(routines, ["c"])
+    assert order == ["a", "b", "c"]
+
+
+def test_blame_stops_where_the_dependency_is_verified_good():
+    """`b` is out of spec and `a` is fine, so the fault is `b`'s own."""
+    routines = [
+        CheckableRoutine("a", verdict=True),
+        CheckableRoutine("b", depends_on=("a",), verdict=False),
+        CheckableRoutine("c", depends_on=("b",), verdict=False),
+    ]
+    order, _notes = _diagnose(routines, ["c"])
+    assert order == ["b", "c"]
+    assert "a" not in order
+
+
+def test_an_unknown_dependency_does_not_attract_blame():
+    """The asymmetry that keeps this from recalibrating everything.
+
+    `b` failed and `a` has no check. Unknown is not failure: with no evidence
+    against `a` there is no reason to re-run the bring-up, so `b` is blamed. Were
+    unknown treated as failed, every diagnose would walk to the root and a partial
+    recalibration would cost more than a full one.
+    """
+    routines = [
+        CheckableRoutine("a", verdict=None),
+        CheckableRoutine("b", depends_on=("a",), verdict=False),
+    ]
+    order, _notes = _diagnose(routines, ["b"])
+    assert order == ["b"]
+
+
+def test_a_check_that_raises_leaves_the_node_unknown():
+    """A broken check is not a drifting parameter, and must not read as one."""
+    routines = [
+        UnevaluableCheck("a"),
+        CheckableRoutine("b", depends_on=("a",), verdict=False),
+    ]
+    order, _notes = _diagnose(routines, ["b"])
+    assert order == ["b"], "an unevaluable check on `a` should not blame `a`"
+
+
+def test_diagnose_checks_each_routine_once_however_many_paths_reach_it():
+    """A diamond reaches `a` twice. Checks cost instrument time, so they are cached."""
+    root = CheckableRoutine("a", verdict=False)
+    routines = [
+        root,
+        CheckableRoutine("b", depends_on=("a",), verdict=False),
+        CheckableRoutine("c", depends_on=("a",), verdict=False),
+        CheckableRoutine("d", depends_on=("b", "c"), verdict=False),
+    ]
+    order, _notes = _diagnose(routines, ["d"])
+    assert order == ["a", "b", "c", "d"]
+    assert root.checked == ["q0"], f"`a` was checked {len(root.checked)} times"
+
+
+def test_the_worst_target_decides():
+    """Drift on one qubit of several is drift. A mean would hide it."""
+
+    class PerTarget(CheckableRoutine):
+        def analyse_check(self, dataset, target, device, config):
+            passed = target != "q1"
+            return CheckOutcome(passed=passed, margin=0.1 if passed else 3.0)
+
+    config = _config(target_qubits=["q0", "q1", "q2"])
+    dag = CalibrationDAG([PerTarget("a", verdict=True)], config)
+    outcome = dag.check("a", config.target_qubits, None, FakeBackend(), config)
+
+    assert outcome is not None and not outcome.passed
+    assert "q1" in outcome.detail
+
+
+def test_the_real_graph_reports_a_readout_drift_instead_of_hiding_it():
+    """The behaviour change that motivated all of this.
+
+    RFC 0004 excluded the readout chain from a partial run, so a drifted readout
+    frequency had no symptom other than every downstream fit getting worse.
+    `resonator_spectroscopy` has a check now, so when it fails the blame walks up
+    into it and the bring-up runs after all — which is more expensive, and correct.
+    """
+    routines = all_routines()
+    by_name = {r.name: r for r in routines}
+    assert by_name["resonator_spectroscopy"].has_check
+    assert by_name["rabi"].has_check
+
+    # Script the two real checks: readout has moved, and the pi pulse is off with it.
+    scripted = [
+        CheckableRoutine(
+            r.name,
+            depends_on=r.depends_on,
+            targets=r.targets,
+            verdict=False if r.name in ("resonator_spectroscopy", "rabi") else None,
+        )
+        for r in routines
+    ]
+    order, notes = _diagnose(scripted, list(RECALIBRATION_ROOTS))
+
+    assert "resonator_spectroscopy" in order, (
+        "a failing readout check should pull the bring-up back into the run"
+    )
+    assert order.index("resonator_spectroscopy") < order.index("rabi")
+    assert any("resonator_spectroscopy" in note for note in notes)
 
 
 def test_recalibrate_narrows_both_the_targets_and_the_routines():

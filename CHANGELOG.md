@@ -131,6 +131,30 @@ the simulator: `test_calibration_loop` now drives all sixteen routines over two
 qubits and the edge between them, through the shipped tuner and a real device file,
 and requires the report to come back `success` having skipped none of them.
 
+**Calibration checks, so staleness is measured rather than assumed** (RFC 0005 §8).
+A routine may now supply a cheap *check* — "does this parameter still hold?" —
+alongside the sweep that derives it, and `recalibrate` uses
+`CalibrationDAG.diagnose` to decide what to re-run: a node whose check passes is left
+alone, a node whose check fails is recalibrated, and if one of *its* dependencies
+also fails the blame moves up, because recalibrating a node whose input is wrong
+measures the wrong thing twice. Following Kelly et al.
+([arXiv:1803.03226](https://arxiv.org/abs/1803.03226)).
+
+Two checks to begin with. `resonator_spectroscopy` probes three points across the
+line and reports how far the configured frequency sits from the peak — which makes a
+readout drift **visible** for the first time, where before it had no symptom beyond
+every downstream fit quietly getting worse. `rabi` amplifies any error in the stored
+`amp180` over five π pulses, because one π pulse is second order in its own error and
+so cannot be told apart from a readout whose gain moved.
+
+A routine with no check is *unknown*, not stale, and cannot be blamed — otherwise
+every diagnosis would walk to the graph's root and a partial recalibration would cost
+more than a full one. With no checks at all, blame stops at the seed, which is what
+RFC 0004's hardcoded `RECALIBRATION_ROOTS` did, so nothing changes until a check
+exists; the constant survives as `RECALIBRATION_SEEDS` for exactly that case. A run
+where every check passes now recalibrates nothing and says so, which was not
+previously reachable.
+
 ### Fixed
 
 - `qpi-driver`: A virtual Z did nothing under `is_simulated` — `ShiftClockPhase`

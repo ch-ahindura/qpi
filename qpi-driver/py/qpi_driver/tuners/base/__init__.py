@@ -19,31 +19,44 @@ from qpi_driver.tuners.base.config import (
     MonitoringConfig,
     RoutineConfig,
 )
-from qpi_driver.tuners.base.dag import CalibrationDAG
+from qpi_driver.tuners.base.dag import CalibrationDAG, utc_timestamp
 from qpi_driver.tuners.base.report import (
     BenchmarkResult,
     CalibrationReport,
     RoutineResult,
 )
-from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
+from qpi_driver.tuners.base.routines import (
+    CalibrationRoutine,
+    CheckOutcome,
+    RoutineError,
+)
 from qpi_driver.tuners.routines import all_routines, routine_names
 from qpi_driver.tuners.utils.persistence import save_device_config
 
 log = logging.getLogger(__name__)
 
-#: Where a partial recalibration starts, and so which routines it runs: these
-#: and everything downstream of them.
+#: Where a partial recalibration starts when the checks cannot say (RFC 0005 §8).
 #:
-#: The readout chain — ``resonator_spectroscopy`` and ``resonator_punchout`` — is
-#: deliberately absent. It is a bring-up step rather than a drift one, and
-#: re-running it is most of the cost of a full calibration, which is the cost a
-#: partial run exists to avoid. A drift the qubit routines cannot fix therefore
-#: needs a full calibration, and that is an operator's decision rather than the
-#: drift check's.
-RECALIBRATION_ROOTS: tuple[str, ...] = ("qubit_spectroscopy",)
+#: This used to be the answer. It is now the *fallback*: `CalibrationDAG.diagnose`
+#: asks each routine whether its parameters still hold and blames the shallowest
+#: node with evidence against it, so which routines run is measured rather than
+#: assumed. A routine with no check leaves its state unknown, and with no checks
+#: at all every seed below is blamed — which is exactly the behaviour this
+#: constant gave on its own, so adding checks can only narrow the run.
+#:
+#: The seeds are the qubit chain rather than the readout chain for the reason they
+#: always were: re-running readout bring-up is most of the cost a partial run
+#: exists to avoid. The difference now is that a readout drift is no longer
+#: *invisible* — `resonator_spectroscopy` has a check, so if the readout has moved
+#: the blame walks up into it and says so.
+RECALIBRATION_SEEDS: tuple[str, ...] = ("qubit_spectroscopy",)
+
+#: Retained under its RFC 0004 name; `RECALIBRATION_SEEDS` is what it became.
+RECALIBRATION_ROOTS: tuple[str, ...] = RECALIBRATION_SEEDS
 
 __all__ = [
     "Tuner",
+    "RECALIBRATION_SEEDS",
     "RECALIBRATION_ROOTS",
     "SchedulerBackend",
     "CalibrationConfig",
@@ -55,6 +68,7 @@ __all__ = [
     "BenchmarkResult",
     "RoutineResult",
     "CalibrationRoutine",
+    "CheckOutcome",
     "RoutineError",
 ]
 
@@ -96,27 +110,46 @@ class Tuner(ABC):
     def recalibrate(
         self, qubits: list[str], config: CalibrationConfig
     ) -> CalibrationReport:
-        """Recalibrate *qubits* only, running the affected routines.
+        """Recalibrate *qubits* only, running whichever routines the checks blame.
 
         Two narrowings, and both matter: this is what a drift check triggers, and
         it has to be meaningfully cheaper than a full run to be worth having.
 
         The targets narrow to *qubits* plus any edge touching one of them. The
-        routines narrow to :data:`RECALIBRATION_ROOTS` and everything downstream
-        of them — downstream because recalibrating a frequency invalidates the
-        gates tuned against it, so re-running the root alone would leave the chip
-        in a worse state than not running at all.
+        routines narrow by :meth:`CalibrationDAG.diagnose` — each routine is asked
+        whether its parameters still hold, and the shallowest node with evidence
+        against it is recalibrated along with everything downstream of it.
+        Downstream because recalibrating a frequency invalidates the gates tuned
+        against it, so re-running the blamed node alone would leave the chip in a
+        worse state than not running at all.
+
+        Where RFC 0004 assumed the boundary, this measures it. A run in which every
+        check passes recalibrates nothing and says so, which is the cheapest
+        possible outcome and was not previously reachable.
         """
         config.validate_against(routine_names())
         narrowed = self._narrow_to(qubits, config)
         dag = CalibrationDAG(self.routines(), narrowed)
-        report = dag.run(
-            self.device,
-            self.backend,
-            narrowed,
-            mode="partial",
-            only=dag.partial_order(list(RECALIBRATION_ROOTS)),
+        order, notes = dag.diagnose(
+            list(RECALIBRATION_SEEDS), self.device, self.backend, narrowed
         )
+        for note in notes:
+            log.info("diagnose: %s", note)
+
+        if not order:
+            report = CalibrationReport(
+                timestamp=utc_timestamp(),
+                duration_s=0.0,
+                mode="partial",
+                backend=self.backend.name,
+            )
+            report.notes.extend(notes)
+            return report
+
+        report = dag.run(
+            self.device, self.backend, narrowed, mode="partial", only=order
+        )
+        report.notes.extend(notes)
         self._persist(report)
         return report
 
