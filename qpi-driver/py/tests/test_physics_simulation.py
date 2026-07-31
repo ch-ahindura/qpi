@@ -22,7 +22,6 @@ is why `make test-py-sim` syncs `--group sim` alone:
 
 import numpy as np
 import pytest
-
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.fitting import FitError, fit_rb_decay
@@ -276,3 +275,199 @@ def test_rb_survival_collapses_to_chance_without_a_recovery_gate(simulator):
         "without a recovery gate the sequences should not return to the ground "
         f"state, but got {survivals}"
     )
+
+
+# --- two qubits ---------------------------------------------------------------
+#
+# A CZ is the first thing here that one transmon cannot have: it needs a joint
+# register, because entanglement is not merely absent between two independent
+# density matrices, it is unrepresentable. `qpi_driver.simulation.coupled` holds
+# both in one 9-dimensional space and couples them.
+#
+# These tolerances are looser than the one-qubit ones above, and the reason is
+# structural rather than numerical: the exchange coupling and the
+# flux-to-detuning curve are numbers chosen to describe a plausible coupler, not
+# constants of a Cooper-pair box. See the module docstring of `coupled`, and
+# RFC 0004 §7.
+
+
+@pytest.fixture(scope="module")
+def coupled():
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
+    return CoupledTransmons()
+
+
+def chevron_config(low, high, amplitude_points, duration_points):
+    return RoutineConfig(
+        params={
+            "amplitudes": list(np.linspace(low, high, amplitude_points)),
+            "durations": list(np.linspace(20e-9, 240e-9, duration_points)),
+            "shots": 512,
+        }
+    )
+
+
+def two_qubit_tuner(coupled):
+    from tests.fixtures.simulation import SimulatedTuner
+
+    return SimulatedTuner(qubits=("q0", "q1"), edges=("q0_q1",), coupled=coupled)
+
+
+def angle_apart(left: float, right: float) -> float:
+    """Degrees between two angles, the short way round.
+
+    The fits report a phase in [0, 360) and the simulator in (-180, 180]; 359°
+    and -1° are the same gate, and a plain subtraction says they are 360° apart.
+    """
+    return abs((left - right + 180.0) % 360.0 - 180.0)
+
+
+def test_the_coupled_pair_produces_a_cz_and_not_merely_a_rotation(coupled):
+    """The conditional phase is 180° because of the avoided crossing, not by fiat."""
+    assert angle_apart(coupled.cz_conditional_phase(), 180.0) < 2.0
+
+
+def test_a_bell_state_comes_out_entangled(coupled):
+    from qpi_driver.simulation.coupled import (
+        computational_block,
+        concurrence,
+        leakage,
+    )
+
+    density = coupled.bell_state()
+    block = computational_block(density)
+    populations = np.real(np.diag(block))
+
+    # (|00> + |11>)/sqrt(2): half in |00>, half in |11>, nothing in between.
+    assert populations[0] == pytest.approx(0.5, abs=0.05)
+    assert populations[3] == pytest.approx(0.5, abs=0.05)
+    assert populations[1] < 0.02 and populations[2] < 0.02
+    assert concurrence(density) > 0.9, (
+        "the pair should be very nearly maximally entangled"
+    )
+    assert leakage(density) < 0.01, "a calibrated CZ should not leave |2> populated"
+
+
+def test_a_cz_needs_the_coupling_to_exist(coupled):
+    """With the qubits uncoupled the same pulse is a pair of single-qubit phases.
+
+    The guard against a simulator that would produce a plausible CZ out of
+    bookkeeping: switch off the one term that makes the gate possible and the
+    conditional phase must collapse.
+    """
+    import dataclasses
+
+    uncoupled = dataclasses.replace(coupled, g_mhz=0.0)
+    # The same pulse, not the same gate: with g=0 there is no exchange and so no
+    # round-trip duration to ask for. Holding the pulse fixed is what isolates
+    # the coupling as the cause.
+    phase = uncoupled.cz_conditional_phase(duration_ns=coupled.cz_duration_ns)
+    assert angle_apart(phase, 0.0) < 1.0
+
+
+def test_cz_chevron_finds_the_avoided_crossing(coupled):
+    tuner = two_qubit_tuner(coupled)
+    config = chevron_config(0.365, 0.388, 21, 45)
+    routine_ = routine("cz_chevron")
+
+    schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+    fit = routine_.analyse(tuner.backend.run(schedule), "q0_q1", tuner.device, config)
+
+    assert fit["cz_amplitude"] == pytest.approx(coupled.resonant_amplitude, rel=0.01)
+    assert fit["cz_duration"] / 1e-9 == pytest.approx(coupled.cz_duration_ns, rel=0.02)
+
+
+def test_cz_chevron_refuses_a_sweep_that_stepped_over_the_crossing(coupled):
+    """The default amplitude range is far too coarse to resolve a few-MHz crossing.
+
+    One step of the default grid moves the control by tens of MHz while the
+    avoided crossing is about 4.5 MHz wide, so the surface comes back flat to
+    within its noise. A peak-finder would still return a confident answer from
+    it, and that answer would go to the device as a CZ.
+    """
+    tuner = two_qubit_tuner(coupled)
+    config = chevron_config(0.1, 0.6, 11, 11)
+    routine_ = routine("cz_chevron")
+
+    schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+    with pytest.raises(FitError, match="no flux amplitude drove"):
+        routine_.analyse(tuner.backend.run(schedule), "q0_q1", tuner.device, config)
+
+
+def test_conditional_phase_recovers_the_gates_real_phase(coupled):
+    tuner = two_qubit_tuner(coupled)
+    config = RoutineConfig(
+        params={"phases": list(np.linspace(0.0, 360.0, 25)), "shots": 512}
+    )
+    routine_ = routine("conditional_phase")
+
+    schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+    fit = routine_.analyse(tuner.backend.run(schedule), "q0_q1", tuner.device, config)
+
+    assert angle_apart(fit["conditional_phase"], coupled.cz_conditional_phase()) < 2.0
+    # A CZ this good needs almost no correcting, and the correction is the
+    # complement of the phase — in degrees, which is what Rxy takes.
+    assert fit["phase_correction"] == pytest.approx(
+        180.0 - coupled.cz_conditional_phase(), abs=2.0
+    )
+
+
+def test_conditional_phase_measures_a_gate_that_is_wrong(coupled):
+    """A miscalibrated CZ must be reported as needing exactly its own error back.
+
+    The one-qubit tier found that a fit which cannot measure a *good* chip
+    recalibrates forever; this is the opposite failure, and the more dangerous
+    one — a fit that reports every gate as fine leaves a broken CZ in service.
+    """
+    import dataclasses
+
+    detuned = dataclasses.replace(coupled, conditional_phase_offset_deg=40.0)
+    tuner = two_qubit_tuner(detuned)
+    config = RoutineConfig(
+        params={"phases": list(np.linspace(0.0, 360.0, 25)), "shots": 512}
+    )
+    routine_ = routine("conditional_phase")
+
+    schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+    fit = routine_.analyse(tuner.backend.run(schedule), "q0_q1", tuner.device, config)
+
+    assert angle_apart(fit["conditional_phase"], detuned.cz_conditional_phase()) < 2.0
+    assert fit["phase_correction"] == pytest.approx(-40.0, abs=3.0)
+
+
+def test_the_conditional_phase_survives_the_controls_own_dynamical_phase(coupled):
+    """The single-qubit phase over a flux pulse is huge, and must cancel.
+
+    Detuning the control by ~280 MHz for ~110 ns winds its phase through tens of
+    turns. That phase is common to both fringes and carries no information about
+    the coupling, so an analysis that does not cancel it reads the winding
+    instead of the gate. Lengthening the pulse changes the winding a great deal
+    and the conditional phase hardly at all, which is the discriminating test.
+    """
+    import dataclasses
+
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
+    phases = np.linspace(0.0, 360.0, 25)
+    longer: CoupledTransmons = dataclasses.replace(coupled)
+
+    measured = []
+    for duration in (coupled.cz_duration_ns, coupled.cz_duration_ns * 3):
+        fringes = longer.conditional_phase(phases, duration_ns=duration, averages=512)
+        from qpi_driver.tuners.fitting import fit_conditional_phase
+
+        fit = fit_conditional_phase(phases, fringes[:25], fringes[25:])
+        measured.append(fit["conditional_phase"])
+        assert (
+            angle_apart(
+                fit["conditional_phase"],
+                longer.cz_conditional_phase(duration_ns=duration),
+            )
+            < 3.0
+        )
+
+    # Three round trips is three times the winding, and an odd multiple of a
+    # half-exchange either way — so a reader of the winding could not land near
+    # the gate's phase twice.
+    assert angle_apart(measured[0], 180.0) < 5.0

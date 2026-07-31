@@ -21,7 +21,7 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
-
+from qpi_driver.simulation.coupled import CoupledTransmons
 from qpi_driver.simulation.transmon import GHZ, NS, TransmonSimulator, _rxy_qobj
 from qpi_driver.tuners.base import Tuner
 
@@ -29,6 +29,7 @@ __all__ = [
     "GHZ",
     "NS",
     "TransmonSimulator",
+    "CoupledTransmons",
     "_rxy_qobj",
     "FakeDevice",
     "FakeElement",
@@ -79,22 +80,32 @@ class _Submodule:
 
 
 class FakeDevice:
-    """A minimal stand-in for a QuantumDevice, holding one element per qubit."""
+    """A minimal stand-in for a QuantumDevice: elements per qubit, edges between."""
 
-    def __init__(self, elements: dict[str, FakeElement]):
+    def __init__(
+        self,
+        elements: dict[str, FakeElement],
+        edges: dict[str, FakeElement] | None = None,
+    ):
         self._elements = elements
+        self._edges = edges or {}
 
     def elements(self):
         return list(self._elements)
 
     def edges(self):
-        return []
+        return list(self._edges)
 
     def get_element(self, name: str) -> FakeElement:
         return self._elements[name]
 
+    def get_edge(self, name: str) -> FakeElement:
+        return self._edges[name]
 
-def device_for(simulator: TransmonSimulator, *qubits: str) -> FakeDevice:
+
+def device_for(
+    simulator: TransmonSimulator, *qubits: str, edges: tuple[str, ...] = ()
+) -> FakeDevice:
     """A device whose current parameters are near, but not at, the true ones.
 
     Deliberately offset: a routine that scans around the current value has to
@@ -118,7 +129,16 @@ def device_for(simulator: TransmonSimulator, *qubits: str) -> FakeDevice:
                 measure={"pulse_amp": 0.25},
             )
             for qubit in (qubits or ("q0",))
-        }
+        },
+        {
+            edge: FakeElement(
+                name=edge,
+                # Offset from the true operating point for the same reason the
+                # qubits are: the routine has to find it, not be handed it.
+                cz={"amp": 0.2, "duration": 60e-9, "phase_correction": 0.0},
+            )
+            for edge in edges
+        },
     )
 
 
@@ -235,12 +255,20 @@ class SimulatedBackend(RecordingBackend):
     """
 
     def __init__(
-        self, simulator: TransmonSimulator, *, gate_error: float = 0.001
+        self,
+        simulator: TransmonSimulator,
+        *,
+        gate_error: float = 0.001,
+        coupled: CoupledTransmons | None = None,
     ) -> None:
         self.simulator = simulator
         #: Depolarising strength applied per gate in an RB sequence. Raising it
         #: is how a test drives the measured fidelity below a drift threshold.
         self.gate_error = gate_error
+        #: The two-qubit register, for the edge routines. Separate from
+        #: ``simulator`` because entanglement needs a joint state that one
+        #: transmon cannot hold — see :mod:`qpi_driver.simulation.coupled`.
+        self.coupled = coupled or CoupledTransmons()
 
     def run(self, schedule: _Schedule) -> xr.Dataset:
         acquire = self._ACQUISITIONS.get(schedule.name)
@@ -331,6 +359,47 @@ class SimulatedBackend(RecordingBackend):
             np.array(survival), averages=schedule.repetitions
         )
 
+    def _acquire_cz_chevron(self, schedule: _Schedule) -> np.ndarray:
+        """The flux sweep, read back off the schedule's square pulses.
+
+        The routine emits one ``SquarePulse`` per grid point in row-major order,
+        so the distinct amplitudes and durations recover the axes it swept — a
+        routine that built the grid the other way round produces a transposed
+        surface and fails here.
+        """
+        pulses = self._of_kind(schedule, "SquarePulse")
+        if not pulses:
+            raise NotImplementedError(
+                "a cz_chevron schedule with no flux pulse cannot be simulated"
+            )
+        amplitudes = _ordered({float(op.kwargs["amp"]) for op in pulses})
+        durations = _ordered({float(op.kwargs["duration"]) for op in pulses})
+        return self.coupled.chevron(
+            amplitudes, durations, averages=schedule.repetitions
+        )
+
+    def _acquire_conditional_phase(self, schedule: _Schedule) -> np.ndarray:
+        """The swept phase of each second π/2, target down then up.
+
+        The routine emits the ground-target fringe first and the excited-target
+        fringe second, so the phases of the second ``Rxy`` in each pair — read in
+        emission order — are exactly the sweep, twice over.
+        """
+        phases = [
+            float(op.kwargs["phi"])
+            for op in self._of_kind(schedule, "Rxy")
+            if float(op.kwargs.get("theta", 0)) == 90
+        ]
+        half = len(phases) // 2
+        # Each point contributes two Rxy: the first at phi=0, the second swept.
+        swept = phases[1:half:2] if half else []
+        if not swept:
+            raise NotImplementedError(
+                "a conditional_phase schedule with no swept second pulse cannot "
+                "be simulated"
+            )
+        return self.coupled.conditional_phase(swept, averages=schedule.repetitions)
+
     #: Routine name to acquisition. A routine's schedule is named after it, so
     #: this is a lookup rather than a guess. Absent means unsimulated, and
     #: :meth:`run` refuses rather than inventing something.
@@ -341,7 +410,14 @@ class SimulatedBackend(RecordingBackend):
         "t2_echo": _acquire_t2_echo,
         "ramsey": _acquire_ramsey,
         "rb": _acquire_rb,
+        "cz_chevron": _acquire_cz_chevron,
+        "conditional_phase": _acquire_conditional_phase,
     }
+
+
+def _ordered(values: set[float]) -> list[float]:
+    """A swept axis recovered from a schedule, in the order it was swept."""
+    return sorted(values)
 
 
 def _rotation_of(operation: _Operation) -> tuple[float, float]:
@@ -394,14 +470,19 @@ class SimulatedTuner(Tuner):
         simulator: TransmonSimulator | None = None,
         *,
         qubits: tuple[str, ...] = ("q0",),
+        edges: tuple[str, ...] = (),
         device_config_path: Path | str | None = None,
         gate_error: float = 0.001,
+        coupled: CoupledTransmons | None = None,
         name: str = "simulated",
     ) -> None:
         super().__init__(name=name)
         self.simulator = simulator or TransmonSimulator()
-        self._backend = SimulatedBackend(self.simulator, gate_error=gate_error)
-        self._device = device_for(self.simulator, *qubits)
+        self.coupled = coupled or CoupledTransmons()
+        self._backend = SimulatedBackend(
+            self.simulator, gate_error=gate_error, coupled=self.coupled
+        )
+        self._device = device_for(self.simulator, *qubits, edges=edges)
         self._device_config_path = (
             Path(device_config_path) if device_config_path is not None else None
         )

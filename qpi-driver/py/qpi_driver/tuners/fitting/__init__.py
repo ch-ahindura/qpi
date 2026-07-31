@@ -9,6 +9,7 @@ frequency (RFC 0004 §10).
 """
 
 from .chevron import fit_chevron, fit_conditional_phase
+from .core import FitError, align, require_in_range, require_positive, signal_of
 from .cosine import (
     decaying_cosine,
     fit_drag,
@@ -16,7 +17,6 @@ from .cosine import (
     fit_rabi,
     fit_ramsey,
 )
-from .core import FitError, align, require_in_range, require_positive, signal_of
 from .exponential import (
     exponential_decay,
     fit_rb_decay,

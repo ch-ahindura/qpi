@@ -16,12 +16,12 @@ from qpi_driver.tuners.routines.benchmarks import (
     RandomizedBenchmarking,
 )
 from qpi_driver.tuners.routines.single_qubit import (
+    T1,
     AllXY,
     Drag,
     FineAmplitude,
     Rabi,
     Ramsey,
-    T1,
     T2Echo,
 )
 from qpi_driver.tuners.routines.spectroscopy import (
@@ -30,7 +30,7 @@ from qpi_driver.tuners.routines.spectroscopy import (
     ResonatorPunchout,
     ResonatorSpectroscopy,
 )
-from qpi_driver.tuners.routines.two_qubit import CZChevron, ConditionalPhase
+from qpi_driver.tuners.routines.two_qubit import ConditionalPhase, CZChevron
 
 #: Every routine class, in the order RFC 0004 §3 lists the experiments.
 ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (

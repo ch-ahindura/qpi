@@ -268,20 +268,38 @@ def test_chevron_needs_a_full_grid():
         fit_chevron(np.arange(3.0), np.arange(3.0), np.zeros(4))
 
 
-def test_conditional_phase_finds_the_crossing():
+@pytest.mark.parametrize("conditional", [180.0, 150.0, 95.0, 220.0])
+def test_conditional_phase_recovers_the_offset_between_two_fringes(conditional):
     phases = np.linspace(0.0, 360.0, 73)
-    signal = np.cos(np.deg2rad(phases - 150.0))
-    fitted = fit_conditional_phase(phases, signal)
-    assert 0.0 <= fitted["conditional_phase"] <= 360.0
-    assert fitted["phase_correction"] == pytest.approx(
-        np.pi - fitted["conditional_phase"]
-    )
+    ground = 0.5 + 0.4 * np.cos(np.deg2rad(phases))
+    excited = 0.5 + 0.4 * np.cos(np.deg2rad(phases - conditional))
+
+    fitted = fit_conditional_phase(phases, ground, excited)
+
+    assert fitted["conditional_phase"] == pytest.approx(conditional, abs=0.5)
+    assert fitted["phase_correction"] == pytest.approx(180.0 - conditional, abs=0.5)
 
 
-def test_conditional_phase_refuses_a_sweep_with_no_crossing():
-    phases = np.linspace(0.0, 30.0, 21)
-    with pytest.raises(FitError, match="no zero crossing"):
-        fit_conditional_phase(phases, np.full(21, 1.0))
+def test_conditional_phase_ignores_a_phase_common_to_both_fringes():
+    """The control's dynamical phase over the flux pulse must not reach the answer.
+
+    It is common to both fringes and can be tens of turns; only the offset
+    between them is the gate.
+    """
+    phases = np.linspace(0.0, 360.0, 73)
+    common = 117.0
+    ground = 0.5 + 0.4 * np.cos(np.deg2rad(phases - common))
+    excited = 0.5 + 0.4 * np.cos(np.deg2rad(phases - common - 150.0))
+
+    fitted = fit_conditional_phase(phases, ground, excited)
+
+    assert fitted["conditional_phase"] == pytest.approx(150.0, abs=0.5)
+
+
+def test_conditional_phase_refuses_a_flat_fringe():
+    phases = np.linspace(0.0, 360.0, 21)
+    with pytest.raises(FitError, match="flat"):
+        fit_conditional_phase(phases, np.full(21, 1.0), np.full(21, 1.0))
 
 
 # --- the shared machinery -----------------------------------------------------

@@ -147,9 +147,11 @@ class ConditionalPhase(CalibrationRoutine):
             raise RoutineError(
                 f"conditional phase expected {2 * count} acquisitions, got {signal.size}"
             )
+        # Both fringes, not their difference: the control's dynamical phase over
+        # the flux pulse cancels between them and does not cancel within either.
         ground = signal[:count]
         excited = signal[count : 2 * count]
-        return fit_conditional_phase(np.asarray(self._phases), excited - ground)
+        return fit_conditional_phase(np.asarray(self._phases), ground, excited)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         edge = device.get_edge(target)

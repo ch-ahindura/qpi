@@ -25,7 +25,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
-
 from qpi_driver.builtins.calibrate import _execute_calibration
 from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.device import read_path

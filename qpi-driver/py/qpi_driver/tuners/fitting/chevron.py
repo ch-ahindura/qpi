@@ -9,21 +9,48 @@ from .core import FitError, align, require_in_range
 log = logging.getLogger(__name__)
 
 
+#: Peak-to-peak swing an amplitude row must show before it counts as having
+#: resolved the avoided crossing. Below this the sweep stepped over it — see
+#: :func:`fit_chevron`.
+MIN_CHEVRON_CONTRAST = 0.15
+
+
 def fit_chevron(
     amplitudes: np.ndarray, durations: np.ndarray, signal: np.ndarray
 ) -> dict[str, float]:
     """Locate the CZ operating point on a flux-amplitude × duration chevron.
 
-    A CZ is calibrated at the amplitude and duration that complete one full
-    ``|11⟩ ↔ |02⟩`` exchange, which is the point of maximum population transfer
-    on the chevron. The fit is a centre-of-mass around the strongest pixel
-    rather than a curve fit: the chevron's analytic form depends on the coupler
-    model, and its maximum does not.
+    *signal* is the control qubit's population after preparing ``|11⟩`` and
+    playing the flux pulse, flattened row-major over ``(amplitude, duration)``.
 
-    *signal* is the measured population, flattened in row-major order over
-    ``(amplitude, duration)``.
+    **The operating point is not the brightest pixel.** On resonance population
+    leaves ``|11⟩`` for ``|02⟩`` and comes back, and the CZ is the *full return*
+    — where the control is excited again, having picked up its phase. But the
+    control also reads ≈1 everywhere the flux pulse did nothing at all, so the
+    maximum of this surface is as likely to sit on an off-resonant row as on the
+    gate. What distinguishes resonance is not level but *motion*: only near the
+    crossing does the population swing at all.
 
-    Returns ``{'cz_amplitude', 'cz_duration', 'transfer'}``.
+    So the amplitude is found from the swing, and only then the duration from
+    the returning edge of that row:
+
+    1. the resonant amplitude is the row of greatest peak-to-peak contrast,
+       refined across its neighbours;
+    2. along it, the CZ duration is the first return to the top after the first
+       trough — one full ``|11⟩ → |02⟩ → |11⟩`` round trip.
+
+    Neither step assumes the coupler's analytic form, which is what the original
+    centre-of-mass approach was reaching for and is worth keeping.
+
+    Returns ``{'cz_amplitude', 'cz_duration', 'contrast', 'transfer'}``.
+
+    Raises:
+        FitError: if no row swings by :data:`MIN_CHEVRON_CONTRAST`. An avoided
+            crossing is only a few MHz wide, and a flux sweep coarse enough to
+            step over it produces a surface that is flat to within its noise —
+            from which a peak-finder would still return a confident, invented
+            answer. Refusing is the same guard qubit spectroscopy applies to a
+            line narrower than its own step size.
     """
     amps = np.asarray(amplitudes, dtype=float).reshape(-1)
     durs = np.asarray(durations, dtype=float).reshape(-1)
@@ -40,8 +67,20 @@ def fit_chevron(
     if not np.any(np.isfinite(grid)):
         raise FitError("chevron acquisition contains no finite data")
 
-    peak = np.unravel_index(int(np.nanargmax(grid)), grid.shape)
-    amplitude, duration = _refine_peak(grid, amps, durs, peak)
+    contrasts = np.nanmax(grid, axis=1) - np.nanmin(grid, axis=1)
+    row = int(np.nanargmax(contrasts))
+    contrast = float(contrasts[row])
+    if contrast < MIN_CHEVRON_CONTRAST:
+        raise FitError(
+            f"no flux amplitude drove a |11>-|02> exchange: the largest population "
+            f"swing over the sweep is {contrast:.3f}, below {MIN_CHEVRON_CONTRAST}. "
+            "The avoided crossing is only a few MHz wide, so a coarse amplitude "
+            "sweep steps over it entirely — narrow the range around the "
+            "flux-spectroscopy estimate, or add points."
+        )
+
+    amplitude = _refine_amplitude(contrasts, amps, row)
+    duration = _return_duration(grid[row, :], durs)
 
     require_in_range(
         amplitude, float(np.min(amps)), float(np.max(amps)), what="CZ amplitude"
@@ -52,61 +91,169 @@ def fit_chevron(
     return {
         "cz_amplitude": amplitude,
         "cz_duration": duration,
-        "transfer": float(grid[peak]),
+        "contrast": contrast,
+        "transfer": float(np.nanmax(grid[row, :]) - np.nanmin(grid[row, :])),
     }
 
 
-def _refine_peak(
-    grid: np.ndarray, amps: np.ndarray, durs: np.ndarray, peak: tuple[int, ...]
-) -> tuple[float, float]:
-    """Sub-grid peak position by a centre of mass over the peak's neighbours.
+def _refine_amplitude(contrasts: np.ndarray, amps: np.ndarray, row: int) -> float:
+    """Sub-grid resonance position, as a centre of mass of the contrast profile.
 
-    The grid step is usually coarser than the precision a CZ needs, so taking
-    the peak pixel alone quantises the answer to the sweep resolution.
+    Contrast peaks at the crossing and falls away either side, so its centroid
+    over the best row and its neighbours locates the resonance between grid
+    points — which matters, because the grid step is normally far wider than the
+    crossing.
     """
-    row, col = int(peak[0]), int(peak[1])
-    floor = float(np.nanmin(grid))
-
-    def centroid(values: np.ndarray, coords: np.ndarray, index: int) -> float:
-        low, high = max(index - 1, 0), min(index + 2, len(coords))
-        window = values[low:high] - floor
-        axis = coords[low:high]
-        total = float(np.sum(window))
-        if total <= 0:
-            return float(coords[index])
-        return float(np.sum(window * axis) / total)
-
-    return centroid(grid[:, col], amps, row), centroid(grid[row, :], durs, col)
+    low, high = max(row - 1, 0), min(row + 2, len(amps))
+    floor = float(np.nanmin(contrasts))
+    weights = contrasts[low:high] - floor
+    total = float(np.sum(weights))
+    if total <= 0:
+        return float(amps[row])
+    return float(np.sum(weights * amps[low:high]) / total)
 
 
-def fit_conditional_phase(phases: np.ndarray, signal: np.ndarray) -> dict[str, float]:
-    """Find the phase correction that brings the conditional phase to π.
+def _return_duration(row: np.ndarray, durs: np.ndarray) -> float:
+    """The first full ``|11⟩ → |02⟩ → |11⟩`` round trip along a resonant row.
 
-    The control qubit's Ramsey fringe is measured against a swept phase with the
-    target in ``|0⟩`` and again in ``|1⟩``; the offset between the two fringes is
-    the conditional phase. Here *signal* is the already-differenced fringe, whose
-    zero crossing is the correction to apply.
-
-    Returns ``{'conditional_phase', 'phase_correction'}``.
+    Walk out to the first trough — the point of maximum transfer, half a round
+    trip — then on to the first sample that stops rising. A parabola through
+    that sample and its neighbours puts the turning point between grid steps.
     """
-    x, y = align(phases, signal, what="conditional phase")
+    if not np.any(np.isfinite(row)):
+        raise FitError("the resonant chevron row contains no finite data")
 
-    centred = y - float(np.mean(y))
-    crossings = np.nonzero(np.diff(np.signbit(centred)))[0]
-    if crossings.size == 0:
+    # The *first* trough, not the deepest. On resonance the exchange rings for
+    # as long as the sweep runs, so the deepest point is typically several round
+    # trips in — and calibrating there would pick a CZ some multiple of the
+    # right duration, which is a working gate only if nothing decohered.
+    noise = 0.02 * (float(np.nanmax(row)) - float(np.nanmin(row)))
+    trough = _first_turn(row, noise, descending=True)
+    if trough is None or trough >= len(row) - 1:
         raise FitError(
-            "conditional-phase sweep has no zero crossing — widen the phase range"
+            "the chevron's population never leaves |11> within the duration "
+            "sweep — no exchange completed, so there is no CZ to calibrate"
         )
 
-    index = int(crossings[0])
-    y0, y1 = float(centred[index]), float(centred[index + 1])
-    x0, x1 = float(x[index]), float(x[index + 1])
-    crossing = x0 if y1 == y0 else x0 - y0 * (x1 - x0) / (y1 - y0)
+    peak = _first_turn(row, noise, descending=False, start=trough)
+    if peak is None or peak == trough:
+        raise FitError(
+            "the chevron's population never recovers after its trough — the "
+            "duration sweep ends before the exchange completes"
+        )
+    return _parabolic_vertex(row, durs, peak)
 
-    crossing = require_in_range(
-        crossing, float(np.min(x)), float(np.max(x)), what="conditional phase"
-    )
+
+def _first_turn(
+    row: np.ndarray, noise: float, *, descending: bool, start: int = 0
+) -> int | None:
+    """Index of the first turning point at or after *start*.
+
+    *noise* is how far the signal must move against the current direction before
+    the turn counts, so a flat stretch with shot noise on it does not read as an
+    extremum.
+    """
+    best = start
+    for index in range(start + 1, len(row)):
+        value, incumbent = float(row[index]), float(row[best])
+        improving = value < incumbent if descending else value > incumbent
+        if improving:
+            best = index
+        elif abs(value - incumbent) > noise:
+            return best
+    return best if best != start or len(row) > start + 1 else None
+
+
+def _parabolic_vertex(row: np.ndarray, durs: np.ndarray, index: int) -> float:
+    """Turning point of the parabola through *index* and its two neighbours."""
+    if index <= 0 or index >= len(row) - 1:
+        return float(durs[index])
+    before, at, after = float(row[index - 1]), float(row[index]), float(row[index + 1])
+    denominator = before - 2.0 * at + after
+    if denominator == 0:
+        return float(durs[index])
+    shift = 0.5 * (before - after) / denominator
+    shift = float(np.clip(shift, -1.0, 1.0))
+    step = float(durs[index + 1] - durs[index])
+    return float(durs[index] + shift * step)
+
+
+def fit_conditional_phase(
+    phases: np.ndarray, ground: np.ndarray, excited: np.ndarray
+) -> dict[str, float]:
+    """Find the phase correction that brings the conditional phase to 180°.
+
+    The control's Ramsey fringe is swept against the phase of its second π/2,
+    once with the target in ``|0⟩`` and once in ``|1⟩``. The conditional phase is
+    the **offset between the two fringes**, and this fits each one for its own
+    phase and subtracts.
+
+    **Why not the difference of the two.** Differencing them and taking a zero
+    crossing looks equivalent and is not. Writing the fringes as
+    ``A + B·cos(φ − φ₀)`` and ``A + B·cos(φ − φ₀ − φ_cz)``, their difference is
+    ``−2B·sin(φ_cz/2)·sin(φ − φ₀ − φ_cz/2)``, whose crossings sit at
+    ``φ₀ + φ_cz/2`` — half the wanted angle, and displaced by ``φ₀``. That ``φ₀``
+    is the control's own dynamical phase from being detuned throughout the flux
+    pulse: hundreds of radians, and nothing to do with the coupling. It is common
+    to both fringes and cancels in their offset, which is the entire reason the
+    experiment measures two of them.
+
+    Everything is in **degrees**, because that is what the routine sweeps and
+    what ``Rxy(phi=...)`` takes on both schedulers. A CZ is correct at 180°, so
+    the correction is ``180 − conditional_phase``, wrapped to ``(−180, 180]``.
+
+    Returns ``{'conditional_phase', 'phase_correction', 'contrast'}``.
+    """
+    x, low = align(phases, ground, what="conditional phase (target |0>)")
+    _x, high = align(phases, excited, what="conditional phase (target |1>)")
+
+    low_phase, low_amplitude, low_residual = _fringe_phase(x, low)
+    high_phase, high_amplitude, high_residual = _fringe_phase(x, high)
+
+    contrast = min(low_amplitude, high_amplitude)
+    # Against the scatter about the fit rather than against zero: a fringe that
+    # did not oscillate still fits some vanishing amplitude out of its own noise,
+    # and an angle read off that is arbitrary.
+    if contrast <= max(low_residual, high_residual):
+        raise FitError(
+            f"a conditional-phase fringe is flat — amplitude {contrast:.2e} does "
+            f"not exceed the scatter about it. The control's Ramsey did not "
+            "oscillate, so no phase can be read from it."
+        )
+
+    conditional = (high_phase - low_phase) % 360.0
+    correction = (180.0 - conditional + 180.0) % 360.0 - 180.0
     return {
-        "conditional_phase": crossing,
-        "phase_correction": float(np.pi - crossing),
+        "conditional_phase": float(conditional),
+        "phase_correction": float(correction),
+        "contrast": float(contrast),
     }
+
+
+def _fringe_phase(phases: np.ndarray, signal: np.ndarray) -> tuple[float, float, float]:
+    """Phase, amplitude and residual scatter of ``c + B·cos(φ − ψ)``, in degrees.
+
+    A linear least squares over ``[cos φ, sin φ, 1]`` rather than a curve fit:
+    the fringe's frequency is known exactly — the routine swept the phase itself,
+    so it is one cycle by construction — which makes the model linear in its
+    remaining parameters and leaves nothing for an optimiser to get stuck in.
+
+    Least squares rather than a bare projection because the sweep is not the
+    clean orthogonal basis a projection assumes. ``linear_setpoints(0, 360, n)``
+    includes both endpoints, so 0° and 360° are the same phase measured twice,
+    and that one duplicated sample is enough to bias a projection by most of a
+    degree. Solving for the coefficients is exact whatever the sampling.
+    """
+    radians = np.deg2rad(np.asarray(phases, dtype=float))
+    values = np.asarray(signal, dtype=float)
+    design = np.column_stack([np.cos(radians), np.sin(radians), np.ones_like(radians)])
+    coefficients = np.linalg.lstsq(design, values, rcond=None)[0]
+    cosine, sine, _offset = coefficients
+    phase = float(np.rad2deg(np.arctan2(sine, cosine)) % 360.0)
+
+    # The floor an amplitude must clear to mean anything: the scatter about the
+    # fit, or — for a fringe so flat that the scatter is float dust too — a small
+    # fraction of the signal's own scale.
+    scatter = float(np.std(values - design @ coefficients))
+    dust = 1e-9 * float(np.max(np.abs(values)) or 1.0)
+    return phase, float(np.hypot(cosine, sine)), max(scatter, dust)
