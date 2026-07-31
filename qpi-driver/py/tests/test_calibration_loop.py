@@ -529,3 +529,102 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
     assert excited_fraction > 0.9
     assert mean_i > 0, f"level 1 should sit on the excited blob, got I={mean_i:.2f}"
     assert settled_i > 0, f"level 0's settled trace should agree, got I={settled_i:.2f}"
+
+
+# --- the flux-tunable coupler ---------------------------------------------------
+#
+# The tests above drive `q0_q1`, a stock `CompositeSquareEdge` whose flux pulse
+# goes on a *qubit's* port. `q1_q2` is a `FluxTunableCoupler`: the pulse goes on
+# the coupler's own port, `q1_q2:fl`, and the CZ is lowered into a fresh
+# subschedule. That is a different path through both the compiler and the
+# simulator, and it is the one the lab's device config actually uses.
+
+
+@pytest.fixture(scope="module")
+def coupler_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
+    simulator = TransmonSimulator()
+    pair = CoupledTransmons()
+    directory = tmp_path_factory.mktemp("coupler")
+    device = directory / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    config = yaml.safe_load(device.read_text())
+    for qubit in ("q0", "q1", "q2"):
+        config[qubit]["clock_freqs"]["f01"] = float(simulator.f01 * GHZ)
+        config[qubit]["rxy"]["amp180"] = 0.2
+    config["q1_q2"]["cz"] = {
+        "square_amp": float(pair.resonant_amplitude),
+        "square_duration": round(pair.cz_duration_ns) * 1e-9,
+    }
+    # The coupler's DC parking point, which the SPI rack supplies out of band.
+    config["q1_q2"]["bias"] = {"parking_current": 0.0009, "source": "spi"}
+    device.write_text(yaml.safe_dump(config))
+    return device, simulator
+
+
+def test_the_coupler_carries_its_parking_current(coupler_device):
+    """The bias is calibrated state and has to survive the device file.
+
+    It is not scheduled — a seconds-scale DC current is not a pulse — but it is
+    as much a part of the CZ's calibration as the pulse amplitude, so it belongs
+    in the config the tuner writes and the executor reads.
+    """
+    device, simulator = coupler_device
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    edge = executor._device.get_edge("q1_q2")
+
+    assert edge.bias.parking_current() == pytest.approx(0.0009)
+    assert edge.bias.source() == "spi"
+
+
+def test_the_parking_current_is_bounded(coupler_device):
+    """Outside the validated range is refused rather than driven.
+
+    An S4g will happily source more than the couplers are characterised for,
+    and a current that far out is a fat-fingered config rather than an
+    operating point.
+    """
+    device, simulator = coupler_device
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    edge = executor._device.get_edge("q1_q2")
+
+    with pytest.raises(ValueError):
+        edge.bias.parking_current(5e-3)
+    # And a normal operating value is accepted.
+    edge.bias.parking_current(1.1e-3)
+
+
+def test_a_cz_over_the_coupler_edge_completes_its_exchange(coupler_device):
+    """|11> survives a CZ played through the coupler's own port.
+
+    The partner cannot be read off the gate here — the lowered subschedule has
+    lost it — so the simulator takes the pair from the port name, which is what
+    `q1_q2:fl` is for. Getting that wrong applies the coupling between the wrong
+    qubits, which is a working-looking gate on the wrong pair.
+    """
+    device, simulator = coupler_device
+    qasm = (
+        'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[3] q;\nbit[2] c;\n'
+        "x q[1];\nx q[2];\ncz q[1], q[2];\n"
+        "c[0] = measure q[1];\nc[1] = measure q[2];\n"
+    )
+    counts = run(device, simulator, qasm, shots=300)
+    assert counts.get("11", 0) / sum(counts.values()) > 0.9, (
+        f"|11> should come back after a full exchange round trip, got {counts}"
+    )

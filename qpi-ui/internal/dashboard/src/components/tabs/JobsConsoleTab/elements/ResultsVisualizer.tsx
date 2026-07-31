@@ -97,26 +97,47 @@ export function ResultsVisualizer({ viewedJob, activeTab }: Props) {
       );
     }
 
-    const mapVal = (v: number) => {
-      const min = -0.5,
-        max = 1.5;
-      return ((v - min) / (max - min)) * 200;
-    };
-
     // Plot first qubit points (limited to 200)
-    const points: React.ReactNode[] = [];
+    const shown: number[][] = [];
     memory.forEach((shot: number[][], idx: number) => {
       if (idx > 200) return;
       const qPoint = shot[0]; // first qubit [I, Q]
-      if (qPoint) {
-        const cx = mapVal(qPoint[0]);
-        const cy = 200 - mapVal(qPoint[1]);
-        const color = qPoint[0] > 0.5 ? "#6366f1" : "#22c55e"; // color by cluster threshold
-        points.push(
-          <circle key={idx} cx={cx} cy={cy} r="3" fill={color} opacity="0.7" />,
-        );
-      }
+      if (qPoint) shown.push(qPoint);
     });
+
+    // Scale to the data rather than to a fixed window. IQ values come back in
+    // whatever units the readout chain produces — they are not normalised to
+    // 0..1 by anything — so a hardcoded range puts the clusters off-screen for
+    // most devices and shows an empty plot instead of the answer.
+    //
+    // One square window over both axes, so the IQ plane is not stretched: the
+    // distance between the two blobs is the readout fidelity, and squashing one
+    // axis misrepresents it.
+    const values = shown.flat();
+    const low = values.length ? Math.min(...values) : 0;
+    const high = values.length ? Math.max(...values) : 1;
+    const pad = (high - low || 1) * 0.15;
+    const min = low - pad;
+    const max = high + pad;
+    const mapVal = (v: number) => ((v - min) / (max - min)) * 200;
+
+    // Colour by which side of the two clusters a shot fell, taken from the
+    // spread of this acquisition rather than from an assumed threshold.
+    const iValues = shown.map((point) => point[0]);
+    const midpoint = iValues.length
+      ? (Math.min(...iValues) + Math.max(...iValues)) / 2
+      : 0;
+
+    const points: React.ReactNode[] = shown.map((qPoint, idx) => (
+      <circle
+        key={idx}
+        cx={mapVal(qPoint[0])}
+        cy={200 - mapVal(qPoint[1])}
+        r="3"
+        fill={qPoint[0] > midpoint ? "#6366f1" : "#22c55e"}
+        opacity="0.7"
+      />
+    ));
 
     return (
       <div className="flex flex-col items-center justify-center">

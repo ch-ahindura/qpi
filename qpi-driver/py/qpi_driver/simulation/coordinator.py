@@ -508,13 +508,31 @@ class SimulatedCoordinator:
         """Evolve the coupled pair for *duration* at flux *amplitude*."""
         if duration <= 0:
             return
-        control = _qubit_of(port)
-        if control is None:
+        head = _qubit_of(port)
+        if head is None:
             raise SimulationError(
                 f"a flux pulse on {port!r} names no qubit, so there is nothing to "
                 "detune"
             )
 
+        # A coupler's port names the *edge* — `q1_q2:fl` — and that is the most
+        # reliable statement of which pair the pulse acts on. It has to be,
+        # because a `FluxTunableCoupler` lowers its CZ into a fresh subschedule
+        # and the gate-level `device_elements` does not survive into it. A
+        # qubit's own flux port (`q1:fl`, the CompositeSquareEdge case) names
+        # only the qubit being detuned, and there the partner comes from the
+        # gate.
+        pair = _edge_qubits(head)
+        if pair is not None:
+            control, target = pair
+            register = registers.join(control, target)
+            self._flux(register, control, target, amplitude, duration)
+            for other in registers.distinct():
+                if other is not register:
+                    self._idle(other, duration)
+            return
+
+        control = head
         partners = [name for name in gate_qubits if name != control]
         if len(partners) != 1:
             others = [name for name in registers.names() if name != control]
@@ -879,6 +897,18 @@ def _gate_qubits(operation: Any) -> tuple[str, ...]:
     # quantify-scheduler called the same field.
     qubits = gate.get("device_elements") or gate.get("qubits") or ()
     return tuple(str(qubit) for qubit in qubits)
+
+
+def _edge_qubits(name: str) -> tuple[str, str] | None:
+    """The pair an edge name joins, or ``None`` if *name* is not one.
+
+    ``q1_q2`` is the two qubits a coupler sits between — the same
+    ``<parent>_<child>`` form the device config and the routines use.
+    """
+    parts = name.split("_")
+    if len(parts) != 2 or not all(parts):
+        return None
+    return parts[0], parts[1]
 
 
 def _qubit_of(identifier: str) -> str | None:

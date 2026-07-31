@@ -55,6 +55,7 @@ try:
         IdlePulse,
         SetClockFrequency,
         ShiftClockPhase,
+        SoftSquarePulse,
         SquarePulse,
     )
     from quantify_scheduler.qblox import ClusterComponent
@@ -93,6 +94,8 @@ except ImportError as exp:
     class SetClockFrequency(BasicCompatClass): ...
 
     class SquarePulse(BasicCompatClass): ...
+
+    class SoftSquarePulse(BasicCompatClass): ...
 
     class ClockResource(BasicCompatClass): ...
 
