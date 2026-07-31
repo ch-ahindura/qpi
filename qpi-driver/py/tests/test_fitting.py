@@ -169,6 +169,28 @@ def test_rb_recovers_a_known_fidelity():
     assert fitted["error_per_gate"] == pytest.approx(1 - expected, abs=0.002)
 
 
+def test_rb_recovers_the_same_fidelity_from_a_rescaled_signal():
+    """The fit must not care about the readout's scale and offset.
+
+    This is what the `rb` routine hands it: the acquisition rescaled to span
+    [0, 1], from a decay that has not reached its asymptote by the deepest
+    sequence. Bounding the model's amplitude used to make that case come out at
+    0.988 whatever the truth was, so every chip better than about 3% error per
+    Clifford measured the same — permanently below the default drift threshold.
+    """
+    decay = 0.999
+    depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
+    survival = 0.5 * decay**depths + 0.5
+    rescaled = (survival - survival.min()) / (survival.max() - survival.min())
+
+    assert fit_rb_decay(depths, rescaled)["decay_rate"] == pytest.approx(
+        fit_rb_decay(depths, survival)["decay_rate"], abs=1e-4
+    )
+    assert fit_rb_decay(depths, rescaled)["fidelity"] == pytest.approx(
+        1.0 - (1.0 - decay) / 2, abs=1e-4
+    )
+
+
 def test_rb_uses_the_right_dimension_for_two_qubits():
     """d = 2^n, so a two-qubit decay maps to a worse fidelity than a one-qubit one."""
     decay = 0.99

@@ -12,7 +12,10 @@ That makes them the first tests where a routine can be wrong in a way the other
 tiers cannot see: a schedule that does not produce the physics its fit assumes
 still compiles, and still fits its own synthetic data.
 
-Needs the `sim` dependency group, and skips without it:
+Needs the `sim` dependency group and nothing else — no scheduler extra. The
+routines, the fits and the DAG are numpy and scipy; the schedulers are needed to
+*run* a schedule, and here the simulator supplies the acquisition instead. That
+is why `make test-py-sim` syncs `--group sim` alone:
 
     make test-py-sim
 """
@@ -27,8 +30,9 @@ from qpi_driver.tuners.routines import all_routines
 pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
 qutip = pytest.importorskip("qutip", reason="needs the [sim] dependency group")
 
-from tests.simulation import (  # noqa: E402
+from tests.fixtures.simulation import (  # noqa: E402
     GHZ,
+    StubBackend,
     TransmonSimulator,
     _rxy_qobj,
     device_for,
@@ -51,45 +55,6 @@ def simulator() -> TransmonSimulator:
 
 def routine(name: str):
     return next(r for r in all_routines() if r.name == name)
-
-
-class StubBackend:
-    """Just enough backend for a routine to build a schedule.
-
-    Tier 3 supplies the acquisition itself, so the schedule is built — which is
-    what sets the routine's setpoints — and then discarded.
-    """
-
-    name = "simulated"
-    drag_parameter = "motzoi"
-
-    class _Op:
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-    Schedule = Reset = Measure = Rxy = X = Y = Rz = CZ = _Op
-    IdlePulse = SquarePulse = SetClockFrequency = _Op
-
-    class BinMode:
-        AVERAGE = "average"
-        APPEND = "append"
-
-    class _Schedule:
-        def __init__(self):
-            self.operations = []
-
-        def add(self, operation, **kwargs):
-            self.operations.append(operation)
-
-    def new_schedule(self, name: str, repetitions: int = 1):
-        return self._Schedule()
-
-    def run(self, schedule):  # pragma: no cover - tier 3 supplies the data
-        raise NotImplementedError
-
-    def idle(self, schedule, duration):
-        schedule.add(("idle", duration))
 
 
 # --- the simulator itself ----------------------------------------------------

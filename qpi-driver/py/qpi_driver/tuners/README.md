@@ -96,8 +96,15 @@ usually does:
 
 With `-o drift_check_interval=1800` the driver runs the benchmarks every half
 hour. If a fidelity falls below its threshold — the two-qubit one for an edge,
-the one-qubit one for a qubit — it queues a partial recalibration of the
-affected qubits and their dependent routines, rather than a full run.
+the one-qubit one for a qubit — it queues a partial recalibration rather than a
+full run.
+
+A partial run is narrower in two ways. It targets only the affected qubits and
+the edges touching them, and it runs only `qubit_spectroscopy` and the routines
+downstream of it. The readout chain is skipped: finding the resonator is a
+bring-up step rather than a drift one, and it is most of what makes a full
+calibration long. So a drift the qubit routines cannot fix needs a full
+calibration, and that is your call, not the driver's.
 
 ## What happens to your device file
 
@@ -136,6 +143,13 @@ a physics simulator (`make test-py-sim`, which builds the transmon from a real
 Hamiltonian with scqubits and integrates the master equation with qutip), and —
 for randomized benchmarking — against sequences composed from this package's own
 Clifford decomposition and evolved as unitaries.
+
+`make test-py-sim` also runs a whole calibration against that simulator: a full
+run, a partial one, a drift check and the recalibration it queues, and the
+write-back. Two faults came out of it — a benchmark fit that reported the same
+fidelity for every chip better than about 3% error per Clifford, and a partial
+recalibration that quietly ran the full graph — neither of which any test of a
+single routine could see.
 
 Two gaps remain, and they are the ones that matter:
 

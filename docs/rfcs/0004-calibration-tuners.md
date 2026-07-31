@@ -283,8 +283,18 @@ class Tuner(ABC):
 ```
 
 The three entry points are the same DAG walk over different subsets — the whole
-enabled graph, the routines downstream of some qubits, the benchmarks alone — so
-they are implemented once on the base class rather than per tuner.
+enabled graph, a partial run, the benchmarks alone — so they are implemented once
+on the base class rather than per tuner.
+
+`recalibrate` narrows twice, and both narrowings are what make it worth having
+over a full run. The **targets** narrow to the given qubits plus any edge
+touching one of them. The **routines** narrow to `RECALIBRATION_ROOTS`
+(`qubit_spectroscopy`) and everything downstream of it: downstream because
+re-finding a frequency invalidates the gates tuned against it, and rooted there
+because the readout chain is a bring-up step rather than a drift one and is most
+of the cost of a full calibration. A drift the qubit routines cannot fix
+therefore needs a full run, which is an operator's decision rather than the
+drift check's.
 
 `check_fidelity` returns a `CalibrationReport` rather than a bare
 `dict[str, float]` so that every mode emits the same payload shape;
@@ -617,24 +627,41 @@ the Ramsey fringe to 0.004%, f01 to 3 kHz) with margin, and no looser. Swapping
 the exponential decay for a Gaussian passes tier 1 and fails tier 3, which is
 the whole argument for having it.
 
+**The whole calibration, not only its routines.** The same simulator behind a
+`SchedulerBackend` gives the routines a `run` to call, and behind the real
+`Tuner` gives a calibration everything it needs bar a scheduler. So
+`_execute_calibration` — the calibrate worker's own entry point — can be handed
+a job dict and driven through the DAG walk, every fit, the write-back and the
+report. That covers the joins rather than the pieces: that the follow-up job a
+drift check emits is a job the worker accepts, and that a fitted frequency
+reaches the file the `process` driver reads. It is what found the RB
+normalisation fault described in §11.
+
 **What it does not cover.** The simulator supplies the acquisition; it does not
-interpret the compiled schedule. So this tier validates that each *fit model*
-describes real physics — not that each *schedule* produces it. Closing that
-second gap needs a simulator driven by the compiled programme, which is a larger
-piece of work and is not done. Hardware remains the only answer for it (§9).
+interpret the compiled schedule. It reads a schedule for the sweep encoded in it
+— the frequencies of its `SetClockFrequency`s, the durations of its idles — and
+then produces that experiment; only RB is played gate by gate. So this tier
+validates that each *fit model* describes real physics, and that each routine
+swept the axis it meant to — not that each *schedule* produces the physics its
+fit assumes. Closing that gap needs a simulator driven by the compiled
+programme, which is a larger piece of work and is not done. Hardware remains the
+only answer for it (§9).
 
 ### Test files
 
 `make test-py` (Makefile:123) runs one target per extra — `base`, `cli`, `aer`,
-`quantify`, `qblox` — each in its own environment, so *which* environment a test
-can run in is a property of the test, not a detail. Tier 1 imports nothing
-vendor-specific and belongs in the base environment; tiers 2 and 3 need a
-scheduler and belong with the extra that ships it. The last column below is
-therefore part of the design, not bookkeeping:
+`quantify`, `qblox`, `sim` — each in its own environment, so *which* environment
+a test can run in is a property of the test, not a detail. Tier 1 imports
+nothing vendor-specific and belongs in the base environment. Tier 2 exists to
+compile a schedule, so it belongs with the extra that ships the compiler. Tier 3
+needs **no scheduler at all**: the routines, the fits and the DAG are numpy and
+scipy, and a scheduler is only needed to *run* a schedule — which is exactly
+what the simulator does instead. `test-py-sim` therefore syncs `--group sim`
+alone. The last column below is part of the design, not bookkeeping:
 
 | Test file | Tier | Runs under | Tests |
 |-----------|------|------------|-------|
-| `tests/test_calibration_dag.py` | 1 | `test-py-base` | DAG topological sort, cycle detection, partial DAG |
+| `tests/test_calibration_dag.py` | 1 | `test-py-base` | DAG topological sort, cycle detection, partial DAG, `recalibrate`'s narrowing |
 | `tests/test_calibration_config.py` | 1 | `test-py-base` | Config parsing, defaults, validation |
 | `tests/test_fitting.py` | 1 | `test-py-base` | All fitting functions against synthetic data |
 | `tests/test_persistence.py` | 1 | `test-py-base` | YAML write-back round-trip |
@@ -642,7 +669,8 @@ therefore part of the design, not bookkeeping:
 | `tests/test_calibrate_driver.py` | 1 | `test-py-base` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
 | `tests/test_tuner_routines.py` | 2 | `test-py-quantify` + `test-py-qblox` | Schedule compilation for each routine |
 | `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries |
-| `tests/simulation.py` | 3 | — | The transmon simulator itself |
+| `tests/test_calibration_e2e.py` | 3 | `test-py-sim` | A whole calibration through `_execute_calibration`: full, partial, drift and the job it queues, write-back |
+| `tests/fixtures/simulation.py` | 3 | — | The transmon simulator, and the backends and tuner built on it |
 
 Keeping the driver's own tests in tier 1 is what makes `CalibrateDriver`
 testable without a lab: the tuner is resolved by name, class *or instance*
@@ -760,6 +788,22 @@ the tuners package, the sixteen routines, the fitting and the Clifford group; th
 verified write-back; the calibrate driver with its drift check; the dispatch
 queue, endpoint and result handler; the catalog entries; the dashboard panel; and
 the docs.
+
+Two faults were found by testing a whole calibration end to end rather than
+routine by routine, and both are fixed:
+
+- **The RB fit could not measure a good chip.** `fit_rb_decay` bounded the
+  model's amplitude to ±2, which suits a raw survival probability but not the
+  rescaled signal the `rb` routine hands it. A decay that has not reached its
+  asymptote by the deepest sequence has an amplitude far larger than the range
+  observed, so the bound was met by pulling the decay rate down instead — pinning
+  the reported fidelity near 0.98 for any chip better than about 3% error per
+  Clifford. Since the default drift threshold is 0.999, a healthy chip would have
+  recalibrated on every drift check, forever. Only `r` is bounded now.
+- **`recalibrate` did not narrow its routines.** `CalibrationDAG.partial_order`
+  was written and tested but never wired in, so a partial recalibration ran the
+  whole enabled graph over fewer targets — including the readout bring-up, which
+  is most of the cost a partial run exists to avoid.
 
 Not implemented, deliberately:
 

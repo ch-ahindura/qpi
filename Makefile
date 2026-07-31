@@ -172,11 +172,14 @@ test-py-qblox:
 # Tier 3 of the calibration testing strategy (RFC 0004 §7): the routines against
 # acquisition data generated from a real transmon Hamiltonian (scqubits) and the
 # Lindblad master equation (qutip), rather than from the analytic form each fit
-# already assumes. Needs no scheduler — it supplies the acquisition itself.
+# already assumes — and then the whole calibration end to end over that same
+# simulator. Needs no scheduler: it supplies the acquisition itself.
 test-py-sim:
 	@echo "Running Python calibration tests against the physics simulator..."
 	$(UV) sync --project qpi-driver/py --group sim --dev
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_physics_simulation.py -v
+	$(UV) run --project qpi-driver/py pytest -v \
+		qpi-driver/py/tests/test_physics_simulation.py \
+		qpi-driver/py/tests/test_calibration_e2e.py
 
 test-js-client:
 	@echo "Running JS client tests..."

@@ -39,7 +39,10 @@ qpi-driver start --operation calibrate --device quantify_tuner \
   its own schedule and queues a partial recalibration of the qubits whose
   fidelity has fallen below `fidelity_threshold` — or `fidelity_2q_threshold`,
   for an edge, since a CZ an order of magnitude worse than a single-qubit gate is
-  normal rather than drift.
+  normal rather than drift. A partial run narrows to those qubits and the edges
+  touching them, and to the routines from qubit spectroscopy down — finding the
+  resonator again is a bring-up step, not a drift one, and it is most of what
+  makes a full calibration long.
 - `POST /api/op/calibrate/dispatch` (admin-only) queues a calibration, and the
   new `calibration_requests` collection is the queue the driver's dispatcher
   polls. Queueing rather than sending is what makes a request survive a restart,
@@ -77,6 +80,14 @@ real unitaries: sequences composed from this package's own Clifford
 decomposition, closed with the computed recovery gate, and depolarised by a
 known amount, with a control test proving the decay disappears when the recovery
 gate is removed.
+
+The same simulator runs a whole calibration end to end through the calibrate
+worker's own entry point: a full run, a partial one, a drift check and the
+recalibration it queues, and the write-back to the device file. That covers the
+joins between the pieces rather than the pieces, and it is what caught a
+benchmark fit that reported the same fidelity for every chip better than about 3%
+error per Clifford — which, being below the default drift threshold, would have
+had a healthy chip recalibrating on every check.
 
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —

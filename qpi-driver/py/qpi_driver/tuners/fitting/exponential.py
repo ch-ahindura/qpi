@@ -71,6 +71,17 @@ def fit_rb_decay(
     average gate fidelity ``F = 1 - (1-r)(d-1)/d`` with ``d = 2^n``, per Magesan
     et al., PRA 85, 042311 (2012) (arXiv:1109.6887).
 
+    Only ``r`` is bounded. It is the one parameter with a physical range, and
+    the one the fidelity comes from; ``A`` and ``B`` are the readout's scale and
+    offset, in whatever units the acquisition arrived in. Bounding those assumes
+    a normalisation nothing guarantees, and gets the answer wrong rather than
+    refusing it: a decay that has not reached its asymptote by the deepest
+    sequence has an ``A`` far larger than the range actually observed, so a
+    bounded ``A`` is met by pulling ``r`` down instead. That pins the reported
+    fidelity near 0.98 for every chip better than about 3% error per Clifford —
+    which is every chip worth benchmarking, and is below the default drift
+    threshold, so the drift check would recalibrate forever.
+
     Returns ``{'fidelity', 'error_per_gate', 'decay_rate'}``.
     """
     x, y = align(depths, survival, what="RB decay")
@@ -86,7 +97,7 @@ def fit_rb_decay(
                 x,
                 y,
                 p0=[float(y[0]) - float(y[-1]) or 0.5, r_guess, float(y[-1])],
-                bounds=([-2.0, 0.0, -1.0], [2.0, 1.0, 2.0]),
+                bounds=([-np.inf, 0.0, -np.inf], [np.inf, 1.0, np.inf]),
                 maxfev=20000,
             )
             break

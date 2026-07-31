@@ -31,8 +31,20 @@ from qpi_driver.tuners.utils.persistence import save_device_config
 
 log = logging.getLogger(__name__)
 
+#: Where a partial recalibration starts, and so which routines it runs: these
+#: and everything downstream of them.
+#:
+#: The readout chain — ``resonator_spectroscopy`` and ``resonator_punchout`` — is
+#: deliberately absent. It is a bring-up step rather than a drift one, and
+#: re-running it is most of the cost of a full calibration, which is the cost a
+#: partial run exists to avoid. A drift the qubit routines cannot fix therefore
+#: needs a full calibration, and that is an operator's decision rather than the
+#: drift check's.
+RECALIBRATION_ROOTS: tuple[str, ...] = ("qubit_spectroscopy",)
+
 __all__ = [
     "Tuner",
+    "RECALIBRATION_ROOTS",
     "SchedulerBackend",
     "CalibrationConfig",
     "ConfigError",
@@ -86,16 +98,25 @@ class Tuner(ABC):
     ) -> CalibrationReport:
         """Recalibrate *qubits* only, running the affected routines.
 
-        The routine subset is everything downstream of the roots — recalibrating
-        a frequency invalidates the gates tuned against it — and the target
-        subset is *qubits* plus any edge touching one of them. Both narrowings
-        matter: this is what a drift check triggers, and it has to be
-        meaningfully cheaper than a full run to be worth having.
+        Two narrowings, and both matter: this is what a drift check triggers, and
+        it has to be meaningfully cheaper than a full run to be worth having.
+
+        The targets narrow to *qubits* plus any edge touching one of them. The
+        routines narrow to :data:`RECALIBRATION_ROOTS` and everything downstream
+        of them — downstream because recalibrating a frequency invalidates the
+        gates tuned against it, so re-running the root alone would leave the chip
+        in a worse state than not running at all.
         """
         config.validate_against(routine_names())
         narrowed = self._narrow_to(qubits, config)
         dag = CalibrationDAG(self.routines(), narrowed)
-        report = dag.run(self.device, self.backend, narrowed, mode="partial")
+        report = dag.run(
+            self.device,
+            self.backend,
+            narrowed,
+            mode="partial",
+            only=dag.partial_order(list(RECALIBRATION_ROOTS)),
+        )
         self._persist(report)
         return report
 

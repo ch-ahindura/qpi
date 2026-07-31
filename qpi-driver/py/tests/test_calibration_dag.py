@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 import xarray as xr
+from qpi_driver.tuners.base import RECALIBRATION_ROOTS, Tuner
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
 from qpi_driver.tuners.base.dag import CalibrationDAG
@@ -127,6 +128,64 @@ def test_partial_order_includes_everything_downstream():
     )
     assert dag.partial_order(["b"]) == ["b", "c"]
     assert dag.partial_order(["a"]) == ["a", "b", "c"]
+
+
+def test_a_partial_recalibration_skips_the_readout_bring_up():
+    """A partial run has to be cheaper than a full one, or there is no reason for it.
+
+    The saving is the readout chain: `resonator_spectroscopy` and
+    `resonator_punchout` are a bring-up step, not a drift one, and they are most
+    of the cost. Everything from `qubit_spectroscopy` down still runs, because
+    re-finding a frequency invalidates the gates tuned against it.
+    """
+    dag = CalibrationDAG(all_routines(), _config())
+    order = dag.partial_order(list(RECALIBRATION_ROOTS))
+
+    assert "resonator_spectroscopy" not in order
+    assert "resonator_punchout" not in order
+    assert order[0] == "qubit_spectroscopy"
+    assert {"rabi", "ramsey", "drag", "fine_amplitude", "rb"} <= set(order)
+    assert set(order) < set(dag.execution_order())
+
+
+def test_recalibrate_narrows_both_the_targets_and_the_routines():
+    """The entry point, not the helper: `partial_order` was written and left unwired."""
+
+    class StubTuner(Tuner):
+        """The real `Tuner`, over a graph shaped like the real one."""
+
+        def __init__(self):
+            super().__init__(name="stub")
+            self._backend = FakeBackend()
+
+        @property
+        def backend(self):
+            return self._backend
+
+        @property
+        def device(self):
+            return None
+
+        def routines(self):
+            return [
+                StubRoutine("resonator_spectroscopy"),
+                StubRoutine(
+                    "qubit_spectroscopy", depends_on=("resonator_spectroscopy",)
+                ),
+                StubRoutine("rabi", depends_on=("qubit_spectroscopy",)),
+                StubRoutine("cz_chevron", depends_on=("rabi",), targets="edges"),
+            ]
+
+    report = StubTuner().recalibrate(
+        ["q0"], _config(target_qubits=["q0", "q1"], target_edges=["q0_q1", "q1_q2"])
+    )
+
+    ran = {(r.routine_name, r.target) for r in report.routine_results}
+    assert report.status == "success"
+    # q1 is not the drifted qubit, and q1_q2 does not touch the one that is.
+    assert {target for _, target in ran} == {"q0", "q0_q1"}
+    # And the readout bring-up is not re-run for a drift the gates can fix.
+    assert {name for name, _ in ran} == {"qubit_spectroscopy", "rabi", "cz_chevron"}
 
 
 def test_the_real_graph_matches_the_rfc_dependency_table():
