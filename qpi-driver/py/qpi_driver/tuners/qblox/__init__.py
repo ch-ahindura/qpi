@@ -88,30 +88,38 @@ class QbloxTuner(Tuner):
         data_dir: Path = Path("bin/data"),
         **kwargs: Any,
     ) -> None:
-        if kwargs.pop("is_simulated", False):
-            # qblox-scheduler reaches its hardware through a HardwareAgent that
-            # compiles and runs in one call, not through quantify's four-call
-            # coordinator, so SimulatedCoordinator does not drop in here. Saying
-            # so beats accepting the flag and quietly running a dummy cluster,
-            # which returns nan and looks like a chip that answered.
-            raise NotImplementedError(
-                "is_simulated is not supported by the qblox backend; the "
-                "simulator plugs into quantify's instrument coordinator. Use "
-                "the quantify device for a simulated node."
+        is_simulated = bool(kwargs.pop("is_simulated", False))
+        simulator = kwargs.pop("simulator", None)
+        if is_dummy and is_simulated:
+            raise ValueError(
+                "is_dummy and is_simulated both replace the cluster; pick one"
             )
         super().__init__(name, **kwargs)
         self._is_dummy = is_dummy
+        self._is_simulated = is_simulated
         self._data_dir = Path(data_dir)
 
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
         self._device = load_quantum_device(name=name, config=quantify_device_config)
-        self._agent = HardwareAgent(
-            hardware_configuration=hardware_config,
-            quantum_device_configuration=self._device,
-            create_dummy_connections=is_dummy,
-            output_dir=self._data_dir,
-        )
+        if is_simulated:
+            # The agent's `compile` is the only part a chip is not needed for,
+            # so that half stays real and the simulator takes over execution.
+            from qpi_driver.simulation.agent import simulated_agent
+
+            self._agent = simulated_agent(
+                hardware_configuration=hardware_config,
+                quantum_device_configuration=self._device,
+                output_dir=self._data_dir,
+                simulator=simulator,
+            )
+        else:
+            self._agent = HardwareAgent(
+                hardware_configuration=hardware_config,
+                quantum_device_configuration=self._device,
+                create_dummy_connections=is_dummy,
+                output_dir=self._data_dir,
+            )
         self._backend = QbloxBackend(self._agent)
 
         self._device_config_path = (

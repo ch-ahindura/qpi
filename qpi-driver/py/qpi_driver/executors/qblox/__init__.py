@@ -76,27 +76,36 @@ class QbloxExecutor(Executor):
             Instrument.close_all()
 
         self._data_dir = data_dir
-        if kwargs.pop("is_simulated", False):
-            # qblox-scheduler reaches its hardware through a HardwareAgent that
-            # compiles and runs in one call, not through quantify's four-call
-            # coordinator, so SimulatedCoordinator does not drop in here. Saying
-            # so beats accepting the flag and quietly running a dummy cluster,
-            # which returns nan and looks like a chip that answered.
-            raise NotImplementedError(
-                "is_simulated is not supported by the qblox backend; the "
-                "simulator plugs into quantify's instrument coordinator. Use "
-                "the quantify device for a simulated node."
+        is_simulated = bool(kwargs.pop("is_simulated", False))
+        if is_dummy and is_simulated:
+            raise ValueError(
+                "is_dummy and is_simulated both replace the cluster; pick one"
             )
         self._is_dummy = is_dummy
+        self._is_simulated = is_simulated
         self._acquisition_timeout = acquisition_timeout
         self._hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._device = load_quantum_device(name=name, config=quantify_device_config)
-        self._agent = HardwareAgent(
-            hardware_configuration=self._hardware_config,
-            quantum_device_configuration=self._device,
-            create_dummy_connections=is_dummy,
-            output_dir=data_dir,
-        )
+        if is_simulated:
+            # A real agent for compilation, the simulator for execution — the
+            # agent's `run` is the only part a chip is needed for. See
+            # `qpi_driver.simulation.agent`.
+            from qpi_driver.simulation.agent import simulated_agent
+
+            self._agent = simulated_agent(
+                hardware_configuration=self._hardware_config,
+                quantum_device_configuration=self._device,
+                output_dir=data_dir,
+                simulator=kwargs.get("simulator"),
+            )
+        else:
+            self._agent = HardwareAgent(
+                hardware_configuration=self._hardware_config,
+                quantum_device_configuration=self._device,
+                create_dummy_connections=is_dummy,
+                output_dir=data_dir,
+            )
+        self._bias_source = self._park_couplers(kwargs.get("spi_rack_address"))
 
     @property
     def hardware_config(self) -> QbloxHardwareCompilationConfig:
@@ -135,6 +144,44 @@ class QbloxExecutor(Executor):
                 )
 
         return combine_circuit_datasets(sub_datasets)
+
+    def _park_couplers(self, spi_rack_address: str | None):
+        """Hold every tunable coupler at its calibrated DC bias.
+
+        The same thing the quantify executor does, for the same reason: the bias
+        is a seconds-scale DC current that no schedule can express, so if the
+        driver does not set it then nothing does and every CZ runs against a
+        coupler parked wherever it was left.
+        """
+        from qpi_driver.executors.utils.coupler_bias import (
+            RecordingBias,
+            apply_coupler_bias,
+            resolve_bias_source,
+        )
+
+        try:
+            source = (
+                RecordingBias()
+                if (self._is_simulated or self._is_dummy)
+                else resolve_bias_source(
+                    self._device,
+                    cluster=self._cluster(),
+                    spi_address=spi_rack_address,
+                )
+            )
+            self._parked = apply_coupler_bias(self._device, source)
+        except Exception:
+            # A coupler that cannot be parked is a broken two-qubit gate, not a
+            # broken node.
+            log.exception("could not park the couplers; two-qubit gates will be wrong")
+            self._parked = {}
+            return RecordingBias()
+        return source
+
+    def _cluster(self):
+        """The first cluster the agent is connected to, if any."""
+        clusters = getattr(self._agent, "get_clusters", lambda: [])()
+        return clusters[0] if clusters else None
 
     def _acquire_circuit(
         self,

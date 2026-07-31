@@ -273,7 +273,7 @@ class QuantifyExecutor(Executor):
         ``is_dummy`` there is no instrument to talk to, so the intended currents
         are recorded and not applied.
         """
-        from qpi_driver.executors.quantify.coupler_bias import (
+        from qpi_driver.executors.utils.coupler_bias import (
             RecordingBias,
             apply_coupler_bias,
             resolve_bias_source,

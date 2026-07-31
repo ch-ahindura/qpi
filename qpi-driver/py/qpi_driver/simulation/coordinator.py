@@ -334,11 +334,11 @@ class SimulatedCoordinator:
         last_time: dict[str, float] = {}
 
         for time, operation, gate_qubits in self._flatten(compiled):
-            for pulse in operation.data.get("pulse_info", []) or []:
+            for pulse in _infos(operation, "pulse_info"):
                 self._apply_pulse(
                     pulse, time, registers, clocks, last_time, gate_qubits
                 )
-            for acquisition in operation.data.get("acquisition_info", []) or []:
+            for acquisition in _infos(operation, "acquisition_info"):
                 self._acquire(acquisition, registers, acquisitions)
 
         return acquisitions
@@ -358,14 +358,13 @@ class SimulatedCoordinator:
         without the ancestor's ``gate_info`` there is nothing left to say which
         qubit it was detuned *towards*.
         """
-        from quantify_scheduler import Schedule
-
         found: list[tuple[float, Any, tuple[str, ...]]] = []
+        operations = _operations_of(schedule)
         for schedulable in schedule.schedulables.values():
-            operation = schedule.operations[schedulable["operation_id"]]
+            operation = operations[schedulable["operation_id"]]
             start = offset + float(schedulable["abs_time"])
             inherited = _gate_qubits(operation) or gate_qubits
-            if isinstance(operation, Schedule):
+            if _is_subschedule(operation):
                 found.extend(self._flatten(operation, start, inherited))
             else:
                 found.append((start, operation, inherited))
@@ -441,7 +440,7 @@ class SimulatedCoordinator:
         register = registers.of(qubit)
         register.detunings[qubit] = clocks.get(clock, 0.0) - self.simulator.f01 * GHZ
 
-        amplitude = pulse.get("G_amp", pulse.get("amp"))
+        amplitude = _amplitude_of(pulse)
         if amplitude is None or duration <= 0:
             self._idle(register, duration)
             return
@@ -492,7 +491,7 @@ class SimulatedCoordinator:
                 self._run_flux(port, held[0], start - held[1], registers, gate_qubits)
             return
 
-        amplitude = pulse.get("amp")
+        amplitude = _amplitude_of(pulse)
         if amplitude is None or duration <= 0:
             return
         self._run_flux(
@@ -960,6 +959,60 @@ def _gate_qubits(operation: Any) -> tuple[str, ...]:
     # quantify-scheduler called the same field.
     qubits = gate.get("device_elements") or gate.get("qubits") or ()
     return tuple(str(qubit) for qubit in qubits)
+
+
+# --- reading either scheduler's compiled schedule ---------------------------
+#
+# quantify-scheduler and qblox-scheduler describe a compiled schedule almost
+# identically and not quite. The differences are small, undocumented, and would
+# otherwise be scattered through the walk below, so they are named here instead:
+#
+# - `pulse_info` and `acquisition_info` are a *list* of dicts under quantify and
+#   a single dict under qblox;
+# - a subschedule is a `Schedule` with `.operations` under quantify, and a
+#   `TimeableSchedule` carrying `operation_dict` inside `.data` under qblox —
+#   and qblox nests them several deep where quantify has one level;
+# - a drive pulse's amplitude is `G_amp` under quantify and `amplitude` under
+#   qblox, with `amp` used by both for square pulses.
+#
+# quantify-scheduler is being deprecated, so the qblox spelling is the one that
+# has to keep working; supporting both is what makes that transition a
+# non-event rather than a rewrite of the simulator.
+
+
+def _operations_of(schedule: Any) -> Any:
+    """The operation table of a compiled schedule, by either spelling."""
+    operations = getattr(schedule, "operations", None)
+    if operations is not None:
+        return operations
+    return schedule.data["operation_dict"]
+
+
+def _is_subschedule(operation: Any) -> bool:
+    """Whether an operation is itself a schedule to descend into."""
+    if getattr(operation, "schedulables", None) is not None:
+        return True
+    data = getattr(operation, "data", None)
+    return isinstance(data, dict) and "schedulables" in data
+
+
+def _infos(operation: Any, key: str) -> list[dict]:
+    """``pulse_info`` or ``acquisition_info`` as a list, whichever shape it is."""
+    data = getattr(operation, "data", None)
+    if not isinstance(data, dict):
+        return []
+    info = data.get(key)
+    if not info:
+        return []
+    return list(info) if isinstance(info, (list, tuple)) else [info]
+
+
+def _amplitude_of(pulse: dict) -> Any:
+    """A drive pulse's amplitude, by whichever key the scheduler used."""
+    for key in ("G_amp", "amplitude", "amp"):
+        if pulse.get(key) is not None:
+            return pulse[key]
+    return None
 
 
 def _edge_qubits(name: str) -> tuple[str, str] | None:

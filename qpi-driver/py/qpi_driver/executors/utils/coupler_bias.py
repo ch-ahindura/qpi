@@ -153,17 +153,58 @@ class QcmBias:
         pass
 
 
+def edge_names(device: Any) -> list[str]:
+    """The device's edge names, however this scheduler exposes them.
+
+    quantify's ``QuantumDevice.edges`` is a method returning names; qblox's is a
+    dict of name to edge. Calling the wrong one raises
+    ``'dict' object is not callable``, which is an unhelpful way to find out.
+    """
+    edges = getattr(device, "edges", None)
+    if edges is None:
+        return []
+    if callable(edges):
+        return list(edges())
+    return list(edges)
+
+
+#: The keys a bias submodule may carry, in either scheduler's spelling.
+BIAS_KEYS = (
+    "parking_current",
+    "source",
+    "spi_module",
+    "spi_output",
+    "qcm_module",
+    "qcm_output",
+    "line_resistance_ohm",
+)
+
+
 def bias_settings(edge: Any) -> dict[str, Any]:
-    """Everything an edge's ``bias`` submodule says, as plain values."""
+    """Everything an edge's ``bias`` submodule says, as plain values.
+
+    Both schedulers are read here, because they disagree about what a parameter
+    *is*: quantify's qcodes submodule exposes callables you invoke to get the
+    value, and qblox's pydantic one holds the value on the attribute directly.
+    Asking by name and calling only what is callable covers both without either
+    caring.
+    """
     submodule = getattr(edge, "bias", None)
     if submodule is None:
         return {}
+
     settings: dict[str, Any] = {}
-    for name, parameter in getattr(submodule, "parameters", {}).items():
-        try:
-            settings[name] = parameter()
-        except Exception:  # noqa: BLE001 - an unreadable parameter is not a bias
+    names = getattr(submodule, "parameters", None) or BIAS_KEYS
+    for name in names:
+        value = getattr(submodule, name, None)
+        if value is None:
             continue
+        if callable(value):
+            try:
+                value = value()
+            except Exception:  # noqa: BLE001 - an unreadable parameter is not a bias
+                continue
+        settings[name] = value
     return settings
 
 
@@ -176,7 +217,7 @@ def apply_coupler_bias(device: Any, source: BiasSource) -> dict[str, float]:
     zero amps at it".
     """
     applied: dict[str, float] = {}
-    for name in device.edges():
+    for name in edge_names(device):
         settings = bias_settings(device.get_edge(name))
         current = settings.get("parking_current")
         if current is None or not current:
@@ -198,7 +239,7 @@ def resolve_bias_source(
     """
     sources = {
         str(bias_settings(device.get_edge(name)).get("source") or SPI)
-        for name in device.edges()
+        for name in edge_names(device)
         if bias_settings(device.get_edge(name)).get("parking_current")
     }
     if not sources:

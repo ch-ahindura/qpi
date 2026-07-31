@@ -43,6 +43,7 @@ try:
     from qblox_scheduler.operations.pulse_library import (
         SetClockFrequency,
         ShiftClockPhase,
+        SoftSquarePulse,
         SquarePulse,
     )
     from qblox_scheduler.qblox.hardware_agent import (
@@ -85,6 +86,8 @@ except ImportError as exp:
     class Numbers(BasicCompatClass): ...
 
     class SquarePulse(BasicCompatClass): ...
+
+    class SoftSquarePulse(BasicCompatClass): ...
 
     class ClockResource(BasicCompatClass): ...
 

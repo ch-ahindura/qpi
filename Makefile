@@ -18,16 +18,20 @@ venv-check:
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi
 
+# `uv sync` reinstalls qblox_instruments, and macOS strips the code signature
+# from the q1asm assembler it bundles — after which every schedule that
+# assembles dies with "Assembly failed". So each target that syncs has to put
+# the signature back. Silent and `|| true`: on Linux, and in an environment
+# without qblox_instruments at all, there is nothing to sign and that is fine.
+RESIGN_Q1ASM = @if [ "$$(uname)" = "Darwin" ]; then codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; fi
+
 build: venv-check build-dashboard
 	@echo "Building Go server..."
 	mkdir -p bin
 	(cd qpi-ui && go build -ldflags="-s -w" -o ../bin/qpi .)
 	@echo "Installing python driver package..."
 	$(UV) sync --project qpi-driver/py --extra cli --extra aer --extra quantify --dev
-	@if [ "$$(uname)" = "Darwin" ]; then \
-		echo "Fixing macOS codesign for q1asm_macos..."; \
-		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
-	fi
+	$(RESIGN_Q1ASM)
 	@echo "Building JS client..."
 	(cd qpi-client/js && npm ci && npm run build)
 
@@ -137,6 +141,7 @@ PY_COV_MIN := 96
 test-py-base:
 	@echo "Running Python driver tests with base deps only (mock executor)..."
 	$(UV) sync --project qpi-driver/py --dev
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
 # The gated run. It is the [cli] extra's because that one imports the most: the base
@@ -144,6 +149,7 @@ test-py-base:
 test-py-cli:
 	@echo "Running Python driver tests with [cli] extra..."
 	$(UV) sync --project qpi-driver/py --extra cli --dev
+	$(RESIGN_Q1ASM)
 	(cd qpi-driver/py && $(UV) run pytest tests/ -v --cov --cov-report=)
 	@echo "Enforcing $(PY_COV_MIN)% coverage on the framework modules..."
 	(cd qpi-driver/py && $(UV) run coverage report \
@@ -155,24 +161,19 @@ test-py-cli:
 test-py-aer:
 	@echo "Running Python driver tests with [aer] extra..."
 	$(UV) sync --project qpi-driver/py --extra aer --dev
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
 test-py-quantify:
 	@echo "Running Python driver tests with [quantify] extra..."
 	$(UV) sync --project qpi-driver/py --extra quantify --dev
-	@if [ "$$(uname)" = "Darwin" ]; then \
-		echo "Fixing macOS codesign for q1asm_macos..."; \
-		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
-	fi
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
 test-py-qblox:
 	@echo "Running Python driver tests with [qblox] extra..."
 	$(UV) sync --project qpi-driver/py --extra qblox --dev
-	@if [ "$$(uname)" = "Darwin" ]; then \
-		echo "Fixing macOS codesign for q1asm_macos..."; \
-		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
-	fi
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
 # Tier 3 of the calibration testing strategy (RFC 0004 §7): the routines against
@@ -183,6 +184,7 @@ test-py-qblox:
 test-py-sim:
 	@echo "Running Python calibration tests against the physics simulator..."
 	$(UV) sync --project qpi-driver/py --group sim --dev
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest -v \
 		qpi-driver/py/tests/test_physics_simulation.py \
 		qpi-driver/py/tests/test_calibration_e2e.py
@@ -195,9 +197,7 @@ test-py-sim:
 test-py-loop:
 	@echo "Running the calibrate/process loop against the simulated chip..."
 	$(UV) sync --project qpi-driver/py --extra quantify --group sim --dev
-	@if [ "$$(uname)" = "Darwin" ]; then \
-		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
-	fi
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_calibration_loop.py -v
 
 test-js-client:
@@ -215,6 +215,7 @@ test-go-client-minimal:
 test-py-client:
 	@echo "Running Python client tests..."
 	$(UV) sync --project qpi-client/py --dev
+	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-client/py pytest qpi-client/py/tests/ -v
 
 test-js-driver:

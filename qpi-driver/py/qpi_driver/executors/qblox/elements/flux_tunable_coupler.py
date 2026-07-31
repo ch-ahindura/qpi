@@ -9,9 +9,14 @@ from qpi_driver.compat.qblox import (
     Parameter,
     SchedulerSubmodule,
     ShiftClockPhase,
-    SquarePulse,
+    SoftSquarePulse,
     TimeableSchedule,
 )
+
+#: The parking current an S4g may be asked for, in amperes. Kept identical to
+#: the quantify element's limit — it describes the chip's couplers, not the
+#: scheduler driving them.
+MAX_PARKING_CURRENT_A = 3.1e-3
 
 
 class EdgeClockFrequencies(SchedulerSubmodule):
@@ -23,6 +28,55 @@ class EdgeClockFrequencies(SchedulerSubmodule):
     )
 
 
+class EdgeBias(SchedulerSubmodule):
+    """The coupler's static flux bias — its DC sweet-spot parking point.
+
+    Deliberately not part of the CZ schedule: the bias is a seconds-scale DC
+    current from an SPI rack's S4g (or a QCM output), and neither scheduler has
+    any way to express one. It lives on the edge because it is a property of the
+    coupler rather than of either qubit, and in the device config because it is
+    calibrated — a coupler parked at the wrong current has the wrong effective
+    coupling, and every CZ across it is wrong in the way that looks like drift.
+    """
+
+    parking_current: float = Parameter(
+        docstring="DC current holding the coupler at its operating point.",
+        unit="A",
+        initial_value=0.0,
+        vals=Numbers(min_value=-MAX_PARKING_CURRENT_A, max_value=MAX_PARKING_CURRENT_A),
+    )
+    source: str = Parameter(
+        docstring="Which mechanism delivers the bias: 'spi' or 'qcm'.",
+        initial_value="spi",
+    )
+    spi_module: float = Parameter(
+        docstring="S4g module slot the coupler is wired to.",
+        initial_value=0,
+        vals=Numbers(min_value=0, max_value=64),
+    )
+    spi_output: float = Parameter(
+        docstring="S4g output on that module.",
+        initial_value=0,
+        vals=Numbers(min_value=0, max_value=64),
+    )
+    qcm_module: float = Parameter(
+        docstring="Cluster module holding the offset, when the source is a QCM.",
+        initial_value=0,
+        vals=Numbers(min_value=0, max_value=64),
+    )
+    qcm_output: float = Parameter(
+        docstring="Output on that module.",
+        initial_value=0,
+        vals=Numbers(min_value=0, max_value=64),
+    )
+    line_resistance_ohm: float = Parameter(
+        docstring="Flux line resistance, for turning a current into a QCM voltage.",
+        unit="Ohm",
+        initial_value=0.0,
+        vals=Numbers(min_value=0, max_value=1e6),
+    )
+
+
 class FluxTunableCoupler(CompositeSquareEdge):
     """An edge for a flux tunable coupler, labeled as {control_qubit}_{target_qubit}"""
 
@@ -30,6 +84,7 @@ class FluxTunableCoupler(CompositeSquareEdge):
     clock_freqs: EdgeClockFrequencies = Field(
         default_factory=lambda: EdgeClockFrequencies(name="clock_freqs")
     )
+    bias: EdgeBias = Field(default_factory=lambda: EdgeBias(name="bias"))
 
     def generate_edge_config(self) -> dict:
         config = super().generate_edge_config()
@@ -61,8 +116,12 @@ def compile_cz(
     sched = TimeableSchedule("CZ")
     sched.add_resource(ClockResource(name=square_clock, freq=square_freq))
 
+    # Soft-edged rather than hard, matching the quantify element and the tergite
+    # instruction both were ported from: a square pulse's discontinuities are
+    # broadband and carry power at the 1-2 transition a CZ spends its whole
+    # duration trying not to drive.
     pulse = sched.add(
-        SquarePulse(
+        SoftSquarePulse(
             amplitude=square_amp,
             duration=square_duration,
             port=square_port,

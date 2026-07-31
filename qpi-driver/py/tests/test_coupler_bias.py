@@ -8,7 +8,7 @@ called the way the mock expected.
 """
 
 import pytest
-from qpi_driver.executors.quantify.coupler_bias import (
+from qpi_driver.executors.utils.coupler_bias import (
     QCM,
     SPI,
     RecordingBias,
@@ -26,8 +26,26 @@ class FakeParameter:
 
 
 class FakeBias:
+    """A bias submodule shaped like quantify's: parameters are callables.
+
+    They are reachable as *attributes* as well as through ``parameters``, which
+    is how both qcodes and pydantic submodules actually behave — a fake that
+    offered only the dict would let a reader pass here that cannot read a real
+    device.
+    """
+
     def __init__(self, **values):
         self.parameters = {k: FakeParameter(v) for k, v in values.items()}
+        for name, parameter in self.parameters.items():
+            setattr(self, name, parameter)
+
+
+class FakePydanticBias:
+    """And one shaped like qblox's: parameters are plain values on attributes."""
+
+    def __init__(self, **values):
+        for name, value in values.items():
+            setattr(self, name, value)
 
 
 class FakeEdge:
@@ -141,7 +159,7 @@ def test_the_qcm_path_refuses_to_guess_a_line_resistance():
     Guessing it would park the coupler at the wrong point and every CZ across
     it would be wrong, which is exactly the failure that looks like drift.
     """
-    from qpi_driver.executors.quantify.coupler_bias import QcmBias
+    from qpi_driver.executors.utils.coupler_bias import QcmBias
 
     with pytest.raises(ValueError, match="line_resistance_ohm"):
         QcmBias(cluster=object()).apply(
@@ -150,7 +168,45 @@ def test_the_qcm_path_refuses_to_guess_a_line_resistance():
 
 
 def test_the_qcm_path_refuses_unmapped_wiring():
-    from qpi_driver.executors.quantify.coupler_bias import QcmBias
+    from qpi_driver.executors.utils.coupler_bias import QcmBias
 
     with pytest.raises(ValueError, match="which module"):
         QcmBias(cluster=object()).apply("q0_q1", 0.001, {"line_resistance_ohm": 1000})
+
+
+def test_both_schedulers_bias_submodules_are_readable():
+    """quantify's parameters are callables, qblox's are plain values.
+
+    Both spellings have to be read, because both schedulers ship a coupler and
+    quantify-scheduler is the one being deprecated — so the pydantic shape is
+    the one that has to keep working.
+    """
+    qcodes_style = device_with(
+        q0_q1=FakeEdge(FakeBias(parking_current=0.0009, source=SPI))
+    )
+    pydantic_style = device_with(
+        q0_q1=FakeEdge(FakePydanticBias(parking_current=0.0009, source=SPI))
+    )
+
+    for device in (qcodes_style, pydantic_style):
+        source = RecordingBias()
+        assert apply_coupler_bias(device, source) == {"q0_q1": 0.0009}
+
+
+def test_edges_are_found_whether_they_are_a_dict_or_a_method():
+    """quantify's `QuantumDevice.edges` is a method; qblox's is a dict.
+
+    Calling the wrong one raises "'dict' object is not callable", which is how
+    this was found — the qblox parking silently logged and gave up.
+    """
+    from qpi_driver.executors.utils.coupler_bias import edge_names
+
+    class DictEdges:
+        edges = {"q0_q1": object(), "q1_q2": object()}
+
+    class MethodEdges:
+        def edges(self):
+            return ["q0_q1", "q1_q2"]
+
+    assert edge_names(DictEdges()) == ["q0_q1", "q1_q2"]
+    assert edge_names(MethodEdges()) == ["q0_q1", "q1_q2"]

@@ -115,7 +115,21 @@ def load_quantum_device(name: str, config: Path | dict) -> QuantumDevice:
 
     quantum_device = QuantumDevice(name=name)
 
-    for element_name, element_data in config.items():  # type: str, dict
+    # Elements before edges, regardless of the order the file lists them in. An
+    # edge names the two qubits it joins and the device rejects it if either is
+    # not there yet, so a single pass in file order means a config is only
+    # loadable if its author happened to put every coupler after both its
+    # qubits — and anything that rewrites the YAML alphabetically (which is
+    # `yaml.safe_dump`'s default) silently makes it unloadable.
+    def _is_edge(element_data: dict) -> bool:
+        path = (
+            (element_data.get(_DEVICE_ELEMENT_TYPE_PROP) or {}).get("path") or ""
+        ).lower()
+        return "edge" in path or "coupler" in path
+
+    ordered = sorted(config.items(), key=lambda item: _is_edge(item[1] or {}))
+
+    for element_name, element_data in ordered:  # type: str, dict
         element_type = element_data.pop(_DEVICE_ELEMENT_TYPE_PROP, None)
         if not element_type:
             raise ValueError(
