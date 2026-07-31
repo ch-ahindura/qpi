@@ -72,7 +72,13 @@ test-docs-static:
 	@echo "Checking the documentation's claims about this repository..."
 	(cd qpi-driver/js && npm ci --silent && npm run --silent build)
 	$(UV) sync --project qpi-driver/py --extra cli
-	$(UV) run --project qpi-driver/py python scripts/check_docs.py
+	# --extra cli on the *run* as well as the sync. check_docs asks the CLI for
+	# its own flags, and forces PYTHONPATH at the source tree so `qpi_driver.cli`
+	# imports whether or not it is installed — which means a run in an
+	# environment missing typer gets the stub CLI, exits 0, and reports every
+	# documented flag as removed. Naming the extra here makes the environment a
+	# property of this target rather than of whatever target ran before it.
+	$(UV) run --project qpi-driver/py --extra cli python scripts/check_docs.py
 
 # The code blocks: Python executed against the real SDK, Go and TypeScript compiled.
 test-docs-snippets:

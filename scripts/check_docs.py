@@ -247,6 +247,10 @@ DRIVER_COMMAND_RE = re.compile(r"qpi-driver\b|qpi_driver\.cli\b")
 # `devices --operation` is as much part of the documented CLI as `start` is.
 SUBCOMMANDS = ("", "start", "devices")
 
+#: Below this many flags across every subcommand, the help is not a real one.
+#: Each SDK's `start` alone documents more than this.
+MINIMUM_PLAUSIBLE_FLAGS = 4
+
 CLI_INVOCATIONS = {
     "py": ([sys.executable, "-m", "qpi_driver.cli"], ROOT / "qpi-driver" / "py"),
     "go": (["go", "run", "./qpi-driver"], ROOT / "qpi-driver" / "go"),
@@ -282,6 +286,16 @@ def cli_flags(sdk: str) -> set[str] | None:
         if out.returncode != 0:
             return None
         found |= set(FLAG_RE.findall(out.stdout + out.stderr))
+
+    # A CLI that ran but told us almost nothing is not a CLI whose flags we can
+    # check against — it is a stub. `qpi_driver.cli` is importable from the
+    # source tree whether or not the `cli` extra is installed (PYTHONPATH above
+    # guarantees it), and without typer it prints a near-empty help and exits 0.
+    # Believing that would report every documented flag as removed, which is a
+    # wall of false failures rather than the one true statement "the CLI could
+    # not be run here".
+    if len(found) < MINIMUM_PLAUSIBLE_FLAGS:
+        return None
     return found
 
 
