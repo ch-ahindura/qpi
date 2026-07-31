@@ -550,18 +550,48 @@ def coupler_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
 
+    amplitude = 0.554
+    drive, duration = pair.parametric_operating_point(amplitude)
+    duration = round(duration)  # the compiler plays on a 1 ns grid
+    phases = pair.parametric_phases(amplitude, drive, duration)
+
     config = yaml.safe_load(device.read_text())
     for qubit in ("q0", "q1", "q2"):
         config[qubit]["clock_freqs"]["f01"] = float(simulator.f01 * GHZ)
         config[qubit]["rxy"]["amp180"] = 0.2
+    config["q1_q2"]["clock_freqs"] = {"cz": float(drive * GHZ)}
     config["q1_q2"]["cz"] = {
-        "square_amp": float(pair.resonant_amplitude),
-        "square_duration": round(pair.cz_duration_ns) * 1e-9,
+        "square_amp": amplitude,
+        "square_duration": duration * 1e-9,
+        # What the coupler's Stark shift left on each qubit, handed back. These
+        # are single-qubit phases, so no amount of tuning the amplitude or the
+        # duration removes them — only these two parameters do.
+        "q1_phase_correction": phases["parent"],
+        "q2_phase_correction": phases["child"],
     }
     # The coupler's DC parking point, which the SPI rack supplies out of band.
     config["q1_q2"]["bias"] = {"parking_current": 0.0009, "source": "spi"}
     device.write_text(yaml.safe_dump(config))
     return device, simulator
+
+
+def bell_circuit() -> str:
+    """H on the control, then H-CZ-H on the target: a CNOT, so a Bell pair."""
+    return (
+        'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[3] q;\nbit[2] c;\n'
+        "h q[1];\nh q[2];\ncz q[1], q[2];\nh q[2];\n"
+        "c[0] = measure q[1];\nc[1] = measure q[2];\n"
+    )
+
+
+def without_corrections(device: Path, tmp_path: Path) -> Path:
+    """The same device with both phase corrections zeroed."""
+    other = tmp_path / "uncorrected.device.yml"
+    config = yaml.safe_load(device.read_text())
+    config["q1_q2"]["cz"]["q1_phase_correction"] = 0.0
+    config["q1_q2"]["cz"]["q2_phase_correction"] = 0.0
+    other.write_text(yaml.safe_dump(config))
+    return other
 
 
 def test_the_coupler_carries_its_parking_current(coupler_device):
@@ -627,4 +657,61 @@ def test_a_cz_over_the_coupler_edge_completes_its_exchange(coupler_device):
     counts = run(device, simulator, qasm, shots=300)
     assert counts.get("11", 0) / sum(counts.values()) > 0.9, (
         f"|11> should come back after a full exchange round trip, got {counts}"
+    )
+
+
+def test_the_coupler_makes_the_bell_state_it_should(coupler_device):
+    """|00> + |11>, not merely *some* maximally entangled pair.
+
+    Getting the specific state — rather than settling for "correlated up to a
+    local rotation" — is what says the two phase corrections were applied, with
+    the right sign, to the right qubits. A wrong sign or a swap still produces
+    a perfectly entangled pair; it just produces |01> + |10> instead.
+    """
+    counts = run(*coupler_device, bell_circuit(), shots=400)
+    total = sum(counts.values())
+    aligned = (counts.get("00", 0) + counts.get("11", 0)) / total
+
+    assert aligned > 0.9, f"expected |00> + |11>, got {counts}"
+    assert abs(counts.get("00", 0) - counts.get("11", 0)) / total < 0.15, (
+        f"the two outcomes should be roughly equal, got {counts}"
+    )
+
+
+def test_without_its_phase_corrections_the_bell_state_is_wrong(
+    coupler_device, tmp_path
+):
+    """The control that makes the test above mean something.
+
+    The coupler Stark-shifts both qubits while it drives them, and the phase
+    that leaves is single-qubit rather than conditional. Zero the two
+    corrections and the CZ is still a perfectly good conditional-phase gate —
+    the Bell state it builds is simply not the one asked for.
+    """
+    device, simulator = coupler_device
+    counts = run(without_corrections(device, tmp_path), simulator, bell_circuit(), 400)
+    aligned = (counts.get("00", 0) + counts.get("11", 0)) / sum(counts.values())
+    assert aligned < 0.8, (
+        f"uncorrected single-qubit phases should spoil |00> + |11>, got {counts}"
+    )
+
+
+def test_a_coupler_driven_off_resonance_does_nothing(coupler_device, tmp_path):
+    """Frequency is the resonance condition, not a carrier detail.
+
+    A parametric CZ works because a sideband of the coupler's modulation
+    bridges |11>-|02>. Move the drive off that transition and the same
+    amplitude for the same duration compiles, plays, and performs no gate —
+    which is the failure a model with a fixed carrier could not show.
+    """
+    device, simulator = coupler_device
+    detuned = tmp_path / "detuned.device.yml"
+    config = yaml.safe_load(device.read_text())
+    config["q1_q2"]["clock_freqs"]["cz"] += 50e6  # 50 MHz off
+    detuned.write_text(yaml.safe_dump(config))
+
+    counts = run(detuned, simulator, bell_circuit(), shots=400)
+    aligned = (counts.get("00", 0) + counts.get("11", 0)) / sum(counts.values())
+    assert aligned < 0.8, (
+        f"a drive 50 MHz off the sideband should not make a Bell pair, got {counts}"
     )

@@ -426,6 +426,7 @@ class SimulatedCoordinator:
                 time + float(pulse.get("t0") or 0.0),
                 registers,
                 gate_qubits,
+                clocks.get(clock, 0.0),
             )
             return
 
@@ -467,6 +468,7 @@ class SimulatedCoordinator:
         start: float,
         registers: _Registers,
         gate_qubits: tuple[str, ...],
+        drive_hz: float = 0.0,
     ) -> None:
         """A flux pulse — a CZ — between the pulsed qubit and its gate partner.
 
@@ -494,7 +496,7 @@ class SimulatedCoordinator:
         if amplitude is None or duration <= 0:
             return
         self._run_flux(
-            port, float(np.real(amplitude)), duration, registers, gate_qubits
+            port, float(np.real(amplitude)), duration, registers, gate_qubits, drive_hz
         )
 
     def _run_flux(
@@ -504,6 +506,7 @@ class SimulatedCoordinator:
         duration: float,
         registers: _Registers,
         gate_qubits: tuple[str, ...],
+        drive_hz: float = 0.0,
     ) -> None:
         """Evolve the coupled pair for *duration* at flux *amplitude*."""
         if duration <= 0:
@@ -526,7 +529,11 @@ class SimulatedCoordinator:
         if pair is not None:
             control, target = pair
             register = registers.join(control, target)
-            self._flux(register, control, target, amplitude, duration)
+            # A coupler's pulse rides a microwave clock, and that frequency is
+            # the gate's resonance condition rather than a carrier detail: a
+            # sideband drive off the transition it means to bridge does nothing
+            # at all. A qubit's own flux line is DC and takes the other branch.
+            self._parametric(register, control, target, amplitude, duration, drive_hz)
             for other in registers.distinct():
                 if other is not register:
                     self._idle(other, duration)
@@ -588,6 +595,62 @@ class SimulatedCoordinator:
         the instruction physically is.
         """
         self._propagate(register, self._drift(register), duration)
+
+    def _parametric(
+        self,
+        register: _Register,
+        parent: str,
+        child: str,
+        amplitude: float,
+        duration: float,
+        drive_hz: float,
+    ) -> None:
+        """A parametrically driven coupler: the CZ a `FluxTunableCoupler` plays.
+
+        The coupler is modulated at microwave frequency and a sideband of that
+        modulation bridges ``|11⟩``–``|02⟩``. Amplitude sets how fast the
+        exchange runs; the *frequency* sets whether it runs at all, so a drive
+        off the transition produces a gate that compiles, plays, and does
+        nothing — which is precisely the failure a fixed-carrier model could
+        not show.
+        """
+        import qutip
+
+        from qpi_driver.simulation.coupled import (
+            PARAMETRIC_RATE_MHZ,
+            SIDEBAND_GAP_GHZ,
+            STARK_ASYMMETRY,
+            STARK_SHIFT_MHZ,
+        )
+
+        levels = register.levels
+        detuning = 2 * np.pi * (SIDEBAND_GAP_GHZ - drive_hz / GHZ)
+        rate = 2 * np.pi * PARAMETRIC_RATE_MHZ * 1e-3 * abs(amplitude)
+        stark = 2 * np.pi * STARK_SHIFT_MHZ * 1e-3 * amplitude**2
+
+        def transition(low: int, high: int, qubit: str):
+            return register.embed(
+                qutip.basis(levels, low) * qutip.basis(levels, high).dag(), qubit
+            )
+
+        # |11><02| factorises across the two qubits, and operators on different
+        # qubits commute — so this is the pair's exchange term wherever the two
+        # happen to sit in the register, with any spectators left alone.
+        raising = transition(1, 0, parent) * transition(1, 2, child)
+        excited_02 = register.embed(
+            qutip.basis(levels, 2) * qutip.basis(levels, 2).dag(), child
+        )
+        parent_number = register.ladder(parent).dag() * register.ladder(parent)
+        child_number = register.ladder(child).dag() * register.ladder(child)
+
+        hamiltonian = (
+            detuning * excited_02
+            + rate * (raising + raising.dag())
+            + stark * parent_number
+            + STARK_ASYMMETRY * stark * child_number
+        )
+        self._sample_cache.clear()
+        self._propagate(register, hamiltonian, duration)
 
     def _flux(
         self,

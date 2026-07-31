@@ -52,6 +52,50 @@ G_MHZ = 3.2
 #: by luck, and the coarseness of that default grid is a real finding (§7).
 FLUX_CURVATURE_GHZ = 2.0
 
+#: The transition a parametric coupler drive bridges, in GHz.
+#:
+#: This is the *other* CZ, and the one `FluxTunableCoupler` builds. Rather than
+#: pushing a qubit onto the ``|11⟩``–``|02⟩`` crossing with DC flux, the coupler
+#: between the two is modulated at microwave frequency and a sideband of that
+#: modulation bridges the gap. The DC bias only parks the coupler; the gate is
+#: the tone on top.
+#:
+#: Two consequences make it a different gate to model rather than a rearrangement
+#: of the same one: it works with qubits nowhere near each other, because the
+#: modulation supplies the detuning instead of the qubit placement having to; and
+#: the resonance condition is on the drive *frequency*, so amplitude sets how fast
+#: the exchange runs while frequency sets whether it runs at all.
+#:
+#: The value matches the ``clock_freqs.cz`` every edge in the lab's device config
+#: carries. Which transition of the coupler-qubit spectrum it actually is depends
+#: on the coupler's own frequency, which this simulator does not model — so this
+#: is a chosen constant, and a routine finding a resonance here has found the one
+#: it was configured to look for.
+SIDEBAND_GAP_GHZ = 3.9
+
+#: Exchange rate in MHz per unit of coupler drive amplitude — linear, as the
+#: leading order of a parametric drive is.
+#:
+#: Not invented: the lab's four calibrated edges imply 4.29, 1.91, 4.91 and 6.41
+#: MHz per unit from their own (amplitude, duration) pairs, reading each duration
+#: as one full ``|11⟩ → |02⟩ → |11⟩`` round trip. This is their mean, so a device
+#: config taken off the bench lands near a real CZ here rather than nowhere. The
+#: spread across those four is itself the point that couplers differ.
+PARAMETRIC_RATE_MHZ = 4.4
+
+#: AC Stark shift per qubit, in MHz per unit of drive amplitude squared. A
+#: modulated coupler pushes both qubits around while it drives the exchange, and
+#: the phase that leaves is single-qubit rather than conditional — so no amount
+#: of tuning amplitude or duration removes it. It is exactly what the edge's
+#: ``<qubit>_phase_correction`` parameters exist to cancel, and with them at zero
+#: a perfectly good CZ still produces the wrong Bell state.
+STARK_SHIFT_MHZ = 9.0
+
+#: How much harder the drive pushes the child than the parent. Deliberately not
+#: 1: with a symmetric shift one correction would fix both qubits, and a test
+#: could not tell a correction written to the wrong qubit from a right one.
+STARK_ASYMMETRY = 1.37
+
 
 @dataclass
 class CoupledTransmons:
@@ -72,6 +116,7 @@ class CoupledTransmons:
     target: TransmonSimulator = field(default_factory=TransmonSimulator)
     g_mhz: float = G_MHZ
     flux_curvature_ghz: float = FLUX_CURVATURE_GHZ
+    sideband_gap_ghz: float = SIDEBAND_GAP_GHZ
     conditional_phase_offset_deg: float = 0.0
     shot_noise: float = 0.004
     seed: int = 20260731
@@ -169,6 +214,107 @@ class CoupledTransmons:
                 + control_ladder * target_ladder.dag()
             )
         )
+
+    # --- the parametric coupler ----------------------------------------------
+
+    def parametric_rate(self, amplitude: float) -> float:
+        """``|11⟩``–``|02⟩`` exchange rate in GHz at a coupler drive *amplitude*."""
+        return PARAMETRIC_RATE_MHZ * 1e-3 * abs(float(amplitude))
+
+    def parametric_cz_duration_ns(self, amplitude: float) -> float:
+        """One full round trip at *amplitude* — the CZ, when on resonance."""
+        rate = self.parametric_rate(amplitude)
+        return float("inf") if rate <= 0 else 1.0 / (2.0 * rate)
+
+    def parametric_operating_point(self, amplitude: float) -> tuple[float, float]:
+        """The ``(drive_ghz, duration_ns)`` that make a CZ at *amplitude*.
+
+        The drive frequency is not simply :data:`SIDEBAND_GAP_GHZ`. The coupler
+        Stark-shifts both qubits while it drives them, and it shifts ``|02⟩`` —
+        two excitations in the child — by more than ``|11⟩``, so the crossing
+        moves as the amplitude rises. Retuning per amplitude is what a real
+        calibration does about that, and the chevron is how it finds it.
+        """
+        stark = STARK_SHIFT_MHZ * 1e-3 * float(amplitude) ** 2
+        return (
+            self.sideband_gap_ghz - stark * (1.0 - STARK_ASYMMETRY),
+            self.parametric_cz_duration_ns(amplitude),
+        )
+
+    def _parametric_hamiltonian(self, amplitude: float, drive_ghz: float):
+        """The coupler-driven Hamiltonian, in the frame rotating at the drive.
+
+        Written on the exchange itself rather than on the coupler's ladder. In
+        the rotating frame the modulation leaves a static coupling between
+        ``|11⟩`` and ``|02⟩`` and a detuning equal to how far the drive sits from
+        their gap, which is the whole content of the gate. Carrying the coupler
+        as a third oscillator would add a 27-dimensional register and a
+        time-dependent solve to produce the same two numbers.
+        """
+        detuning = 2 * np.pi * (self.sideband_gap_ghz - drive_ghz)
+        rate = 2 * np.pi * self.parametric_rate(amplitude)
+        stark = 2 * np.pi * STARK_SHIFT_MHZ * 1e-3 * float(amplitude) ** 2
+
+        excited_11 = self.state(1, 1)
+        excited_02 = self.state(0, 2)
+        control_ladder, target_ladder = self._ladders()
+
+        return (
+            detuning * (excited_02 * excited_02.dag())
+            + rate * (excited_11 * excited_02.dag() + excited_02 * excited_11.dag())
+            + stark * (control_ladder.dag() * control_ladder)
+            + STARK_ASYMMETRY * stark * (target_ladder.dag() * target_ladder)
+        )
+
+    def parametric_evolve(self, state, amplitude: float, drive_ghz: float, duration_ns):
+        """Integrate the coupler-driven master equation over *duration_ns*."""
+        import qutip
+
+        if state.isket:
+            state = state * state.dag()
+        return qutip.mesolve(
+            self._parametric_hamiltonian(amplitude, drive_ghz),
+            state,
+            np.array([0.0, max(duration_ns, 1e-9)]),
+            self._collapse(),
+            e_ops=[],
+            options={"nsteps": 200_000},
+        ).final_state
+
+    def parametric_phases(
+        self, amplitude: float, drive_ghz: float, duration_ns: float
+    ) -> dict[str, float]:
+        """The phases a coupler CZ leaves behind, in degrees.
+
+        ``conditional`` is the part not explained by the two single-qubit
+        phases; ``parent`` and ``child`` are those, and are exactly what the
+        edge's ``<qubit>_phase_correction`` parameters have to undo.
+        """
+        import qutip
+
+        propagator = qutip.propagator(
+            self._parametric_hamiltonian(amplitude, drive_ghz),
+            duration_ns,
+            [],
+            options={"nsteps": 200_000},
+        )
+        if isinstance(propagator, list):
+            propagator = propagator[-1]
+
+        def phase_of(parent_level: int, child_level: int) -> float:
+            ket = self.state(parent_level, child_level)
+            element = ket.dag() * propagator * ket
+            if hasattr(element, "full"):
+                element = element.full()[0, 0]
+            return float(np.angle(complex(element)))
+
+        parent, child = phase_of(1, 0), phase_of(0, 1)
+        conditional = phase_of(1, 1) - parent - child
+        return {
+            "parent": float(np.rad2deg(parent)),
+            "child": float(np.rad2deg(child)),
+            "conditional": float((np.rad2deg(conditional) + 180.0) % 360.0 - 180.0),
+        }
 
     def _collapse(self):
         """Relaxation and dephasing on both qubits, in the joint space."""
