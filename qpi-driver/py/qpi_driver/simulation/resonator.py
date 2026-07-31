@@ -18,13 +18,17 @@ enough photons in and that pull collapses and the resonance walks to its bare
 value, which is what makes readout power a thing to calibrate rather than turn
 up. The crossover is set by :attr:`ReadoutResonator.punchout_amplitude`.
 
-What this is not: a dispersive model with the two qubit states pulling the
-resonance to two different frequencies. Here the lineshape follows the
-ground-state resonance and the discrimination stays in the blob geometry the
-coordinator already had — see :data:`~qpi_driver.simulation.coordinator.GROUND_IQ`.
-The consequence is that the best point to read out at is the resonance itself,
-where a real chip has an optimum *between* the two pulled peaks. The routines
-under test measure the lineshape and its power dependence, and those are real.
+**Dispersive, and it has to be.** Each qubit level pulls the resonance to its own
+frequency, so at any one drive frequency the levels return *different complex
+numbers* — differing in phase as much as in magnitude. That is where the two clouds
+in an IQ plane come from, and it is why they are no longer two constants the
+coordinator carries: a model with hand-placed clouds cannot be asked where the best
+readout point is, or what rotation and threshold separate them, because both answers
+were built into the placement.
+
+The consequence is that `measure.acq_rotation` and `measure.acq_threshold` are now
+*wrong* at their defaults of zero, exactly as they are on a chip nobody has
+calibrated. `readout_discrimination` is what measures them.
 """
 
 from dataclasses import dataclass
@@ -64,27 +68,57 @@ class ReadoutResonator:
             return 1.0
         return photons / (photons + critical)
 
-    def resonance_ghz(self, amplitude: float) -> float:
-        """Where the resonance sits when read out at *amplitude*.
+    @property
+    def bare_frequency_ghz(self) -> float:
+        """Where the resonance sits with the qubit's pull removed.
 
-        Downwards with power, by up to one dispersive shift. The direction is a
-        choice — which side the qubit pulls the resonator to depends on the sign
-        of the detuning between them — but it has to be *a* direction, and a
-        consistent one, or punchout has nothing monotone to find.
+        :attr:`frequency_ghz` is the *ground-state* resonance, because that is what a
+        device config's ``clock_freqs.readout`` means and what
+        `resonator_spectroscopy` finds. The bare frequency is one dispersive shift
+        below it, and is where every level's resonance converges once punchout has
+        washed the pull out.
         """
-        return self.frequency_ghz - self.dispersive_shift_ghz * self.punched_through(
-            amplitude
-        )
+        return self.frequency_ghz - self.dispersive_shift_ghz
 
-    def response(self, drive_ghz: float, amplitude: float) -> float:
-        """Fraction of the signal that comes back, 0 to 1, at *drive_ghz*.
+    def resonance_ghz(self, amplitude: float, level: int = 0) -> float:
+        """Where the resonance sits for a qubit in *level*, read out at *amplitude*.
 
-        A Lorentzian of FWHM ``kappa`` centred on :meth:`resonance_ghz` — the
-        transmitted power, so a fit of this recovers ``kappa`` itself rather than
-        some multiple of it.
+        The dispersive pull is ``chi * (1 - 2n)`` about the bare frequency, so the
+        ladder is ``+chi``, ``-chi``, ``-3chi`` for the ground, first and second
+        excited states. Linear in the excitation number, which is the leading order
+        and — more to the point here — *monotone*: a three-state discriminator needs
+        the levels to come out in an order, and a model where ``|2>`` landed between
+        ``|0>`` and ``|1>`` would make one unmeasurable.
+
+        Power collapses the pull towards bare, which is punchout. At full collapse
+        every level sits at the same place and readout distinguishes nothing, which is
+        why turning the power up is not free.
+        """
+        pull = self.dispersive_shift_ghz * (1.0 - 2.0 * int(level))
+        return self.bare_frequency_ghz + pull * (1.0 - self.punched_through(amplitude))
+
+    def reflection(self, drive_ghz: float, amplitude: float, level: int = 0) -> complex:
+        """The complex response at *drive_ghz* for a qubit in *level*.
+
+        ``(kappa/2) / (kappa/2 + i*detuning)`` — one at resonance, falling away with a
+        phase that swings through ±90° across the line. **The phase is the point.**
+        Two levels sit at two resonances, so at any one drive frequency they return
+        two different complex numbers, and it is that difference a discriminator
+        separates. A magnitude-only model has the two states differing only in how
+        much comes back, which is true at the resonance and false everywhere else, and
+        it cannot pose the question of where the best readout point is.
         """
         half = self.linewidth_ghz / 2.0
         if half <= 0:
-            return 1.0
-        detuning = float(drive_ghz) - self.resonance_ghz(amplitude)
-        return float(half**2 / (detuning**2 + half**2))
+            return 1.0 + 0j
+        detuning = float(drive_ghz) - self.resonance_ghz(amplitude, level)
+        return half / (half + 1j * detuning)
+
+    def response(self, drive_ghz: float, amplitude: float, level: int = 0) -> float:
+        """Fraction of the *power* that comes back, 0 to 1.
+
+        ``|reflection|^2``, so a Lorentzian of FWHM ``kappa`` and a fit of it recovers
+        ``kappa`` itself rather than some multiple. This is what
+        `resonator_spectroscopy` sweeps.
+        """
+        return float(abs(self.reflection(drive_ghz, amplitude, level)) ** 2)

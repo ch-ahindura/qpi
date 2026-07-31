@@ -64,6 +64,44 @@ def _calibrate_edge(name: str, element: dict, pair) -> None:
     }
 
 
+def _calibrate_discriminator(qubit: str, element: dict, simulator) -> None:
+    """Give the element the readout line that separates its two clouds.
+
+    Without this the dashboard's job console reads every shot as ``|1>``. The two
+    clouds land wherever the simulated amplifier chain puts them, and
+    ``acq_rotation``/``acq_threshold`` default to zero — a rule that is only right for
+    a chain straddling the imaginary axis, which this one does not. That is the honest
+    state of an uncalibrated chip and the wrong starting point for an e2e whose
+    subject is the dashboard.
+
+    Computed the way `readout_discrimination` measures it: rotate so the two centres
+    separate along the real axis, then take the midpoint.
+    """
+    import numpy as np
+
+    measure = element.setdefault("measure", {})
+    readout = float((element.get("clock_freqs") or {}).get("readout") or 0.0)
+    if readout <= 0:
+        return
+    resonator = simulator.resonator(qubit, configured_ghz=readout / 1e9)
+    chain = simulator.readout_gain * np.exp(
+        1j * np.deg2rad(simulator.readout_phase_deg)
+    )
+    amplitude = float(measure.get("pulse_amp", 0.25))
+    ground, excited = (
+        chain * resonator.reflection(readout / 1e9, amplitude, level)
+        for level in (0, 1)
+    )
+    # Into [0, 360): the instrument refuses a negative rotation, and it refuses it in
+    # every schedule that follows rather than where it was written.
+    rotation = float(np.angle(excited - ground, deg=True) % 360.0)
+    turn = np.exp(-1j * np.deg2rad(rotation))
+    measure["acq_rotation"] = rotation
+    measure["acq_threshold"] = float(
+        0.5 * ((ground * turn).real + (excited * turn).real)
+    )
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
@@ -95,6 +133,7 @@ def main() -> int:
         # The drive strength the simulated instrument applies puts a pi rotation
         # at 0.2; this is the number Rabi would have found.
         element.setdefault("rxy", {})["amp180"] = 0.2
+        _calibrate_discriminator(name, element, simulator)
 
     destination.write_text(yaml.safe_dump(config, sort_keys=False))
     print(f"[e2e] wrote calibrated device config to {destination}")

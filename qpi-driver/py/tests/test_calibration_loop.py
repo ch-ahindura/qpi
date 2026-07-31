@@ -129,7 +129,11 @@ def calibration_config() -> CalibrationConfig:
 
 def _sweep(name: str) -> dict:
     return {
-        "qubit_spectroscopy": {"span": 600e6, "points": 61},
+        # 3% drive, for the reason FULL_DAG_SWEEPS gives: the routine's 1% default is
+        # a signal-to-noise of about five, and a Lorentzian fitted at that ratio lands
+        # anywhere. Here it left an 8.8 MHz residual that Ramsey then could not
+        # refine away, because the fringe it produces is close to the sweep's Nyquist.
+        "qubit_spectroscopy": {"span": 600e6, "points": 61, "drive_amp": 0.03},
         "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
         # Ramsey's sweep is squeezed from both ends, which is worth stating
         # because getting either wrong looks like a broken routine.
@@ -548,11 +552,18 @@ def test_meas_level_1_returns_integrated_iq(calibrated_device):
         f"expected one IQ pair per shot, got {excited_memory.shape}"
     )
 
-    # The two states have to be separable, or no discriminator could work.
-    excited_i = float(np.mean(excited_memory[:, 0, 0]))
-    ground_i = float(np.mean(np.asarray(ground["memory"])[:, 0, 0]))
-    assert excited_i > ground_i + 1.0, (
-        f"the blobs should separate along I: ground {ground_i:.2f}, excited {excited_i:.2f}"
+    # The two clouds have to be separable, or no discriminator could work — but not
+    # separable *along I*, which is what this used to require. Where the clouds land
+    # is the amplifier chain's business: each level sits at its own resonance and so
+    # returns its own complex response, and the chain then rotates the pair by
+    # whatever the cabling happens to be. Demanding a particular axis was demanding
+    # that `acq_rotation` be zero, which is the thing `readout_discrimination` exists
+    # to measure.
+    ground_memory = np.asarray(ground["memory"])
+    excited_iq = complex(*np.mean(excited_memory[:, 0, :], axis=0))
+    ground_iq = complex(*np.mean(ground_memory[:, 0, :], axis=0))
+    assert abs(excited_iq - ground_iq) > 1.0, (
+        f"the clouds should separate: |0> at {ground_iq}, |1> at {excited_iq}"
     )
 
 
@@ -604,13 +615,36 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
         run_at(device, simulator, scheduler, qasm, meas_level=0)["memory"]
     )
 
+    # Against the *same circuit with no gate*, rather than against a sign. Which side
+    # of the origin an excited qubit lands on is the readout chain's business, so the
+    # question that has content is whether all three levels move the same way when the
+    # gate is added.
+    reference_iq = np.asarray(
+        run_at(device, simulator, scheduler, circuit(""), meas_level=1, shots=200)[
+            "memory"
+        ]
+    )
+    reference_trace = np.asarray(
+        run_at(device, simulator, scheduler, circuit(""), meas_level=0)["memory"]
+    )
+
     excited_fraction = counts["1"] / sum(counts.values())
-    mean_i = float(np.mean(iq[:, 0, 0]))
-    settled_i = float(np.mean(memory[0, -200:, 0]))
+    moved_iq = abs(
+        complex(*np.mean(iq[:, 0, :], axis=0))
+        - complex(*np.mean(reference_iq[:, 0, :], axis=0))
+    )
+    moved_trace = abs(
+        complex(*np.mean(memory[0, -200:, :], axis=0))
+        - complex(*np.mean(reference_trace[0, -200:, :], axis=0))
+    )
 
     assert excited_fraction > 0.9
-    assert mean_i > 0, f"level 1 should sit on the excited blob, got I={mean_i:.2f}"
-    assert settled_i > 0, f"level 0's settled trace should agree, got I={settled_i:.2f}"
+    assert moved_iq > 1.0, (
+        f"level 1 should move off the |0> cloud, moved {moved_iq:.2f}"
+    )
+    assert moved_trace > 1.0, (
+        f"level 0's settled trace should move with it, moved {moved_trace:.2f}"
+    )
 
 
 # --- the flux-tunable coupler ---------------------------------------------------
@@ -854,11 +888,11 @@ def test_a_raw_trace_over_two_qubits_takes_one_run_each(calibrated_device):
     )
     # The two qubits are in different states, and their traces have to say so —
     # otherwise the second run measured the first qubit again.
-    excited = float(np.mean(memory[0, -200:, 0]))
-    ground = float(np.mean(memory[1, -200:, 0]))
-    assert excited > ground, (
-        f"q0 was excited and q1 was not, but their traces settle at "
-        f"{excited:.2f} and {ground:.2f}"
+    excited = complex(*np.mean(memory[0, -200:, :], axis=0))
+    ground = complex(*np.mean(memory[1, -200:, :], axis=0))
+    assert abs(excited - ground) > 1.0, (
+        f"q0 was excited and q1 was not, but their traces settle at the same place: "
+        f"{excited} and {ground}"
     )
 
 
@@ -1164,6 +1198,41 @@ def test_resonator_relaxation_measures_the_linewidth_and_writes_nothing(
         assert written[qubit]["measure"]["integration_time"] == pytest.approx(
             float(declared[qubit]["measure"]["integration_time"])
         )
+
+
+def test_the_discriminator_is_measured_rather_than_defaulted(fully_calibrated):
+    """The line that assigns every meas_level=2 shot, and nothing used to produce it.
+
+    Two clouds land wherever the amplifier chain puts them — each qubit level sits at
+    its own resonance and so returns its own complex response, and the chain then
+    rotates the pair. On the simulated chip both land with *positive* real parts, so at
+    the defaults of `acq_rotation=0` and `acq_threshold=0` every shot reads ``|1>``.
+    The reference device config does not carry either field at all.
+
+    So the assertion is the fidelity: the fitted rule has to assign shots correctly,
+    which the defaults cannot. And the rotation has to be in ``[0, 360)``, because the
+    instrument refuses anything else — in every schedule *after* the one that wrote it.
+    """
+    report, device, _simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+
+    for qubit in ("q0", "q1"):
+        measure = written[qubit]["measure"]
+        assert 0.0 <= measure["acq_rotation"] < 360.0, (
+            f"{qubit}'s acq_rotation is {measure['acq_rotation']}, which the "
+            "instrument will refuse"
+        )
+        # Not the defaults, or the routine measured nothing.
+        assert measure["acq_rotation"] != 0.0
+        assert measure["acq_threshold"] != 0.0
+
+    fidelities = [
+        r.parameters["assignment_fidelity"]
+        for r in report.routine_results
+        if r.routine_name == "readout_discrimination"
+    ]
+    assert fidelities, "readout_discrimination did not run"
+    assert min(fidelities) > 0.95, f"poor readout assignment: {fidelities}"
 
 
 def test_punchout_wrote_a_readout_power_inside_its_sweep(fully_calibrated):

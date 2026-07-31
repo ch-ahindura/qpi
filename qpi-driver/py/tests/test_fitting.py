@@ -22,6 +22,7 @@ from qpi_driver.tuners.fitting import (
     fit_rabi,
     fit_ramsey,
     fit_rb_decay,
+    fit_readout_discrimination,
     fit_readout_timing,
     fit_resonator_spectroscopy,
     fit_t1,
@@ -333,39 +334,143 @@ def test_readout_timing_reads_the_baseline_from_the_front_not_a_percentile():
     assert fitted["noise_floor"] < 0.1 * fitted["settled_amplitude"]
 
 
+# --- the readout discriminator ---------------------------------------------------
+
+
+def _clouds(rotation_deg: float, separation: float = 3.0, shots: int = 800):
+    """Two Gaussian clouds a given separation apart, at a given chain rotation."""
+    rng = np.random.default_rng(11)
+    turn = np.exp(1j * np.deg2rad(rotation_deg))
+    ground = 0.0 + 0j
+    excited = separation * turn
+
+    def noise():
+        return rng.normal(0, 0.25, shots) + 1j * rng.normal(0, 0.25, shots)
+
+    return ground + noise(), excited + noise()
+
+
+@pytest.mark.parametrize("rotation", [0.0, 35.0, 120.0, -153.7, 206.3, -20.0])
+def test_discrimination_returns_a_rotation_the_instrument_accepts(rotation):
+    """In [0, 360), because the hardware says so and says it late.
+
+    `np.angle` returns (-180, 180], so half of all readout chains produce a negative
+    rotation — which the compiler refuses with "the hardware requires it to be between
+    0 and 360", in *every schedule after* the one that wrote it rather than in the
+    routine at fault.
+    """
+    fitted = fit_readout_discrimination(*_clouds(rotation))
+    assert 0.0 <= fitted["acq_rotation"] < 360.0
+
+
+@pytest.mark.parametrize("rotation", [0.0, 35.0, 120.0, -153.7, 250.0])
+def test_discrimination_separates_the_clouds_at_any_chain_rotation(rotation):
+    """The rotation is what makes one real threshold enough.
+
+    Whatever angle the chain leaves the clouds at, rotating by the direction between
+    their centres puts all the state information in the real part — so the fitted rule
+    assigns nearly every shot correctly.
+    """
+    ground, excited = _clouds(rotation)
+    fitted = fit_readout_discrimination(ground, excited)
+
+    turn = np.exp(-1j * np.deg2rad(fitted["acq_rotation"]))
+    assigned_ground = np.real(ground * turn) >= fitted["acq_threshold"]
+    assigned_excited = np.real(excited * turn) >= fitted["acq_threshold"]
+    assert assigned_ground.mean() < 0.01
+    assert assigned_excited.mean() > 0.99
+    assert fitted["assignment_fidelity"] > 0.98
+
+
+def test_discrimination_refuses_clouds_it_cannot_separate():
+    """A readout that does not resolve the qubit has no discriminator.
+
+    Fitting one anyway would put a confident, meaningless threshold on the device, and
+    every count afterwards would be a coin toss with no symptom.
+    """
+    rng = np.random.default_rng(3)
+    same = rng.normal(0, 0.25, 500) + 1j * rng.normal(0, 0.25, 500)
+    other = rng.normal(0, 0.25, 500) + 1j * rng.normal(0, 0.25, 500)
+    with pytest.raises(FitError, match="no separation at all"):
+        fit_readout_discrimination(same, other)
+
+
+def test_discrimination_needs_single_shots():
+    with pytest.raises(FitError, match="needs single shots"):
+        fit_readout_discrimination(np.array([1 + 1j]), np.array([2 + 2j]))
+
+
 # --- two-qubit fits -----------------------------------------------------------
 
 
-def test_chevron_locates_the_operating_point():
-    amplitudes = np.linspace(0.1, 0.5, 9)
-    durations = np.linspace(20e-9, 200e-9, 9)
-    grid = np.zeros((9, 9))
-    grid[5, 6] = 1.0  # the transfer maximum
-    fitted = fit_chevron(amplitudes, durations, grid.reshape(-1))
-    assert fitted["cz_amplitude"] == pytest.approx(amplitudes[5], abs=0.03)
-    assert fitted["cz_duration"] == pytest.approx(durations[6], abs=1e-8)
+def _chevron_grid(
+    durations: np.ndarray,
+    rows: int,
+    resonant: int,
+    round_trip: float = 110e-9,
+    reference: float = 1.0,
+    swing: float = 1.0,
+    ripple: float = 0.0,
+) -> np.ndarray:
+    """A chevron shaped the way one measures.
+
+    The off-resonant rows sit at *reference* — the level the readout gives when the
+    flux pulse drove no exchange, so the pair is still ``|11>``. The resonant row
+    leaves that level, reaches full transfer half a round trip in, and comes back.
+
+    *swing* may be negative, which is the case that matters: whether the control's
+    ``|z|`` rises or falls as it empties depends on which side of the resonator's line
+    the readout sits, and nothing in a chevron says which.
+
+    *ripple* adds the beat against neighbouring transitions that makes the far side of
+    the round trip lumpy — shaped to vanish at zero duration so it does not move the
+    reference.
+    """
+    angle = 2 * np.pi * durations / round_trip
+    departure = (1 - np.cos(angle)) / 2
+    beat = (1 - np.cos(5 * angle)) / 2
+    row = reference - swing * departure + ripple * beat
+    grid = np.full((rows, durations.size), reference)
+    grid[resonant, :] = row
+    return grid
 
 
-def test_chevron_reads_past_a_wiggle_in_the_trough():
-    """The round trip, not a bump on the way to it.
+@pytest.mark.parametrize("swing", [1.0, -1.0], ids=["falls", "rises"])
+def test_chevron_locates_the_operating_point(swing):
+    """And does so whichever way the readout's magnitude moves.
 
-    The exchange beats against the transitions the flux pulse sits near, so the
-    bottom of the round trip is not smooth. Walking to the first local maximum
-    after the trough stops on that bump — still deep in |02>, and half the right
-    duration, which is a complete population swap rather than a CZ.
+    The polarity is not knowable from a chevron: `resonator_spectroscopy` leaves the
+    readout on the ground-state resonance, where an *excited* qubit reflects less, so
+    an emptying control can read either up or down depending on the chain. Hunting an
+    extreme picked the wrong one and returned half the round trip — a complete
+    population swap, which is a perfectly good gate and not a CZ.
     """
     amplitudes = np.linspace(0.3, 0.5, 5)
     durations = np.linspace(10e-9, 200e-9, 20)
-    # One resonant row: a cosine round trip of ~110 ns with a 5% ripple on it.
-    angle = 2 * np.pi * durations / 110e-9
-    row = 0.5 + 0.5 * np.cos(angle) + 0.05 * np.cos(5 * angle)
-    grid = np.tile(0.5, (5, 20))
-    grid[2, :] = row
+    grid = _chevron_grid(durations, rows=5, resonant=2, swing=swing)
 
     fitted = fit_chevron(amplitudes, durations, grid.reshape(-1))
     assert fitted["cz_amplitude"] == pytest.approx(amplitudes[2], abs=0.03)
+    assert fitted["cz_duration"] == pytest.approx(110e-9, rel=0.05)
+
+
+@pytest.mark.parametrize("swing", [1.0, -1.0], ids=["falls", "rises"])
+def test_chevron_reads_past_a_wiggle_in_the_far_side(swing):
+    """The round trip, not a bump on the way through it.
+
+    The exchange beats against the transitions the flux pulse sits near, so the far
+    side of the round trip is not smooth. A turning-point walk stops on that bump,
+    still deep in ``|02>`` and at half the right duration.
+    """
+    amplitudes = np.linspace(0.3, 0.5, 5)
+    durations = np.linspace(10e-9, 200e-9, 20)
+    grid = _chevron_grid(
+        durations, rows=5, resonant=2, swing=swing, ripple=0.05 * swing
+    )
+
+    fitted = fit_chevron(amplitudes, durations, grid.reshape(-1))
     assert fitted["cz_duration"] == pytest.approx(110e-9, rel=0.05), (
-        "half of this is a swap, and it is what the turning-point walk returned"
+        "half of this is a swap, and it is what a turning-point walk returned"
     )
 
 

@@ -16,6 +16,16 @@ q0:
     pulse_duration: 300e-9
     acq_delay: 100e-9
     integration_time: 1e-6
+    # The line that separates the two readout clouds, which every meas_level=2
+    # shot is assigned by. Defaults of 0/0 are wrong for any chain that does not
+    # happen to straddle the imaginary axis, and the simulated one does not: both
+    # clouds land with positive real parts, so every shot would read |1>.
+    #
+    # These are what `readout_discrimination` measures. Carried here so the
+    # fixtures that do *not* run a full calibration still read out correctly, and
+    # the loop test requires the routine to find them rather than trusting them.
+    acq_rotation: 206.27
+    acq_threshold: -1.7792
 
 q1:
   element_type:
@@ -34,6 +44,16 @@ q1:
     pulse_duration: 300e-9
     acq_delay: 100e-9
     integration_time: 1e-6
+    # The line that separates the two readout clouds, which every meas_level=2
+    # shot is assigned by. Defaults of 0/0 are wrong for any chain that does not
+    # happen to straddle the imaginary axis, and the simulated one does not: both
+    # clouds land with positive real parts, so every shot would read |1>.
+    #
+    # These are what `readout_discrimination` measures. Carried here so the
+    # fixtures that do *not* run a full calibration still read out correctly, and
+    # the loop test requires the routine to find them rather than trusting them.
+    acq_rotation: 206.27
+    acq_threshold: -1.7792
 
 q0_q1:
   element_type: 
@@ -63,6 +83,16 @@ q2:
     pulse_duration: 300e-9
     acq_delay: 100e-9
     integration_time: 1e-6
+    # The line that separates the two readout clouds, which every meas_level=2
+    # shot is assigned by. Defaults of 0/0 are wrong for any chain that does not
+    # happen to straddle the imaginary axis, and the simulated one does not: both
+    # clouds land with positive real parts, so every shot would read |1>.
+    #
+    # These are what `readout_discrimination` measures. Carried here so the
+    # fixtures that do *not* run a full calibration still read out correctly, and
+    # the loop test requires the routine to find them rather than trusting them.
+    acq_rotation: 206.27
+    acq_threshold: -1.7792
 
 q1_q2:
   element_type:

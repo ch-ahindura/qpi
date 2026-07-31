@@ -176,7 +176,48 @@ late by a quarter of the ring-up — 20 ns here — and fitting the ring-up need
 where it began. One straight line through `ln(1 - rise)` gives both, consistent by
 construction, recovering 148 ns and 2.02 MHz against a true 148 ns and 2.00 MHz.
 
+**Dispersive readout, and the routine that calibrates its discriminator**
+(RFC 0005 §7, §9). Each qubit level pulls the resonator to its own frequency, so at one
+drive frequency the levels return different *complex* responses — differing in phase as
+much as in magnitude. The two IQ clouds are now derived from that response and an
+amplifier chain, rather than being two constants the coordinator carried: `GROUND_IQ`
+and `EXCITED_IQ` are gone.
+
+That has a consequence worth stating plainly. `measure.acq_rotation` and
+`measure.acq_threshold` decide the bit of **every `meas_level=2` shot** — the default
+job path — and they default to zero, which is right only for a chain that happens to
+put the clouds either side of the imaginary axis. On the simulated chip both land with
+positive real parts, so at the defaults every shot reads `|1⟩`. That is the honest state
+of an uncalibrated readout, and a model with hand-placed clouds could not express it
+because the placement *was* the answer.
+
+`readout_discrimination` measures it: prepare `|0⟩` and `|1⟩` single-shot, take the
+rotation as the direction between the cloud centres — which is what makes one real
+threshold sufficient — and the threshold as the spread-weighted midpoint, the
+maximum-likelihood boundary for two Gaussians of unequal width. It reports the
+assignment fidelity from the same shots (0.994 here) rather than leaving that to a
+separate node, since splitting them would measure the same two clouds twice. It depends
+on `rabi`, because preparing `|1⟩` needs a calibrated π pulse — the readout chain
+straddles the qubit chain rather than preceding it.
+
 ### Fixed
+
+- `qpi-driver`: `allxy` and `fit_chevron` assumed which direction the readout's
+  magnitude moves when a qubit is excited. Nothing guarantees it: whether `|z|` rises or
+  falls depends on which side of the resonator's line the readout sits, and
+  `resonator_spectroscopy` puts it on the ground-state resonance, where an excited qubit
+  reflects *less*. AllXY compared a descending response against an ascending staircase
+  and reported an rms deviation of 0.65 on a well-calibrated qubit; the chevron hunted
+  the wrong extreme and returned half the round trip — a complete population swap, which
+  is a perfectly good gate and not a CZ. Both measure their own references now: AllXY
+  normalises against the five `|0⟩` and four `|1⟩` pairs already in its sequence, and the
+  chevron anchors on the level its resonant row reads at the shortest duration, where
+  the least exchange has happened.
+- `qpi-driver`: a fitted `acq_rotation` could be one the instrument refuses. `np.angle`
+  returns `(-180, 180]` and the hardware requires `[0, 360)`, so half of all readout
+  chains produced a value rejected at compile time — in every schedule *after* the one
+  that wrote it, not in the routine at fault. Wrapped, which costs nothing since a
+  rotation and that rotation plus a turn are the same rotation.
 
 - `qpi-driver`: A virtual Z did nothing under `is_simulated` — `ShiftClockPhase`
   never reached the coordinator, so every `rz`, `z`, `s` and `t` ran as an

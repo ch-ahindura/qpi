@@ -15,6 +15,7 @@ from qpi_driver.tuners.routines.benchmarks import (
     InterleavedRB,
     RandomizedBenchmarking,
 )
+from qpi_driver.tuners.routines.readout import ReadoutDiscrimination
 from qpi_driver.tuners.routines.single_qubit import (
     T1,
     AllXY,
@@ -42,6 +43,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     ResonatorPunchout,
     QubitSpectroscopy,
     Rabi,
+    ReadoutDiscrimination,
     Ramsey,
     T1,
     T2Echo,

@@ -224,7 +224,8 @@ cannot claim.
 | `time_of_flight` | `measure.acq_delay` | ✅ a propagation delay before the acquisition window |
 | `resonator_relaxation` | — (reports the linewidth) | ✅ the ring-up, already present in `_trace` |
 | `qubit_spectroscopy_amplitude` | `spec.amplitude` | nothing new; the line power-broadens already |
-| `resonator_spectroscopy_excited` | `clock_freqs.readout_1` | **the dispersive pull** — resonance per qubit state |
+| `readout_discrimination` | `measure.acq_rotation`, `measure.acq_threshold` | ✅ the dispersive pull, plus a chain rotation so `0`/`0` is not right by construction |
+| `resonator_spectroscopy_excited` | `clock_freqs.readout_1` | ✅ **the dispersive pull** — resonance per qubit state |
 | `readout_frequency_two_state` | `clock_freqs.readout_2state_opt` | the pull, plus separation as a function of drive frequency |
 | `readout_amplitude_two_state` | `measure.pulse_amp`, `measure.acq_rotation`, `measure.acq_threshold` | blob positions **derived** from the response, plus a readout-chain rotation and offset so `0/0` is not right by construction |
 | `readout_fidelity` | — (characterisation) | assignment errors from the overlap of the two distributions |
@@ -389,13 +390,26 @@ after the machinery.
      `rxy`, and none of them holds a spectroscopy drive amplitude. Adding one means a
      custom element class and an `element_type` change in every device config, which
      is a decision about the config format rather than a routine to write.
-3. **Dispersive readout in the simulator.** Blob positions from the response;
-   readout-chain rotation and offset; the `|1⟩` pull. Nothing user-visible, so it
-   lands with only simulator tests.
-4. **The state-resolved readout pass.** `resonator_spectroscopy_excited`,
-   `readout_frequency_two_state`, `readout_amplitude_two_state`,
-   `readout_fidelity`. Moves `measure.pulse_amp` off punchout. **This is the phase
-   that makes `meas_level=2` calibrated**, and the highest-value one.
+3. ~~**Dispersive readout in the simulator.**~~ **Done.** Each level pulls the
+   resonance to `bare + chi(1-2n)`, so the levels return different *complex*
+   responses and the IQ clouds are derived rather than placed — `GROUND_IQ` and
+   `EXCITED_IQ` are gone. Through an amplifier chain (gain 3.6, phase 35°) they land
+   at 3.60, 0.665 and 0.337 in magnitude: a monotone ladder, 14σ separation, and both
+   real parts positive so the defaults of `0`/`0` assign every shot as `|1⟩`. It did
+   not land with only simulator tests — see below.
+4. **The state-resolved readout pass.** Partly done.
+   - `readout_discrimination`: **done.** Prepares `|0⟩`/`|1⟩` single-shot, fits the
+     rotation as the direction between cloud centres and the threshold as the
+     spread-weighted midpoint, and reports the assignment fidelity from the same
+     shots — 0.994 on the simulated chip. **This is what makes `meas_level=2`
+     calibrated.** `readout_fidelity` is folded in rather than being its own node:
+     splitting them would measure the same two clouds twice.
+   - `resonator_spectroscopy_excited`, `readout_frequency_two_state`,
+     `readout_amplitude_two_state`: **deferred to phase 5**, because each writes a
+     clock (`ro1`, `ro_2st_opt`) that nothing reads yet. Using a different clock for
+     discriminated readout needs the executor to select it, which is the same work as
+     the EF subspace's `ro2`/`ro_3st_opt`. `measure.pulse_amp` stays with punchout
+     until then.
 5. **The EF subspace.** Seven nodes, plus the `|2⟩` pull and the `.12` clock.
    Unlocks three-state readout and grounds `f12`.
 6. **The coupler.** A coupler frequency in the simulator, the two arcs,

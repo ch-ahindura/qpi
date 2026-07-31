@@ -17,6 +17,7 @@ from .cosine import (
     fit_rabi,
     fit_ramsey,
 )
+from .discrimination import fit_readout_discrimination
 from .exponential import (
     exponential_decay,
     fit_rb_decay,
@@ -42,6 +43,7 @@ __all__ = [
     "fit_qubit_spectroscopy",
     "fit_punchout",
     "fit_readout_timing",
+    "fit_readout_discrimination",
     "decaying_cosine",
     "fit_rabi",
     "fit_ramsey",

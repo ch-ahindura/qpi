@@ -79,24 +79,9 @@ log = logging.getLogger(__name__)
 #: and the population comes out wrong here.
 DEFAULT_DRIVE_STRENGTH = np.pi / (0.2 * 20e-9)
 
-#: Where the two readout blobs sit in the IQ plane, and how wide they are. The
-#: separation over the width is the readout fidelity a discriminator can reach.
-#:
-#: Their placement has to satisfy both readers of an acquisition, which want
-#: different things:
-#:
-#: - The executor discriminates a shot by comparing the rotated *real part*
-#:   against ``acq_threshold``, so the two must straddle it — ground above the
-#:   threshold would label every ground state ``1`` and inverts every circuit.
-#: - A calibration routine reduces an acquisition to ``|z|`` (`signal_of`), so
-#:   the two must also differ in *magnitude* — blobs placed symmetrically about
-#:   the origin have the same modulus, and every sweep would come out flat.
-#:
-#: Hence opposite real parts and different moduli. Real blobs sit wherever the
-#: readout chain puts them and generally satisfy both by accident; here it has
-#: to be deliberate.
-GROUND_IQ = complex(-1.0, 0.0)
-EXCITED_IQ = complex(1.0, 3.0)
+#: Per-shot scatter about a cloud's centre, per quadrature. Against the cloud
+#: separation — which `TransmonSimulator.readout_gain` sets — this is the
+#: single-shot readout fidelity a discriminator can reach.
 READOUT_NOISE = 0.25
 
 
@@ -124,10 +109,13 @@ class _Acquisition:
     #: against *threshold*.
     threshold: float = 0.0
     rotation: float = 0.0
-    #: How much of the signal the resonator returned, 0 to 1. One at the readout
-    #: frequency the resonator is actually at, falling away outside its
-    #: linewidth — which is what `resonator_spectroscopy` sweeps to find.
-    contrast: float = 1.0
+    #: Where each qubit level lands in the IQ plane for *this* acquisition, indexed
+    #: by level. Derived from the resonator's complex response at the frequency and
+    #: power this readout used, then through the amplifier chain — so the clouds move
+    #: when the readout is mistuned, rather than being two fixed points. Empty when
+    #: the schedule never mentioned this qubit's readout clock, where there is
+    #: nothing to say the readout is off and a perfect one is assumed.
+    clouds: tuple[complex, ...] = ()
     #: Seconds of dead time at the front of a `Trace`: how much longer the signal
     #: takes to arrive than this window waited for it. Negative means the window
     #: opened late and the front of the signal was missed. What `time_of_flight`
@@ -991,7 +979,7 @@ class SimulatedCoordinator:
                 duration=float(acquisition.get("duration") or 0.0),
                 threshold=float(acquisition.get("acq_threshold") or 0.0),
                 rotation=float(acquisition.get("acq_rotation") or 0.0),
-                contrast=self._contrast(qubit, clock, clocks),
+                clouds=self._clouds(qubit, clock, clocks),
                 dead_time=self._dead_time(
                     clock, time + float(acquisition.get("t0") or 0.0)
                 ),
@@ -1017,20 +1005,33 @@ class SimulatedCoordinator:
             return 0.0
         return self.simulator.time_of_flight_ns * NS - (window_opened - started)
 
-    def _contrast(self, qubit: str, clock: str, clocks: dict[str, float]) -> float:
-        """How much signal the resonator returns for this acquisition.
+    def _clouds(
+        self, qubit: str, clock: str, clocks: dict[str, float]
+    ) -> tuple[complex, ...]:
+        """Where each qubit level lands in the IQ plane for this acquisition.
 
-        The two things a readout is calibrated for, both of them here: the clock
-        the resonator is interrogated at — swept by `resonator_spectroscopy` — and
-        the power it is driven with, swept by `resonator_punchout`. A qubit whose
-        readout clock this schedule never mentions keeps the old behaviour of a
-        perfect readout, since there is nothing to say it is off resonance.
+        Everything a readout is calibrated for meets here. The clock the resonator is
+        interrogated at, swept by `resonator_spectroscopy`; the power it is driven
+        with, swept by `resonator_punchout`; the dispersive pull, which puts each
+        level at its own resonance and so at its own complex response; and the
+        amplifier chain's gain and rotation, which is what
+        `readout_discrimination` has to undo.
+
+        A qubit whose readout clock this schedule never mentions gets an empty tuple
+        and the caller falls back to a perfect readout, since there is nothing here to
+        say the readout is off.
         """
         resonator = self._resonators.get(qubit)
         if resonator is None or clock not in clocks:
-            return 1.0
-        return resonator.response(
-            clocks[clock] / GHZ, self._readout_amps.get(clock, 0.0)
+            return ()
+        drive = clocks[clock] / GHZ
+        amplitude = self._readout_amps.get(clock, 0.0)
+        chain = self.simulator.readout_gain * np.exp(
+            1j * np.deg2rad(self.simulator.readout_phase_deg)
+        )
+        return tuple(
+            complex(chain * resonator.reflection(drive, amplitude, level))
+            for level in range(self.simulator.levels)
         )
 
     def _joint_outcomes(self, register: _Register) -> dict[str, Any]:
@@ -1139,6 +1140,19 @@ class SimulatedCoordinator:
             return xr.Dataset()
         return xr.Dataset(variables, coords=coordinates)
 
+    @staticmethod
+    def _cloud_pair(entry: _Acquisition) -> tuple[complex, complex]:
+        """Where ``|0>`` and ``|1>`` land for this acquisition.
+
+        The fallback is the pair a perfect readout at resonance would give — one at
+        the ground cloud's own place and the excited one attenuated and phase-rotated
+        by sitting two dispersive shifts off. It is used only for an acquisition whose
+        readout clock the schedule never mentioned, where there is nothing to derive.
+        """
+        if len(entry.clouds) >= 2:
+            return entry.clouds[0], entry.clouds[1]
+        return complex(1.0, 0.0), complex(0.0, 0.0)
+
     def _single_shots(self, entry: _Acquisition) -> np.ndarray:
         """One value per shot, in whatever the entry's protocol returns."""
         outcomes = (
@@ -1146,7 +1160,7 @@ class SimulatedCoordinator:
             if entry.outcomes is None
             else np.asarray(entry.outcomes, dtype=bool)
         )
-        points = self._blobs(outcomes, entry.contrast)
+        points = self._blobs(outcomes, entry)
         if entry.protocol != "ThresholdedAcquisition":
             return points
 
@@ -1183,9 +1197,9 @@ class SimulatedCoordinator:
         samples = max(int(round(entry.duration / NS)), 1)
         times = np.arange(samples, dtype=float)
 
-        settled = entry.contrast * (
-            GROUND_IQ * (1 - entry.excited_population)
-            + EXCITED_IQ * entry.excited_population
+        ground, excited = self._cloud_pair(entry)
+        settled = (
+            ground * (1 - entry.excited_population) + excited * entry.excited_population
         )
         # Nothing arrives until the signal has travelled. Before that the digitiser
         # samples noise, and how many samples that is is exactly what
@@ -1206,24 +1220,24 @@ class SimulatedCoordinator:
     def _averaged(self, entry: _Acquisition) -> complex:
         """The mean IQ point, with the noise an averaged acquisition still has."""
         population = entry.excited_population
-        centre = entry.contrast * (
-            GROUND_IQ * (1 - population) + EXCITED_IQ * population
-        )
+        ground, excited = self._cloud_pair(entry)
+        centre = ground * (1 - population) + excited * population
         spread = READOUT_NOISE / np.sqrt(max(self._repetitions, 1))
         return complex(
             centre.real + self._rng.normal(0.0, spread),
             centre.imag + self._rng.normal(0.0, spread),
         )
 
-    def _blobs(self, excited: np.ndarray, contrast: float = 1.0) -> np.ndarray:
+    def _blobs(self, excited: np.ndarray, entry: _Acquisition) -> np.ndarray:
         """The IQ point each already-drawn outcome lands on, with readout noise.
 
-        *contrast* scales the signal and not the noise, which is the whole reason
-        reading out at the wrong frequency is bad rather than merely different: the
-        blobs move in towards the origin while the noise around them stays put, so
-        a discriminator that separated them cleanly stops being able to.
+        The clouds move and the noise does not, which is the whole reason a mistuned
+        readout is bad rather than merely different: off resonance the two responses
+        both shrink towards the origin and towards each other, so a discriminator that
+        separated them cleanly stops being able to.
         """
-        centres = contrast * np.where(excited, EXCITED_IQ, GROUND_IQ)
+        ground, excited_cloud = self._cloud_pair(entry)
+        centres = np.where(excited, excited_cloud, ground)
         noise = self._rng.normal(0.0, READOUT_NOISE, self._repetitions) + 1j * (
             self._rng.normal(0.0, READOUT_NOISE, self._repetitions)
         )

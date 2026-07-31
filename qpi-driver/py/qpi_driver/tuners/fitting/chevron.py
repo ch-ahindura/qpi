@@ -121,61 +121,97 @@ _DEPARTED = 0.25
 _RETURNED = 0.75
 
 
+def _no_exchange_level(row: np.ndarray) -> float:
+    """The level this row reads when the pair is still ``|11>``.
+
+    Of the row's two extremes, the one nearer its *shortest* duration. At the start of
+    the sweep the least exchange has happened, so the row is on the ``|11>`` side of
+    its own oscillation — and that is true whichever direction the readout's magnitude
+    moves, which is the point.
+
+    Read from the resonant row rather than from an off-resonant one, even though an
+    off-resonant row is the more obvious reference. A chevron sweep is deliberately
+    narrow — the avoided crossing is a few MHz wide, so a sweep wide enough to contain
+    a row with no exchange is too coarse to resolve the crossing at all. Every row in a
+    useful sweep is partly resonant, and taking the quietest one's median put the
+    reference part-way up the swing and the duration 10% short.
+
+    Assumes the shortest duration is less than half a round trip, which is implied by
+    wanting to observe the round trip at all.
+    """
+    finite = row[np.isfinite(row)]
+    low, high = float(np.nanmin(finite)), float(np.nanmax(finite))
+    first = float(finite[0])
+    return low if abs(first - low) <= abs(first - high) else high
+
+
 def _return_duration(row: np.ndarray, durs: np.ndarray) -> float:
     """The first full ``|11⟩ → |02⟩ → |11⟩`` round trip along a resonant row.
 
-    By *level* rather than by turning point. Walking out to the first local
-    minimum and then to the first sample that stops rising is the obvious reading
-    of "there and back", and it is wrong on real data: the trough is not smooth.
-    The exchange beats against the other transitions the flux pulse is near, so
-    the bottom of the round trip carries a wiggle a few per cent of the full
-    swing, and a turning-point walk stops at the top of that wiggle — which is
-    still deep in ``|02⟩``. Measured here: it returned 55 ns for a round trip of
-    110, so the calibrated "CZ" was a complete population swap, which is a
-    perfectly good gate and the wrong one.
+    Measured as *distance from* the no-exchange level — see `_no_exchange_level`.
+    Population leaves ``|11⟩`` and comes back, so that distance rises from nothing,
+    peaks at full transfer, and returns to nothing, and the CZ is where it returns.
 
-    A level crossing cannot make that mistake. The population has to actually
-    reach the far side of the swing before anything counts as a return, and only
-    then is the local maximum around it refined between grid steps.
+    **Reference rather than direction, because the direction is not knowable here.**
+    Whether the control's ``|z|`` rises or falls as it empties depends on which side of
+    the resonator's line the readout sits, and `resonator_spectroscopy` puts it on the
+    ground-state resonance, where an excited qubit reflects *less*. An earlier version
+    hunted a maximum and, once the readout was modelled dispersively, found the wrong
+    extreme: 55 ns, half the round trip, which is a complete population swap — a
+    perfectly good gate and the wrong one. Anchoring on a measured no-exchange level
+    removes the assumption rather than flipping it.
 
-    The *first* return, not the strongest: on resonance the exchange rings for as
-    long as the sweep runs, and a later round trip is a working gate only if
-    nothing decohered in the meantime.
+    By level, not by turning point, for a second reason. Walking to the first local
+    turn is the obvious reading of "there and back" and is also wrong: the exchange
+    beats against the other transitions the flux pulse sits near, so the far side of
+    the round trip carries a wiggle a few per cent of the swing and a turning-point
+    walk stops on it. The population has to actually cross back before anything counts
+    as a return.
+
+    The *first* return, not the strongest: on resonance the exchange rings for as long
+    as the sweep runs, and a later round trip is a working gate only if nothing
+    decohered in the meantime.
     """
     if not np.any(np.isfinite(row)):
         raise FitError("the resonant chevron row contains no finite data")
 
-    bottom, top = float(np.nanmin(row)), float(np.nanmax(row))
-    swing = top - bottom
-    departed = _crossing(row, bottom + _DEPARTED * swing, below=True)
+    away = np.abs(np.asarray(row, dtype=float) - _no_exchange_level(row))
+    span = float(np.nanmax(away))
+    if span <= 0:
+        raise FitError(
+            "the resonant chevron row never departs from the no-exchange level, so "
+            "no exchange completed and there is no CZ to calibrate"
+        )
+
+    departed = _crossing(away, _RETURNED * span, above=True)
     if departed is None:
         raise FitError(
             "the chevron's population never leaves |11> within the duration "
             "sweep — no exchange completed, so there is no CZ to calibrate"
         )
 
-    returned = _crossing(row, bottom + _RETURNED * swing, below=False, start=departed)
+    returned = _crossing(away, _DEPARTED * span, above=False, start=departed)
     if returned is None:
         raise FitError(
             "the chevron's population never recovers after its trough — the "
             "duration sweep ends before the exchange completes"
         )
 
-    # On past the crossing to the top of the recovery, which is where the round
-    # trip actually closes.
-    peak = returned
-    while peak + 1 < len(row) and float(row[peak + 1]) > float(row[peak]):
-        peak += 1
-    return _parabolic_vertex(row, durs, peak)
+    # On to where the return actually closes: the minimum distance from the
+    # no-exchange level, which is the round trip completing.
+    settled = returned
+    while settled + 1 < away.size and float(away[settled + 1]) < float(away[settled]):
+        settled += 1
+    return _parabolic_vertex(away, durs, settled)
 
 
 def _crossing(
-    row: np.ndarray, level: float, *, below: bool, start: int = 0
+    values: np.ndarray, level: float, *, above: bool, start: int = 0
 ) -> int | None:
     """First index at or after *start* on the far side of *level*."""
-    for index in range(start, len(row)):
-        value = float(row[index])
-        crossed = value < level if below else value > level
+    for index in range(start, len(values)):
+        value = float(values[index])
+        crossed = value > level if above else value < level
         if crossed:
             return index
     return None
