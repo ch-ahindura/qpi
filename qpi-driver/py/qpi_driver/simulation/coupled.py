@@ -30,8 +30,8 @@ pass. Several numbers here *were* chosen — :data:`G_MHZ`,
 :data:`PARAMETRIC_RATE_MHZ`, :data:`STARK_SHIFT_MHZ` and
 :data:`STARK_ASYMMETRY` — because they describe a coupler and a flux line this
 project has no device to measure. Each one says in its own comment how it was
-picked, and :data:`PARAMETRIC_RATE_MHZ` at least comes from the lab's own
-calibrated operating points rather than from nothing.
+picked, and :data:`PARAMETRIC_RATE_MHZ` at least comes from calibrated operating
+points measured on a real chip rather than from nothing.
 
 Given them the dynamics are real, and a routine still has to find a crossing it
 was not told the location of. But the claim in RFC 0004 §7 that "nothing is
@@ -78,18 +78,18 @@ FLUX_CURVATURE_GHZ = 2.0
 #: the resonance condition is on the drive *frequency*, so amplitude sets how fast
 #: the exchange runs while frequency sets whether it runs at all.
 #:
-#: The value matches the ``clock_freqs.cz`` every edge in the lab's device config
-#: carries. Which transition of the coupler-qubit spectrum it actually is depends
-#: on the coupler's own frequency, which this simulator does not model — so this
-#: is a chosen constant, and a routine finding a resonance here has found the one
-#: it was configured to look for.
+#: The value matches the ``clock_freqs.cz`` every edge in the reference device
+#: config carries. Which transition of the coupler-qubit spectrum it actually is
+#: depends on the coupler's own frequency, which this simulator does not model — so
+#: this is a chosen constant, and a routine finding a resonance here has found the
+#: one it was configured to look for.
 SIDEBAND_GAP_GHZ = 3.9
 
 #: Exchange rate in MHz per unit of coupler drive amplitude — linear, as the
 #: leading order of a parametric drive is.
 #:
-#: Not invented: the lab's four calibrated edges imply 4.29, 1.91, 4.91 and 6.41
-#: MHz per unit from their own (amplitude, duration) pairs, reading each duration
+#: Not invented: four calibrated edges off a real chip imply 4.29, 1.91, 4.91 and
+#: 6.41 MHz per unit from their own (amplitude, duration) pairs, reading each duration
 #: as one full ``|11⟩ → |02⟩ → |11⟩`` round trip. This is their mean, so a device
 #: config taken off the bench lands near a real CZ here rather than nowhere. The
 #: spread across those four is itself the point that couplers differ.

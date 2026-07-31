@@ -965,7 +965,7 @@ running the same tests under qblox as well as quantify:
   qubits sharing one QRM\_RF agreed on an LO only because their configured readout
   frequencies happened to. Move one by a single kilohertz and the module is asked
   for two LOs at once, and *every later schedule* fails to compile — a long way
-  from the routine that caused it. The lab's own config does the opposite, pinning
+  from the routine that caused it. The reference hardware config does the opposite, pinning
   the LO and letting each qubit's IF differ, which is the arrangement that lets a
   readout frequency be recalibrated at all. The fixture matches it now.
 - **`resonator_punchout` left the readout pointing where the resonator used to
@@ -1043,7 +1043,7 @@ Not implemented, deliberately:
   (`clock_freqs.sideband_gap`) and the simulator prefers it, so the constant is a
   fallback for an uncharacterised coupler rather than the only answer — but no
   coupler here has been characterised, and `PARAMETRIC_RATE_MHZ` is the only one
-  derived from anything measured (the lab's four calibrated operating points).
+  derived from anything measured (four calibrated operating points off a real chip).
 - **The SPI and QCM bias paths against hardware.** Which current goes where, by
   which mechanism, and every refusal are tested; the qcodes calls that would
   drive an S4g or hold a cluster offset are not, and mocking them would only

@@ -94,7 +94,7 @@ had a healthy chip recalibrating on every check.
 integrates the coupler rather than asserting a gate. Both mechanisms the hardware
 has: DC flux on a qubit's port, and a parametric drive on a coupler, where the
 drive *frequency* is the resonance condition. Its exchange rate comes from the
-lab's four calibrated edges rather than being invented; the remaining constants
+four calibrated edges of a real chip rather than being invented; the remaining constants
 are chosen and say so, in the module and in RFC 0004 §7.
 
 - `-o is_simulated=true` works on **both** schedulers now. qblox's
@@ -198,8 +198,8 @@ previously reachable.
 - `qpi-driver`: The readout could be calibrated once and never again. The hardware
   fixture pinned each readout port's intermediate frequency and let the LO float,
   so moving one of three qubits sharing a QRM_RF asked the module for two LOs and
-  every *later* schedule failed to compile. The LO is pinned instead, as the lab's
-  own config does.
+  every *later* schedule failed to compile. The LO is pinned instead, as the
+  reference hardware config does.
 - `qpi-driver`: `resonator_punchout` left the readout pointing where the resonator
   used to be. The resonance moves with readout power — that movement *is* the
   experiment — so settling on a new power invalidated the frequency

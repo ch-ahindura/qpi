@@ -14,17 +14,18 @@ graph is not finished. Three things say so, and none of them is a matter of tast
 
 **The device file has parameters nothing produces.** `measure.acq_rotation` and
 `measure.acq_threshold` decide the bit of every `meas_level=2` shot — the default
-job path — and no routine writes them. The lab's own `quantify.device.yml` does not
-carry them at all, so the executor falls back to `0.0`/`0.0` and discriminates on
-`Re(z) > 0` with no rotation. There is no reason a readout chain puts the two
-clouds either side of that line. The same holds for `measure.integration_time`,
-`measure.pulse_duration`, `measure.acq_delay` and `clock_freqs.f12`.
+job path — and no routine writes them. The reference `quantify.device.yml` in this
+repo does not carry them at all, so the executor falls back to `0.0`/`0.0` and
+discriminates on `Re(z) > 0` with no rotation. There is no reason a readout chain
+puts the two clouds either side of that line. The same holds for
+`measure.integration_time`, `measure.pulse_duration`, `measure.acq_delay` and
+`clock_freqs.f12`.
 
 **The hardware config is provisioned for a larger pipeline than the tuner can
 fill.** `qpi-driver/py/quantify.hardware.json` declares, per qubit, clocks named
 `01`, `12`, `ro`, `ro1`, `ro2`, `ro_2st_opt` and `ro_3st_opt`. The tuner produces
 three of those seven. The other four are the state-resolved readout calibration and
-the EF subspace, and the operators who wrote that config plainly expect them.
+the EF subspace, so a chip wired to that config expects them to exist.
 
 **The readout chain cannot all live at the root.** Measuring the resonance with the
 qubit in `|1⟩` needs a calibrated π pulse, so proper readout calibration *depends
@@ -51,8 +52,9 @@ Extends RFC 0004 §2.
 
 ## 3. Background: the reference pipelines
 
-Two exist in this lab and both are worth reading for their **node inventory**,
-which is hard-won domain knowledge, and not for their software structure (§11).
+Two prior implementations target this hardware stack, and both are worth reading
+for their **node inventory** — hard-won domain knowledge — and not for their
+software structure (§11).
 
 - [`tergite-autocalibration`](https://github.com/tergite/tergite-autocalibration) —
   the full pipeline, 32 nodes, `GRAPH_DEPENDENCIES` in `lib/utils/graph.py`.
@@ -155,8 +157,8 @@ what produces it today.
 | `clock_freqs.readout_1` / `_2` | readout optimisation | ❌ nothing |
 | `clock_freqs.readout_2state_opt` / `_3state_opt` | optimal readout | ❌ nothing |
 | `measure.pulse_amp` | every readout | ⚠️ `resonator_punchout` — dressed-regime edge, not fidelity |
-| `measure.acq_rotation` | **every `meas_level=2` shot** | ❌ nothing; absent from the lab file → `0.0` |
-| `measure.acq_threshold` | **every `meas_level=2` shot** | ❌ nothing; absent from the lab file → `0.0` |
+| `measure.acq_rotation` | **every `meas_level=2` shot** | ❌ nothing; absent from the reference config → `0.0` |
+| `measure.acq_threshold` | **every `meas_level=2` shot** | ❌ nothing; absent from the reference config → `0.0` |
 | `measure.integration_time` | every acquisition | ❌ hand-set (3.6 µs) |
 | `measure.pulse_duration` | every readout | ❌ hand-set (3.8 µs) |
 | `measure.acq_delay` | every acquisition | ❌ hand-set (200 ns) |

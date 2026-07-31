@@ -619,7 +619,7 @@ def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device
 # goes on a *qubit's* port. `q1_q2` is a `FluxTunableCoupler`: the pulse goes on
 # the coupler's own port, `q1_q2:fl`, and the CZ is lowered into a fresh
 # subschedule. That is a different path through both the compiler and the
-# simulator, and it is the one the lab's device config actually uses.
+# simulator, and it is the one the reference device config actually uses.
 
 
 @pytest.fixture(scope="module")
