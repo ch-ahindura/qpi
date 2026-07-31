@@ -32,6 +32,7 @@ from qpi_driver.tuners.routines.spectroscopy import (
     ResonatorPunchout,
     ResonatorRelaxation,
     ResonatorSpectroscopy,
+    ResonatorSpectroscopyExcited,
     TimeOfFlight,
 )
 from qpi_driver.tuners.routines.two_qubit import ConditionalPhase, CZChevron
@@ -44,6 +45,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     ResonatorPunchout,
     QubitSpectroscopy,
     Rabi,
+    ResonatorSpectroscopyExcited,
     ReadoutDiscrimination,
     F12Spectroscopy,
     Ramsey,

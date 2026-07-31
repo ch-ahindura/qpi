@@ -448,6 +448,69 @@ class ResonatorPunchout(CalibrationRoutine):
         write_path(element, "clock_freqs.readout", params["readout_frequency"])
 
 
+class ResonatorSpectroscopyExcited(CalibrationRoutine):
+    """The resonator again with the qubit in ``|1>`` — which is where chi comes from.
+
+    A characterisation, like `resonator_relaxation`: it writes nothing. The two
+    resonances it and `resonator_spectroscopy` measure differ by twice the dispersive
+    shift, and that number is the whole basis of the readout — it is what makes the
+    states distinguishable at all, and its collapse is what punchout detects. Nothing
+    else in the graph measures it.
+
+    Deliberately not the producer of the optimal readout frequency. The frequency
+    where the two responses differ most is not derivable from the two resonances
+    alone — it depends on the linewidth and on how the two Lorentzians overlap — so
+    `readout_frequency_two_state` measures the separation directly rather than
+    computing it from here.
+    """
+
+    name = "resonator_spectroscopy_excited"
+    depends_on = ("rabi",)
+    updates = ()
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        self._frequencies = _frequency_sweep(
+            config, device, target, "readout", default_span=20e6
+        )
+        clock = f"{target}.ro"
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        for index, frequency in enumerate(self._frequencies):
+            schedule.add(backend.Reset(target))
+            schedule.add(backend.X(target))
+            schedule.add(
+                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+            )
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        excited = fitted["readout_frequency"]
+        ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
+        return {
+            "readout_frequency_excited": excited,
+            # Half the gap, signed: chi is negative for a transmon below its
+            # resonator. The sign is worth keeping — it says which side of the bare
+            # resonance the dressed one sits, which is how a mis-assigned resonator
+            # shows up.
+            "dispersive_shift": 0.5 * (excited - ground),
+            "linewidth": fitted["linewidth"],
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Nothing to write — see the class docstring."""
+
+
 class QubitSpectroscopy(CalibrationRoutine):
     """Two-tone spectroscopy: find f01 (Schuster et al., Nature 445, 515).
 

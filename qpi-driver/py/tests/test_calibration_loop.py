@@ -1076,6 +1076,38 @@ def test_the_whole_dag_completes_against_the_simulator(fully_calibrated):
     assert ran == expected, f"did not run {sorted(expected - ran)}"
 
 
+def test_the_dispersive_shift_is_measured_and_not_assumed(fully_calibrated):
+    """`resonator_spectroscopy_excited` recovers chi, which nothing else measures.
+
+    A characterisation node writes nothing, so the only way it can be wrong is
+    quietly: it would keep reporting a number and the calibration would keep
+    succeeding. This is the assertion that makes it a measurement — the whole readout
+    rests on the two states pulling the resonance to different places, and this is the
+    node that says by how much.
+
+    Against the simulator's own chi rather than a constant, and loosely: the routine
+    fits a Lorentzian at the *configured* readout power, where punchout has already
+    collapsed part of the pull, so it measures what the readout actually sees rather
+    than the zero-power value.
+    """
+    report, _device, simulator, _scheduler = fully_calibrated
+    measured = {
+        result.target: result.parameters["dispersive_shift"]
+        for result in report.routine_results
+        if result.routine_name == "resonator_spectroscopy_excited"
+    }
+    assert measured, "resonator_spectroscopy_excited reported nothing"
+
+    for qubit, shift in measured.items():
+        # Negative: |1> pulls the resonance below where |0> leaves it.
+        assert shift < 0, f"{qubit} reported a positive dispersive shift, {shift}"
+        full = simulator.resonator(qubit).dispersive_shift_ghz * GHZ
+        assert abs(shift) < full, (
+            f"{qubit}'s measured pull {abs(shift) / 1e6:.3f} MHz exceeds the "
+            f"{full / 1e6:.3f} MHz the model has to give, at any power"
+        )
+
+
 def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):
     """The CZ the chevron found reached the file, on the hardware's time grid.
 

@@ -123,6 +123,36 @@ def test_readout_power_walks_the_resonance_from_dressed_to_bare(resonator):
     )
 
 
+def test_the_readout_response_scales_with_the_power_it_is_driven_with(resonator):
+    """More power buys more signal, and punch-through is what it costs.
+
+    Without the first half there is nothing to trade: a response that ignored the
+    drive amplitude would make readout power purely harmful, since the only thing
+    left for it to do is collapse the dispersive pull. Then the optimum power is
+    always the smallest one, and `readout_amplitude_two_state` has no question to
+    answer.
+
+    The scaling lives in the coordinator's amplifier chain rather than here, so what
+    this asserts is the other half — that the pull really does collapse, and that
+    the two effects therefore pull opposite ways.
+    """
+    strong, weak = 1.4, 0.2
+    assert resonator.reflection(
+        resonator.resonance_ghz(strong, 0), strong, 0
+    ) == pytest.approx(resonator.reflection(resonator.resonance_ghz(weak, 0), weak, 0))
+
+    def gap(amplitude: float) -> float:
+        return abs(
+            resonator.resonance_ghz(amplitude, 0)
+            - resonator.resonance_ghz(amplitude, 1)
+        )
+
+    assert gap(strong) < 0.5 * gap(weak), (
+        "the states should be harder to tell apart at high power, or there is no "
+        "cost to turning it up"
+    )
+
+
 def test_a_chip_that_states_its_resonators_is_believed(simulator):
     """Otherwise the resonator sits wherever the readout clock is configured.
 

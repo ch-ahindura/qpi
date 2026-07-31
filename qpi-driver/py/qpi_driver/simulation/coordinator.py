@@ -1126,8 +1126,16 @@ class SimulatedCoordinator:
             return ()
         drive = clocks[clock] / GHZ
         amplitude = self._readout_amps.get(clock, 0.0)
-        chain = self.simulator.readout_gain * np.exp(
-            1j * np.deg2rad(self.simulator.readout_phase_deg)
+        # Linear in the drive amplitude, because the reflected field is. This is the
+        # half of readout power that pushes *for* more of it — more signal against a
+        # noise floor that does not move — and `punched_through` inside `reflection`
+        # is the half that pushes back, by collapsing the pull that made the states
+        # distinguishable. `readout_amplitude_two_state` exists to find where the two
+        # balance, and cannot if the response ignores the power.
+        chain = (
+            self.simulator.readout_gain
+            * amplitude
+            * np.exp(1j * np.deg2rad(self.simulator.readout_phase_deg))
         )
         return tuple(
             complex(chain * resonator.reflection(drive, amplitude, level))

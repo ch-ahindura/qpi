@@ -66,9 +66,11 @@ class TransmonSimulator:
             the beginning of the signal is missed. A property of the wiring rather
             than of the chip, which is why it is here and not on the resonator.
         readout_gain: how much the amplifier chain multiplies the reflected signal
-            by. Sets the separation between the two clouds against
-            :data:`~qpi_driver.simulation.coordinator.READOUT_NOISE`, so it is the
-            single-shot readout fidelity in disguise.
+            by, **per unit of readout drive amplitude**. Against
+            :data:`~qpi_driver.simulation.coordinator.READOUT_NOISE` this sets the
+            separation between the clouds, so it is the single-shot readout fidelity
+            in disguise — but only together with ``measure.pulse_amp``, which is what
+            makes readout power worth calibrating rather than a free choice.
         readout_phase_deg: how far the chain rotates the IQ plane — cable length,
             mixer, however the digitiser happens to be referenced. Arbitrary on a
             real setup and **deliberately not zero here**, because zero is the value
@@ -100,7 +102,9 @@ class TransmonSimulator:
     readout_dispersive_shift_ghz: float = 0.003
     readout_punchout_amplitude: float = 0.7
     time_of_flight_ns: float = 148.0
-    readout_gain: float = 3.6
+    #: Per unit amplitude: 14.4 x the fixture's 0.25 is the 3.6 this was before the
+    #: drive amplitude entered, so the clouds sit where they always did.
+    readout_gain: float = 14.4
     readout_phase_deg: float = 35.0
     resonator_frequencies_ghz: dict[str, float] = field(default_factory=dict)
     shot_noise: float = 0.004

@@ -84,10 +84,13 @@ def _calibrate_discriminator(qubit: str, element: dict, simulator) -> None:
     if readout <= 0:
         return
     resonator = simulator.resonator(qubit, configured_ghz=readout / 1e9)
-    chain = simulator.readout_gain * np.exp(
-        1j * np.deg2rad(simulator.readout_phase_deg)
-    )
     amplitude = float(measure.get("pulse_amp", 0.25))
+    # Per unit amplitude, as the coordinator's own chain is.
+    chain = (
+        simulator.readout_gain
+        * amplitude
+        * np.exp(1j * np.deg2rad(simulator.readout_phase_deg))
+    )
     ground, excited = (
         chain * resonator.reflection(readout / 1e9, amplitude, level)
         for level in (0, 1)

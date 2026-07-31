@@ -214,6 +214,32 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`resonator_spectroscopy_excited`, which measures the dispersive shift** (RFC 0005
+§7). The readout works because the two qubit states pull the resonator to different
+frequencies, and nothing measured by how much. This prepares `|1>` and sweeps the
+readout clock, reporting that resonance and the shift between it and the ground-state
+one. A characterisation: it writes nothing, like `resonator_relaxation`. The frequency
+that best separates the two states is deliberately not derived from it — that depends
+on how the two Lorentzians overlap, not on where their centres are.
+
+The simulated readout response now **scales with the power it is driven with**, which
+it did not. A reflected field is proportional to the drive that produced it, and
+without that half the model made readout power purely harmful: the only thing left for
+it to do was collapse the dispersive pull, so the best power was always the lowest one
+and there was no operating point to find. `readout_gain` is now per unit amplitude
+(14.4 x the fixture's 0.25 is the 3.6 it was), so every existing cloud sits exactly
+where it did.
+
+Two readout nodes were written against that model and **backed out**, and the reason is
+worth recording. Optimising the readout operating point for *discrimination* moves it
+away from the point that maximises *magnitude* contrast, and every calibration routine
+reads magnitude. Measured on the simulated chip: complex separation rose 2.6% while
+magnitude contrast fell 14%, and the CZ chevron's answer moved from 110 ns to 100 ns,
+past its own tolerance. Doing it properly needs a discriminated-readout operating point
+separate from the calibration one, with the executor overriding the readout clock for
+`meas_level=2` — a change to every discriminated job rather than a routine to add. RFC
+0005 §12 carries the numbers.
+
 **Spectroscopy no longer guesses how hard to drive** (RFC 0005 §7). `qubit_spectroscopy`
 drove at a fixed 1% of full scale, which on the simulated chip moves the population half
 a per cent — a signal-to-noise of about five, at which the same sweep returned centres

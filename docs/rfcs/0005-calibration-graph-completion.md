@@ -226,7 +226,7 @@ cannot claim.
 | `readout_discrimination` | `measure.acq_rotation`, `measure.acq_threshold` | ✅ the dispersive pull, plus a chain rotation so `0`/`0` is not right by construction |
 | `resonator_spectroscopy_excited` | `clock_freqs.readout_1` | ✅ **the dispersive pull** — resonance per qubit state |
 | `readout_frequency_two_state` | `clock_freqs.readout_2state_opt` | the pull, plus separation as a function of drive frequency |
-| `readout_amplitude_two_state` | `measure.pulse_amp`, `measure.acq_rotation`, `measure.acq_threshold` | blob positions **derived** from the response, plus a readout-chain rotation and offset so `0/0` is not right by construction |
+| `readout_amplitude_two_state` | `measure.pulse_amp`, `measure.acq_rotation`, `measure.acq_threshold` | ✅ blob positions derived from the response, **scaled by the drive amplitude** so more power buys more signal and punch-through is a real cost rather than the only one |
 | `readout_fidelity` | — (characterisation) | assignment errors from the overlap of the two distributions |
 | `f12_spectroscopy` | `clock_freqs.f12` | ✅ the `.12` clock driven; the three-level ladder was already real |
 | `rabi_12`, `ramsey_12`, `drag_12`, `fine_amplitude_12` | `r12.ef_amp180`, `clock_freqs.f12`, `r12.ef_motzoi` | drive on the `.12` clock; leakage to `|3⟩` bounded or a fourth level |
@@ -426,12 +426,46 @@ after the machinery.
      shots — 0.994 on the simulated chip. **This is what makes `meas_level=2`
      calibrated.** `readout_fidelity` is folded in rather than being its own node:
      splitting them would measure the same two clouds twice.
-   - `resonator_spectroscopy_excited`, `readout_frequency_two_state`,
-     `readout_amplitude_two_state`: **deferred to phase 5**, because each writes a
-     clock (`ro1`, `ro_2st_opt`) that nothing reads yet. Using a different clock for
-     discriminated readout needs the executor to select it, which is the same work as
-     the EF subspace's `ro2`/`ro_3st_opt`. `measure.pulse_amp` stays with punchout
-     until then.
+   - `resonator_spectroscopy_excited`: **done, as a characterisation.** Prepares
+     ``|1>`` and sweeps the readout clock, reporting where that resonance sits and so
+     the dispersive shift itself — the number the whole readout rests on, and one
+     nothing else measures. It writes nothing, deliberately: the frequency that best
+     separates the states is not derivable from the two resonances, since it depends
+     on how the two Lorentzians overlap.
+   - `readout_frequency_two_state`, `readout_amplitude_two_state`: **still deferred,
+     and now for a measured reason rather than an anticipated one.** Both were
+     written, run against the full DAG, and backed out.
+
+     The deferral note used to say they write a clock nothing reads. The real
+     obstacle is sharper: **optimising the readout operating point for discrimination
+     moves it away from the point that maximises magnitude contrast, and every
+     calibration routine reads magnitude** through `signal_of`. The discriminator
+     uses the complex separation between the clouds, most of which is *phase* once
+     the drive is off resonance; a magnitude-only reducer sees none of that. At the
+     midpoint between the two resonances the complex separation is still 0.81 and the
+     magnitude contrast is exactly zero.
+
+     Measured on the simulated chip, with the frequency node writing
+     `clock_freqs.readout`: complex separation rose from 0.968 to 0.993, a gain of
+     2.6%, while magnitude contrast fell from 0.750 to 0.645, a loss of 14%. That is
+     a bad trade made on behalf of every node downstream, and it was not theoretical
+     — the CZ chevron's answer moved from 110 ns to 100 ns, past its own 5% tolerance,
+     because the crossing it looks for had lost contrast.
+
+     Amplitude is not the problem and was measured too: raising the readout power
+     helps *both* criteria, because the returned field grows linearly while
+     punch-through only bends it, so scaled magnitude contrast climbs from 2.9 to 7.2
+     across the bracket. A refinement of punchout's power is legitimate. What it
+     cannot do alone is leave `clock_freqs.readout` behind — refining 0.45 to 0.5175
+     walks the resonance 183 kHz, which is punchout's own lesson repeating.
+
+     So both nodes need a **discriminated-readout operating point separate from the
+     calibration one**, and the executor emitting a `SetClockFrequency` for
+     `meas_level=2` — the measure operation's clock is fixed at `{qubit}.ro` in the
+     device config, so this is a schedule-level override rather than a second clock
+     resource. That is a change to every discriminated job, not a routine to add, and
+     it is the same work the EF subspace's `ro2`/`ro_3st_opt` needs.
+     `measure.pulse_amp` and `clock_freqs.readout` stay with punchout until then.
 5. **The EF subspace.** Begun.
    - `f12_spectroscopy` → `clock_freqs.f12`: **done.** The `.12` clock is driven in
      the simulator now — its own rotating frame, detuning on `|2⟩`, `|0⟩` a spectator —
