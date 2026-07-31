@@ -20,6 +20,22 @@ from qpi_driver.tuners.base.routines import (
 )
 from qpi_driver.tuners.fitting import fit_chevron, fit_conditional_phase, signal_of
 
+#: The instrument plays pulses on a 1 ns grid and the compiler refuses anything
+#: else, so a duration is only usable once it is a whole number of nanoseconds.
+GRID_NS = 1e-9
+
+
+def grid_duration(seconds: float) -> float:
+    """*seconds* rounded to the hardware's pulse-time grid.
+
+    The chevron's fit refines the round trip between its duration setpoints, so
+    it reports sub-nanosecond precision the instrument cannot play. Writing that
+    to the device makes every *later* schedule containing this CZ fail to
+    compile — the routine looks like it succeeded and the next one dies with a
+    complaint about a time value, some way from the cause.
+    """
+    return round(float(seconds) / GRID_NS) * GRID_NS
+
 
 def qubits_of(edge: str) -> tuple[str, str]:
     """The two element names an edge joins.
@@ -106,7 +122,7 @@ class CZChevron(CalibrationRoutine):
         """
         edge = device.get_edge(target)
         write_path(edge, "cz.square_amp", params["cz_amplitude"])
-        write_path(edge, "cz.square_duration", params["cz_duration"])
+        write_path(edge, "cz.square_duration", grid_duration(params["cz_duration"]))
 
 
 class ConditionalPhase(CalibrationRoutine):

@@ -547,14 +547,16 @@ class SimulatedCoordinator:
         control = head
         partners = [name for name in gate_qubits if name != control]
         if len(partners) != 1:
+            # Not every flux pulse is a two-qubit gate. `flux_spectroscopy`
+            # holds a DC bias on one qubit's own port to move its frequency and
+            # then looks for the line — no partner, no coupling, and treating it
+            # as a CZ made the routine fail with a complaint about a pair it
+            # never mentioned. A flux pulse whose enclosing gate names no second
+            # qubit is a frequency shift of the one it names.
             others = [name for name in registers.names() if name != control]
             if len(others) != 1:
-                raise SimulationError(
-                    f"a flux pulse on {port!r} is a two-qubit gate, but its partner "
-                    f"cannot be identified: the operation names {gate_qubits or '()'} "
-                    f"and the circuit holds {registers.names()}. Without the pair "
-                    "there is no coupling to apply."
-                )
+                self._flux_detune(registers.of(control), control, amplitude, duration)
+                return
             partners = others
 
         target = partners[0]
@@ -600,6 +602,28 @@ class SimulatedCoordinator:
         the instruction physically is.
         """
         self._propagate(register, self._drift(register), duration)
+
+    def _flux_detune(
+        self, register: _Register, qubit: str, amplitude: float, duration: float
+    ) -> None:
+        """A DC flux bias on one qubit: its frequency moves while the pulse lasts.
+
+        Down, and quadratically, for the reason :data:`FLUX_CURVATURE_GHZ` gives —
+        a transmon sits at a sweet spot where the first derivative of frequency
+        with flux vanishes. The shift is restored afterwards because the bias is
+        a pulse rather than a parking current; a `flux_spectroscopy` schedule
+        that drives *after* the pulse rather than during it therefore sees an
+        unshifted qubit, which is a property of the schedule and not of this.
+        """
+        from qpi_driver.simulation.coupled import FLUX_CURVATURE_GHZ
+
+        shift = -FLUX_CURVATURE_GHZ * float(amplitude) ** 2 * GHZ
+        before = register.detunings.get(qubit, 0.0)
+        register.detunings[qubit] = before + shift
+        try:
+            self._idle(register, duration)
+        finally:
+            register.detunings[qubit] = before
 
     def _parametric(
         self,

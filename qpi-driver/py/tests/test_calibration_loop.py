@@ -886,3 +886,153 @@ def test_a_coupler_that_declares_its_own_gap_is_believed(coupler_device, tmp_pat
     assert aligned < 0.8, (
         f"a declared gap 50 MHz off the drive should spoil the gate, got {counts}"
     )
+
+
+# --- the whole DAG, through the real stack ---------------------------------------
+#
+# The tests above calibrate three routines. That was enough to prove the loop
+# closes, and not enough to prove much else: `cz_chevron` wrote `cz.amp`, a name
+# no device has, and nothing noticed for as long as no test ran it against a real
+# `QuantumDevice`. Tier 2 compiles a schedule without calling `apply`; tier 3's
+# fake device was given the names the routine used. Both agreed with the code.
+#
+# This runs *every* routine the simulated chip can answer, through the shipped
+# tuner, over a real device loaded from YAML, and requires the report to come back
+# `success`. Nothing here is a double except the instrument.
+
+#: Routines the simulator cannot answer, and why. Explicit so the list shrinks
+#: rather than being invisible — each is a gap in the simulator, not in the
+#: routine.
+UNSIMULATED = {
+    # The coordinator's readout is two IQ blobs with no resonator behind them, so
+    # there is no response to sweep. Worse than useless: calibrating a readout
+    # frequency the hardware config's fixed LO+IF cannot reach makes every later
+    # schedule fail to compile, which is a real interaction worth modelling but
+    # not one to leave enabled meanwhile.
+    "resonator_spectroscopy",
+    "resonator_punchout",
+    # The coordinator plays a pulse's amplitude and phase and ignores its DRAG
+    # parameter, so beta has no effect and the fit has nothing to find.
+    "drag",
+}
+
+#: Sweeps sized for the simulated chip. Every one of these is a property of the
+#: simulator's own parameters — T1 of 30 us wants a sweep several times that, and
+#: a sweep shorter than the decay cannot measure it.
+FULL_DAG_SWEEPS: dict[str, dict] = {
+    # 440 MHz, not more: q0 starts 214 MHz off, and the NCO cannot be pushed past
+    # 500 MHz from its intermediate frequency, which a wider span would do.
+    "qubit_spectroscopy": {"span": 440e6, "points": 89},
+    "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
+    "ramsey": {
+        "delays": [round(4e-9 + 4e-8 * i, 11) for i in range(601)],
+        "artificial_detuning": 1e6,
+    },
+    "t1": {"delays": [round(6e-6 * i, 9) for i in range(21)]},
+    "t2_echo": {"delays": [round(2e-6 * i, 9) for i in range(41)]},
+    "fine_amplitude": {"repetitions": [1, 3, 5, 7, 9]},
+    "rb": {"depths": [1, 4, 16, 32], "circuits_per_depth": 6},
+    "interleaved_rb": {"depths": [1, 4, 10, 20], "circuits_per_depth": 4},
+    # Narrow, because the avoided crossing is a few MHz wide and the default grid
+    # steps ~75 MHz per point — see `MIN_CHEVRON_CONTRAST`.
+    "cz_chevron": {
+        "amplitudes": [round(0.365 + i * 0.00115, 5) for i in range(21)],
+        "durations": [round(20e-9 + i * 5e-9, 11) for i in range(45)],
+    },
+    "conditional_phase": {"phases": [round(i * 15.0, 1) for i in range(25)]},
+}
+
+
+@pytest.fixture(scope="module")
+def fully_calibrated(scheduler, tmp_path_factory):
+    """The whole enabled DAG, over two qubits and the edge between them."""
+    simulator = TransmonSimulator()
+    directory = tmp_path_factory.mktemp(f"fulldag_{scheduler}")
+    device = directory / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    # q0 stays 214 MHz off, so finding it is still load-bearing. q1 and q2 start
+    # roughly characterised, which is what a chip that has been on a fridge before
+    # looks like — and what keeps the spectroscopy span inside the NCO's range.
+    config = yaml.safe_load(device.read_text())
+    for qubit in ("q1", "q2"):
+        config[qubit]["clock_freqs"]["f01"] = float(simulator.f01 * GHZ - 5e6)
+    device.write_text(yaml.safe_dump(config, sort_keys=False))
+
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"fulldag_{scheduler}",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(
+        CalibrationConfig(
+            target_qubits=["q0", "q1"],
+            target_edges=["q0_q1"],
+            routines={
+                name: RoutineConfig(
+                    enabled=name not in UNSIMULATED,
+                    params=FULL_DAG_SWEEPS.get(name, {}),
+                )
+                for name in routine_names()
+            },
+        )
+    )
+    tuner.close()
+    close_instruments(scheduler)
+    return report, device, simulator, scheduler
+
+
+def test_the_whole_dag_completes_against_the_simulator(fully_calibrated):
+    """Every enabled routine, through the shipped stack, with no failures.
+
+    This is the test that would have caught `cz.amp`, `cz.phase_correction`, the
+    DRAG units and the qblox write-back — each of which was a routine that
+    measured correctly and then failed, or silently declined, to write.
+    """
+    report, _device, _simulator, _scheduler = fully_calibrated
+
+    assert report.status == "success", report.errors
+    assert report.errors == []
+
+    ran = {result.routine_name for result in report.routine_results}
+    expected = set(routine_names()) - UNSIMULATED
+    assert ran == expected, f"did not run {sorted(expected - ran)}"
+
+
+def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):
+    """The CZ the chevron found reached the file, on the hardware's time grid.
+
+    A duration refined between setpoints is sub-nanosecond, which the instrument
+    cannot play — and writing it made every *later* schedule containing this CZ
+    fail to compile, some distance from the routine that caused it.
+    """
+    _report, device, _simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())["q0_q1"]["cz"]
+
+    assert written["square_amp"] == pytest.approx(0.376, abs=0.01)
+    duration_ns = written["square_duration"] * 1e9
+    assert duration_ns == pytest.approx(round(duration_ns), abs=1e-6), (
+        f"the CZ duration must be a whole number of nanoseconds, got {duration_ns}"
+    )
+
+    corrections = [
+        value for name, value in written.items() if name.endswith("phase_correction")
+    ]
+    assert len(corrections) == 2, f"expected two virtual-Z corrections in {written}"
+    assert any(value != 0 for value in corrections), (
+        "the conditional-phase routine measured its corrections and wrote none"
+    )
+
+
+def test_circuits_run_against_what_the_whole_dag_wrote(fully_calibrated):
+    """The point of calibrating: the file it produced drives the chip."""
+    _report, device, simulator, scheduler = fully_calibrated
+
+    counts = run(device, simulator, scheduler, circuit("x q[0];\n"), shots=400)
+    assert counts["1"] / sum(counts.values()) > 0.9, (
+        f"an X gate should land in |1> after a full calibration, got {counts}"
+    )
