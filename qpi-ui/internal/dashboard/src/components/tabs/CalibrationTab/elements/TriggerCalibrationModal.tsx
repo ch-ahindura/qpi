@@ -45,11 +45,9 @@ const MODES: {
  * Defaults to the drift check rather than the full run: it is the one an
  * operator wants most often, it is cheap, and it changes nothing — whereas a
  * mis-clicked full calibration costs hours of QPU time. */
-export const TriggerCalibrationModal: React.FC<TriggerCalibrationModalProps> = ({
-  driver,
-  onClose,
-  onSubmit,
-}) => {
+export const TriggerCalibrationModal: React.FC<
+  TriggerCalibrationModalProps
+> = ({ driver, onClose, onSubmit }) => {
   const [mode, setMode] = useState<CalibrationMode>("fidelity_check");
   const [qubits, setQubits] = useState("");
   const [edges, setEdges] = useState("");
@@ -97,7 +95,8 @@ export const TriggerCalibrationModal: React.FC<TriggerCalibrationModalProps> = (
               Calibrate {driver.name}
             </h2>
             <p className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">
-              Queued for the driver to pick up. It reports back when it finishes.
+              Queued for the driver to pick up. It reports back when it
+              finishes.
             </p>
           </div>
           <button
@@ -173,8 +172,8 @@ export const TriggerCalibrationModal: React.FC<TriggerCalibrationModalProps> = (
             <div className="flex gap-2 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/5 border border-amber-200 dark:border-amber-500/30 rounded p-3">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                A full calibration walks every enabled routine over every target.
-                The QPU will not run jobs until it finishes.
+                A full calibration walks every enabled routine over every
+                target. The QPU will not run jobs until it finishes.
               </span>
             </div>
           )}

@@ -20,12 +20,19 @@ function formatValue(key: string, value: unknown): string {
   if (name.includes("freq") && Math.abs(value) > 1e6) {
     return `${(value / 1e9).toFixed(6)} GHz`;
   }
-  if (name.startsWith("t1") || name.startsWith("t2") || name.includes("duration")) {
+  if (
+    name.startsWith("t1") ||
+    name.startsWith("t2") ||
+    name.includes("duration")
+  ) {
     return Math.abs(value) < 1e-6
       ? `${(value * 1e9).toFixed(1)} ns`
       : `${(value * 1e6).toFixed(2)} µs`;
   }
-  if (Math.abs(value) !== 0 && (Math.abs(value) < 1e-3 || Math.abs(value) >= 1e6)) {
+  if (
+    Math.abs(value) !== 0 &&
+    (Math.abs(value) < 1e-3 || Math.abs(value) >= 1e6)
+  ) {
     return value.toExponential(3);
   }
   return value.toFixed(6).replace(/\.?0+$/, "");

@@ -25,7 +25,10 @@ jobs:
         go-version: ['1.25.x', '1.26.x']
         python-version: ['3.12']
         node-version: ['20.x', '22.x']
-        extra: ['mock', 'aer', 'quantify', 'qblox']
+        # 'sim' is not an executor — it is the simulated chip the tier-3
+        # physics tests and the whole calibrate/execute loop run against.
+        # Without it here, none of those ever run on CI.
+        extra: ['mock', 'aer', 'quantify', 'qblox', 'sim']
 
     steps:
     - name: Checkout Code
@@ -59,6 +62,8 @@ jobs:
           uv sync --project qpi-driver/py --extra cli --extra quantify --dev
         elif [ "${{ matrix.extra }}" = "qblox" ]; then
           uv sync --project qpi-driver/py --extra cli --extra qblox --dev
+        elif [ "${{ matrix.extra }}" = "sim" ]; then
+          uv sync --project qpi-driver/py --extra cli --extra quantify --group sim --dev
         fi
         sudo apt-get update && sudo apt-get install -y zip
 
@@ -84,9 +89,17 @@ jobs:
           make test-py-quantify
         elif [ "${{ matrix.extra }}" = "qblox" ]; then
           make test-py-qblox
+        elif [ "${{ matrix.extra }}" = "sim" ]; then
+          # The routines against real physics, then the whole loop: calibrate a
+          # simulated chip and run circuits on what the calibration wrote.
+          make test-py-sim
+          make test-py-loop
         fi
 
+    # 'sim' names no executor a driver can be started with, so there is no
+    # driver end-to-end run for it — its own end-to-end coverage is test-py-loop.
     - name: Run E2E Integration Tests for driver '${{ matrix.extra }}'
+      if: matrix.extra != 'sim'
       run: make test-e2e-driver EXECUTOR=${{ matrix.extra }}
 
   # -------------------------------------------------------------------------

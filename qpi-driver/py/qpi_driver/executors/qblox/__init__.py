@@ -1,3 +1,4 @@
+import logging
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -30,8 +31,10 @@ from qpi_driver.executors.utils.counts import (
     per_shot_values,
     qubit_key,
 )
-from qpi_driver.executors.utils.qiskit import load_qasm
+from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
 from qpi_driver.executors.utils.types import cast_to
+
+log = logging.getLogger(__name__)
 
 
 class QbloxExecutor(Executor):
@@ -126,12 +129,48 @@ class QbloxExecutor(Executor):
                 if param_values is not None and circuit.parameters:
                     bound_circuit = circuit.assign_parameters(param_values)
                 sub_datasets.append(
-                    self._run_circuit(
+                    self._acquire_circuit(
                         payload, bound_circuit, circ_shots, acq_protocol, acq_kwargs
                     )
                 )
 
         return combine_circuit_datasets(sub_datasets)
+
+    def _acquire_circuit(
+        self,
+        payload: JobPayload,
+        circuit: QuantumCircuit,
+        shots: int,
+        acq_protocol: str,
+        acq_kwargs: dict,
+    ) -> xr.Dataset:
+        """One circuit's acquisition, in as many runs as the hardware requires.
+
+        Almost always one. The exception is a raw trace over more than one
+        qubit: a Qblox module can put a single sequencer into scope mode, so
+        asking two qubits for a trace at once does not compile. The circuit is
+        played once per measured qubit instead, capturing one trace each time,
+        at an honest cost of N runs for N qubits.
+
+        The same constraint and the same remedy as the quantify executor's —
+        it is a property of the module, not of the scheduler driving it.
+        """
+        measured = measured_qubits(circuit)
+        if acq_protocol != "Trace" or len(measured) < 2:
+            return self._run_circuit(payload, circuit, shots, acq_protocol, acq_kwargs)
+
+        log.info(
+            "raw trace over %d qubits: taking %d runs, one scope-mode acquisition each",
+            len(measured),
+            len(measured),
+        )
+        passes = [
+            self._run_circuit(
+                payload, circuit, shots, acq_protocol, acq_kwargs, only_qubit=qubit
+            )
+            for qubit in measured
+        ]
+        return xr.merge(passes, combine_attrs="override")
 
     def _run_circuit(
         self,
@@ -140,6 +179,7 @@ class QbloxExecutor(Executor):
         shots: int,
         acq_protocol: str,
         acq_kwargs: dict,
+        only_qubit: int | None = None,
     ) -> xr.Dataset:
         """Run a single (parameter-bound) circuit and return its acquisition dataset."""
         schedule, clbit_map, num_clbits = generate_schedule(
@@ -148,6 +188,7 @@ class QbloxExecutor(Executor):
             shots=shots,
             acq_protocol=acq_protocol,
             acq_kwargs=acq_kwargs,
+            only_qubit=only_qubit,
         )
 
         dataset = self._agent.run(schedule, timeout=self._acquisition_timeout)

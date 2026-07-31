@@ -30,7 +30,8 @@ export const FidelityGrid: React.FC<FidelityGridProps> = ({
   // should show the worst evidence it has, not the most flattering.
   const worst = new Map<string, BenchmarkResult>();
   for (const benchmark of benchmarks) {
-    if (benchmark.fidelity === null || benchmark.fidelity === undefined) continue;
+    if (benchmark.fidelity === null || benchmark.fidelity === undefined)
+      continue;
     const current = worst.get(benchmark.target);
     if (!current || benchmark.fidelity < (current.fidelity ?? 1)) {
       worst.set(benchmark.target, benchmark);

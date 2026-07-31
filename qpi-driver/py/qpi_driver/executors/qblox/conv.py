@@ -34,6 +34,7 @@ def to_qblox_gates(
     acq_protocol: str = "SSBIntegrationComplex",
     acq_kwargs: dict | None = None,
     clbit_map: list[tuple[int, int, int]] | None = None,
+    only_qubit: int | None = None,
 ) -> list[Operation]:
     """Converts a qiskit Instruction to Qblox gate operations.
 
@@ -199,6 +200,8 @@ def to_qblox_gates(
         clbit_indices = [circuit.find_bit(c).index for c in instruction.clbits]
         for idx, clbit_idx in zip(qubit_indices, clbit_indices):
             acq_idx = acq_indices.get(idx, 0)
+            if only_qubit is not None and idx != only_qubit:
+                continue
             # Use unique acq_channel per qubit to avoid overlaps
             result.append(
                 Measure(
@@ -239,7 +242,12 @@ def to_qblox_gates(
 
 
 def generate_schedule(
-    name: str, circuit: QuantumCircuit, shots: int, acq_protocol: str, acq_kwargs: dict
+    name: str,
+    circuit: QuantumCircuit,
+    shots: int,
+    acq_protocol: str,
+    acq_kwargs: dict,
+    only_qubit: int | None = None,
 ) -> tuple[Schedule, list[tuple[int, int, int]], int]:
     """Generate a schedule from the given circuit.
 
@@ -268,6 +276,7 @@ def generate_schedule(
             acq_protocol=acq_protocol,
             acq_kwargs=acq_kwargs,
             clbit_map=clbit_map,
+            only_qubit=only_qubit,
         )
 
         import qiskit

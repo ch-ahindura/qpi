@@ -215,7 +215,16 @@ class Drag(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._betas = setpoints_of(config, "motzois", linear_setpoints(-1.0, 1.0, 31))
+        # The DRAG parameter is in *seconds*: it scales a time derivative of the
+        # pulse envelope, so its size is set by the pulse, not by the amplitude.
+        # A calibrated 20 ns gate wants something of order 1e-11 — the lab's own
+        # device file carries -5.4e-11 and -1.5e-11 — and the sweep has to
+        # bracket that. It used to run -1.0 to 1.0, eleven orders of magnitude
+        # out, which puts the derivative term so far above the carrier that the
+        # waveform exceeds full scale and the schedule will not compile at all.
+        self._betas = setpoints_of(
+            config, "motzois", linear_setpoints(-2e-10, 2e-10, 31)
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )

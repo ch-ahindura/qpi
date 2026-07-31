@@ -113,3 +113,23 @@ def _detect_qasm_version(value: str) -> int | None:
     """
     match = _QASM_VERSION_PATTERN.search(value)
     return int(match.group(1)) if match else None
+
+
+def measured_qubits(circuit: "QuantumCircuit") -> list[int]:
+    """Qubit indices the circuit measures, in order, without repeats.
+
+    Both schedulers need this for the same reason: a Qblox module can put one
+    sequencer into scope mode, so a raw trace over several qubits has to be
+    taken one qubit per run.
+    """
+    from qiskit.circuit import library as qiskit_library
+
+    found: list[int] = []
+    for instruction in circuit.data:
+        if not isinstance(instruction.operation, qiskit_library.Measure):
+            continue
+        for qubit in instruction.qubits:
+            index = circuit.find_bit(qubit).index
+            if index not in found:
+                found.append(index)
+    return found

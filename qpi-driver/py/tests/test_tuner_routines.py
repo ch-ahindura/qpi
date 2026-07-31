@@ -29,7 +29,11 @@ SMALL_SWEEPS: dict[str, dict] = {
     "ramsey": {"delays": [4e-9, 1e-6, 2e-6, 4e-6]},
     "t1": {"delays": [0, 10e-6, 20e-6, 40e-6]},
     "t2_echo": {"delays": [0, 10e-6, 20e-6, 40e-6]},
-    "drag": {"motzois": [-0.5, 0.0, 0.5]},
+    # Seconds, not a dimensionless amplitude: the DRAG parameter scales a time
+    # derivative of the envelope, so a 20 ns gate wants values of order 1e-11.
+    # At the dimensionless scale this used to use, the derivative term dwarfs
+    # the carrier and the waveform exceeds full scale.
+    "drag": {"motzois": [-1e-10, 0.0, 1e-10]},
     "fine_amplitude": {"repetitions": [1, 3, 5]},
     "rb": {"depths": [1, 2, 4], "circuits_per_depth": 2},
     "flux_spectroscopy": {"flux_offsets": [-0.1, 0.1], "points": 3, "span": 20e6},
@@ -102,12 +106,22 @@ def test_every_routine_compiles_under_quantify(routine_name, quantify_tuner):
 
 @pytest.mark.parametrize("routine_name", ROUTINE_NAMES)
 def test_every_routine_builds_a_schedule_under_qblox(routine_name, qblox_tuner):
-    """qblox compiles inside its HardwareAgent, so building is what is asserted here."""
+    """And compiles it, which is the half that was missing.
+
+    qblox owns compilation inside its `HardwareAgent` rather than in a separate
+    compiler, so this used to assert only that a schedule came back — meaning a
+    routine whose schedule built but would not compile passed here while the
+    equivalent quantify test caught it. The agent exposes `compile`, so both
+    backends are now held to the same standard.
+    """
     routine = next(r for r in all_routines() if r.name == routine_name)
     schedule = _build(routine, qblox_tuner)
 
     assert schedule is not None
     assert len(schedule.operations) > 0
+
+    compiled = qblox_tuner._agent.compile(schedule)
+    assert compiled is not None
 
 
 def test_a_dummy_acquisition_fails_the_routine_rather_than_fitting_zeros(

@@ -8,24 +8,36 @@ register (3 levels each, so a 9-dimensional Hilbert space and an 81-dimensional
 Liouvillian) and couples them, which is the smallest change that makes a CZ a
 thing the simulator can get wrong.
 
-**The physics.** ``|11⟩`` and ``|02⟩`` are degenerate when the control sits one
-anharmonicity below the target, and the exchange coupling turns that degeneracy
-into an avoided crossing. A flux pulse walks the control through it; population
-leaves ``|11⟩`` for ``|02⟩`` and comes back, and the round trip leaves a phase on
-``|11⟩`` alone. That is the CZ. Nothing here writes down a chevron or a
-conditional phase — both fall out of integrating the coupled Hamiltonian.
+**Two CZs, because the hardware has two.** Both work by exchanging ``|11⟩`` with
+``|02⟩`` and letting the round trip leave a phase on ``|11⟩`` alone, and neither
+writes a chevron or a conditional phase down — both fall out of integrating the
+Hamiltonian. What differs is how the exchange is switched on:
+
+- **DC flux on a qubit's own port**, which a stock `CompositeSquareEdge` emits.
+  ``|11⟩`` and ``|02⟩`` are degenerate when the control sits one anharmonicity
+  below the target, and a flux pulse walks the control through that crossing.
+- **A parametric drive on a coupler**, which `FluxTunableCoupler` emits. The
+  coupler between the two qubits is modulated at microwave frequency and a
+  sideband bridges the gap, so the qubits need not be near each other — and the
+  drive *frequency*, not the amplitude, is what decides whether the gate happens
+  at all.
 
 **Where this tier is weaker than the one-qubit one, and it matters.** The
 one-qubit simulator derives everything from a Cooper-pair-box Hamiltonian whose
 parameters are physical constants: no number in it was chosen to make a test
-pass. Two of the numbers here *were* chosen — the exchange coupling :data:`G_MHZ`
-and the flux-to-detuning curve :data:`FLUX_CURVATURE_GHZ` — because they describe
-a coupler and a flux line this project has no device to measure. Given them the
-dynamics are real, and a routine still has to find an avoided crossing it was not
-told the location of. But the claim in RFC 0004 §7 that "nothing is generated
-from a fitting model" is a claim about the one-qubit tier, and it is weaker here.
-Read a two-qubit result as "the routine recovers the operating point of a
-plausible coupler", not "of a real one".
+pass. Several numbers here *were* chosen — :data:`G_MHZ`,
+:data:`FLUX_CURVATURE_GHZ`, :data:`SIDEBAND_GAP_GHZ`,
+:data:`PARAMETRIC_RATE_MHZ`, :data:`STARK_SHIFT_MHZ` and
+:data:`STARK_ASYMMETRY` — because they describe a coupler and a flux line this
+project has no device to measure. Each one says in its own comment how it was
+picked, and :data:`PARAMETRIC_RATE_MHZ` at least comes from the lab's own
+calibrated operating points rather than from nothing.
+
+Given them the dynamics are real, and a routine still has to find a crossing it
+was not told the location of. But the claim in RFC 0004 §7 that "nothing is
+generated from a fitting model" is a claim about the one-qubit tier, and it is
+weaker here. Read a two-qubit result as "the routine recovers the operating
+point of a plausible coupler", not "of a real one".
 """
 
 from dataclasses import dataclass, field
@@ -265,21 +277,6 @@ class CoupledTransmons:
             + stark * (control_ladder.dag() * control_ladder)
             + STARK_ASYMMETRY * stark * (target_ladder.dag() * target_ladder)
         )
-
-    def parametric_evolve(self, state, amplitude: float, drive_ghz: float, duration_ns):
-        """Integrate the coupler-driven master equation over *duration_ns*."""
-        import qutip
-
-        if state.isket:
-            state = state * state.dag()
-        return qutip.mesolve(
-            self._parametric_hamiltonian(amplitude, drive_ghz),
-            state,
-            np.array([0.0, max(duration_ns, 1e-9)]),
-            self._collapse(),
-            e_ops=[],
-            options={"nsteps": 200_000},
-        ).final_state
 
     def parametric_phases(
         self, amplitude: float, drive_ghz: float, duration_ns: float

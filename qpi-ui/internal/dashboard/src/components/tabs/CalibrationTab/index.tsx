@@ -1,10 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Activity, Play, Loader2 } from "lucide-react";
-import type {
-  CalibrationRequest,
-  CalibrationResult,
-  Driver,
-} from "@/types";
+import type { CalibrationRequest, CalibrationResult, Driver } from "@/types";
 import { TUNER_KINDS } from "@/types";
 import { FidelityGrid } from "./elements/FidelityGrid";
 import { ParameterTable } from "./elements/ParameterTable";
@@ -69,7 +65,8 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
   // the current parameters are the last run that actually wrote some.
   const latest = visible[0];
   const latestCalibration = useMemo(
-    () => visible.find((r) => r.mode !== "fidelity_check" && r.status !== "failed"),
+    () =>
+      visible.find((r) => r.mode !== "fidelity_check" && r.status !== "failed"),
     [visible],
   );
 
@@ -179,7 +176,9 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
               )}
             </h2>
             {latestCalibration ? (
-              <ParameterTable results={latestCalibration.routine_results ?? []} />
+              <ParameterTable
+                results={latestCalibration.routine_results ?? []}
+              />
             ) : (
               <p className="text-sm text-gray-500 dark:text-zinc-400">
                 No successful calibration yet — a drift check measures fidelity

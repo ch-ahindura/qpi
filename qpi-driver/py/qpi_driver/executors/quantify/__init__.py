@@ -36,23 +36,10 @@ from qpi_driver.executors.utils.counts import (
     per_shot_values,
     qubit_key,
 )
-from qpi_driver.executors.utils.qiskit import load_qasm
+from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
 from qpi_driver.executors.utils.types import cast_to
 
 log = logging.getLogger(__name__)
-
-
-def measured_qubits(circuit: QuantumCircuit) -> list[int]:
-    """Qubit indices the circuit measures, in order, without repeats."""
-    found: list[int] = []
-    for instruction in circuit.data:
-        if not isinstance(instruction.operation, qiskit_library.Measure):
-            continue
-        for qubit in instruction.qubits:
-            index = circuit.find_bit(qubit).index
-            if index not in found:
-                found.append(index)
-    return found
 
 
 class QuantifyExecutor(Executor):

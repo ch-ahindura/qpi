@@ -116,6 +116,76 @@ three faults in them, all fixed:
   for. It now fits each fringe and subtracts. Its correction was also
   `np.pi - crossing` with the crossing in degrees.
 
+**The coupler CZ, as the hardware actually does it.** A `FluxTunableCoupler`
+parks its coupler with a DC bias current and then drives it at microwave
+frequency, and a sideband of that modulation bridges `|11>`–`|02>`. The drive
+frequency is the resonance condition, not a carrier detail: 50 MHz off and the
+same pulse performs no gate. The exchange rate is taken from the lab's own four
+calibrated edges rather than invented, so a device config off the bench lands
+near a real CZ. The pulse is a `SoftSquarePulse`, matching the tergite
+instruction this element was ported from — a hard square's edges are broadband
+and carry power at the 1–2 transition a CZ spends its duration avoiding.
+
+A Bell state now comes out `|00> + |11>` rather than merely *a* maximally
+entangled pair, because the coupler's Stark shift leaves a single-qubit phase on
+each qubit that only the edge's two `<qubit>_phase_correction` values remove.
+
+**Coupler bias, over SPI or a QCM.** The DC parking current is not part of any
+schedule — quantify's hardware config has no notion of an SPI rack — so the
+driver sets it directly at startup, through whichever mechanism the edge's
+`bias.source` names: an S4g current source over qcodes (`spi`, ramped rather
+than stepped), or the same offset held on a baseband cluster output (`qcm`).
+Switching is a config change. The current is validated to ±3.1 mA, a chip whose
+couplers disagree about the mechanism is refused, and a chip with no tunable
+couplers needs no rack at all. New option: `-o spi_rack_address`.
+
+### Fixed
+- `qpi-driver`: A virtual Z did nothing at all under `is_simulated`.
+  `ShiftClockPhase` never reached the simulated coordinator's pulse walk, so
+  every `rz`, `z`, `s` and `t` ran as an identity — silently, because a frame
+  shift plays no pulse and its absence looks like nothing happening. `h; h` and
+  `h; rz(pi); h` returned the same answer. This also meant a CZ's per-qubit
+  phase corrections, which are `ShiftClockPhase` operations, could never work.
+- `qpi-driver`: The simulated coordinator answered all three acquisition
+  protocols with an integrated IQ point. `meas_level=0` asks for a `Trace` — a
+  time series — and got a single sample, so a raw-waveform job produced a
+  one-point waveform and looked like it had worked. `meas_level=2` asks for
+  `ThresholdedAcquisition`, which the *instrument* discriminates and returns as
+  0/1; handing back IQ still produced correct counts because the executor falls
+  through to software discrimination, so the path every real job takes went
+  untested while a different one passed.
+- `qpi-driver`: A raw trace over more than one qubit could not be taken at all.
+  A Qblox module puts one sequencer into scope mode, so two traces in one
+  schedule do not compile — which made `meas_level=0` unavailable for any
+  circuit measuring more than one qubit, including the dashboard's default. The
+  quantify executor now plays the circuit once per measured qubit and merges the
+  traces, at an honest cost of N runs for N qubits.
+- `qpi-driver`: The coupler's CZ never reached the simulator. `compile_cz`
+  lowers the gate into a fresh subschedule, so the gate-level `device_elements`
+  is gone by the time the flux pulse arrives and the qubit pair could not be
+  identified. The pair is read from the port name (`q1_q2:fl`) instead.
+- `qpi-ui`: The dashboard's IQ plot mapped both axes onto a hardcoded
+  `-0.5..1.5` window. IQ arrives in whatever units the readout chain produces,
+  so that window is wrong for most devices — against the simulated chip both
+  clusters fall outside it and the tab renders empty. It scales to the data now,
+  over one square window so the distance between the blobs, which is the readout
+  fidelity, is not stretched.
+- `qpi-driver`: The `drag` routine swept its DRAG parameter over -1.0 to 1.0.
+  That parameter is in *seconds* — it scales a time derivative of the pulse
+  envelope — so a 20 ns gate wants values of order 1e-11, which the lab's own
+  device file confirms (-5.4e-11, -1.5e-11). Eleven orders of magnitude out
+  puts the derivative term so far above the carrier that the waveform exceeds
+  full scale, and the schedule does not compile at all. Found by making the
+  qblox tier-2 test compile rather than only build.
+- `qpi-driver`: The qblox tier-2 test asserted only that a routine's schedule
+  was *built*, while the quantify one compiled it — so a schedule that would
+  not compile under qblox passed. `HardwareAgent.compile` is called now, and
+  both backends are held to the same standard.
+- `qpi-ui`: The driver catalog offered `is_dummy` but not `is_simulated`, so the
+  registration form could not offer the simulator although both builders have
+  read the option since it was added. Its cross-check test listed the calibrate
+  driver's options by hand and had gone stale the same way.
+
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
   seconds rather than minutes when iterating on one tab.
