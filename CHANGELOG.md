@@ -89,6 +89,33 @@ benchmark fit that reported the same fidelity for every chip better than about 3
 error per Clifford — which, being below the default drift threshold, would have
 had a healthy chip recalibrating on every check.
 
+**Two-qubit gates in the simulator.** A CZ needs a joint state — two independent
+density matrices cannot be entangled — so the pair is now held in one register
+and the gate falls out of walking the control through the `|11>`–`|02>` avoided
+crossing. A `cz` in a circuit runs against `-o is_simulated=true` instead of
+raising, and `h; cz; h` produces a genuinely entangled pair; half a CZ does not.
+The coupler's exchange strength and flux-to-frequency curve are chosen rather
+than measured, so a two-qubit result means "against a plausible coupler" — the
+one-qubit tier's stronger claim does not carry over.
+
+Putting the two-qubit routines in front of real physics for the first time found
+three faults in them, all fixed:
+
+- `fit_chevron` looked for the brightest pixel on the chevron. The control reads
+  ≈1 at the CZ *and* everywhere the flux pulse did nothing, so the maximum was as
+  likely to land on an off-resonant row as on the gate. It now locates resonance
+  by oscillation contrast and the duration by the round trip along that row.
+- A chevron sweep can step clean over the crossing: it is a few MHz wide and the
+  default grid moves the control tens of MHz per step, leaving a surface flat to
+  within its noise that a peak-finder still reads a confident answer out of. It
+  now refuses below a minimum contrast, as spectroscopy already does for a line
+  narrower than its own step size.
+- `fit_conditional_phase` took the zero crossing of the two fringes' difference,
+  which sits at half the wanted angle displaced by the control's dynamical phase
+  over the flux pulse — tens of turns, and precisely what having two fringes is
+  for. It now fits each fringe and subtracts. Its correction was also
+  `np.pi - crossing` with the crossing in degrees.
+
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
   seconds rather than minutes when iterating on one tab.
