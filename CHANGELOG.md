@@ -155,6 +155,27 @@ exists; the constant survives as `RECALIBRATION_SEEDS` for exactly that case. A 
 where every check passes now recalibrates nothing and says so, which was not
 previously reachable.
 
+**Two more nodes, measuring what was hand-set** (RFC 0005 §7).
+
+`time_of_flight` writes `measure.acq_delay` — how long a readout signal takes to come
+back through the cables. The reference config carries 200 ns there with nothing having
+measured it. The routine opens the acquisition window *with* the readout pulse so the
+dead time lands inside a raw trace, which is the whole trick: leaving the configured
+delay in place would hide exactly the quantity being measured.
+
+`resonator_relaxation` reports the resonator linewidth, which nothing else measures —
+`resonator_spectroscopy` fits one from its Lorentzian and discards it. It deliberately
+does **not** write `measure.integration_time`: the ring-up is a floor on that, not an
+optimum, and the optimum trades signal-to-noise against relaxation during the window.
+Three time constants would have cut the reference config's 1 µs window to 240 ns on a
+criterion that never mentions noise.
+
+Both read one trace and share `fit_readout_timing`, because the arrival time and the
+fill time constant cannot be measured apart: a level crossing finds the arrival biased
+late by a quarter of the ring-up — 20 ns here — and fitting the ring-up needs to know
+where it began. One straight line through `ln(1 - rise)` gives both, consistent by
+construction, recovering 148 ns and 2.02 MHz against a true 148 ns and 2.00 MHz.
+
 ### Fixed
 
 - `qpi-driver`: A virtual Z did nothing under `is_simulated` — `ShiftClockPhase`
@@ -195,6 +216,16 @@ previously reachable.
   transitions — so it stopped at the top of a wiggle a few per cent deep, still in
   `|02⟩`: 55 ns for a round trip of 110. The return is a level crossing now, so the
   population has to reach the far side of the swing to count as having come back.
+- `make test-py-loop` and `make test-py-sim` reported success having run nothing when
+  either followed the other in one `make` invocation — which is the order `make test`
+  uses. `uv run` without `--no-sync` re-syncs to the project's *default* dependency
+  set, pruning the `sim` group the target had just installed, so every test skipped on
+  `importorskip("scqubits")` and pytest exited 0. Both now pin their own environment.
+- `qpi-driver`: A raw trace under `is_simulated` carried single-shot noise while
+  documenting itself as averaged over repetitions, which are contradictory claims.
+  It now falls as 1/√N like an integrated point does. The two halves mattered
+  together: at single-shot noise the 10% level of a trace and its noise floor are the
+  same number, so no arrival time could be found at any shot count.
 - `qpi-driver`: The readout could be calibrated once and never again. The hardware
   fixture pinned each readout port's intermediate frequency and let the LO float,
   so moving one of three qubits sharing a QRM_RF asked the module for two LOs and

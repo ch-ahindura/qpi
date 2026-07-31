@@ -221,8 +221,8 @@ cannot claim.
 
 | Node | Writes | Simulator needs |
 |---|---|---|
-| `time_of_flight` | `measure.acq_delay` | a propagation delay before the acquisition window |
-| `resonator_relaxation` | `measure.integration_time`, `measure.pulse_duration` | resonator ring-down — partly present already in `_trace` |
+| `time_of_flight` | `measure.acq_delay` | ✅ a propagation delay before the acquisition window |
+| `resonator_relaxation` | — (reports the linewidth) | ✅ the ring-up, already present in `_trace` |
 | `qubit_spectroscopy_amplitude` | `spec.amplitude` | nothing new; the line power-broadens already |
 | `resonator_spectroscopy_excited` | `clock_freqs.readout_1` | **the dispersive pull** — resonance per qubit state |
 | `readout_frequency_two_state` | `clock_freqs.readout_2state_opt` | the pull, plus separation as a function of drive frequency |
@@ -372,9 +372,23 @@ after the machinery.
    order in its own error and cannot be told apart from a gain change. Tier-1 tests
    for the recursion over a fabricated graph; a tier-2 test that every check
    schedule compiles.
-2. **The cheap missing writers.** `qubit_spectroscopy_amplitude`,
-   `time_of_flight`, `resonator_relaxation`. Each replaces a hardcoded number with a
-   measured one, and the first removes a known signal-to-noise trap.
+2. **The cheap missing writers.** Partly done.
+   - `time_of_flight` → `measure.acq_delay`: **done.** Opens the window *with* the
+     readout pulse so the dead time lands inside a raw trace, and recovers 148 ns
+     against a true 148 on the simulated chip.
+   - `resonator_relaxation`: **done, as a characterisation.** It reports the
+     resonator linewidth — which nothing else measures — and deliberately does *not*
+     write `measure.integration_time`. The ring-up is a floor on that, not an
+     optimum: choosing the optimum trades signal-to-noise against relaxation during
+     the window, which needs phase 4's discrimination fidelity. Three time constants
+     would have cut the reference config's 1 µs window to 240 ns on a criterion that
+     never mentions noise.
+   - `qubit_spectroscopy_amplitude`: **blocked**, and the blocker is §13's open
+     question rather than effort. There is nowhere to put the value: the transmon
+     element has `clock_freqs`, `measure`, `ports`, `pulse_compensation`, `reset` and
+     `rxy`, and none of them holds a spectroscopy drive amplitude. Adding one means a
+     custom element class and an `element_type` change in every device config, which
+     is a decision about the config format rather than a routine to write.
 3. **Dispersive readout in the simulator.** Blob positions from the response;
    readout-chain rotation and offset; the `|1⟩` pull. Nothing user-visible, so it
    lands with only simulator tests.

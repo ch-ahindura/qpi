@@ -22,6 +22,7 @@ from qpi_driver.tuners.fitting import (
     fit_rabi,
     fit_ramsey,
     fit_rb_decay,
+    fit_readout_timing,
     fit_resonator_spectroscopy,
     fit_t1,
     fit_t2,
@@ -260,6 +261,76 @@ def test_punchout_refuses_a_sweep_with_no_shift():
     powers = np.array([0.01, 0.05, 0.1, 0.2])
     with pytest.raises(FitError, match="no resonator shift"):
         fit_punchout(powers, np.full(4, 6.0e9))
+
+
+# --- the readout chain's timing, off one raw trace ------------------------------
+
+
+def _readout_trace(
+    arrival_ns: float, tau_ns: float = 79.58, samples: int = 1000, sigma: float = 0.008
+) -> np.ndarray:
+    """A trace that waits *arrival_ns*, then rings up with time constant *tau_ns*.
+
+    ``sigma`` is the *averaged* per-sample noise a Trace comes back with — a shot
+    count of 1024 over a single-shot spread of 0.25. At single-shot noise the 10%
+    level and the noise floor are the same number and no arrival is findable, which
+    is a property of the measurement rather than of this fit.
+    """
+    times = np.arange(samples, dtype=float)
+    envelope = np.where(
+        times >= arrival_ns, 1.0 - np.exp(-(times - arrival_ns) / tau_ns), 0.0
+    )
+    rng = np.random.default_rng(7)
+    return (
+        (1 + 3j) * envelope
+        + rng.normal(0, sigma, samples)
+        + 1j * rng.normal(0, sigma, samples)
+    )
+
+
+@pytest.mark.parametrize("arrival", [0.0, 50.0, 148.0, 300.0])
+def test_readout_timing_recovers_the_arrival_and_the_ring_up(arrival):
+    """Both together, because neither is measurable alone.
+
+    A level crossing finds the arrival biased late by the ring-up, and fitting the
+    ring-up needs to know where it started. One straight line through
+    ``ln(1 - rise)`` gives both, consistent by construction.
+    """
+    fitted = fit_readout_timing(_readout_trace(arrival), sampling_rate=1e9)
+
+    assert fitted["time_of_flight"] * 1e9 == pytest.approx(arrival, abs=8.0)
+    assert fitted["ring_up_time"] * 1e9 == pytest.approx(79.58, rel=0.05)
+    # The linewidth is what nothing else measures, and it is the same number.
+    assert fitted["linewidth"] == pytest.approx(2e6, rel=0.05)
+
+
+def test_readout_timing_refuses_a_trace_with_no_signal():
+    """A dead readout chain is not a mismeasured delay, and must not report one."""
+    noise = np.random.default_rng(0).normal(0, 0.01, 500) + 0j
+    with pytest.raises(FitError, match="never rises out of its own noise"):
+        fit_readout_timing(noise, sampling_rate=1e9)
+
+
+def test_readout_timing_refuses_an_integrated_acquisition():
+    """One point per acquisition is the wrong protocol, not a short trace."""
+    with pytest.raises(FitError, match="needs a trace"):
+        fit_readout_timing(np.array([1 + 1j, 2 + 2j]), sampling_rate=1e9)
+
+
+def test_readout_timing_reads_the_baseline_from_the_front_not_a_percentile():
+    """With the delay already right there is no dead time to take a floor from.
+
+    A low percentile over the whole trace lands part-way up the ring-up in that
+    case, reporting a floor about half the swing too high — which moved the
+    recovered onset by 50 ns on a true zero. The front of the trace is the baseline
+    whether or not the window waited first.
+    """
+    fitted = fit_readout_timing(_readout_trace(0.0), sampling_rate=1e9)
+    assert fitted["time_of_flight"] * 1e9 < 10.0
+    # Not near zero — with no dead time the lead window unavoidably averages in the
+    # first few per cent of the rise. Far below the settled level is what matters,
+    # and is what a percentile over the whole trace would not give.
+    assert fitted["noise_floor"] < 0.1 * fitted["settled_amplitude"]
 
 
 # --- two-qubit fits -----------------------------------------------------------

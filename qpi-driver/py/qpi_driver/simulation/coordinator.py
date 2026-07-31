@@ -128,6 +128,11 @@ class _Acquisition:
     #: frequency the resonator is actually at, falling away outside its
     #: linewidth — which is what `resonator_spectroscopy` sweeps to find.
     contrast: float = 1.0
+    #: Seconds of dead time at the front of a `Trace`: how much longer the signal
+    #: takes to arrive than this window waited for it. Negative means the window
+    #: opened late and the front of the signal was missed. What `time_of_flight`
+    #: measures, and zero when ``acq_delay`` already matches the wiring.
+    dead_time: float = 0.0
 
 
 #: The most qubits allowed in one entangled register. Each one multiplies the
@@ -320,6 +325,10 @@ class SimulatedCoordinator:
         #: Readout clock to the amplitude last played on it. A punchout sweep
         #: changes this between acquisitions, which is the whole experiment.
         self._readout_amps: dict[str, float] = {}
+        #: Readout clock to when its pulse began, so an acquisition knows how long
+        #: after the pulse its window opened — which is what `time_of_flight`
+        #: measures against the wiring's own delay.
+        self._readout_starts: dict[str, float] = {}
         #: Each qubit's resonator, built once per schedule from where its readout
         #: clock started — see `TransmonSimulator.resonator`.
         self._resonators: dict[str, Any] = {}
@@ -364,6 +373,7 @@ class SimulatedCoordinator:
         self._clock_phases = {}
         self._sample_cache = {}
         self._readout_amps = {}
+        self._readout_starts = {}
         registers = _Registers(self.simulator)
         clocks = self._clock_frequencies(compiled)
         # Before any `SetClockFrequency` is replayed: a spectroscopy sweep moves
@@ -384,7 +394,7 @@ class SimulatedCoordinator:
                     pulse, time, registers, clocks, last_time, gate_qubits
                 )
             for acquisition in _infos(operation, "acquisition_info"):
-                self._acquire(acquisition, registers, acquisitions, clocks)
+                self._acquire(acquisition, registers, acquisitions, clocks, time)
 
         return acquisitions
 
@@ -493,6 +503,14 @@ class SimulatedCoordinator:
                 amplitude = pulse.get("offset_path_I")
             if amplitude is not None and abs(np.real(amplitude)) > 0:
                 self._readout_amps[clock] = float(abs(np.real(amplitude)))
+                # The *first* non-zero amplitude since the last acquisition, which
+                # is when the pulse began. A long readout arrives as a held offset
+                # plus a short square tail, so taking the latest would report the
+                # tail's start — 296 ns into a 300 ns pulse — and `time_of_flight`
+                # would measure the wrong interval.
+                self._readout_starts.setdefault(
+                    clock, time + float(pulse.get("t0") or 0.0)
+                )
             for register in registers.distinct():
                 self._idle(register, duration)
             return
@@ -952,6 +970,7 @@ class SimulatedCoordinator:
         registers: _Registers,
         found: list[_Acquisition],
         clocks: dict[str, float],
+        time: float = 0.0,
     ) -> None:
         clock = str(acquisition.get("clock") or "")
         qubit = (
@@ -973,8 +992,30 @@ class SimulatedCoordinator:
                 threshold=float(acquisition.get("acq_threshold") or 0.0),
                 rotation=float(acquisition.get("acq_rotation") or 0.0),
                 contrast=self._contrast(qubit, clock, clocks),
+                dead_time=self._dead_time(
+                    clock, time + float(acquisition.get("t0") or 0.0)
+                ),
             )
         )
+        # The next acquisition on this clock belongs to the next readout pulse.
+        self._readout_starts.pop(clock, None)
+
+    def _dead_time(self, clock: str, window_opened: float) -> float:
+        """How long the front of this window waited with nothing in it, in seconds.
+
+        The signal arrives ``time_of_flight_ns`` after the readout pulse begins, and
+        the window opens ``acq_delay`` after it. The difference is what a raw trace
+        shows as dead samples, and what `time_of_flight` exists to remove: setting
+        ``acq_delay`` to the wiring's delay makes this zero.
+
+        Negative when the window opened *late*, which loses the front of the signal
+        rather than wasting the front of the window — the more expensive mistake, and
+        the reason this is signed rather than clamped.
+        """
+        started = self._readout_starts.get(clock)
+        if started is None:
+            return 0.0
+        return self.simulator.time_of_flight_ns * NS - (window_opened - started)
 
     def _contrast(self, qubit: str, clock: str, clocks: dict[str, float]) -> float:
         """How much signal the resonator returns for this acquisition.
@@ -1125,9 +1166,19 @@ class SimulatedCoordinator:
         only the settled part of the trace carries the qubit's state. Sampled at
         1 GSa/s, which is the Qblox digitiser's rate.
 
-        The noise here is per sample and much larger than on an integrated
-        point, because integrating the window is what averages it down — that
-        ratio is most of why a trace looks the way it does.
+        The noise here is per sample and much larger than on an integrated point,
+        because integrating the window is what averages it down — that ratio is most
+        of why a trace looks the way it does.
+
+        It still falls with the shot count, though, and that correction was missing.
+        A `Trace` is averaged over repetitions *on the instrument*, which is why
+        there is no shot axis in the returned dataset; leaving the per-sample noise
+        at its single-shot size while claiming the average had been taken made the
+        two halves of that sentence contradict each other. It also made the front of
+        a trace unreadable: `fit_readout_timing` locates the arrival by where the
+        signal leaves its noise floor, and at single-shot noise the 10% level and the
+        noise floor are the same number, so no arrival could be found at any shot
+        count.
         """
         samples = max(int(round(entry.duration / NS)), 1)
         times = np.arange(samples, dtype=float)
@@ -1136,12 +1187,19 @@ class SimulatedCoordinator:
             GROUND_IQ * (1 - entry.excited_population)
             + EXCITED_IQ * entry.excited_population
         )
+        # Nothing arrives until the signal has travelled. Before that the digitiser
+        # samples noise, and how many samples that is is exactly what
+        # `time_of_flight` measures — see `_dead_time`.
+        arrival = entry.dead_time / NS
         # Ring-up at the resonator linewidth: kappa in GHz gives ns directly.
         tau = 1.0 / (2 * np.pi * max(self.simulator.readout_linewidth_ghz, 1e-6))
-        envelope = 1.0 - np.exp(-times / tau)
+        envelope = np.where(
+            times >= arrival, 1.0 - np.exp(-(times - arrival) / tau), 0.0
+        )
 
-        noise = self._rng.normal(0.0, READOUT_NOISE, samples) + 1j * self._rng.normal(
-            0.0, READOUT_NOISE, samples
+        spread = READOUT_NOISE / np.sqrt(max(self._repetitions, 1))
+        noise = self._rng.normal(0.0, spread, samples) + 1j * self._rng.normal(
+            0.0, spread, samples
         )
         return settled * envelope + noise
 

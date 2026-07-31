@@ -16,12 +16,14 @@ from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
+    grid_duration,
     linear_setpoints,
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
     fit_punchout,
     fit_qubit_spectroscopy,
+    fit_readout_timing,
     fit_resonator_spectroscopy,
     signal_of,
 )
@@ -84,6 +86,149 @@ def _current_clock(device: Any, target: str, clock: str) -> float:
             f"'centre_frequency' or 'frequencies' for this routine"
         )
     return float(value)
+
+
+class _ReadoutTraceRoutine(CalibrationRoutine):
+    """Shared base for the two routines that read one raw acquisition (RFC 0005 §7).
+
+    Both capture a `Trace` with the acquisition window opened at the readout pulse
+    and both call `fit_readout_timing`, because the arrival time and the fill time
+    constant cannot be measured independently — see that function. They are separate
+    nodes because they write different parameters and drift for different reasons:
+    ``acq_delay`` is a property of the cabling, ``integration_time`` of the
+    resonator.
+
+    ``acq_delay`` is set to zero for the measurement itself, which is the whole
+    trick: opening the window with the pulse is what puts the dead time inside the
+    trace where it can be seen. Leaving the configured delay in place would hide
+    exactly the quantity being measured.
+    """
+
+    #: Samples per second the digitiser records a trace at. Qblox's rate; a chip on
+    #: other hardware overrides it through ``sampling_rate``.
+    SAMPLING_RATE = 1e9
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        self._restore = {
+            "measure.acq_delay": read_path(element, "measure.acq_delay"),
+            "measure.integration_time": read_path(element, "measure.integration_time"),
+        }
+        window = float(config.get("window", 2e-6))
+        write_path(element, "measure.acq_delay", 0.0)
+        write_path(element, "measure.integration_time", window)
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        schedule.add(backend.Reset(target))
+        schedule.add(
+            backend.Measure(
+                target,
+                acq_index=0,
+                acq_protocol="Trace",
+                bin_mode=backend.BinMode.AVERAGE,
+            )
+        )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        try:
+            trace = _trace_of(dataset)
+            rate = float(config.get("sampling_rate", self.SAMPLING_RATE))
+            return fit_readout_timing(trace, rate)
+        finally:
+            # Whatever the fit did, the device must not be left with the zero delay
+            # and the long window this routine set to make its own measurement
+            # possible. `apply` writes the calibrated value over the restored one.
+            element = device.get_element(target)
+            for path, value in self._restore.items():
+                write_path(element, path, value)
+
+
+class TimeOfFlight(_ReadoutTraceRoutine):
+    """How long a readout signal takes to come back, so the window opens when it does.
+
+    A root of the graph: it needs no calibrated parameter, only a readout pulse and a
+    raw trace, and everything that acquires afterwards wants the delay it writes.
+    Hand-set until now — 200 ns in the reference config, with nothing measuring it.
+    """
+
+    name = "time_of_flight"
+    # The reference pipelines put `tof` at the very root, before any resonator is
+    # known. That works for a reflection measurement, where a mismatched resonator
+    # sends back plenty off resonance. What this simulator models — and what a
+    # transmission geometry does — returns signal only *near* resonance, so a trace
+    # taken at a wrong readout frequency is noise and the fit rightly refuses it.
+    # Hence the dependency: find the resonator, then time the flight to it.
+    depends_on = ("resonator_spectroscopy",)
+    updates = ("measure.acq_delay",)
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        # On the grid, because the fit reports an arrival to a fraction of a sample
+        # and `acq_delay` shifts the acquisition. An unrounded value compiles here and
+        # makes every *later* schedule fail with a complaint about a time value —
+        # measured: 149.327 ns took out punchout, qubit spectroscopy, Rabi, Ramsey,
+        # T1 and flux spectroscopy, none of which is the routine at fault.
+        write_path(
+            device.get_element(target),
+            "measure.acq_delay",
+            grid_duration(params["time_of_flight"]),
+        )
+
+
+class ResonatorRelaxation(_ReadoutTraceRoutine):
+    """How fast the resonator fills — its linewidth, in the time domain.
+
+    A characterisation rather than a calibration, and deliberately so. The obvious
+    parameter to write is ``measure.integration_time``, and the ring-up is only a
+    *floor* on it: the optimum trades signal-to-noise against relaxation during the
+    window, which needs the discrimination fidelity of RFC 0005 phase 4 to measure.
+    Three time constants would have shortened the reference config's 1 µs window to
+    240 ns on the strength of a criterion that never mentions noise.
+
+    What it reports is the linewidth, and nothing else measures that.
+    `resonator_spectroscopy` fits one from its Lorentzian and discards it, and that
+    routine's own check currently scales its tolerance by a constant for want of
+    somewhere to keep it — see RFC 0005 §13.
+
+    Depends on `resonator_spectroscopy` because a resonator interrogated off its own
+    resonance rings up towards a smaller settled level, and a fit of that reports how
+    the drive overlaps the line rather than the resonator's own width.
+    """
+
+    name = "resonator_relaxation"
+    depends_on = ("resonator_spectroscopy",)
+    updates = ()
+
+
+def _trace_of(dataset: Any) -> Any:
+    """The one raw trace in *dataset*, as a complex 1-D array.
+
+    `signal_of` is the wrong reducer here: it takes the magnitude and flattens, and
+    a trace fit needs the complex samples in time order rather than a scalar per
+    acquisition.
+    """
+    import numpy as np
+
+    values: Any = dataset
+    data_vars = getattr(dataset, "data_vars", None)
+    if data_vars is not None:
+        names = list(data_vars)
+        if not names:
+            raise RoutineError("the trace acquisition returned no data variables")
+        values = dataset[names[0]]
+    array = np.asarray(getattr(values, "values", values)).reshape(-1)
+    if array.size < 16:
+        raise RoutineError(
+            f"expected a raw trace, got {array.size} sample(s) — the acquisition "
+            "protocol was not Trace, so there is no timing to read"
+        )
+    return array
 
 
 class ResonatorSpectroscopy(CalibrationRoutine):

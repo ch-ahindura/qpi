@@ -175,3 +175,24 @@ def linear_setpoints(start: float, stop: float, count: int) -> list[float]:
         return [start]
     step = (stop - start) / (count - 1)
     return [start + step * i for i in range(count)]
+
+
+#: The instrument plays pulses on a 1 ns grid and the compiler refuses anything
+#: else, so any *time* written to a device is only usable once it is a whole number
+#: of nanoseconds.
+GRID_NS = 1e-9
+
+
+def grid_duration(seconds: float) -> float:
+    """*seconds* rounded to the hardware's pulse-time grid.
+
+    Any fit that interpolates between setpoints reports more precision than the
+    instrument can play, and writing that to the device makes every *later* schedule
+    fail to compile — the routine looks like it succeeded and the next one dies with
+    a complaint about a time value, some way from the cause.
+
+    Two routines have produced that bug. `cz_chevron` refines the round trip between
+    its duration setpoints; `time_of_flight` fits an arrival to a fraction of a
+    sample. Both are correct measurements and neither is a playable time.
+    """
+    return round(float(seconds) / GRID_NS) * GRID_NS

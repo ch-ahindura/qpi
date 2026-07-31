@@ -926,6 +926,11 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
         "span": 30e6,
         "points": 61,
     },
+    # A window long enough to hold the dead time *and* several ring-up constants:
+    # 148 ns of flight plus 80 ns per constant needs well over half a microsecond
+    # before the fit has a settled level to normalise against.
+    "time_of_flight": {"window": 2e-6},
+    "resonator_relaxation": {"window": 2e-6},
     # Centred above the fixture's claim rather than on it, because q0 is 214 MHz
     # *above* where the config says and a symmetric sweep spends half its points
     # below the qubit. Sweeping [4.85, 5.27] instead of [4.78, 5.22] leaves the
@@ -1095,6 +1100,70 @@ def test_the_readout_lands_on_the_resonance_at_the_power_it_chose(fully_calibrat
         # And it moved, rather than the fixture having been right all along.
         was = float(declared[qubit]["clock_freqs"]["readout"])
         assert abs(written - was) > 2e6, f"{qubit}'s readout never moved off {was}"
+
+
+def test_the_acquisition_window_opens_when_the_signal_arrives(fully_calibrated):
+    """`time_of_flight` measured the wiring's delay, which nothing used to.
+
+    The reference config carries 200 ns here with nothing having measured it. The
+    simulated chip's delay is 148 ns, and the routine has to find that by opening the
+    window *with* the readout pulse so the dead time lands inside the trace — which
+    is the whole trick, since leaving the configured delay in place would hide
+    exactly the quantity being measured.
+
+    Tight tolerance on purpose: the arrival and the ring-up are recovered from one
+    straight line, and a level crossing — the obvious alternative — is biased late by
+    a quarter of the ring-up, some 20 ns here. Ten nanoseconds would pass with that
+    bug present; two does not.
+    """
+    _report, device, simulator, _scheduler = fully_calibrated
+    config = yaml.safe_load(device.read_text())
+
+    for qubit in ("q0", "q1"):
+        written = config[qubit]["measure"]["acq_delay"]
+        assert written * 1e9 == pytest.approx(simulator.time_of_flight_ns, abs=2.0), (
+            f"{qubit}'s acq_delay is {written * 1e9:.1f} ns against a true flight of "
+            f"{simulator.time_of_flight_ns} ns"
+        )
+        # And on the instrument's 1 ns grid. The fit reports an arrival to a fraction
+        # of a sample, and `acq_delay` shifts the acquisition: writing 149.327 ns
+        # compiled here and then broke punchout, qubit spectroscopy, Rabi, Ramsey, T1
+        # and flux spectroscopy, none of which is the routine at fault. Same shape as
+        # the CZ duration below.
+        assert written * 1e9 == pytest.approx(round(written * 1e9), abs=1e-6), (
+            f"acq_delay must be a whole number of nanoseconds, got {written * 1e9}"
+        )
+
+
+def test_resonator_relaxation_measures_the_linewidth_and_writes_nothing(
+    fully_calibrated,
+):
+    """A characterisation, deliberately — see the routine for why.
+
+    The tempting parameter is `measure.integration_time`, and the ring-up is only a
+    floor on it: the optimum trades signal-to-noise against relaxation during the
+    window, which nothing here measures yet. So the routine reports the linewidth —
+    which nothing else does, and which `resonator_spectroscopy`'s check currently
+    approximates with a constant — and leaves the window alone.
+    """
+    report, device, simulator, _scheduler = fully_calibrated
+    results = [
+        r for r in report.routine_results if r.routine_name == "resonator_relaxation"
+    ]
+    assert results, "resonator_relaxation did not run"
+
+    for result in results:
+        assert result.parameters["linewidth"] == pytest.approx(
+            simulator.readout_linewidth_ghz * GHZ, rel=0.1
+        )
+
+    # And the window is untouched, at whatever the fixture set.
+    declared = yaml.safe_load((FIXTURES / "quantify.device.yml").read_text())
+    written = yaml.safe_load(device.read_text())
+    for qubit in ("q0", "q1"):
+        assert written[qubit]["measure"]["integration_time"] == pytest.approx(
+            float(declared[qubit]["measure"]["integration_time"])
+        )
 
 
 def test_punchout_wrote_a_readout_power_inside_its_sweep(fully_calibrated):

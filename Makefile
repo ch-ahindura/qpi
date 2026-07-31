@@ -185,7 +185,7 @@ test-py-sim:
 	@echo "Running Python calibration tests against the physics simulator..."
 	$(UV) sync --project qpi-driver/py --group sim --dev
 	$(RESIGN_Q1ASM)
-	$(UV) run --project qpi-driver/py pytest -v \
+	$(UV) run --no-sync --project qpi-driver/py pytest -v \
 		qpi-driver/py/tests/test_physics_simulation.py \
 		qpi-driver/py/tests/test_calibration_e2e.py
 
@@ -200,7 +200,13 @@ test-py-loop:
 	# silently skips half the tests — which is how qblox stayed a stub.
 	$(UV) sync --project qpi-driver/py --extra quantify --extra qblox --group sim --dev
 	$(RESIGN_Q1ASM)
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_calibration_loop.py -v
+	# --no-sync, because `uv run` otherwise re-syncs to the project's *default*
+	# dependency set and prunes the `sim` group the line above just installed. Then
+	# every test in the file skips on `importorskip("scqubits")` and pytest exits 0,
+	# so the target reports success having run nothing. Seen when this follows
+	# test-py-sim in one `make test`, which is the order `make test` uses.
+	$(UV) run --no-sync --project qpi-driver/py pytest \
+		qpi-driver/py/tests/test_calibration_loop.py -v
 
 test-js-client:
 	@echo "Running JS client tests..."

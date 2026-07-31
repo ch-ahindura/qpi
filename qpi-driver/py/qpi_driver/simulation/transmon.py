@@ -54,6 +54,12 @@ class TransmonSimulator:
             :class:`~qpi_driver.simulation.resonator.ReadoutResonator`.
         readout_punchout_amplitude: readout amplitude at which half that pull has
             collapsed.
+        time_of_flight_ns: how long after a readout pulse is played its reflection
+            reaches the digitiser — cables, converters and the resonator's own
+            delay. This is what ``measure.acq_delay`` has to match: open the
+            acquisition window earlier and the front of it is dead time, later and
+            the beginning of the signal is missed. A property of the wiring rather
+            than of the chip, which is why it is here and not on the resonator.
         resonator_frequencies_ghz: per-qubit resonator frequencies, where the
             chip's actually are. The one thing here that is a property of a *chip*
             rather than of a transmon, because it is the one a device config
@@ -76,6 +82,7 @@ class TransmonSimulator:
     readout_linewidth_ghz: float = 0.002
     readout_dispersive_shift_ghz: float = 0.003
     readout_punchout_amplitude: float = 0.7
+    time_of_flight_ns: float = 148.0
     resonator_frequencies_ghz: dict[str, float] = field(default_factory=dict)
     shot_noise: float = 0.004
     seed: int = 20260731

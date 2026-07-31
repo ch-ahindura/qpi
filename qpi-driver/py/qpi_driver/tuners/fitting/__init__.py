@@ -29,6 +29,7 @@ from .lorentzian import (
     fit_resonator_spectroscopy,
     lorentzian,
 )
+from .trace import fit_readout_timing
 
 __all__ = [
     "FitError",
@@ -40,6 +41,7 @@ __all__ = [
     "fit_resonator_spectroscopy",
     "fit_qubit_spectroscopy",
     "fit_punchout",
+    "fit_readout_timing",
     "decaying_cosine",
     "fit_rabi",
     "fit_ramsey",
