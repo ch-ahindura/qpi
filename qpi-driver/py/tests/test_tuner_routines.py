@@ -170,3 +170,36 @@ def test_a_write_back_round_trips_through_the_real_loader(quantify_tuner):
     reloaded = load_quantum_device(name="reloaded", config=path)
     assert reloaded.get_element("q0").rxy.amp180() == 0.1234
     assert reloaded.edges() == ["q0_q1", "q1_q2"]
+
+
+@pytest.mark.parametrize("tuner_name", ["quantify", "qblox"])
+def test_closing_a_live_tuner_does_not_raise(tuner_name, tmp_path):
+    """The worker calls `close()` on shutdown, so it has to survive a live coordinator.
+
+    Its own tuner rather than the module fixture, deliberately. That fixture is
+    torn down *after* a test that has already called `Instrument.close_all()`,
+    so its `close()` runs against a coordinator that is already gone — the one
+    arrangement in which a broken shutdown looks fine.
+    """
+    if not {
+        "quantify": IS_QUANTIFY_INSTALLED,
+        "qblox": IS_QBLOX_SCHEDULER_INSTALLED,
+    }[tuner_name]:
+        pytest.skip(f"the {tuner_name} scheduler is not installed")
+
+    from qpi_driver.compat.quantify import Instrument
+    from qpi_driver.tuners import resolve_tuner
+
+    device = tmp_path / "quantify.device.yml"
+    device.write_bytes((FIXTURES / "quantify.device.yml").read_bytes())
+
+    Instrument.close_all()
+    tuner = resolve_tuner(
+        tuner_name,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_dummy=True,
+        data_dir=tmp_path / "data",
+    )
+    tuner.close()
+    tuner.close()  # and again: a driver failing mid-shutdown closes twice

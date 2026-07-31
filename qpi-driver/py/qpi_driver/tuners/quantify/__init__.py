@@ -118,15 +118,30 @@ class QuantifyTuner(Tuner):
         return self._device
 
     def close(self) -> None:
-        # Mirrors QuantifyExecutor.close: components are detached and closed
-        # individually before the coordinator itself, and every step is
-        # best-effort — a shutdown that raises leaves instruments held open.
-        for component in list(getattr(self._instrument_coordinator, "components", [])):
+        """Detach the coordinator's components, then release every instrument.
+
+        ``InstrumentCoordinator.components`` is a qcodes ``ManualParameter``
+        holding component *names*, so it has to be called — iterating it
+        directly raises, and the shutdown that raises is the one that leaves a
+        cluster held open against the next driver that wants it.
+
+        Every step is best-effort, including reading the component list: by the
+        time this runs the coordinator may already have been closed.
+        """
+        try:
+            components = list(self._instrument_coordinator.components())
+        except Exception:  # noqa: BLE001 - shutdown is best-effort
+            components = []
+
+        for name in components:
             try:
-                self._instrument_coordinator.remove_component(component.name)
-                component.close()
+                self._instrument_coordinator.remove_component(name)
             except Exception:  # noqa: BLE001 - shutdown is best-effort
-                log.debug("could not close component %s", component)
+                log.debug("could not detach component %s", name)
+
+        # `close_all` closes the components themselves, so detaching them above
+        # is enough; looking each one up by name to close it individually would
+        # duplicate what the next line does anyway.
         for shutdown in (self._instrument_coordinator.close, Instrument.close_all):
             try:
                 shutdown()

@@ -314,3 +314,23 @@ measure q[1] -> c[0];"""
 def test_quantify_gate_conversion_matches_qiskit_unitary(name, num_qubits, apply_gate):
     """Every gate to_quantify_gates supports must reproduce qiskit's own unitary for it."""
     assert_gate_conversion_matches_qiskit(to_quantify_gates, num_qubits, apply_gate)
+
+
+def test_closing_a_live_executor_does_not_raise():
+    """The QPU worker closes its executor on shutdown, so it must survive a live one.
+
+    `InstrumentCoordinator.components` is a qcodes parameter holding component
+    *names*: it has to be called, and iterating it raises. A shutdown that
+    raises leaves the cluster held against the next driver that wants it.
+    """
+    from qpi_driver.compat.quantify import Instrument
+
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_dummy=True,
+        quantify_hardware_config=_QUANTIFY_HARDWARE_CONFIG,
+        quantify_device_config=_QUANTIFY_DEVICE_CONFIG,
+    )
+    executor.close()
+    executor.close()  # and again: a driver failing mid-shutdown closes twice

@@ -373,10 +373,20 @@ class QuantifyExecutor(Executor):
         return {"counts": counts_dict, "shots": shots}
 
     def close(self) -> None:
-        """Release resources."""
-        for component in self._instrument_coordinator.components:
-            self._instrument_coordinator.remove_component(component.name)
-            component.close()
+        """Detach the coordinator's components, then release it.
+
+        ``InstrumentCoordinator.components`` is a qcodes ``ManualParameter``
+        holding component *names*, so it has to be called — iterating it
+        directly raises, and a shutdown that raises leaves the cluster held
+        against the next driver that wants it.
+        """
+        components: list = []
+        with suppress(Exception):
+            components = list(self._instrument_coordinator.components())
+
+        for name in components:
+            with suppress(Exception):
+                self._instrument_coordinator.remove_component(name)
 
         with suppress(Exception):
             self._instrument_coordinator.close()
