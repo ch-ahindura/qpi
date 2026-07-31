@@ -715,3 +715,33 @@ def test_a_coupler_driven_off_resonance_does_nothing(coupler_device, tmp_path):
     assert aligned < 0.8, (
         f"a drive 50 MHz off the sideband should not make a Bell pair, got {counts}"
     )
+
+
+def test_a_raw_trace_over_two_qubits_takes_one_run_each(calibrated_device):
+    """A Qblox module scopes one sequencer, so two traces need two runs.
+
+    Asking both qubits for a raw trace in one schedule does not compile —
+    "Only one sequencer per device can trigger raw trace capture" — which used
+    to make `meas_level=0` simply unavailable for any circuit measuring more
+    than one qubit. The executor now runs the circuit once per measured qubit
+    and captures one trace each time, which is what the instrument allows and
+    what a lab does by hand.
+    """
+    device, simulator = calibrated_device
+    qasm = (
+        'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[2] q;\nbit[2] c;\n'
+        "x q[0];\nc[0] = measure q[0];\nc[1] = measure q[1];\n"
+    )
+    memory = np.asarray(run_at(device, simulator, qasm, meas_level=0)["memory"])
+
+    assert memory.shape == (2, 1000, 2), (
+        f"expected a 1 us trace per qubit as [I, Q] pairs, got {memory.shape}"
+    )
+    # The two qubits are in different states, and their traces have to say so —
+    # otherwise the second run measured the first qubit again.
+    excited = float(np.mean(memory[0, -200:, 0]))
+    ground = float(np.mean(memory[1, -200:, 0]))
+    assert excited > ground, (
+        f"q0 was excited and q1 was not, but their traces settle at "
+        f"{excited:.2f} and {ground:.2f}"
+    )

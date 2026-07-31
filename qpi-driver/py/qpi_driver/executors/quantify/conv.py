@@ -29,6 +29,7 @@ def to_quantify_gates(
     acq_protocol: str = "SSBIntegrationComplex",
     acq_kwargs: dict | None = None,
     clbit_map: list[tuple[int, int, int]] | None = None,
+    only_qubit: int | None = None,
 ) -> list[Operation]:
     """Converts a qiskit Instruction to Quantify gate operations.
 
@@ -41,6 +42,10 @@ def to_quantify_gates(
         clbit_map: If given, appended to with a ``(qubit_idx, acq_index, clbit_idx)``
             triple for every Measure operation, recording which classical bit
             each acquisition targets.
+        only_qubit: If given, acquire on that qubit alone and leave the other
+            measurements out of the schedule. This exists for raw traces: a
+            Qblox module can put only one sequencer into scope mode, so a
+            multi-qubit trace has to be taken one qubit per run.
 
     Returns:
         list of quantify Operations
@@ -219,6 +224,8 @@ def to_quantify_gates(
         extra = acq_kwargs or {}
         clbit_indices = [circuit.find_bit(c).index for c in instruction.clbits]
         for idx, clbit_idx in zip(qubit_indices, clbit_indices):
+            if only_qubit is not None and idx != only_qubit:
+                continue
             acq_idx = acq_indices.get(idx, 0)
             # Use unique acq_channel per qubit to avoid overlaps
             result.append(

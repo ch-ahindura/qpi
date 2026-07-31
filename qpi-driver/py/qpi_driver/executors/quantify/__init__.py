@@ -41,7 +41,18 @@ from qpi_driver.executors.utils.types import cast_to
 
 log = logging.getLogger(__name__)
 
-log = logging.getLogger(__name__)
+
+def measured_qubits(circuit: QuantumCircuit) -> list[int]:
+    """Qubit indices the circuit measures, in order, without repeats."""
+    found: list[int] = []
+    for instruction in circuit.data:
+        if not isinstance(instruction.operation, qiskit_library.Measure):
+            continue
+        for qubit in instruction.qubits:
+            index = circuit.find_bit(qubit).index
+            if index not in found:
+                found.append(index)
+    return found
 
 
 class QuantifyExecutor(Executor):
@@ -154,12 +165,52 @@ class QuantifyExecutor(Executor):
                 if param_values is not None and circuit.parameters:
                     bound_circuit = circuit.assign_parameters(param_values)
                 sub_datasets.append(
-                    self._run_circuit(
+                    self._acquire_circuit(
                         payload, bound_circuit, circ_shots, acq_protocol, acq_kwargs
                     )
                 )
 
         return combine_circuit_datasets(sub_datasets)
+
+    def _acquire_circuit(
+        self,
+        payload: JobPayload,
+        circuit: QuantumCircuit,
+        shots: int,
+        acq_protocol: str,
+        acq_kwargs: dict,
+    ) -> xr.Dataset:
+        """One circuit's acquisition, in as many runs as the hardware requires.
+
+        Almost always one. The exception is a raw trace over more than one
+        qubit: a Qblox module can put a single sequencer into scope mode, so
+        asking two qubits for a trace at once does not compile —
+        *"Only one sequencer per device can trigger raw trace capture"*.
+
+        Rather than refuse a `meas_level=0` job on a multi-qubit circuit, run
+        the circuit once per measured qubit and capture one trace each time.
+        That is what the instrument allows and what a lab does by hand; the
+        cost is honest and unavoidable — N runs' worth of time for N qubits,
+        because the shots are repeated per qubit rather than shared.
+        """
+        measured = measured_qubits(circuit)
+        if acq_protocol != "Trace" or len(measured) < 2:
+            return self._run_circuit(payload, circuit, shots, acq_protocol, acq_kwargs)
+
+        log.info(
+            "raw trace over %d qubits: taking %d runs, one scope-mode acquisition each",
+            len(measured),
+            len(measured),
+        )
+        passes = [
+            self._run_circuit(
+                payload, circuit, shots, acq_protocol, acq_kwargs, only_qubit=qubit
+            )
+            for qubit in measured
+        ]
+        # Each pass carries exactly one qubit's variable, on its own
+        # channel-suffixed dimensions, so there is nothing to collide.
+        return xr.merge(passes, combine_attrs="override")
 
     def _run_circuit(
         self,
@@ -168,6 +219,7 @@ class QuantifyExecutor(Executor):
         shots: int,
         acq_protocol: str,
         acq_kwargs: dict,
+        only_qubit: int | None = None,
     ) -> xr.Dataset:
         """Run a single (parameter-bound) circuit and return its acquisition dataset."""
         schedule = Schedule(name=payload.id, repetitions=shots)
@@ -182,6 +234,7 @@ class QuantifyExecutor(Executor):
                 acq_protocol=acq_protocol,
                 acq_kwargs=acq_kwargs,
                 clbit_map=clbit_map,
+                only_qubit=only_qubit,
             )
             is_parallel_op = isinstance(
                 instruction.operation,

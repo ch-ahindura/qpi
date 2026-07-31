@@ -46,21 +46,6 @@ function runJob() {
   cy.contains("div", "completed", COMPLETED).should("be.visible");
 }
 
-/**
- * A one-qubit circuit, for the raw-trace level.
- *
- * Not a stylistic choice: a Qblox module can put only one sequencer into scope
- * mode, so raw trace capture on two qubits at once does not compile —
- * "Only one sequencer per device can trigger raw trace capture". The form's
- * default circuit measures both, so level 0 has to be given something narrower
- * or the job fails before it runs.
- */
-const SINGLE_QUBIT =
-  'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[1] q;\nbit[1] c;\nx q[0];\nc[0] = measure q[0];';
-
-function setCircuit(qasm: string) {
-  cy.get("textarea").first().clear().type(qasm, { parseSpecialCharSequences: false });
-}
 
 describe("Jobs Console — results at every measurement level", () => {
   beforeEach(() => {
@@ -129,7 +114,9 @@ describe("Jobs Console — results at every measurement level", () => {
   });
 
   it("level 0 shows a raw trace with many samples", () => {
-    setCircuit(SINGLE_QUBIT);
+    // The form's default circuit measures both qubits, which a Qblox module
+    // cannot scope in one run — the executor splits it into one run per qubit,
+    // so level 0 works here rather than failing to compile.
     setMeasLevel(0);
     runJob();
 
