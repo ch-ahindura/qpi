@@ -644,6 +644,44 @@ two-qubit result as "the routine recovers the operating point of a plausible
 coupler", not "of a real one". That is a smaller claim than the one-qubit tier
 makes, and larger than the nothing that preceded it.
 
+**The readout chain, and the same weakening again.** Two routines have the readout
+itself as their subject, and against two fixed points in the IQ plane both swept a
+flat line — which is why they were the last to be simulated.
+`simulation/resonator.py` gives each qubit a resonance with a linewidth to find
+and a power at which the resonance walks from dressed to bare, so
+`resonator_spectroscopy` fits a real Lorentzian (recovering the modelled `kappa`,
+1.96 MHz against 2.00) and `resonator_punchout` measures a shift bounded by one
+dispersive shift. Reading out away from the resonance costs contrast, which is what
+makes a wrong `clock_freqs.readout` degrade every routine after it rather than only
+the one that found it.
+
+What is *not* modelled is the two qubit states pulling the resonance to two
+different frequencies. The lineshape follows the ground state and the
+discrimination stays in the blob geometry the coordinator already had, so the best
+point to read out at here is the resonance itself — where a real chip has an
+optimum *between* the two pulled peaks, and reaching it is a calibration this
+simulator cannot pose. Read a readout result as "the routine measures the
+resonator's lineshape and its power dependence", which is what these two routines
+do, and not as a model of dispersive readout.
+
+**Pulse envelopes, because a derivative cannot survive averaging.** A `Rxy`
+compiles to a DRAG pulse: a Gaussian with a scaled derivative of itself on the
+other quadrature, and that derivative is what cancels the phase error a fast pulse
+picks up from the `|1⟩`–`|2⟩` transition. A model that averaged the pulse to a
+constant amplitude therefore made the DRAG parameter do *nothing* — averaged over
+the pulse the derivative is identically zero — so `drag` had no optimum to find.
+Shaped pulses are integrated in steps now, and the leakage DRAG corrects comes from
+the same three-level ladder that produces it, so the optimum is found rather than
+asserted: 0.113 as a ratio, against the `-1/(2·alpha)` theory gives for this
+transmon's −280 MHz anharmonicity.
+
+Two properties of that integration are load-bearing rather than incidental. The
+envelope is normalised to unit *mean*, so the rotation angle stays the pulse area
+and `amp180` keeps the meaning it had before shapes were modelled — otherwise
+adding envelopes would silently recalibrate the one number the whole loop turns on.
+And the step count is set by convergence, not by argument: the fitted optimum agrees
+to five significant figures with a run at eight times the resolution.
+
 **Tolerances are part of the design here.** A loose one makes a test that passes
 without discriminating. Fitting a *Gaussian* decay to this simulator's
 exponential relaxation still recovers T1 to within 7%, so a 15% tolerance would
@@ -713,10 +751,10 @@ alone. The last column below is part of the design, not bookkeeping:
 | `tests/test_clifford.py` | 1 | `test-py-base` | Clifford group generation + inverse correctness |
 | `tests/test_calibrate_driver.py` | 1 | `test-py-base` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
 | `tests/test_tuner_routines.py` | 2 | `test-py-quantify` + `test-py-qblox` | Schedule compilation for each routine |
-| `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries; the CZ routines against a coupled pair |
+| `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries; the CZ routines against a coupled pair; the readout resonator's own lineshape and punchout curve |
 | `tests/test_calibration_e2e.py` | 3 | `test-py-sim` | A whole calibration through `_execute_calibration`: full, partial, drift and the job it queues, write-back |
 | `tests/fixtures/simulation.py` | 3 | — | The backends, fake device and tuner built on the simulators |
-| `tests/test_calibration_loop.py` | 3 | `test-py-loop` | Calibrate then run circuits through the compiled schedule, CZ and Bell state included |
+| `tests/test_calibration_loop.py` | 3 | `test-py-loop` | The whole DAG through the shipped tuner, then circuits on what it wrote; CZ, Bell state and all three measurement levels |
 
 Keeping the driver's own tests in tier 1 is what makes `CalibrateDriver`
 testable without a lab: the tuner is resolved by name, class *or instance*
@@ -764,18 +802,34 @@ write-back contract, and the reason §10 treats that file as the trust boundary.
 
 ```bash
 make test-py-base        # Fitting, DAG, config, Clifford, persistence, driver lifecycle
+make test-py-cli         # the same suite under [cli], plus the coverage floor on the CLI and registry
 make test-py-quantify    # quantify_tuner routine compilation (dummy Cluster)
 make test-py-qblox       # qblox_tuner routine compilation (dummy Cluster)
 make test-py-sim         # the routines against scqubits/qutip physics
+make test-py-loop        # the whole DAG, then circuits on what it wrote — both schedulers
 make test-go             # Event routing, handler, dispatcher queue, catalog invariants
 make test-go-driver      # Go SDK: operations are no longer a closed pair
 make test-js-driver      # TypeScript SDK: same
+make test-e2e-driver     # A live server and a real driver, per executor
+make test-e2e-dashboard  # The Calibration and Jobs tabs against a simulated chip
 ```
+
+`test-py-loop` is the one that covers most of what this RFC claims, and it is the
+slowest for the same reason: it calibrates a simulated chip through the shipped
+tuner and then runs circuits against the file that calibration wrote, under both
+schedulers. A green run of it is the only evidence that a fitted number survives the
+fit, the write-back, the YAML, the loader and the compiler with its meaning intact.
+Nothing in it is a double except the instrument.
 
 The two SDK targets are in the list because the closed-set assertions there
 (`TestOperationsAreAClosedPair` and its TypeScript counterpart) fail the moment
 `calibrate` is added, and a green run of those is the cheapest proof the
 operation landed in all three SDKs rather than just the one that needed it.
+
+CI runs all of the above. `test-py-sim` and `test-py-loop` need both schedulers and
+the `sim` group, which is why the matrix carries a `sim` entry that names no
+executor — without it neither target would ever run there, which is how the qblox
+tuner stayed a stub.
 
 ### Manual verification
 
@@ -974,24 +1028,12 @@ the report to come back `success` having skipped none of them. Getting there nee
 two additions to the simulator, each of which had been the reason a routine was
 excluded:
 
-- **A readout resonator** (`simulation/resonator.py`). A response with a linewidth
-  to find and a power at which it moves, so `resonator_spectroscopy` and
-  `resonator_punchout` have an experiment rather than a flat line. The fitted
-  linewidth comes back as the modelled `kappa` and the fitted frequency as the
-  resonance at the power being used. Reading out away from it costs contrast, which
-  is what makes the readout frequency load-bearing for every routine after it.
-  What is *not* modelled is the two qubit states pulling the resonance to two
-  different frequencies; the discrimination stays in the blob geometry, so the best
-  point to read out at here is the resonance itself where a real chip has an
-  optimum between the two pulled peaks.
-- **Pulse envelopes, and the derivative that rides on them.** A shaped pulse is
-  integrated in steps rather than averaged to a constant amplitude, because the
-  DRAG term *is* the variation — averaged, it is identically zero, which is why the
-  Motzoi parameter used to do nothing. The leakage DRAG corrects comes from the
-  same three-level ladder that produces it, so the optimum is found rather than
-  assumed: 0.113 as a ratio, against the `-1/(2·alpha)` the theory gives for this
-  transmon's −280 MHz. Converged to five figures against eight times the step
-  resolution.
+- **A readout resonator** (`simulation/resonator.py`), so the two routines whose
+  subject is the readout chain have an experiment rather than a flat line.
+- **Pulse envelopes and their derivative**, so the DRAG parameter changes the answer
+  instead of averaging to nothing.
+
+§7 describes both, and what each still does not model.
 
 Not implemented, deliberately:
 
