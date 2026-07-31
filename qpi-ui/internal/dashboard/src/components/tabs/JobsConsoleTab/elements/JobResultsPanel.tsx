@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { QPU, QuantumJob } from "@/types";
+import { JobError } from "./JobError";
 import { ResultsVisualizer } from "./ResultsVisualizer";
 
 interface Props {
@@ -11,6 +12,14 @@ export function JobResultsPanel({ viewedJob, qpus }: Props) {
   const [activeTab, setActiveTab] = useState<"counts" | "iq" | "trace">(
     "counts",
   );
+
+  // A failed job has a reason and no results, so the tabs have nothing to show
+  // and showing them invites the reader to hunt through three empty ones.
+  const failure =
+    viewedJob?.results?.error ??
+    (viewedJob?.status === "failed"
+      ? "The driver reported no reason. Check the driver logs on the node."
+      : null);
 
   return (
     <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg p-6 flex flex-col gap-6 h-[650px] overflow-hidden">
@@ -69,7 +78,9 @@ export function JobResultsPanel({ viewedJob, qpus }: Props) {
       </div>
 
       {/* Tab view options */}
-      <div className="flex border-b border-gray-200 dark:border-zinc-800">
+      <div
+        className={`flex border-b border-gray-200 dark:border-zinc-800 ${failure ? "hidden" : ""}`}
+      >
         <button
           onClick={() => setActiveTab("counts")}
           className={`px-4 py-2 font-geist text-sm transition-all -mb-[1px] ${
@@ -104,7 +115,11 @@ export function JobResultsPanel({ viewedJob, qpus }: Props) {
 
       {/* Chart body */}
       <div className="flex-1 bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded p-6 flex flex-col items-center justify-center relative overflow-hidden">
-        <ResultsVisualizer viewedJob={viewedJob} activeTab={activeTab} />
+        {failure ? (
+          <JobError message={failure} />
+        ) : (
+          <ResultsVisualizer viewedJob={viewedJob} activeTab={activeTab} />
+        )}
       </div>
     </div>
   );

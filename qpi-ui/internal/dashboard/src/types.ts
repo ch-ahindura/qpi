@@ -22,6 +22,8 @@ export interface JobResult {
   hex_counts?: Record<string, number>;
   memory?: number[][][];
   circuit_results?: unknown[];
+  /** Why the job failed. Present instead of results, never alongside them. */
+  error?: string;
 }
 
 export interface QuantumJob {

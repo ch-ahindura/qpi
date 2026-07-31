@@ -146,3 +146,42 @@ describe("Jobs Console — results at every measurement level", () => {
     cy.contains("Must submit with Meas Level = 1").should("be.visible");
   });
 });
+
+describe("Jobs Console — a failed job says why", () => {
+  beforeEach(() => {
+    cy.clearCookies();
+    cy.clearLocalStorage();
+    cy.visit("/");
+
+    cy.get('input[type="text"]').clear().type("user@example.com");
+    cy.get('input[type="password"]').clear().type("userpassword1234");
+    cy.get('button[type="submit"]').click();
+    cy.contains("h1", "QPI Interface").should("be.visible");
+
+    cy.contains("button", "Jobs Console").click();
+    cy.contains("h1", "Jobs Console").should("be.visible");
+  });
+
+  it("shows the reason instead of three empty tabs", () => {
+    // A circuit the compiler refuses: two virtual Z gates with no time between
+    // them, which the hardware's NCO cannot do — "The minimum time between
+    // phase updates must be 4 ns". A real refusal rather than a contrived one,
+    // and the kind a user hits by generating circuits programmatically.
+    cy.get("textarea")
+      .first()
+      .clear()
+      .type(
+        'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[1] q;\nbit[1] c;\nh q[0];\nz q[0];\nz q[0];\nh q[0];\nc[0] = measure q[0];',
+        { parseSpecialCharSequences: false },
+      );
+    cy.contains("button", "Execute Job").click();
+
+    cy.contains("div", "failed", { timeout: 30000 }).should("be.visible");
+
+    // The reason, not an empty histogram.
+    cy.contains("Job failed").should("be.visible");
+    cy.get(".flex-1").should("not.contain", "No counts data available");
+    // And the tabs are gone, because none of them has anything to show.
+    cy.contains("button", "Counts Histogram").should("not.be.visible");
+  });
+});
