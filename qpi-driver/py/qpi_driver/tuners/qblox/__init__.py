@@ -55,6 +55,9 @@ class QbloxBackend(SchedulerBackend):
     SetClockFrequency = SetClockFrequency
     BinMode = BinMode
     drag_parameter = "beta"
+    # Seconds: qblox divides the derivative by sigma squared where quantify
+    # divides by sigma, so the same pulse is one sigma larger here.
+    drag_span = 5e-10
 
     def __init__(self, agent: Any) -> None:
         self._agent = agent

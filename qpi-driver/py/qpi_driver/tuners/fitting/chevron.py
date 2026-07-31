@@ -113,55 +113,72 @@ def _refine_amplitude(contrasts: np.ndarray, amps: np.ndarray, row: int) -> floa
     return float(np.sum(weights * amps[low:high]) / total)
 
 
+#: Fractions of a resonant row's full swing that count as having left ``|11⟩``
+#: and as having come back to it. Deliberately far apart: what lies between them
+#: is the exchange in flight, and anything that only wanders around inside the
+#: band has not completed either leg.
+_DEPARTED = 0.25
+_RETURNED = 0.75
+
+
 def _return_duration(row: np.ndarray, durs: np.ndarray) -> float:
     """The first full ``|11⟩ → |02⟩ → |11⟩`` round trip along a resonant row.
 
-    Walk out to the first trough — the point of maximum transfer, half a round
-    trip — then on to the first sample that stops rising. A parabola through
-    that sample and its neighbours puts the turning point between grid steps.
+    By *level* rather than by turning point. Walking out to the first local
+    minimum and then to the first sample that stops rising is the obvious reading
+    of "there and back", and it is wrong on real data: the trough is not smooth.
+    The exchange beats against the other transitions the flux pulse is near, so
+    the bottom of the round trip carries a wiggle a few per cent of the full
+    swing, and a turning-point walk stops at the top of that wiggle — which is
+    still deep in ``|02⟩``. Measured here: it returned 55 ns for a round trip of
+    110, so the calibrated "CZ" was a complete population swap, which is a
+    perfectly good gate and the wrong one.
+
+    A level crossing cannot make that mistake. The population has to actually
+    reach the far side of the swing before anything counts as a return, and only
+    then is the local maximum around it refined between grid steps.
+
+    The *first* return, not the strongest: on resonance the exchange rings for as
+    long as the sweep runs, and a later round trip is a working gate only if
+    nothing decohered in the meantime.
     """
     if not np.any(np.isfinite(row)):
         raise FitError("the resonant chevron row contains no finite data")
 
-    # The *first* trough, not the deepest. On resonance the exchange rings for
-    # as long as the sweep runs, so the deepest point is typically several round
-    # trips in — and calibrating there would pick a CZ some multiple of the
-    # right duration, which is a working gate only if nothing decohered.
-    noise = 0.02 * (float(np.nanmax(row)) - float(np.nanmin(row)))
-    trough = _first_turn(row, noise, descending=True)
-    if trough is None or trough >= len(row) - 1:
+    bottom, top = float(np.nanmin(row)), float(np.nanmax(row))
+    swing = top - bottom
+    departed = _crossing(row, bottom + _DEPARTED * swing, below=True)
+    if departed is None:
         raise FitError(
             "the chevron's population never leaves |11> within the duration "
             "sweep — no exchange completed, so there is no CZ to calibrate"
         )
 
-    peak = _first_turn(row, noise, descending=False, start=trough)
-    if peak is None or peak == trough:
+    returned = _crossing(row, bottom + _RETURNED * swing, below=False, start=departed)
+    if returned is None:
         raise FitError(
             "the chevron's population never recovers after its trough — the "
             "duration sweep ends before the exchange completes"
         )
+
+    # On past the crossing to the top of the recovery, which is where the round
+    # trip actually closes.
+    peak = returned
+    while peak + 1 < len(row) and float(row[peak + 1]) > float(row[peak]):
+        peak += 1
     return _parabolic_vertex(row, durs, peak)
 
 
-def _first_turn(
-    row: np.ndarray, noise: float, *, descending: bool, start: int = 0
+def _crossing(
+    row: np.ndarray, level: float, *, below: bool, start: int = 0
 ) -> int | None:
-    """Index of the first turning point at or after *start*.
-
-    *noise* is how far the signal must move against the current direction before
-    the turn counts, so a flat stretch with shot noise on it does not read as an
-    extremum.
-    """
-    best = start
-    for index in range(start + 1, len(row)):
-        value, incumbent = float(row[index]), float(row[best])
-        improving = value < incumbent if descending else value > incumbent
-        if improving:
-            best = index
-        elif abs(value - incumbent) > noise:
-            return best
-    return best if best != start or len(row) > start + 1 else None
+    """First index at or after *start* on the far side of *level*."""
+    for index in range(start, len(row)):
+        value = float(row[index])
+        crossed = value < level if below else value > level
+        if crossed:
+            return index
+    return None
 
 
 def _parabolic_vertex(row: np.ndarray, durs: np.ndarray, index: int) -> float:

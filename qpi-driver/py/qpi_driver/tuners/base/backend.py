@@ -25,6 +25,19 @@ class SchedulerBackend(ABC):
     like the scheduler's documentation.
     """
 
+    #: How wide a DRAG sweep to run by default, in this backend's own units for
+    #: the parameter named by ``drag_parameter``. It has to come from the backend
+    #: because the two schedulers' DRAG parameters are not the same quantity:
+    #: quantify's ``motzoi`` is the dimensionless ratio of the derivative
+    #: component to the Gaussian, while qblox's ``beta`` is in seconds, larger by
+    #: one pulse sigma. A span sized for either is meaningless for the other.
+    #:
+    #: Both defaults bracket the same physical value — about ``-1/(2*alpha)`` for
+    #: an anharmonicity ``alpha`` in rad/s, a tenth of a ratio or a few hundred
+    #: picoseconds — with room for a chip whose anharmonicity is not typical, and
+    #: not so much room that the straight line the fit assumes stops holding.
+    drag_span: float
+
     #: Scheduler operation classes, bound by the subclass. Named as the
     #: schedulers name them so routines stay readable.
     Schedule: Any

@@ -51,6 +51,8 @@ class QuantifyBackend(SchedulerBackend):
     SetClockFrequency = SetClockFrequency
     BinMode = BinMode
     drag_parameter = "motzoi"
+    # Dimensionless: the derivative component as a fraction of the Gaussian.
+    drag_span = 0.2
 
     def __init__(self, compiler: Any, instrument_coordinator: Any) -> None:
         self._compiler = compiler
@@ -112,9 +114,13 @@ class QuantifyTuner(Tuner):
         self._device = load_quantum_device(name=name, config=quantify_device_config)
         self._device.hardware_config(hardware_config)
         if is_simulated:
+            from qpi_driver.executors.utils.coupler_bias import declared_sideband_gaps
             from qpi_driver.simulation import SimulatedCoordinator
 
-            self._instrument_coordinator = SimulatedCoordinator(kwargs.get("simulator"))
+            self._instrument_coordinator = SimulatedCoordinator(
+                kwargs.get("simulator"),
+                sideband_gaps=declared_sideband_gaps(self._device),
+            )
         else:
             self._instrument_coordinator = load_instrument_coordinator(
                 f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy

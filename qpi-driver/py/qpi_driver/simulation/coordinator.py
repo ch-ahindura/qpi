@@ -19,10 +19,23 @@ a factor of ten compiles, runs and returns the same nothing. Here the compiled
 schedule's own ``G_amp`` is the drive amplitude that rotates the state, so a
 wrong calibration is a wrong population, measured.
 
-**What is modelled.** Drive pulses on a qubit's ``.01`` clock (the DRAG and
-square waveforms quantify emits for ``Rxy``/``X``/``Y``), idles and resets,
+**What is modelled.** Drive pulses on a qubit's ``.01`` clock, idles and resets,
 clock detuning from ``SetClockFrequency``, relaxation and dephasing between
-operations, and a readout that reports IQ around two blobs.
+operations, and a readout through a resonator.
+
+Drive pulses by their actual envelope. A ``Rxy`` compiles to a DRAG pulse — a
+Gaussian with a derivative component on the other quadrature — and the derivative
+is what cancels the phase error a fast pulse picks up from the ``|1>``-``|2>``
+transition. Because it is a *derivative*, a model that averaged the pulse to a
+constant amplitude made the Motzoi parameter do nothing at all; so a shaped pulse
+is integrated in steps and the leakage that DRAG corrects comes from the same
+three-level ladder that produces it.
+
+Readout through a resonator, so the readout chain is calibratable rather than
+assumed: the response has a linewidth to find and a power at which it moves. See
+:mod:`qpi_driver.simulation.resonator`. Reading out at the wrong frequency
+therefore costs contrast everywhere downstream, which is the coupling that makes
+`resonator_spectroscopy` worth running.
 
 Two-qubit gates too. A CZ compiles to a flux pulse, and that pulse detunes the
 control towards the ``|11⟩``–``|02⟩`` crossing where the coupling in
@@ -36,9 +49,11 @@ that point their state does not factor. That keeps a one-qubit circuit cheap and
 makes a two-qubit one correct, at the cost of a register that grows as
 ``levels^n`` — hence :data:`MAX_ENTANGLED`.
 
-**What is not.** Crosstalk, any readout chain beyond the blobs, and a flux pulse
-whose partner cannot be identified — which raises rather than guessing, since
-the wrong partner is a plausible-looking gate between the wrong qubits.
+**What is not.** Crosstalk, the two qubit states pulling the resonator to two
+different frequencies (:mod:`qpi_driver.simulation.resonator` says what follows
+from that), and a flux pulse whose partner cannot be identified — which raises
+rather than guessing, since the wrong partner is a plausible-looking gate between
+the wrong qubits.
 """
 
 import logging
@@ -109,6 +124,10 @@ class _Acquisition:
     #: against *threshold*.
     threshold: float = 0.0
     rotation: float = 0.0
+    #: How much of the signal the resonator returned, 0 to 1. One at the readout
+    #: frequency the resonator is actually at, falling away outside its
+    #: linewidth — which is what `resonator_spectroscopy` sweeps to find.
+    contrast: float = 1.0
 
 
 #: The most qubits allowed in one entangled register. Each one multiplies the
@@ -298,6 +317,16 @@ class SimulatedCoordinator:
         self._clock_phases: dict[str, float] = {}
         #: Register id to its per-shot joint outcomes, dropped as it evolves.
         self._sample_cache: dict[int, dict[str, Any]] = {}
+        #: Readout clock to the amplitude last played on it. A punchout sweep
+        #: changes this between acquisitions, which is the whole experiment.
+        self._readout_amps: dict[str, float] = {}
+        #: Each qubit's resonator, built once per schedule from where its readout
+        #: clock started — see `TransmonSimulator.resonator`.
+        self._resonators: dict[str, Any] = {}
+        #: Whole-pulse propagators, keyed by everything they depend on. A shaped
+        #: pulse is integrated in steps, and a benchmarking schedule replays the
+        #: same few pulses thousands of times.
+        self._propagator_cache: dict[Any, Any] = {}
 
     # --- the InstrumentCoordinator surface ------------------------------------
 
@@ -334,8 +363,18 @@ class SimulatedCoordinator:
         self._flux_offsets = {}
         self._clock_phases = {}
         self._sample_cache = {}
+        self._readout_amps = {}
         registers = _Registers(self.simulator)
         clocks = self._clock_frequencies(compiled)
+        # Before any `SetClockFrequency` is replayed: a spectroscopy sweep moves
+        # the readout clock across the resonator, so taking the resonator's own
+        # frequency from the swept clock would make it follow the drive and the
+        # routine would fit a flat line.
+        self._resonators = {
+            qubit: self.simulator.resonator(qubit, frequency / GHZ)
+            for clock, frequency in clocks.items()
+            if _is_readout_clock(clock) and (qubit := _qubit_of(clock))
+        }
         acquisitions: list[_Acquisition] = []
         last_time: dict[str, float] = {}
 
@@ -345,7 +384,7 @@ class SimulatedCoordinator:
                     pulse, time, registers, clocks, last_time, gate_qubits
                 )
             for acquisition in _infos(operation, "acquisition_info"):
-                self._acquire(acquisition, registers, acquisitions)
+                self._acquire(acquisition, registers, acquisitions, clocks)
 
         return acquisitions
 
@@ -363,6 +402,12 @@ class SimulatedCoordinator:
         bare flux pulse whose ``port`` names only the qubit being detuned, so
         without the ancestor's ``gate_info`` there is nothing left to say which
         qubit it was detuned *towards*.
+
+        Acquisitions sort after pulses that start at the same instant. A `Measure`
+        lowers to a readout pulse and an acquisition both at ``t0``, and the pulse
+        is what says at which frequency and power the resonator was interrogated;
+        reading them in the other order would answer each acquisition with the
+        *previous* one's readout settings.
         """
         found: list[tuple[float, Any, tuple[str, ...]]] = []
         operations = _operations_of(schedule)
@@ -374,7 +419,9 @@ class SimulatedCoordinator:
                 found.extend(self._flatten(operation, start, inherited))
             else:
                 found.append((start, operation, inherited))
-        return sorted(found, key=lambda item: item[0])
+        return sorted(
+            found, key=lambda item: (item[0], bool(_infos(item[1], "acquisition_info")))
+        )
 
     @staticmethod
     def _clock_frequencies(compiled: Any) -> dict[str, float]:
@@ -435,10 +482,25 @@ class SimulatedCoordinator:
             )
             return
 
+        if _is_readout_clock(clock):
+            # The resonator is interrogated at whatever amplitude this pulse
+            # carries. A long readout arrives as a held DC offset plus a short
+            # square tail — the same shape a flux pulse does — so the amplitude
+            # is whichever of those was non-zero, and the zero that clears the
+            # offset must not be mistaken for a readout at zero power.
+            amplitude = _amplitude_of(pulse)
+            if amplitude is None:
+                amplitude = pulse.get("offset_path_I")
+            if amplitude is not None and abs(np.real(amplitude)) > 0:
+                self._readout_amps[clock] = float(abs(np.real(amplitude)))
+            for register in registers.distinct():
+                self._idle(register, duration)
+            return
+
         qubit = _qubit_of(clock) or _qubit_of(port)
         if qubit is None or not clock.endswith(".01"):
-            # A readout pulse, a baseband idle, anything not driving a qubit:
-            # it still takes time, and time is where decoherence happens.
+            # A baseband idle, anything not driving a qubit: it still takes time,
+            # and time is where decoherence happens.
             for register in registers.distinct():
                 self._idle(register, duration)
             return
@@ -459,6 +521,7 @@ class SimulatedCoordinator:
             # The pulse's own phase, in the frame the clock has been shifted to.
             phase_deg=float(pulse.get("phase") or 0.0)
             + self._clock_phases.get(clock, 0.0),
+            shape=_envelope_of(pulse),
         )
         # Every other register was idling while this one was driven.
         for other in registers.distinct():
@@ -573,6 +636,7 @@ class SimulatedCoordinator:
         amplitude: float,
         duration: float,
         phase_deg: float,
+        shape: "_Envelope | None" = None,
     ) -> None:
         """Evolve under a drive of *amplitude* for *duration*.
 
@@ -580,19 +644,128 @@ class SimulatedCoordinator:
         detuning and the collapse operators evolving together, which is what
         makes an off-resonant or mis-scaled pulse produce the wrong population
         rather than a nominally correct one.
+
+        A square pulse is one constant Hamiltonian. A DRAG pulse is not: its
+        Gaussian envelope and the derivative quadrature that rides on it both
+        vary across the pulse, and the derivative is *defined* by that variation
+        — averaged to a constant it is identically zero, which is what made the
+        Motzoi parameter a no-op here. So a shaped pulse is stepped.
         """
+        self._sample_cache.clear()
+        if shape is None:
+            drive = self._constant_drive(register, qubit, amplitude, phase_deg)
+            self._propagate(register, self._drift(register) + drive, duration)
+            return
+        self._propagate_shaped(register, qubit, amplitude, duration, phase_deg, shape)
+
+    def _constant_drive(
+        self, register: _Register, qubit: str, amplitude: float, phase_deg: float
+    ):
+        """A square pulse's drive term: ``(Omega/2)(e^-iphi a + e^iphi a-dagger)``."""
         import qutip
 
         destroy = qutip.destroy(self.simulator.levels)
         rabi = self.drive_strength * amplitude * NS  # rad/ns
         phase = np.deg2rad(phase_deg)
-        drive = register.embed(
+        return register.embed(
             (rabi / 2)
             * (np.exp(-1j * phase) * destroy + np.exp(1j * phase) * destroy.dag()),
             qubit,
         )
-        self._sample_cache.clear()
-        self._propagate(register, self._drift(register) + drive, duration)
+
+    def _propagate_shaped(
+        self,
+        register: _Register,
+        qubit: str,
+        amplitude: float,
+        duration: float,
+        phase_deg: float,
+        shape: "_Envelope",
+    ) -> None:
+        """Step a shaped pulse, composing the steps into one cached propagator.
+
+        The envelope is normalised to unit *mean* over the pulse, so the rotation
+        angle stays the pulse area — ``drive_strength x amplitude x duration``,
+        exactly what a square pulse of the same amplitude would give. That is not
+        cosmetic: it keeps `amp180` meaning what it meant before shapes were
+        modelled, so the number Rabi finds here is the number it found before, and
+        the DRAG term is an addition rather than a recalibration.
+
+        The derivative quadrature is the whole point of DRAG. Its coefficient is
+        in seconds and multiplies ``d(envelope)/dt``; the two schedulers spell it
+        differently and :func:`_envelope_of` converts both to that form.
+        """
+        import qutip
+
+        if duration <= 0:
+            return
+        steps = _drive_steps(duration)
+        key = (
+            register.signature(),
+            qubit,
+            round(amplitude, 12),
+            round(duration, 15),
+            round(phase_deg % 360.0, 9),
+            round(shape.drag_seconds, 18),
+            round(shape.sigma, 15),
+            steps,
+        )
+        propagator = self._propagator_cache.get(key)
+        if propagator is None:
+            propagator = self._compose_shaped(
+                register, qubit, amplitude, duration, phase_deg, shape, steps
+            )
+            if len(self._propagator_cache) < _PROPAGATOR_CACHE_LIMIT:
+                self._propagator_cache[key] = propagator
+        register.rho = qutip.vector_to_operator(
+            propagator * qutip.operator_to_vector(register.rho)
+        )
+
+    def _compose_shaped(
+        self,
+        register: _Register,
+        qubit: str,
+        amplitude: float,
+        duration: float,
+        phase_deg: float,
+        shape: "_Envelope",
+        steps: int,
+    ):
+        import qutip
+
+        drift = self._drift(register)
+        collapse = register.collapse()
+        destroy = register.ladder(qubit)
+        raising = destroy.dag()
+        step_ns = (duration / NS) / steps
+
+        # Midpoints, so the piecewise-constant sampling is second order rather
+        # than first, and the derivative's two lobes stay balanced.
+        offsets = (np.arange(steps) + 0.5) * (duration / steps) - duration / 2.0
+        sigma = shape.sigma
+        envelope = np.exp(-0.5 * (offsets / sigma) ** 2)
+        mean = float(envelope.mean()) or 1.0
+        envelope = envelope / mean
+        # d/dt of that same normalised Gaussian, analytically.
+        derivative = -(offsets / sigma**2) * envelope
+
+        rabi = self.drive_strength * amplitude * NS  # rad/ns
+        phase = np.exp(1j * np.deg2rad(phase_deg))
+        composed = None
+        for index in range(steps):
+            # The played waveform: Gaussian on I, its derivative on Q, the pair
+            # rotated by the pulse phase.
+            # `drag_seconds` is in seconds and the derivative in inverse seconds,
+            # so their product is the dimensionless quadrature ratio.
+            wave = (
+                rabi
+                * (envelope[index] + 1j * shape.drag_seconds * derivative[index])
+                * phase
+            )
+            hamiltonian = drift + (wave * raising + np.conj(wave) * destroy) / 2
+            step = (qutip.liouvillian(hamiltonian, collapse) * step_ns).expm()
+            composed = step if composed is None else step * composed
+        return composed
 
     def _idle(self, register: _Register, duration: float) -> None:
         """Free evolution, which is where T1 and T2 do their work.
@@ -778,11 +951,11 @@ class SimulatedCoordinator:
         acquisition: dict,
         registers: _Registers,
         found: list[_Acquisition],
+        clocks: dict[str, float],
     ) -> None:
+        clock = str(acquisition.get("clock") or "")
         qubit = (
-            _qubit_of(str(acquisition.get("clock") or ""))
-            or _qubit_of(str(acquisition.get("port") or ""))
-            or "q0"
+            _qubit_of(clock) or _qubit_of(str(acquisition.get("port") or "")) or "q0"
         )
         register = registers.of(qubit)
         # The marginal, so reading one half of a Bell pair averages to the 50/50
@@ -799,7 +972,24 @@ class SimulatedCoordinator:
                 duration=float(acquisition.get("duration") or 0.0),
                 threshold=float(acquisition.get("acq_threshold") or 0.0),
                 rotation=float(acquisition.get("acq_rotation") or 0.0),
+                contrast=self._contrast(qubit, clock, clocks),
             )
+        )
+
+    def _contrast(self, qubit: str, clock: str, clocks: dict[str, float]) -> float:
+        """How much signal the resonator returns for this acquisition.
+
+        The two things a readout is calibrated for, both of them here: the clock
+        the resonator is interrogated at — swept by `resonator_spectroscopy` — and
+        the power it is driven with, swept by `resonator_punchout`. A qubit whose
+        readout clock this schedule never mentions keeps the old behaviour of a
+        perfect readout, since there is nothing to say it is off resonance.
+        """
+        resonator = self._resonators.get(qubit)
+        if resonator is None or clock not in clocks:
+            return 1.0
+        return resonator.response(
+            clocks[clock] / GHZ, self._readout_amps.get(clock, 0.0)
         )
 
     def _joint_outcomes(self, register: _Register) -> dict[str, Any]:
@@ -900,9 +1090,7 @@ class SimulatedCoordinator:
                 variables[channel] = (("repetition", axis), shots)
                 coordinates["repetition"] = np.arange(self._repetitions)
             else:
-                values = np.array(
-                    [self._averaged(entry.excited_population) for entry in entries]
-                )
+                values = np.array([self._averaged(entry) for entry in entries])
                 variables[channel] = ((axis,), values)
             coordinates[axis] = np.array([entry.index for entry in entries])
 
@@ -917,7 +1105,7 @@ class SimulatedCoordinator:
             if entry.outcomes is None
             else np.asarray(entry.outcomes, dtype=bool)
         )
-        points = self._blobs(outcomes)
+        points = self._blobs(outcomes, entry.contrast)
         if entry.protocol != "ThresholdedAcquisition":
             return points
 
@@ -944,8 +1132,9 @@ class SimulatedCoordinator:
         samples = max(int(round(entry.duration / NS)), 1)
         times = np.arange(samples, dtype=float)
 
-        settled = GROUND_IQ * (1 - entry.excited_population) + (
-            EXCITED_IQ * entry.excited_population
+        settled = entry.contrast * (
+            GROUND_IQ * (1 - entry.excited_population)
+            + EXCITED_IQ * entry.excited_population
         )
         # Ring-up at the resonator linewidth: kappa in GHz gives ns directly.
         tau = 1.0 / (2 * np.pi * max(self.simulator.readout_linewidth_ghz, 1e-6))
@@ -956,22 +1145,27 @@ class SimulatedCoordinator:
         )
         return settled * envelope + noise
 
-    def _averaged(self, population: float) -> complex:
+    def _averaged(self, entry: _Acquisition) -> complex:
         """The mean IQ point, with the noise an averaged acquisition still has."""
-        centre = GROUND_IQ * (1 - population) + EXCITED_IQ * population
+        population = entry.excited_population
+        centre = entry.contrast * (
+            GROUND_IQ * (1 - population) + EXCITED_IQ * population
+        )
         spread = READOUT_NOISE / np.sqrt(max(self._repetitions, 1))
         return complex(
             centre.real + self._rng.normal(0.0, spread),
             centre.imag + self._rng.normal(0.0, spread),
         )
 
-    def _shots(self, population: float) -> np.ndarray:
-        """One IQ point per shot: a Bernoulli draw, then the blob it landed in."""
-        return self._blobs(self._rng.random(self._repetitions) < population)
+    def _blobs(self, excited: np.ndarray, contrast: float = 1.0) -> np.ndarray:
+        """The IQ point each already-drawn outcome lands on, with readout noise.
 
-    def _blobs(self, excited: np.ndarray) -> np.ndarray:
-        """The IQ point each already-drawn outcome lands on, with readout noise."""
-        centres = np.where(excited, EXCITED_IQ, GROUND_IQ)
+        *contrast* scales the signal and not the noise, which is the whole reason
+        reading out at the wrong frequency is bad rather than merely different: the
+        blobs move in towards the origin while the noise around them stays put, so
+        a discriminator that separated them cleanly stops being able to.
+        """
+        centres = contrast * np.where(excited, EXCITED_IQ, GROUND_IQ)
         noise = self._rng.normal(0.0, READOUT_NOISE, self._repetitions) + 1j * (
             self._rng.normal(0.0, READOUT_NOISE, self._repetitions)
         )
@@ -1046,6 +1240,95 @@ def _amplitude_of(pulse: dict) -> Any:
         if pulse.get(key) is not None:
             return pulse[key]
     return None
+
+
+#: Steps per nanosecond when integrating a shaped pulse. Chosen by convergence
+#: rather than by argument: the fitted DRAG optimum agrees to five significant
+#: figures with a run at eight times this resolution, and the drift term is
+#: exponentiated exactly at every step, so what the steps have to resolve is only
+#: how the envelope varies.
+_STEPS_PER_NS = 2
+_MIN_DRIVE_STEPS = 16
+_MAX_DRIVE_STEPS = 256
+
+#: Cached propagators are one per distinct pulse, and a two-qubit register's is a
+#: dense (levels^2)^2 matrix. Bounded so a long sweep cannot grow without limit;
+#: past the bound the physics is the same and only the speed suffers.
+_PROPAGATOR_CACHE_LIMIT = 512
+
+
+def _drive_steps(duration: float) -> int:
+    steps = int(round(duration / NS * _STEPS_PER_NS))
+    return max(_MIN_DRIVE_STEPS, min(_MAX_DRIVE_STEPS, steps))
+
+
+@dataclass(frozen=True)
+class _Envelope:
+    """A shaped pulse: its Gaussian width, and its derivative coefficient.
+
+    Attributes:
+        sigma: the Gaussian's width in seconds.
+        drag_seconds: what multiplies ``d(envelope)/dt`` to give the quadrature
+            component, in seconds. Both schedulers' DRAG parameters reduce to
+            this — see :func:`_envelope_of` — and the leading-order optimum is
+            ``-1/alpha`` for an anharmonicity ``alpha`` in rad/s, which for a
+            normal transmon is a few hundred picoseconds.
+    """
+
+    sigma: float
+    drag_seconds: float = 0.0
+
+
+def _envelope_of(pulse: dict) -> "_Envelope | None":
+    """A drive pulse's shape, or ``None`` for a square one.
+
+    The two schedulers' DRAG parameters differ in units, and by exactly the
+    factor that makes a sweep sized for one meaningless for the other:
+
+    - quantify-scheduler's ``D_amp`` is the *ratio* of the derivative component
+      to the Gaussian, dimensionless, validated to ``-1..1``. Its waveform is
+      ``-D_amp x (t-mu)/sigma x G(t)``, so it multiplies ``dG/dt`` by
+      ``D_amp x sigma``.
+    - qblox-scheduler's ``beta`` is in *seconds*. Its waveform is
+      ``-beta x (t-mu)/sigma^2 x G(t)``, which multiplies ``dG/dt`` by ``beta``
+      directly.
+
+    So the same physical pulse is ``beta = D_amp x sigma`` — a factor of 2.5 ns
+    for a 20 ns gate. Reducing both to seconds here is what lets the physics
+    below be written once, and is why the routine's default sweep has to come
+    from the backend rather than be a constant.
+    """
+    function = str(pulse.get("wf_func") or "")
+    if not function.endswith(("drag", "gauss")):
+        return None
+    duration = float(pulse.get("duration") or 0.0)
+    if duration <= 0:
+        return None
+
+    sigma = pulse.get("sigma")
+    if sigma:
+        sigma = float(sigma)
+    else:
+        # Both schedulers: sigma = duration / (2 x nr_sigma), defaulting to 4.
+        sigma = duration / (2 * float(pulse.get("nr_sigma") or 4))
+
+    if pulse.get("beta") is not None:
+        drag = float(pulse["beta"])
+    elif pulse.get("D_amp") is not None:
+        drag = float(pulse["D_amp"]) * sigma
+    else:
+        drag = 0.0
+    return _Envelope(sigma=sigma, drag_seconds=drag)
+
+
+def _is_readout_clock(clock: str) -> bool:
+    """Whether *clock* is a qubit's readout clock: ``q0.ro``, ``q0.ro_2st_opt``.
+
+    The suffix rather than an exact match, because a chip with optimal-weight
+    readout declares several clocks per qubit and they all drive one resonator.
+    """
+    _, separator, suffix = clock.partition(".")
+    return bool(separator) and suffix.startswith("ro")
 
 
 def _edge_qubits(name: str) -> tuple[str, str] | None:

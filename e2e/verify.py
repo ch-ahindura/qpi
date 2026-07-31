@@ -736,9 +736,6 @@ def test_qpu_time_requests_validation():
     user_session.headers["Authorization"] = user_token
     print("[verify] User A authenticated")
 
-    # Fetch User A's initial QPU seconds
-    initial_seconds = resp.json()["record"]["qpu_seconds"]
-
     # 2. User A creates a request (status defaults to pending)
     resp = user_session.post(
         f"{BASE}/api/collections/qpu_time_requests/records",
@@ -881,6 +878,16 @@ def test_qpu_time_requests_validation():
     print("[verify] ✓ User A updating own request was rejected")
 
     # 10. Admin approves User A's request
+    #
+    # Read the balance here rather than back at authentication. What this check
+    # means is "approving a 300 s request credits 300 s", and the nine steps above
+    # take long enough that a job settling in the background can debit the user in
+    # between — which turns an exact-300 assertion into "and nothing else happened
+    # meanwhile", something it never intended to test. Seen failing on 299.42.
+    resp = s.get(f"{BASE}/api/collections/users/records/{user_id}")
+    resp.raise_for_status()
+    initial_seconds = resp.json()["qpu_seconds"]
+
     resp = s.patch(
         f"{BASE}/api/collections/qpu_time_requests/records/{req_id}",
         json={

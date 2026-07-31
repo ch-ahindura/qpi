@@ -71,6 +71,74 @@ def test_the_simulated_transmon_is_a_plausible_one(simulator):
     )
 
 
+# --- the readout resonator ----------------------------------------------------
+#
+# The two resonator routines are exercised end to end in `test_calibration_loop`,
+# where they sweep a compiled schedule. What belongs here is the model underneath:
+# these are the properties those routines are entitled to assume, and each one is
+# a number a fit of the simulated data has to come back with.
+
+
+@pytest.fixture
+def resonator(simulator):
+    return simulator.resonator("q0", configured_ghz=6.0)
+
+
+def test_the_resonator_response_is_lorentzian_in_its_own_linewidth(resonator):
+    """Half power at half a linewidth away — which is what `kappa` *means*.
+
+    `fit_resonator_spectroscopy` fits a Lorentzian and reports its width as the
+    linewidth, so if the model's response were some other lineshape the routine
+    would report a number that is not the parameter it names.
+    """
+    centre = resonator.resonance_ghz(amplitude=0.0)
+    half = resonator.linewidth_ghz / 2.0
+
+    assert resonator.response(centre, 0.0) == pytest.approx(1.0)
+    assert resonator.response(centre + half, 0.0) == pytest.approx(0.5)
+    assert resonator.response(centre - half, 0.0) == pytest.approx(0.5)
+    # And far off it is gone, rather than merely smaller: a readout at the wrong
+    # frequency has to lose the signal, not attenuate it.
+    assert resonator.response(centre + 20 * half, 0.0) < 0.01
+
+
+def test_readout_power_walks_the_resonance_from_dressed_to_bare(resonator):
+    """Monotone, and bounded by one dispersive shift — which is punchout.
+
+    Monotone because `fit_punchout` reads the crossing of the halfway point, and a
+    curve that wandered would give it several. Bounded because the pull it is
+    watching collapse is the qubit's, and there is only one of those to lose.
+    """
+    amplitudes = np.linspace(0.0, 4.0, 40)
+    frequencies = np.array([resonator.resonance_ghz(a) for a in amplitudes])
+
+    assert np.all(np.diff(frequencies) <= 0), "the resonance should only walk down"
+    total = float(frequencies[0] - frequencies[-1])
+    shift = resonator.dispersive_shift_ghz
+    assert 0.95 * shift < total < shift
+    # Half of it by the crossover amplitude, which is what names that parameter.
+    midpoint = resonator.resonance_ghz(resonator.punchout_amplitude)
+    assert midpoint == pytest.approx(
+        frequencies[0] - resonator.dispersive_shift_ghz / 2
+    )
+
+
+def test_a_chip_that_states_its_resonators_is_believed(simulator):
+    """Otherwise the resonator sits wherever the readout clock is configured.
+
+    Both halves matter. The fallback is what lets `is_simulated` work against any
+    device file — a resonator where the config says means spectroscopy confirms it.
+    The override is what lets a test put one somewhere the config does not expect,
+    without which the routine cannot come out wrong.
+    """
+    import dataclasses
+
+    stated = dataclasses.replace(simulator, resonator_frequencies_ghz={"q0": 6.004})
+
+    assert stated.resonator("q0", configured_ghz=6.0).frequency_ghz == 6.004
+    assert stated.resonator("q1", configured_ghz=6.01).frequency_ghz == 6.01
+
+
 # --- spectroscopy ------------------------------------------------------------
 
 

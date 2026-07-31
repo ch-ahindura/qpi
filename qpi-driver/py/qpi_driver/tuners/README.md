@@ -124,7 +124,7 @@ resonator_spectroscopy → resonator_punchout → qubit_spectroscopy → rabi
 | Routine | Writes | Notes |
 |---------|--------|-------|
 | `resonator_spectroscopy` | `clock_freqs.readout` | Lorentzian fit over a readout sweep. |
-| `resonator_punchout` | `measure.pulse_amp` | Highest power still in the dressed regime. |
+| `resonator_punchout` | `measure.pulse_amp`, `clock_freqs.readout` | Highest power still in the dressed regime — and the resonance *at* that power, since choosing a power moves it. |
 | `qubit_spectroscopy` | `clock_freqs.f01` | Two-tone, weak drive. |
 | `rabi` | `rxy.amp180` | π amplitude is half the oscillation period. |
 | `ramsey` | `clock_freqs.f01` | Fine frequency, plus T2*. |

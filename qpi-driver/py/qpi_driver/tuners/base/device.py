@@ -140,6 +140,27 @@ def phase_correction_names(edge: Any) -> tuple[str, str] | None:
     return None
 
 
+def drag_parameter_name(element: Any) -> str | None:
+    """What this element's ``rxy`` calls its DRAG parameter.
+
+    The same disagreement as :func:`phase_correction_names`, one level down:
+    quantify's transmon has ``rxy.motzoi``, qblox's has ``rxy.beta``. They are not
+    even the same quantity — see `SchedulerBackend.drag_span` — but for writing a
+    fitted value back, what matters is that the name exists. `drag` wrote
+    ``rxy.motzoi`` unconditionally, so under qblox it measured an optimum and then
+    had nowhere to put it.
+
+    Returns ``None`` for an element with no DRAG parameter at all.
+    """
+    rxy = getattr(element, "rxy", None)
+    if rxy is None:
+        return None
+    for name in ("motzoi", "beta"):
+        if hasattr(rxy, name):
+            return name
+    return None
+
+
 def construction_args(component: Any) -> list[str]:
     """The positional arguments *component*'s class is rebuilt from.
 

@@ -17,9 +17,12 @@ this package.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from qpi_driver.simulation.resonator import ReadoutResonator
 
 # Frequencies are in GHz and times in ns throughout this module, which is
 # scqubits' convention. The routines work in Hz and seconds, so the conversions
@@ -43,8 +46,23 @@ class TransmonSimulator:
         t1_ns: relaxation time.
         t2_ns: total dephasing time, from which the pure-dephasing rate is
             derived given T1.
-        readout_frequency_ghz: bare resonator frequency, for spectroscopy.
+        readout_frequency_ghz: fallback resonator frequency, for a readout clock
+            whose configured frequency is unknown.
         readout_linewidth_ghz: resonator linewidth.
+        readout_dispersive_shift_ghz: how far the qubit pulls its resonator, and
+            so how far punchout walks it. See
+            :class:`~qpi_driver.simulation.resonator.ReadoutResonator`.
+        readout_punchout_amplitude: readout amplitude at which half that pull has
+            collapsed.
+        resonator_frequencies_ghz: per-qubit resonator frequencies, where the
+            chip's actually are. The one thing here that is a property of a *chip*
+            rather than of a transmon, because it is the one a device config
+            differs about: every other parameter is shared by construction, but
+            each qubit is read out through its own resonator at its own frequency.
+            Empty — the default — means each resonator sits wherever its readout
+            clock is configured, so `resonator_spectroscopy` confirms the config
+            instead of correcting it. Supply it to put a resonator somewhere the
+            config does not expect, which is what makes finding it load-bearing.
         seed: seeds the shot noise, so a failure is reproducible.
     """
 
@@ -56,6 +74,9 @@ class TransmonSimulator:
     t2_ns: float = 20_000.0
     readout_frequency_ghz: float = 7.1
     readout_linewidth_ghz: float = 0.002
+    readout_dispersive_shift_ghz: float = 0.003
+    readout_punchout_amplitude: float = 0.7
+    resonator_frequencies_ghz: dict[str, float] = field(default_factory=dict)
     shot_noise: float = 0.004
     seed: int = 20260731
     levels: int = 3
@@ -112,6 +133,28 @@ class TransmonSimulator:
             step = error / np.sqrt(2 * candidate.EC / candidate.EJ)
             candidate = dataclasses.replace(candidate, EJ=candidate.EJ - step)
         return candidate
+
+    # --- the readout resonator -------------------------------------------------
+
+    def resonator(
+        self, qubit: str, configured_ghz: float | None = None
+    ) -> "ReadoutResonator":
+        """*qubit*'s readout resonator, wherever this chip's actually is.
+
+        *configured_ghz* is what the device config claims, used when this chip
+        says nothing — see ``resonator_frequencies_ghz``.
+        """
+        from qpi_driver.simulation.resonator import ReadoutResonator
+
+        frequency = self.resonator_frequencies_ghz.get(qubit)
+        if frequency is None:
+            frequency = configured_ghz if configured_ghz else self.readout_frequency_ghz
+        return ReadoutResonator(
+            frequency_ghz=float(frequency),
+            linewidth_ghz=self.readout_linewidth_ghz,
+            dispersive_shift_ghz=self.readout_dispersive_shift_ghz,
+            punchout_amplitude=self.readout_punchout_amplitude,
+        )
 
     # --- the dynamics, from qutip ---------------------------------------------
 

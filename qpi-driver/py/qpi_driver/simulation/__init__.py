@@ -1,10 +1,13 @@
 """A simulated chip to put where the hardware goes (RFC 0004 §7).
 
-Two pieces, and the second is the one that makes the first useful:
+Three pieces, and the last is the one that makes the others useful:
 
 - :class:`~qpi_driver.simulation.transmon.TransmonSimulator` is a transmon as
   physics — levels from `scqubits`, dynamics from `qutip`.
-- :class:`~qpi_driver.simulation.coordinator.SimulatedCoordinator` puts it
+- :class:`~qpi_driver.simulation.resonator.ReadoutResonator` is what it is read
+  out through, so the readout chain has parameters to calibrate rather than being
+  assumed correct.
+- :class:`~qpi_driver.simulation.coordinator.SimulatedCoordinator` puts them
   behind quantify's four-call instrument interface, so it drops in wherever a
   cluster goes. It reads the compiled schedule and plays it, which a dummy
   cluster does not: the dummy returns ``nan+nanj`` regardless, so an ``amp180``
@@ -25,10 +28,12 @@ from qpi_driver.simulation.coordinator import (
     SimulatedCoordinator,
     SimulationError,
 )
+from qpi_driver.simulation.resonator import ReadoutResonator
 from qpi_driver.simulation.transmon import GHZ, NS, TransmonSimulator
 
 __all__ = [
     "TransmonSimulator",
+    "ReadoutResonator",
     "SimulatedCoordinator",
     "SimulationError",
     "DEFAULT_DRIVE_STRENGTH",

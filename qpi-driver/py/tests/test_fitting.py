@@ -244,6 +244,18 @@ def test_punchout_picks_the_last_dressed_power():
     assert fitted["bare_frequency"] == 6.1e9
 
 
+def test_punchout_reports_the_frequency_at_the_power_it_chose():
+    """Not the low-power one. Choosing a power moves the resonance to a new place,
+    and the caller has to drive it there rather than where it used to be."""
+    powers = np.array([0.01, 0.1, 0.2, 0.4])
+    frequencies = np.array([6.000e9, 6.002e9, 6.020e9, 6.040e9])
+    fitted = fit_punchout(powers, frequencies)
+
+    assert fitted["readout_power"] == pytest.approx(0.1)
+    assert fitted["readout_frequency"] == pytest.approx(6.002e9)
+    assert fitted["readout_frequency"] != fitted["dressed_frequency"]
+
+
 def test_punchout_refuses_a_sweep_with_no_shift():
     powers = np.array([0.01, 0.05, 0.1, 0.2])
     with pytest.raises(FitError, match="no resonator shift"):
@@ -261,6 +273,29 @@ def test_chevron_locates_the_operating_point():
     fitted = fit_chevron(amplitudes, durations, grid.reshape(-1))
     assert fitted["cz_amplitude"] == pytest.approx(amplitudes[5], abs=0.03)
     assert fitted["cz_duration"] == pytest.approx(durations[6], abs=1e-8)
+
+
+def test_chevron_reads_past_a_wiggle_in_the_trough():
+    """The round trip, not a bump on the way to it.
+
+    The exchange beats against the transitions the flux pulse sits near, so the
+    bottom of the round trip is not smooth. Walking to the first local maximum
+    after the trough stops on that bump — still deep in |02>, and half the right
+    duration, which is a complete population swap rather than a CZ.
+    """
+    amplitudes = np.linspace(0.3, 0.5, 5)
+    durations = np.linspace(10e-9, 200e-9, 20)
+    # One resonant row: a cosine round trip of ~110 ns with a 5% ripple on it.
+    angle = 2 * np.pi * durations / 110e-9
+    row = 0.5 + 0.5 * np.cos(angle) + 0.05 * np.cos(5 * angle)
+    grid = np.tile(0.5, (5, 20))
+    grid[2, :] = row
+
+    fitted = fit_chevron(amplitudes, durations, grid.reshape(-1))
+    assert fitted["cz_amplitude"] == pytest.approx(amplitudes[2], abs=0.03)
+    assert fitted["cz_duration"] == pytest.approx(110e-9, rel=0.05), (
+        "half of this is a swap, and it is what the turning-point walk returned"
+    )
 
 
 def test_chevron_needs_a_full_grid():

@@ -103,7 +103,15 @@ def fit_punchout(powers: np.ndarray, frequencies: np.ndarray) -> dict[str, float
     readout power is the highest one still in the dressed regime, taken here as
     the last power before the frequency has crossed halfway across the shift.
 
-    Returns ``{'readout_power', 'dressed_frequency', 'bare_frequency'}``.
+    **And the frequency at that power**, which is the whole reason this is a 2D
+    sweep. The resonance moves *because* the power changed, so choosing a new
+    power invalidates whatever frequency was measured at the old one — and the
+    row this routine already fitted at the chosen power is the corrected value.
+    Reporting only the power leaves the caller to drive a resonance that has
+    since walked away from it.
+
+    Returns ``{'readout_power', 'readout_frequency', 'dressed_frequency',
+    'bare_frequency'}``.
     """
     x, y = align(powers, frequencies, what="punchout")
     order = np.argsort(x)
@@ -123,6 +131,7 @@ def fit_punchout(powers: np.ndarray, frequencies: np.ndarray) -> dict[str, float
 
     return {
         "readout_power": float(x[index]),
+        "readout_frequency": float(y[index]),
         "dressed_frequency": dressed,
         "bare_frequency": bare,
     }

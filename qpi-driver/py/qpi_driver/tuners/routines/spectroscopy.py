@@ -128,11 +128,22 @@ class ResonatorSpectroscopy(CalibrationRoutine):
 
 
 class ResonatorPunchout(CalibrationRoutine):
-    """Sweep readout power to find the edge of the dressed regime."""
+    """Sweep readout power to find the edge of the dressed regime.
+
+    Writes the readout *frequency* as well as the power, and has to: the resonance
+    moves with power — that movement is the experiment — so a new power leaves the
+    frequency `resonator_spectroscopy` measured at the old one pointing at where
+    the resonator used to be. Half a linewidth off on the simulated chip, costing
+    a fifth of the readout contrast for every routine downstream, silently.
+
+    It costs no extra measurement. This sweep fits a resonator spectrum at every
+    power in its range, the selected one included; the fix is to stop discarding
+    that row.
+    """
 
     name = "resonator_punchout"
     depends_on = ("resonator_spectroscopy",)
-    updates = ("measure.pulse_amp",)
+    updates = ("measure.pulse_amp", "clock_freqs.readout")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -185,9 +196,9 @@ class ResonatorPunchout(CalibrationRoutine):
         return fit_punchout(self._powers, frequencies)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
-        write_path(
-            device.get_element(target), "measure.pulse_amp", params["readout_power"]
-        )
+        element = device.get_element(target)
+        write_path(element, "measure.pulse_amp", params["readout_power"])
+        write_path(element, "clock_freqs.readout", params["readout_frequency"])
 
 
 class QubitSpectroscopy(CalibrationRoutine):

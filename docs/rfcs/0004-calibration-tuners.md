@@ -663,24 +663,34 @@ drift check emits is a job the worker accepts, and that a fitted frequency
 reaches the file the `process` driver reads. It is what found the RB
 normalisation fault described in §11.
 
-**What it does not cover.** The simulator supplies the acquisition; it does not
-interpret the compiled schedule. It reads a schedule for the sweep encoded in it
-— the frequencies of its `SetClockFrequency`s, the durations of its idles — and
-then produces that experiment; only RB is played gate by gate. So this tier
-validates that each *fit model* describes real physics, and that each routine
-swept the axis it meant to — not that each *schedule* produces the physics its
-fit assumes. Closing that gap needs a simulator driven by the compiled
-programme, which is a larger piece of work and is not done for the routines.
-Hardware remains the only answer for it (§9).
+**What each half of the tier covers.** There are two simulators here and the
+difference between them is the point.
 
-It *is* done on the other side of the loop. `SimulationCoordinator` reads the
-compiled schedule and plays it, which is what `test_calibration_loop.py` runs
-circuits against — including a CZ, whose flux pulse reaches it not as one pulse
+`test_physics_simulation.py` supplies the *acquisition*. It reads a schedule for
+the sweep encoded in it — the frequencies of its `SetClockFrequency`s, the
+durations of its idles — and produces that experiment; only RB is played gate by
+gate. So it validates that each fit model describes real physics, and that each
+routine swept the axis it meant to. It cannot show that a routine's *schedule*
+produces the physics its fit assumes, because it never reads the pulses.
+
+`SimulationCoordinator` does read them, and `test_calibration_loop.py` runs the
+whole DAG through it — every routine, over a real `QuantumDevice` loaded from YAML,
+with the report required to come back `success` and to have run every routine
+rather than a subset. Nothing there is a double except the instrument. That is
+what caught `cz.amp`, `cz.phase_correction`, both DRAG faults and the chevron's
+half-duration: each was a routine that measured correctly and then failed, or
+silently declined, to write, and each is invisible to a simulator that never
+compiles the schedule.
+
+The pulses are not a formality to read. A CZ's flux pulse arrives not as one pulse
 but as a held DC offset plus a 4 ns tail, so a reader of the pulses alone would
-apply 4 ns of a gate that ran for 110. Entanglement survives to the counts
-there only because the shots are drawn from the pair's *joint* distribution;
-sampling each qubit from its own marginal reproduces both marginals perfectly
-and destroys the correlation that was the whole content of the state.
+apply 4 ns of a gate that ran for 110; a readout arrives the same way, and its
+amplitude is what `resonator_punchout` sweeps. Entanglement survives to the counts
+only because the shots are drawn from the pair's *joint* distribution — sampling
+each qubit from its own marginal reproduces both marginals perfectly and destroys
+the correlation that was the whole content of the state.
+
+What neither covers is hardware (§9).
 
 ### Test files
 
@@ -866,12 +876,62 @@ running the same tests under qblox as well as quantify:
   correction was also `np.pi - crossing` with the crossing in degrees, so a gate
   needing 30° back was told to apply −26.86.
 
-- **`drag` swept its parameter over ±1.0.** The DRAG parameter is in *seconds* —
-  it scales a time derivative of the envelope — so a 20 ns gate wants order
-  1e-11, which the lab's own device file confirms (-5.4e-11, -1.5e-11). Eleven
-  orders out puts the derivative term so far above the carrier that the waveform
-  exceeds full scale and the schedule does not compile at all, so the routine
-  could never have run on hardware.
+- **The DRAG parameter is not the same quantity in the two schedulers.** Both
+  pulses put a scaled derivative of the Gaussian on the other quadrature, and they
+  scale it differently: quantify's `D_amp` multiplies `(t−µ)/σ`, so it is the
+  dimensionless *ratio* of derivative to Gaussian, validated to ±1; qblox's `beta`
+  multiplies `(t−µ)/σ²`, so it is in *seconds*, larger by one pulse sigma — 2.5 ns
+  for a 20 ns gate. The routine swept one constant range for both, so it was nine
+  orders of magnitude out for whichever it was not written for, and being out in
+  the large direction does not merely mis-fit: the derivative term exceeds full
+  scale and the schedule stops compiling. `SchedulerBackend.drag_span` gives each
+  backend its own default, and both now recover the same physical optimum — 0.113
+  as a ratio, 2.8e-10 s as a beta, agreeing to four figures.
+- **`drag` wrote to a parameter qblox does not have.** `apply` wrote
+  `rxy.motzoi` unconditionally; qblox's transmon calls it `rxy.beta`. Same shape
+  as `cz.phase_correction` below — a routine that measured its optimum correctly
+  and then had nowhere to put it. `drag_parameter_name` asks the element which it
+  has, as `phase_correction_names` already did for the edge.
+- **`fit_chevron` calibrated a swap and called it a CZ.** The round trip was
+  found by walking to the first trough and then to the first sample that stops
+  rising. That is the right description of the experiment and the wrong way to
+  measure it, because the trough is not smooth: the exchange beats against the
+  other transitions the flux pulse sits near, so the bottom of the round trip
+  carries a wiggle a few per cent of the full swing, and the walk stops at the top
+  of *that* — still deep in `|02⟩`. Measured: 55 ns for a round trip of 110, so
+  the calibrated gate was a complete population transfer, which is a perfectly
+  good gate and the wrong one. It is a level crossing now: the population has to
+  reach the far side of the swing before anything counts as a return. Found only
+  once the DAG ran far enough for `conditional_phase` to consume the answer, where
+  it surfaced as a flat fringe — `fit_conditional_phase`'s own guard refusing to
+  read an angle off a Ramsey that did not oscillate, two routines downstream of the
+  fault that caused it.
+- **The readout could be calibrated once and never again.** The hardware fixture
+  pinned each readout port's intermediate frequency and let the LO float, so three
+  qubits sharing one QRM\_RF agreed on an LO only because their configured readout
+  frequencies happened to. Move one by a single kilohertz and the module is asked
+  for two LOs at once, and *every later schedule* fails to compile — a long way
+  from the routine that caused it. The lab's own config does the opposite, pinning
+  the LO and letting each qubit's IF differ, which is the arrangement that lets a
+  readout frequency be recalibrated at all. The fixture matches it now.
+- **`resonator_punchout` left the readout pointing where the resonator used to
+  be.** A readout frequency and a readout power are not two independent numbers:
+  the resonance moves *because* the power changed, which is the entire content of
+  the punchout experiment. So choosing a new power invalidated the frequency
+  `resonator_spectroscopy` had measured at the old one, and the DAG never revisited
+  it — half a linewidth off, a fifth of the readout contrast, for every routine
+  downstream. Punchout writes both now, and needed nothing extra measured to do it:
+  it already fits a resonator spectrum at every power in its range, so the row at
+  the power it selects *is* the corrected frequency. It was being discarded. The
+  alternative — re-running spectroscopy after punchout — is a second sweep for data
+  already in hand, and would have meant a routine appearing twice in the graph.
+- **Qubit spectroscopy at a 1% drive is a signal-to-noise of about five.** The
+  routine's default drive rotates by a tenth of a radian, moving the population by
+  half a per cent, and a Lorentzian fitted at that ratio lands anywhere: the same
+  sweep returned centres 14 MHz low, 12 MHz high and 62 MHz low depending on
+  nothing but the noise. The full-DAG test had been passing on that margin. Three
+  per cent puts it inside a megahertz and is still weak enough not to saturate the
+  line or reach the two-photon 0–2 transition 70 MHz above it.
 - **The qblox tuner had never completed a calibration.** Four faults, each alone
   fatal: the write-back called `device.elements()`, which is a *dict* under
   qblox and a method under quantify; edges were written with positional
@@ -906,15 +966,35 @@ one of those faults sat in shared code that quantify happened to satisfy.
 untested for the other. quantify-scheduler is being deprecated, which makes the
 qblox path the one that has to keep working.
 
+**Every routine now runs against the compiled schedule.** This used to be listed
+below as deliberately not done. `test_calibration_loop.py` drives the whole DAG —
+sixteen routines, both qubits, the edge between them — through the shipped tuner
+against `SimulatedCoordinator`, which reads pulses rather than sweeps, and requires
+the report to come back `success` having skipped none of them. Getting there needed
+two additions to the simulator, each of which had been the reason a routine was
+excluded:
+
+- **A readout resonator** (`simulation/resonator.py`). A response with a linewidth
+  to find and a power at which it moves, so `resonator_spectroscopy` and
+  `resonator_punchout` have an experiment rather than a flat line. The fitted
+  linewidth comes back as the modelled `kappa` and the fitted frequency as the
+  resonance at the power being used. Reading out away from it costs contrast, which
+  is what makes the readout frequency load-bearing for every routine after it.
+  What is *not* modelled is the two qubit states pulling the resonance to two
+  different frequencies; the discrimination stays in the blob geometry, so the best
+  point to read out at here is the resonance itself where a real chip has an
+  optimum between the two pulled peaks.
+- **Pulse envelopes, and the derivative that rides on them.** A shaped pulse is
+  integrated in steps rather than averaged to a constant amplitude, because the
+  DRAG term *is* the variation — averaged, it is identically zero, which is why the
+  Motzoi parameter used to do nothing. The leakage DRAG corrects comes from the
+  same three-level ladder that produces it, so the optimum is found rather than
+  assumed: 0.113 as a ratio, against the `-1/(2·alpha)` the theory gives for this
+  transmon's −280 MHz. Converged to five figures against eight times the step
+  resolution.
+
 Not implemented, deliberately:
 
-- **Schedule-level simulation for the routines** (§7). The tuner's tier 3
-  supplies the acquisition rather than interpreting the compiled schedule, so a
-  routine whose schedule does not produce the physics its fit assumes would
-  still pass. Note this gap is now closed on the *executor* side —
-  `SimulationCoordinator` plays the compiled schedule, flux pulses included —
-  but the routines are still tested against a simulator that reads their sweeps
-  rather than their pulses.
 - **A coupler measured rather than assumed** (§7). `SIDEBAND_GAP_GHZ`,
   `G_MHZ`, `FLUX_CURVATURE_GHZ`, `STARK_SHIFT_MHZ` and `STARK_ASYMMETRY` are
   chosen numbers. An edge can now declare the transition its drive bridges
@@ -928,10 +1008,12 @@ Not implemented, deliberately:
   assert the mock.
 - **Hardware validation** (§9). No routine here has been run against a physical
   transmon. Until the manual verification in §9 has been done on a lab node, the
-  honest description of this feature is "complete and untested against
-  hardware" — the failure modes that remain are the ones a dummy cluster cannot
-  show, above all whether each routine's schedule produces the physics its fit
-  assumes.
+  honest description of this feature is "complete and untested against hardware".
+  Every routine's schedule now produces the physics its fit assumes *in the
+  simulator*, which is a real claim and a bounded one: what remains are the failure
+  modes a model does not have — the analogue chain, crosstalk, TLS defects, drift
+  on the timescale of a calibration, and every one of the coupler constants §7
+  admits is chosen.
 
 ## 12. Implementation plan
 

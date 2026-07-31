@@ -11,7 +11,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import read_path, write_path
+from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
@@ -210,20 +210,23 @@ class Drag(CalibrationRoutine):
 
     name = "drag"
     depends_on = ("ramsey",)
+    # Spelled `rxy.beta` under qblox — see `drag_parameter_name`.
     updates = ("rxy.motzoi",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        # The DRAG parameter is in *seconds*: it scales a time derivative of the
-        # pulse envelope, so its size is set by the pulse, not by the amplitude.
-        # A calibrated 20 ns gate wants something of order 1e-11 — the lab's own
-        # device file carries -5.4e-11 and -1.5e-11 — and the sweep has to
-        # bracket that. It used to run -1.0 to 1.0, eleven orders of magnitude
-        # out, which puts the derivative term so far above the carrier that the
-        # waveform exceeds full scale and the schedule will not compile at all.
+        # The DRAG parameter's *units differ between the two schedulers*, so the
+        # default sweep cannot be a constant here — see `SchedulerBackend.drag_span`.
+        # quantify's `motzoi` is a dimensionless ratio; qblox's `beta` is the same
+        # quantity multiplied by the pulse sigma, so in seconds. A sweep sized for
+        # one is nine orders of magnitude wrong for the other, and being wrong in
+        # the large direction does not merely mis-fit: it pushes the derivative
+        # term past full scale and the schedule stops compiling.
         self._betas = setpoints_of(
-            config, "motzois", linear_setpoints(-2e-10, 2e-10, 31)
+            config,
+            "motzois",
+            linear_setpoints(-backend.drag_span, backend.drag_span, 31),
         )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
@@ -262,7 +265,13 @@ class Drag(CalibrationRoutine):
         return fit_drag(np.asarray(self._betas), paired[:, 0] - paired[:, 1])
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
-        write_path(device.get_element(target), "rxy.motzoi", params["motzoi"])
+        element = device.get_element(target)
+        name = drag_parameter_name(element)
+        if name is None:
+            raise RoutineError(
+                f"{target} has no DRAG parameter to write the fitted optimum to"
+            )
+        write_path(element, f"rxy.{name}", params["motzoi"])
 
 
 class AllXY(CalibrationRoutine):

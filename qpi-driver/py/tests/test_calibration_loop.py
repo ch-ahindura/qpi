@@ -900,29 +900,53 @@ def test_a_coupler_that_declares_its_own_gap_is_believed(coupler_device, tmp_pat
 # tuner, over a real device loaded from YAML, and requires the report to come back
 # `success`. Nothing here is a double except the instrument.
 
-#: Routines the simulator cannot answer, and why. Explicit so the list shrinks
-#: rather than being invisible — each is a gap in the simulator, not in the
-#: routine.
-UNSIMULATED = {
-    # The coordinator's readout is two IQ blobs with no resonator behind them, so
-    # there is no response to sweep. Worse than useless: calibrating a readout
-    # frequency the hardware config's fixed LO+IF cannot reach makes every later
-    # schedule fail to compile, which is a real interaction worth modelling but
-    # not one to leave enabled meanwhile.
-    "resonator_spectroscopy",
-    "resonator_punchout",
-    # The coordinator plays a pulse's amplitude and phase and ignores its DRAG
-    # parameter, so beta has no effect and the fit has nothing to find.
-    "drag",
-}
+#: Where this chip's readout resonators actually are, in GHz — four megahertz from
+#: the 6.000/6.010/6.020 the fixture claims.
+#:
+#: Without this the resonator routines would be vacuous: a resonator sitting
+#: exactly where the config says makes `resonator_spectroscopy` a measurement that
+#: cannot come out wrong. Four megahertz is two linewidths, so the fixture's
+#: declared frequency finds the line and does not sit on it, and the routine has to
+#: move the number for the readout to work.
+TRUE_RESONATORS = {"q0": 6.004, "q1": 6.014, "q2": 6.024}
 
 #: Sweeps sized for the simulated chip. Every one of these is a property of the
 #: simulator's own parameters — T1 of 30 us wants a sweep several times that, and
 #: a sweep shorter than the decay cannot measure it.
 FULL_DAG_SWEEPS: dict[str, dict] = {
-    # 440 MHz, not more: q0 starts 214 MHz off, and the NCO cannot be pushed past
-    # 500 MHz from its intermediate frequency, which a wider span would do.
-    "qubit_spectroscopy": {"span": 440e6, "points": 89},
+    # Wide enough to bracket resonators four megahertz out, fine enough to resolve
+    # a two-megahertz linewidth: a Lorentzian narrower than the step between
+    # setpoints is fitted from the noise between them.
+    "resonator_spectroscopy": {"span": 30e6, "points": 91},
+    # Up to 0.85, because punchout is a *shift* and the shift only appears once
+    # there are enough photons to wash out the dispersive pull. Stopping at the
+    # 0.5 default leaves it under a megahertz, which fits but says less.
+    "resonator_punchout": {
+        "amplitudes": [round(0.05 + 0.1 * i, 3) for i in range(9)],
+        "span": 30e6,
+        "points": 61,
+    },
+    # Centred above the fixture's claim rather than on it, because q0 is 214 MHz
+    # *above* where the config says and a symmetric sweep spends half its points
+    # below the qubit. Sweeping [4.85, 5.27] instead of [4.78, 5.22] leaves the
+    # line 56 MHz inside the upper edge rather than 6 MHz — and a Lorentzian one
+    # setpoint from the boundary has an essentially unconstrained centre, which is
+    # a fit that passes or fails on the noise.
+    #
+    # Not wider: the NCO cannot be pushed past 500 MHz from its intermediate
+    # frequency, and 5.27 GHz against q0's 200 MHz IF already asks for 470.
+    "qubit_spectroscopy": {
+        "centre_frequency": 5.06e9,
+        "span": 420e6,
+        "points": 85,
+        # Three per cent, not the routine's one. A 1% drive on this chip rotates
+        # by a tenth of a radian, so it moves the population by half a per cent —
+        # against per-shot readout noise that is a signal-to-noise of about five,
+        # and a fit at that ratio lands anywhere. Three per cent puts the centre
+        # within a megahertz and is still weak enough not to saturate the line or
+        # reach the two-photon 0-2 transition, which sits only 70 MHz above f01.
+        "drive_amp": 0.03,
+    },
     "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
     "ramsey": {
         "delays": [round(4e-9 + 4e-8 * i, 11) for i in range(601)],
@@ -945,8 +969,13 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
 
 @pytest.fixture(scope="module")
 def fully_calibrated(scheduler, tmp_path_factory):
-    """The whole enabled DAG, over two qubits and the edge between them."""
-    simulator = TransmonSimulator()
+    """The whole DAG, over two qubits and the edge between them.
+
+    Every routine, with nothing skipped. The readout resonators are deliberately
+    not where the config says, so the two resonator routines have something to
+    find and the readout frequency they write is load-bearing for everything after.
+    """
+    simulator = TransmonSimulator(resonator_frequencies_ghz=TRUE_RESONATORS)
     directory = tmp_path_factory.mktemp(f"fulldag_{scheduler}")
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
@@ -973,10 +1002,7 @@ def fully_calibrated(scheduler, tmp_path_factory):
             target_qubits=["q0", "q1"],
             target_edges=["q0_q1"],
             routines={
-                name: RoutineConfig(
-                    enabled=name not in UNSIMULATED,
-                    params=FULL_DAG_SWEEPS.get(name, {}),
-                )
+                name: RoutineConfig(enabled=True, params=FULL_DAG_SWEEPS.get(name, {}))
                 for name in routine_names()
             },
         )
@@ -987,11 +1013,14 @@ def fully_calibrated(scheduler, tmp_path_factory):
 
 
 def test_the_whole_dag_completes_against_the_simulator(fully_calibrated):
-    """Every enabled routine, through the shipped stack, with no failures.
+    """Every routine, through the shipped stack, with no failures and none skipped.
 
     This is the test that would have caught `cz.amp`, `cz.phase_correction`, the
     DRAG units and the qblox write-back — each of which was a routine that
     measured correctly and then failed, or silently declined, to write.
+
+    The equality is the point rather than the success: a routine quietly excluded
+    from the run is indistinguishable from one that works.
     """
     report, _device, _simulator, _scheduler = fully_calibrated
 
@@ -999,7 +1028,7 @@ def test_the_whole_dag_completes_against_the_simulator(fully_calibrated):
     assert report.errors == []
 
     ran = {result.routine_name for result in report.routine_results}
-    expected = set(routine_names()) - UNSIMULATED
+    expected = set(routine_names())
     assert ran == expected, f"did not run {sorted(expected - ran)}"
 
 
@@ -1010,6 +1039,8 @@ def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):
     cannot play — and writing it made every *later* schedule containing this CZ
     fail to compile, some distance from the routine that caused it.
     """
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
     _report, device, _simulator, _scheduler = fully_calibrated
     written = yaml.safe_load(device.read_text())["q0_q1"]["cz"]
 
@@ -1018,6 +1049,13 @@ def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):
     assert duration_ns == pytest.approx(round(duration_ns), abs=1e-6), (
         f"the CZ duration must be a whole number of nanoseconds, got {duration_ns}"
     )
+    # A *full* round trip, which is the assertion this test used to be missing.
+    # Half of one is complete population transfer into |02>: a perfectly good gate,
+    # measured just as confidently, and not a CZ. The chevron wrote 55 ns against a
+    # round trip of 110 for as long as nothing checked the number itself.
+    assert duration_ns == pytest.approx(CoupledTransmons().cz_duration_ns, rel=0.05), (
+        f"the CZ should be one |11>-|02>-|11> round trip, got {duration_ns:.1f} ns"
+    )
 
     corrections = [
         value for name, value in written.items() if name.endswith("phase_correction")
@@ -1025,6 +1063,82 @@ def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):
     assert len(corrections) == 2, f"expected two virtual-Z corrections in {written}"
     assert any(value != 0 for value in corrections), (
         "the conditional-phase routine measured its corrections and wrote none"
+    )
+
+
+def test_the_readout_lands_on_the_resonance_at_the_power_it_chose(fully_calibrated):
+    """Both halves of the readout operating point, and consistent with each other.
+
+    The strong claim is the pairing. The resonance moves with readout power, so a
+    frequency and a power are not two independent numbers — the frequency is only
+    right *at* that power. Punchout picks the power, so punchout has to supply the
+    frequency too; leaving `resonator_spectroscopy`'s answer in place pointed the
+    readout half a linewidth off and cost a fifth of the contrast everywhere
+    downstream, which no assertion about either number alone would catch.
+
+    Checked against the model rather than a constant, to a tenth of a linewidth.
+    """
+    _report, device, simulator, _scheduler = fully_calibrated
+    config = yaml.safe_load(device.read_text())
+    declared = yaml.safe_load((FIXTURES / "quantify.device.yml").read_text())
+
+    for qubit in ("q0", "q1"):
+        written = config[qubit]["clock_freqs"]["readout"]
+        power = config[qubit]["measure"]["pulse_amp"]
+        resonator = simulator.resonator(qubit)
+        expected = resonator.resonance_ghz(power) * GHZ
+
+        assert written == pytest.approx(expected, abs=200e3), (
+            f"{qubit}'s readout is at {written / 1e6:.3f} MHz but its resonance at "
+            f"power {power} is {expected / 1e6:.3f} MHz"
+        )
+        # And it moved, rather than the fixture having been right all along.
+        was = float(declared[qubit]["clock_freqs"]["readout"])
+        assert abs(written - was) > 2e6, f"{qubit}'s readout never moved off {was}"
+
+
+def test_punchout_wrote_a_readout_power_inside_its_sweep(fully_calibrated):
+    """The last power still in the dressed regime, which is a real choice here.
+
+    Punchout only means something because pushing more photons in *costs* the thing
+    readout measures: past the crossover the dispersive pull washes out and the
+    resonance walks to bare. A simulator where power did nothing would let this
+    routine write the top of its sweep and look just as successful.
+    """
+    _report, device, _simulator, _scheduler = fully_calibrated
+    amplitudes = FULL_DAG_SWEEPS["resonator_punchout"]["amplitudes"]
+    written = yaml.safe_load(device.read_text())["q0"]["measure"]["pulse_amp"]
+
+    assert any(abs(written - amplitude) < 1e-9 for amplitude in amplitudes), (
+        f"the readout power should be one of the swept amplitudes, got {written}"
+    )
+    assert written < max(amplitudes), (
+        "punchout picked the highest power it tried, which is what it would do if "
+        "power had no effect on the resonator"
+    )
+
+
+def test_drag_wrote_the_optimum_its_scheduler_spells(fully_calibrated):
+    """The Motzoi optimum, in whichever units and under whichever name.
+
+    The two schedulers disagree twice over: quantify's `rxy.motzoi` is a
+    dimensionless ratio and qblox's `rxy.beta` is that ratio times the pulse sigma,
+    in seconds. So the same chip has two right answers differing by 2.5 ns, and a
+    routine with one hardcoded name and one hardcoded sweep gets both wrong.
+
+    The physical value is about ``-1/(2*alpha)``, which for this transmon's -280 MHz
+    is a ratio near 0.11.
+    """
+    _report, device, _simulator, scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())["q0"]["rxy"]
+
+    name = "beta" if scheduler == "qblox" else "motzoi"
+    assert name in written, f"drag wrote nothing readable: {written}"
+    # Back to the dimensionless ratio, so one number covers both schedulers.
+    sigma = 20e-9 / 8  # the default 20 ns gate, cut at four sigma
+    ratio = written[name] / (sigma if scheduler == "qblox" else 1.0)
+    assert ratio == pytest.approx(0.11, abs=0.03), (
+        f"expected a DRAG ratio near 0.11, got {ratio} from {name}={written[name]}"
     )
 
 

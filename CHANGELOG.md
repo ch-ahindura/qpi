@@ -112,6 +112,25 @@ are chosen and say so, in the module and in RFC 0004 §7.
 - `test_calibration_loop` runs under both schedulers rather than one, and
   `make test-py-loop` installs both.
 
+**A readout resonator, and real pulse envelopes.** The simulator's readout was two
+fixed points in the IQ plane, which is enough to tell `|0⟩` from `|1⟩` and nothing
+at all for the two routines whose subject *is* the readout chain. It now has a
+resonance with a linewidth to find and a power at which it moves, so
+`resonator_spectroscopy` and `resonator_punchout` measure something — and reading
+out away from that resonance costs contrast, which is what makes the readout
+frequency matter to every routine after it.
+
+Drive pulses are played as the envelope the schedule specifies rather than averaged
+to a constant amplitude. That was what made the DRAG parameter a no-op: the
+correction is the *derivative* of the envelope, which averages to exactly zero. The
+leakage it cancels comes from the same three-level ladder that produces it, so
+`drag` finds its optimum rather than being handed one.
+
+Together these close the last gaps in running the whole calibration graph against
+the simulator: `test_calibration_loop` now drives all sixteen routines over two
+qubits and the edge between them, through the shipped tuner and a real device file,
+and requires the report to come back `success` having skipped none of them.
+
 ### Fixed
 
 - `qpi-driver`: A virtual Z did nothing under `is_simulated` — `ShiftClockPhase`
@@ -134,13 +153,37 @@ are chosen and say so, in the module and in RFC 0004 §7.
   was therefore never true. It now measures four fringes rather than two, because
   the two corrections cancel each qubit's *single-qubit* phase, which is not the
   conditional phase.
-- `qpi-driver`: The `drag` routine swept its parameter over ±1.0. That parameter
-  is in seconds; a 20 ns gate wants order 1e-11, and eleven orders out puts the
-  waveform past full scale so the schedule does not compile at all.
+- `qpi-driver`: The `drag` routine swept one range for both schedulers, whose DRAG
+  parameters are not the same quantity: quantify's `motzoi` is the dimensionless
+  ratio of the derivative component to the Gaussian, qblox's `beta` is that ratio
+  times the pulse sigma, in seconds. Nine orders apart, and out in the large
+  direction the waveform exceeds full scale so nothing compiles. Each backend
+  supplies its own default span, and both recover the same physical optimum.
+- `qpi-driver`: `drag` then wrote its result to `rxy.motzoi` unconditionally,
+  which qblox calls `rxy.beta` — an optimum measured correctly with nowhere to go.
 - `qpi-driver`: `fit_chevron` looked for the brightest pixel. The control reads
   ≈1 wherever the flux pulse did nothing, so the maximum was as likely to sit on
   an off-resonant row as on the gate; it finds resonance by oscillation contrast
   now, and refuses a sweep that stepped over the crossing.
+- `qpi-driver`: `fit_chevron` then calibrated a population swap and called it a
+  CZ. It walked to the first trough and on to the first sample that stopped
+  rising, but the trough is not smooth — the exchange beats against nearby
+  transitions — so it stopped at the top of a wiggle a few per cent deep, still in
+  `|02⟩`: 55 ns for a round trip of 110. The return is a level crossing now, so the
+  population has to reach the far side of the swing to count as having come back.
+- `qpi-driver`: The readout could be calibrated once and never again. The hardware
+  fixture pinned each readout port's intermediate frequency and let the LO float,
+  so moving one of three qubits sharing a QRM_RF asked the module for two LOs and
+  every *later* schedule failed to compile. The LO is pinned instead, as the lab's
+  own config does.
+- `qpi-driver`: `resonator_punchout` left the readout pointing where the resonator
+  used to be. The resonance moves with readout power — that movement *is* the
+  experiment — so settling on a new power invalidated the frequency
+  `resonator_spectroscopy` had measured at the old one, and nothing revisited it.
+  Measured on the simulated chip: half a linewidth off, costing a fifth of the
+  readout contrast for every routine downstream. Punchout writes the frequency as
+  well as the power now, taken from the spectrum it already fitted at the power it
+  chose — the two are one operating point, and neither is right without the other.
 - `qpi-driver`: `fit_conditional_phase` took the zero crossing of the two
   fringes' difference, which sits at half the wanted angle displaced by the
   control's dynamical phase over the flux pulse — tens of turns. It fits each
@@ -166,6 +209,10 @@ are chosen and say so, in the module and in RFC 0004 §7.
 - `qpi-driver`: The qblox tier-2 test asserted a routine's schedule was *built*
   but never compiled, so a schedule that would not compile passed. Both backends
   compile now.
+- The driver e2e's QPU-seconds check read its baseline nine API calls before the
+  approval it was measuring, so a job settling in the background in between turned
+  "approving 300 seconds credits 300 seconds" into a flaky assertion that nothing
+  else happened meanwhile. It reads the baseline where it means to.
 
 ### Changed
 - `make test-e2e-dashboard` accepts `SPEC=<glob>` to run a single Cypress spec —
