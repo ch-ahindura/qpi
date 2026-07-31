@@ -504,6 +504,26 @@ class SimulatedCoordinator:
             return
 
         qubit = _qubit_of(clock) or _qubit_of(port)
+        if qubit is not None and clock.endswith(".12"):
+            amplitude = _amplitude_of(pulse)
+            register = registers.of(qubit)
+            if amplitude is None or duration <= 0:
+                self._idle(register, duration)
+                return
+            self._drive_ef(
+                register,
+                qubit,
+                amplitude=float(amplitude),
+                duration=duration,
+                phase_deg=float(pulse.get("phase") or 0.0)
+                + self._clock_phases.get(clock, 0.0),
+                detuning_hz=clocks.get(clock, 0.0) - self._f12_hz(),
+            )
+            for other in registers.distinct():
+                if other is not register:
+                    self._idle(other, duration)
+            return
+
         if qubit is None or not clock.endswith(".01"):
             # A baseband idle, anything not driving a qubit: it still takes time,
             # and time is where decoherence happens.
@@ -678,6 +698,86 @@ class SimulatedCoordinator:
             * (np.exp(-1j * phase) * destroy + np.exp(1j * phase) * destroy.dag()),
             qubit,
         )
+
+    def _f12_hz(self) -> float:
+        """The ``|1>``-``|2>`` transition of the simulated transmon, in Hz."""
+        return (self.simulator.f01 + self.simulator.anharmonicity) * GHZ
+
+    def _drive_ef(
+        self,
+        register: _Register,
+        qubit: str,
+        amplitude: float,
+        duration: float,
+        phase_deg: float,
+        detuning_hz: float,
+    ) -> None:
+        """A drive on the ``.12`` clock: the ``|1>``-``|2>`` transition.
+
+        Its own rotating frame, and a two-level problem inside three levels. The
+        detuning sits on ``|2>`` and the drive couples ``|1>`` to ``|2>`` only, with
+        ``|0>`` a spectator — which is the leading order, and correct to the extent
+        that the drive is far from ``0-1``. It is: the anharmonicity is some 280 MHz
+        and a 20 ns pulse spans about 50.
+
+        What that leaves out is the off-resonant ``0-1`` excitation and the Stark
+        shift it brings, so a *strong* EF pulse leaks more here than it would on a
+        chip. The routines that use this drive it weakly, and a leakage-sensitive
+        experiment on the EF transition would want the neglected term back.
+
+        The 1-2 matrix element is folded into the subspace operator rather than taken
+        from the ladder's ``sqrt(2)``: the drive strength this simulator applies is
+        calibrated against the 0-1 transition, and an EF pulse that came out
+        ``sqrt(2)`` stronger for the same amplitude would make `rabi_12` measure the
+        ladder rather than the chain.
+        """
+        import qutip
+
+        levels = register.levels
+        if levels < 3:
+            raise SimulationError(
+                "a drive on the .12 clock needs a three-level transmon; this "
+                f"simulator has {levels}"
+            )
+
+        excited = qutip.basis(levels, 1) * qutip.basis(levels, 2).dag()
+        raising = register.embed(excited.dag(), qubit)
+        lowering = register.embed(excited, qubit)
+        second = register.embed(
+            qutip.basis(levels, 2) * qutip.basis(levels, 2).dag(), qubit
+        )
+
+        rabi = self.drive_strength * amplitude * NS  # rad/ns
+        phase = np.exp(1j * np.deg2rad(phase_deg))
+        hamiltonian = (
+            2 * np.pi * (detuning_hz / GHZ) * second
+            + (rabi / 2) * (phase * raising + np.conj(phase) * lowering)
+            + self._drift_of_others(register, qubit)
+        )
+        self._sample_cache.clear()
+        self._propagate(register, hamiltonian, duration)
+
+    def _drift_of_others(self, register: _Register, driven: str):
+        """Drift for every qubit in the register *except* the driven one.
+
+        The driven qubit's own drift is replaced by the EF frame's detuning term, but
+        a spectator sharing the register is still accumulating phase and would freeze
+        if this were left out.
+        """
+        import qutip
+
+        total = None
+        for qubit in register.qubits:
+            if qubit == driven:
+                continue
+            single = self.simulator._anharmonic_hamiltonian(
+                detuning_ghz=register.detunings[qubit] / GHZ
+            )
+            embedded = register.embed(single, qubit)
+            total = embedded if total is None else total + embedded
+        if total is None:
+            return qutip.qzero_like(register.ladder(driven))
+        return total
 
     def _propagate_shaped(
         self,

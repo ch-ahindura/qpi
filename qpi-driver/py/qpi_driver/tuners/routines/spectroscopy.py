@@ -496,6 +496,95 @@ class QubitSpectroscopy(CalibrationRoutine):
         )
 
 
+class F12Spectroscopy(CalibrationRoutine):
+    """Find the ``|1>``-``|2>`` transition, by driving it from ``|1>``.
+
+    Depends on `rabi` because the transition starts from ``|1>``: without a calibrated
+    pi pulse there is no population to drive out of, and the sweep comes back flat.
+    That is the same straddle `readout_discrimination` sits in — part of the chip's
+    characterisation cannot be done before the qubit chain has begun.
+
+    ``clock_freqs.f12`` has been on the element all along and nothing measured it. The
+    reference config pins it 134 MHz from where the simulated transmon's actually is,
+    and nothing notices, because until now nothing read it either. It is the input to
+    three-state readout and it grounds the ``|02>`` leg a CZ works through.
+    """
+
+    name = "f12_spectroscopy"
+    depends_on = ("rabi",)
+    updates = ("clock_freqs.f12",)
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        # Centred on f01 plus the anharmonicity rather than on the configured f12,
+        # unless the config says otherwise: a chip whose f12 has never been measured
+        # carries whatever was typed in, and scanning around that finds nothing. A
+        # transmon's anharmonicity is a few hundred MHz and negative, so f01 - 300 MHz
+        # is a far better prior than an unmeasured field.
+        centre = config.get("centre_frequency")
+        if centre is None:
+            offset = float(config.get("anharmonicity_prior", -300e6))
+            centre = _current_clock(device, target, "f01") + offset
+        span = float(config.get("span", 400e6))
+        points = int(config.get("points", 81))
+        self._frequencies = setpoints_of(
+            config,
+            "frequencies",
+            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        )
+
+        clock = f"{target}.12"
+        amplitude = float(config.get("drive_amp", 0.03))
+        duration = float(config.get("duration", 20e-9))
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        for index, frequency in enumerate(self._frequencies):
+            schedule.add(backend.Reset(target))
+            # Into |1> first, which is what makes this the *ef* transition rather than
+            # a second look at 0-1.
+            schedule.add(backend.X(target))
+            schedule.add(
+                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+            )
+            schedule.add(
+                backend.SquarePulse(
+                    amp=amplitude,
+                    duration=duration,
+                    port=f"{target}:mw",
+                    clock=clock,
+                )
+            )
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        fitted = fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
+        _require_resolved_line(fitted["linewidth"], self._frequencies)
+        return {
+            "clock_freq_12": fitted["clock_freq_01"],
+            "linewidth": fitted["linewidth"],
+            "quality_factor": fitted["quality_factor"],
+            # Reported because it is the number a reader wants and nothing else
+            # measures it: the anharmonicity is f12 - f01, and it sets both the DRAG
+            # optimum and where |02> sits for a CZ.
+            "anharmonicity": fitted["clock_freq_01"]
+            - _current_clock(device, target, "f01"),
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        write_path(
+            device.get_element(target), "clock_freqs.f12", params["clock_freq_12"]
+        )
+
+
 class FluxSpectroscopy(CalibrationRoutine):
     """Map coupler frequency against flux bias — the input to a CZ."""
 

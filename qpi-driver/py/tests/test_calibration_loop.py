@@ -135,6 +135,10 @@ def _sweep(name: str) -> dict:
         # refine away, because the fringe it produces is close to the sweep's Nyquist.
         "qubit_spectroscopy": {"span": 600e6, "points": 61, "drive_amp": 0.03},
         "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
+        # 400 MHz about f01 minus 300, which brackets a transmon's anharmonicity without
+        # trusting the f12 already on the device — the fixture's is 134 MHz wrong, which is
+        # the honest state of a field nothing ever measured.
+        "f12_spectroscopy": {"span": 400e6, "points": 81},
         # Ramsey's sweep is squeezed from both ends, which is worth stating
         # because getting either wrong looks like a broken routine.
         #
@@ -1233,6 +1237,43 @@ def test_the_discriminator_is_measured_rather_than_defaulted(fully_calibrated):
     ]
     assert fidelities, "readout_discrimination did not run"
     assert min(fidelities) > 0.95, f"poor readout assignment: {fidelities}"
+
+
+def test_f12_was_measured_rather_than_inherited(fully_calibrated):
+    """The |1>-|2> transition, which the element carried and nothing produced.
+
+    The fixture pins `clock_freqs.f12` at 4.8 GHz and the simulated transmon's is at
+    4.931 — 131 MHz out, unnoticed for as long as nothing read the field. It is the
+    input to three-state readout and it sets where |02> sits for a CZ, so a wrong value
+    is not harmless, only silent.
+
+    Driving it needs a |1> to start from, which is why the routine depends on `rabi`
+    and why this cannot be part of the readout bring-up.
+    """
+    report, device, simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+    declared = yaml.safe_load((FIXTURES / "quantify.device.yml").read_text())
+    true_f12 = (simulator.f01 + simulator.anharmonicity) * GHZ
+
+    for qubit in ("q0", "q1"):
+        found = written[qubit]["clock_freqs"]["f12"]
+        assert found == pytest.approx(true_f12, abs=5e6), (
+            f"{qubit}'s f12 is {found / 1e9:.4f} GHz against a true "
+            f"{true_f12 / 1e9:.4f}"
+        )
+        was = float(declared[qubit]["clock_freqs"]["f12"])
+        assert abs(found - was) > 50e6, f"{qubit}'s f12 never moved off {was}"
+
+    # And the anharmonicity it implies is a transmon's, which is the sanity check on
+    # the whole measurement: a fit that found the 0-1 line again would report zero.
+    anharmonicities = [
+        r.parameters["anharmonicity"]
+        for r in report.routine_results
+        if r.routine_name == "f12_spectroscopy"
+    ]
+    assert anharmonicities
+    for value in anharmonicities:
+        assert -400e6 < value < -150e6, f"not a transmon anharmonicity: {value}"
 
 
 def test_punchout_wrote_a_readout_power_inside_its_sweep(fully_calibrated):

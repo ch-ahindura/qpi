@@ -229,7 +229,7 @@ cannot claim.
 | `readout_frequency_two_state` | `clock_freqs.readout_2state_opt` | the pull, plus separation as a function of drive frequency |
 | `readout_amplitude_two_state` | `measure.pulse_amp`, `measure.acq_rotation`, `measure.acq_threshold` | blob positions **derived** from the response, plus a readout-chain rotation and offset so `0/0` is not right by construction |
 | `readout_fidelity` | — (characterisation) | assignment errors from the overlap of the two distributions |
-| `f12_spectroscopy` | `clock_freqs.f12` | the `.12` clock handled; the three-level ladder is already real |
+| `f12_spectroscopy` | `clock_freqs.f12` | ✅ the `.12` clock driven; the three-level ladder was already real |
 | `rabi_12`, `ramsey_12`, `drag_12`, `fine_amplitude_12` | `r12.ef_amp180`, `clock_freqs.f12`, `r12.ef_motzoi` | drive on the `.12` clock; leakage to `|3⟩` bounded or a fourth level |
 | `resonator_spectroscopy_second_excited` | `clock_freqs.readout_2` | a **second** dispersive shift, for `|2⟩` |
 | `readout_frequency_three_state`, `readout_amplitude_three_state`, `three_state_discrimination` | `clock_freqs.readout_3state_opt`, `measure_3state.*` | three resolvable clouds, so leakage is a third outcome rather than "not `|0⟩`" |
@@ -410,8 +410,18 @@ after the machinery.
      discriminated readout needs the executor to select it, which is the same work as
      the EF subspace's `ro2`/`ro_3st_opt`. `measure.pulse_amp` stays with punchout
      until then.
-5. **The EF subspace.** Seven nodes, plus the `|2⟩` pull and the `.12` clock.
-   Unlocks three-state readout and grounds `f12`.
+5. **The EF subspace.** Begun.
+   - `f12_spectroscopy` → `clock_freqs.f12`: **done.** The `.12` clock is driven in
+     the simulator now — its own rotating frame, detuning on `|2⟩`, `|0⟩` a spectator —
+     and the routine recovers 4.9304 GHz against a true 4.9312, with an anharmonicity
+     of −283.7 MHz against −282.9. It depends on `rabi`, because the transition starts
+     from `|1⟩`.
+   - `rabi_12`, `ramsey_12`, `drag_12`, `fine_amplitude_12`,
+     `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
+     `readout_amplitude_three_state`, `three_state_discrimination`: **blocked on the
+     same decision as `qubit_spectroscopy_amplitude`.** They need `r12.ef_amp180`,
+     `r12.ef_motzoi`, `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a
+     `measure_3state` submodule, and the transmon element has none of them. §13.
 6. **The coupler.** A coupler frequency in the simulator, the two arcs,
    `coupler_anticrossing` → `bias.parking_current`, `cz_parametrization`. Replaces
    two chosen constants with measured ones.

@@ -200,6 +200,27 @@ separate node, since splitting them would measure the same two clouds twice. It 
 on `rabi`, because preparing `|1⟩` needs a calibrated π pulse — the readout chain
 straddles the qubit chain rather than preceding it.
 
+**`f12_spectroscopy`, and an EF drive to run it against** (RFC 0005 §7). The
+`|1⟩`-`|2⟩` transition has been a field on the transmon element all along with nothing
+measuring it: the reference config pins `clock_freqs.f12` 131 MHz from where the
+simulated transmon's actually is, unnoticed for as long as nothing read it. It is the
+input to three-state readout and it sets where `|02⟩` sits for a CZ, so a wrong value
+is not harmless, only silent.
+
+The routine prepares `|1⟩` and sweeps the `.12` clock across it — so it depends on
+`rabi`, which is the same straddle `readout_discrimination` sits in. The simulator
+drives that clock now, in its own rotating frame with the detuning on `|2⟩` and `|0⟩` a
+spectator; what that leaves out is the off-resonant `0-1` excitation, so a strong EF
+pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
+reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
+
+The drive ports in the hardware fixture pin their LO and let the intermediate
+frequency float, for the reason the readout ports already did: two clocks on one output
+cannot each derive the LO from their own configured frequency. Choosing the value is
+tighter than it looks — the NCO's ±500 MHz window has to hold *both* the `.01`
+spectroscopy sweep and the `.12` one, and picking each LO from the fixture's declared
+`f01` put q1's sweep 5 MHz over the edge. 4.99 GHz leaves both inside with margin.
+
 ### Fixed
 
 - `qpi-driver`: `allxy` and `fit_chevron` assumed which direction the readout's

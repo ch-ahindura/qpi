@@ -26,6 +26,7 @@ from qpi_driver.tuners.routines.single_qubit import (
     T2Echo,
 )
 from qpi_driver.tuners.routines.spectroscopy import (
+    F12Spectroscopy,
     FluxSpectroscopy,
     QubitSpectroscopy,
     ResonatorPunchout,
@@ -44,6 +45,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     QubitSpectroscopy,
     Rabi,
     ReadoutDiscrimination,
+    F12Spectroscopy,
     Ramsey,
     T1,
     T2Echo,
