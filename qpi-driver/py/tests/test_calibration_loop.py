@@ -346,3 +346,57 @@ def test_a_mistimed_cz_does_not_entangle(two_qubit_device):
     assert correlation(counts) < 0.5, (
         f"half a CZ should not produce an entangled pair, got {counts}"
     )
+
+
+# --- virtual Z ------------------------------------------------------------------
+
+
+def test_a_virtual_z_actually_rotates_the_frame(calibrated_device):
+    """`rz` plays no pulse, and must still change the answer.
+
+    A `z`, `s`, `t` or `rz` compiles to a `ShiftClockPhase`: nothing is played,
+    the frame the *next* drive is referenced to simply moves. A simulator that
+    walks pulses and ignores frame shifts therefore runs every one of them as an
+    identity, silently — and `h; h` and `h; rz(pi); h` come out the same.
+
+    The delays are not padding: the compiler refuses two phase updates closer
+    than 4 ns apart, which is a real constraint of the hardware's NCO.
+    """
+    device, simulator = calibrated_device
+    gap = "delay[8ns] q[0];\n"
+
+    without = run(
+        device, simulator, circuit("h q[0];\n" + gap + gap + "h q[0];\n"), shots=600
+    )
+    with_z = run(
+        device,
+        simulator,
+        circuit("h q[0];\n" + gap + "rz(pi) q[0];\n" + gap + "h q[0];\n"),
+        shots=600,
+    )
+
+    assert without["0"] / sum(without.values()) > 0.9, (
+        f"h then h should return to |0>, got {without}"
+    )
+    # H Z H = X, so the same circuit with a virtual Z between the two Hadamards
+    # must land in |1> instead.
+    assert with_z["1"] / sum(with_z.values()) > 0.9, (
+        f"h, rz(pi), h should land in |1>, got {with_z}"
+    )
+
+
+def test_two_virtual_z_gates_compose(calibrated_device):
+    """S·S = Z, which only holds if the shifts accumulate rather than replace."""
+    device, simulator = calibrated_device
+    gap = "delay[8ns] q[0];\n"
+    counts = run(
+        device,
+        simulator,
+        circuit(
+            "h q[0];\n" + gap + "s q[0];\n" + gap + "s q[0];\n" + gap + "h q[0];\n"
+        ),
+        shots=600,
+    )
+    assert counts["1"] / sum(counts.values()) > 0.9, (
+        f"two S gates should compose to a Z, got {counts}"
+    )

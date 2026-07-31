@@ -17,6 +17,7 @@ this package.
 """
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -84,6 +85,33 @@ class TransmonSimulator:
         """f12 − f01 in GHz, negative for a transmon."""
         levels = self.eigenvalues(3)
         return float((levels[2] - levels[1]) - (levels[1] - levels[0]))
+
+    def at_f01(self, target_ghz: float, **overrides: Any) -> "TransmonSimulator":
+        """A copy of this transmon tuned to *target_ghz*, by solving for EJ.
+
+        A chip is not one qubit repeated. Two qubits sharing a coupler have to
+        sit at different frequencies for a CZ to exist at all — the DC-tuned
+        gate works by bringing ``|11⟩`` and ``|02⟩`` together, and they are only
+        near each other when the pair is detuned by about one anharmonicity.
+
+        EJ rather than EC because EC sets the anharmonicity, and a chip whose
+        qubits had different anharmonicities as a side effect of being placed
+        at different frequencies would be a strange one. Newton on the real
+        diagonalisation, since ``√(8·EJ·EC) − EC`` is only the leading term.
+        """
+        import dataclasses
+
+        candidate = dataclasses.replace(
+            self, EJ=(target_ghz + self.EC) ** 2 / (8 * self.EC), **overrides
+        )
+        for _ in range(24):
+            error = candidate.f01 - target_ghz
+            if abs(error) < 1e-9:
+                break
+            # d(f01)/d(EJ) ~ sqrt(2 EC / EJ), the leading term's derivative.
+            step = error / np.sqrt(2 * candidate.EC / candidate.EJ)
+            candidate = dataclasses.replace(candidate, EJ=candidate.EJ - step)
+        return candidate
 
     # --- the dynamics, from qutip ---------------------------------------------
 

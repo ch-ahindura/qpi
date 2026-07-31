@@ -281,6 +281,8 @@ class SimulatedCoordinator:
         self._repetitions = 1
         #: Flux port to the (amplitude, start time) of an offset currently held.
         self._flux_offsets: dict[str, tuple[float, float]] = {}
+        #: Clock to its accumulated virtual-Z phase, in degrees.
+        self._clock_phases: dict[str, float] = {}
         #: Register id to its per-shot joint outcomes, dropped as it evolves.
         self._sample_cache: dict[int, dict[str, Any]] = {}
 
@@ -317,6 +319,7 @@ class SimulatedCoordinator:
         """Play *compiled* through the transmons and collect what was measured."""
         self._repetitions = int(getattr(compiled, "repetitions", 1) or 1)
         self._flux_offsets = {}
+        self._clock_phases = {}
         self._sample_cache = {}
         registers = _Registers(self.simulator)
         clocks = self._clock_frequencies(compiled)
@@ -396,6 +399,18 @@ class SimulatedCoordinator:
                 clocks[clock] = float(new)
             return
 
+        # A `ShiftClockPhase` is a virtual Z: no pulse is played, the frame the
+        # *next* drive is referenced to simply moves. Every `rz`, `z`, `s` and
+        # `t` compiles to one, and so does each half of a CZ's phase correction,
+        # so ignoring these makes all of them silently do nothing.
+        if "phase_shift" in pulse:
+            shift = pulse.get("phase_shift")
+            if shift is not None:
+                self._clock_phases[clock] = (
+                    self._clock_phases.get(clock, 0.0) + float(shift)
+                ) % 360.0
+            return
+
         if ":fl" in port or clock.endswith(".flux"):
             self._apply_flux(
                 pulse,
@@ -428,7 +443,9 @@ class SimulatedCoordinator:
             qubit,
             amplitude=float(amplitude),
             duration=duration,
-            phase_deg=float(pulse.get("phase") or 0.0),
+            # The pulse's own phase, in the frame the clock has been shifted to.
+            phase_deg=float(pulse.get("phase") or 0.0)
+            + self._clock_phases.get(clock, 0.0),
         )
         # Every other register was idling while this one was driven.
         for other in registers.distinct():
