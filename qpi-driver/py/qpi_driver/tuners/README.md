@@ -35,7 +35,7 @@ filesystem and nothing else.
 | `quantify_device_config` | `./quantify.device.yml` | The device calibration file, read at start and written back. |
 | `quantify_hardware_config` | `./quantify.hardware.json` | Hardware connectivity. |
 | `is_dummy` | `false` | Run against the vendor's dummy cluster. Compiles and runs; every acquisition is `nan`, so every routine fails. |
-| `is_simulated` | `false` | Run against a simulated chip instead — see below. `quantify_tuner` only. |
+| `is_simulated` | `false` | Run against a simulated chip instead — see below. Both tuners. |
 | `drift_check_interval` | `0` | Seconds between periodic benchmark runs. `0` disables them. |
 | `fidelity_threshold` | `0.999` | 1Q fidelity below which a recalibration is triggered. |
 | `fidelity_2q_threshold` | `0.99` | 2Q fidelity below which a recalibration is triggered. |
@@ -80,15 +80,26 @@ measured.
 detuning, relaxation and dephasing, and a readout discriminated from two IQ
 blobs. A CZ is a flux pulse walking the pair through the `|11>`-`|02>` avoided
 crossing, so the conditional phase is integrated rather than asserted and a Bell
-state comes out entangled. Not modelled: crosstalk and any readout chain beyond
-the blobs. The qubits are all the same simulated transmon, so it will never show
-you a chip whose qubits differ — which on real hardware is most of what
-calibration is for.
+state comes out entangled. Both mechanisms the hardware has: DC flux on a qubit's
+own port, and a parametric drive on a coupler, where the drive *frequency* is the
+resonance condition rather than a carrier detail.
+
+Not modelled: crosstalk and any readout chain beyond the blobs. The qubits are
+all the same simulated transmon, so it will never show you a chip whose qubits
+differ — which on real hardware is most of what calibration is for.
+
+**Both schedulers.** quantify reaches its hardware through an instrument
+coordinator, which the simulator replaces outright. qblox reaches it through a
+`HardwareAgent` that compiles and runs in one call — but `compile` needs no
+instrument, so a real agent keeps compilation and only execution is simulated.
+A schedule that would not assemble for a cluster does not assemble here either.
 
 **The two-qubit model is weaker than the one-qubit one.** A transmon's levels
 come from diagonalising a real Cooper-pair-box Hamiltonian: nothing in it was
-chosen. The coupler's exchange strength and its flux-to-frequency curve *were*
-chosen, because this project has no device to measure them from. The dynamics
+chosen. The coupler's exchange strength, its flux-to-frequency curve and the transition
+its parametric drive bridges *were* chosen, because this project has no device to
+measure them from — though an edge that has characterised its own gap can declare
+it (`clock_freqs.sideband_gap`) and be simulated against that instead. The dynamics
 they produce are real and a routine still has to find a crossing it was not told
 the location of, but read a two-qubit result as "against a plausible coupler",
 not "against a real one".

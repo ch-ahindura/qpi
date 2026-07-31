@@ -44,7 +44,7 @@ func processOptions() []Option {
 			// point: a dummy cluster returns nan for every acquisition, so it
 			// cannot tell a correct calibration from a wrong one. The simulator
 			// reads the schedule it was given and answers with the physics.
-			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy. quantify only.",
+			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy.",
 			Default: "false",
 			Example: "true",
 		},
@@ -132,7 +132,7 @@ func calibrateOptions() []Option {
 			// point: a dummy cluster returns nan for every acquisition, so it
 			// cannot tell a correct calibration from a wrong one. The simulator
 			// reads the schedule it was given and answers with the physics.
-			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy. quantify only.",
+			Help:    "Run against a simulated transmon chip — reads the schedule and returns real physics, unlike is_dummy.",
 			Default: "false",
 			Example: "true",
 		},

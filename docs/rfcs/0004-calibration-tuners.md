@@ -824,12 +824,15 @@ Implemented: the operation and event types across all three SDKs and the server;
 the tuners package, the sixteen routines, the fitting and the Clifford group; the
 verified write-back; the calibrate driver with its drift check; the dispatch
 queue, endpoint and result handler; the catalog entries; the dashboard panel; and
-the docs.
+the docs. All of it under **both** schedulers, including `-o is_simulated=true`,
+which qblox refused until its `HardwareAgent` turned out to compile offline — a
+real agent keeps compilation and only execution is simulated.
 
 Faults found by testing a whole calibration end to end rather than routine by
 routine, all fixed. The first two came from driving `_execute_calibration`
 against the one-qubit simulator; the next three from putting the two-qubit
-routines in front of a coupled pair for the first time:
+routines in front of a coupled pair for the first time; the last group from
+running the same tests under qblox as well as quantify:
 
 - **The RB fit could not measure a good chip.** `fit_rb_decay` bounded the
   model's amplitude to ±2, which suits a raw survival probability but not the
@@ -863,9 +866,45 @@ routines in front of a coupled pair for the first time:
   correction was also `np.pi - crossing` with the crossing in degrees, so a gate
   needing 30° back was told to apply −26.86.
 
-The tier-1 test for the last of these asserted
-`phase_correction == np.pi - conditional_phase` — it encoded the bug as the
-expectation, which is why none of it surfaced there.
+- **`drag` swept its parameter over ±1.0.** The DRAG parameter is in *seconds* —
+  it scales a time derivative of the envelope — so a 20 ns gate wants order
+  1e-11, which the lab's own device file confirms (-5.4e-11, -1.5e-11). Eleven
+  orders out puts the derivative term so far above the carrier that the waveform
+  exceeds full scale and the schedule does not compile at all, so the routine
+  could never have run on hardware.
+- **The qblox tuner had never completed a calibration.** Four faults, each alone
+  fatal: the write-back called `device.elements()`, which is a *dict* under
+  qblox and a method under quantify; edges were written with positional
+  constructor arguments and qblox's edges are pydantic models, which take none;
+  `element_type`, `name`, `edge_type` and both endpoints were written as if they
+  were calibration when they are structural, so the loader tried to assign to
+  fields that refuse it; and both loaders added elements in file order, so an
+  edge listed before either of its qubits failed.
+- **`conditional_phase` applied nothing, on either scheduler.** It wrote
+  `cz.phase_correction` — a name *neither* has, quantify naming them after the
+  qubits and qblox after the roles — behind a `hasattr` guard that was therefore
+  never true. Fixing the name exposed the larger gap: those two parameters
+  cancel each qubit's *single-qubit* phase, which is not the conditional phase
+  and not derivable from it, so the routine measures four fringes now rather
+  than two.
+- **The qblox tier-2 test never compiled anything.** It asserted a routine's
+  schedule was *built* while the quantify one compiled it, so a schedule that
+  would not compile under qblox passed. `HardwareAgent.compile` is called now,
+  and the first thing it caught was `drag`.
+
+Two of these were encoded as expectations rather than found by them. The tier-1
+test for `fit_conditional_phase` asserted
+`phase_correction == np.pi - conditional_phase`, and the tier-2 sweep for `drag`
+carried the same dimensionless scale the routine did. A test written from the
+code cannot contradict it.
+
+The common cause of the last group is worth naming, because it is structural
+rather than a series of accidents: only one scheduler was ever exercised. Every
+one of those faults sat in shared code that quantify happened to satisfy.
+`test_calibration_loop` is parametrised over both now rather than duplicated, and
+`make test-py-loop` installs both, so a claim cannot be proved for one and left
+untested for the other. quantify-scheduler is being deprecated, which makes the
+qblox path the one that has to keep working.
 
 Not implemented, deliberately:
 
@@ -876,6 +915,17 @@ Not implemented, deliberately:
   `SimulationCoordinator` plays the compiled schedule, flux pulses included —
   but the routines are still tested against a simulator that reads their sweeps
   rather than their pulses.
+- **A coupler measured rather than assumed** (§7). `SIDEBAND_GAP_GHZ`,
+  `G_MHZ`, `FLUX_CURVATURE_GHZ`, `STARK_SHIFT_MHZ` and `STARK_ASYMMETRY` are
+  chosen numbers. An edge can now declare the transition its drive bridges
+  (`clock_freqs.sideband_gap`) and the simulator prefers it, so the constant is a
+  fallback for an uncharacterised coupler rather than the only answer — but no
+  coupler here has been characterised, and `PARAMETRIC_RATE_MHZ` is the only one
+  derived from anything measured (the lab's four calibrated operating points).
+- **The SPI and QCM bias paths against hardware.** Which current goes where, by
+  which mechanism, and every refusal are tested; the qcodes calls that would
+  drive an S4g or hold a cluster offset are not, and mocking them would only
+  assert the mock.
 - **Hardware validation** (§9). No routine here has been run against a physical
   transmon. Until the manual verification in §9 has been done on a lab node, the
   honest description of this feature is "complete and untested against
