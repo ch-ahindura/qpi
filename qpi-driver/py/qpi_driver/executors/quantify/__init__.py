@@ -57,6 +57,7 @@ class QuantifyExecutor(Executor):
         ),
         quantify_device_config: Path | dict = Path("quantify.device.json"),
         is_dummy: bool = False,
+        is_simulated: bool = False,
         data_dir: Path = Path("data"),
         acquisition_timeout: int = 10,
         **kwargs: Any,
@@ -67,7 +68,14 @@ class QuantifyExecutor(Executor):
             name: the name of the executor
             quantify_hardware_config: Hardware-layer configuration dictionary, file path, or config as dict.
             quantify_device_config: Device-layer configuration dictionary, file path or config as dict
-            is_dummy: If True, uses a dummy Cluster instrument.
+            is_dummy: If True, uses a dummy Cluster instrument. It compiles and
+                runs, but every acquisition comes back `nan`, so results carry
+                no information about the circuit.
+            is_simulated: If True, plays the compiled schedule through
+                `qpi_driver.simulation.SimulatedCoordinator` instead — a
+                transmon model driven by the schedule's own pulses, so counts
+                reflect both the circuit and the device calibration. Needs the
+                `sim` dependency group. Mutually exclusive with `is_dummy`.
             data_dir: Directory to where data is temporarily stored.
             acquisition_timeout: Timeout in seconds to wait for acquisition.
             **kwargs: Arbitrary keyword arguments passed to the base class.
@@ -78,14 +86,24 @@ class QuantifyExecutor(Executor):
         with suppress(Exception):
             Instrument.close_all()
 
+        if is_dummy and is_simulated:
+            raise ValueError(
+                "is_dummy and is_simulated both replace the cluster; pick one"
+            )
         self._is_dummy = is_dummy
+        self._is_simulated = is_simulated
         self._acquisition_timeout = acquisition_timeout
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
         self._device = load_quantum_device(name=name, config=quantify_device_config)
-        self._instrument_coordinator = load_instrument_coordinator(
-            f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
-        )
+        if is_simulated:
+            from qpi_driver.simulation import SimulatedCoordinator
+
+            self._instrument_coordinator = SimulatedCoordinator(kwargs.get("simulator"))
+        else:
+            self._instrument_coordinator = load_instrument_coordinator(
+                f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
+            )
         self._device.hardware_config(hardware_config)
         self._compiler = SerialCompiler(
             name=f"{name}_compiler", quantum_device=self._device

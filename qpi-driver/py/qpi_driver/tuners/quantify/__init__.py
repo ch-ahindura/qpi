@@ -84,18 +84,41 @@ class QuantifyTuner(Tuner):
         quantify_hardware_config: Path | dict | Any = Path("quantify.hardware.json"),
         quantify_device_config: Path | dict = Path("quantify.device.yml"),
         is_dummy: bool = False,
+        is_simulated: bool = False,
         **kwargs: Any,
     ) -> None:
+        """
+        Args:
+            is_dummy: run against the vendor's dummy cluster. Schedules compile
+                and execute, but every acquisition comes back ``nan``, so a
+                routine fails rather than fitting anything.
+            is_simulated: run against
+                :class:`~qpi_driver.simulation.SimulatedCoordinator` instead —
+                the compiled schedule is played through a transmon model, so
+                routines fit real physics and the calibration written back is a
+                calibration of *something*. Needs the ``sim`` dependency group.
+                Mutually exclusive with *is_dummy*.
+        """
         super().__init__(name, **kwargs)
+        if is_dummy and is_simulated:
+            raise ValueError(
+                "is_dummy and is_simulated both replace the cluster; pick one"
+            )
         self._is_dummy = is_dummy
+        self._is_simulated = is_simulated
 
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
         self._device = load_quantum_device(name=name, config=quantify_device_config)
         self._device.hardware_config(hardware_config)
-        self._instrument_coordinator = load_instrument_coordinator(
-            f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
-        )
+        if is_simulated:
+            from qpi_driver.simulation import SimulatedCoordinator
+
+            self._instrument_coordinator = SimulatedCoordinator(kwargs.get("simulator"))
+        else:
+            self._instrument_coordinator = load_instrument_coordinator(
+                f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
+            )
         self._compiler = SerialCompiler(
             name=f"{name}_compiler", quantum_device=self._device
         )

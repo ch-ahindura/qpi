@@ -120,7 +120,7 @@ test-go-minimal:
 	@echo "Running Go server unit tests..."
 	(cd qpi-ui && go test -race -cover ./...)
 
-test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox test-py-sim
+test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox test-py-sim test-py-loop
 
 # The framework modules the coverage floor applies to: the SDK, the CLI, the device
 # registry and its options, and the executors that need no hardware. Everything else
@@ -180,6 +180,19 @@ test-py-sim:
 	$(UV) run --project qpi-driver/py pytest -v \
 		qpi-driver/py/tests/test_physics_simulation.py \
 		qpi-driver/py/tests/test_calibration_e2e.py
+
+# The two operations against one another, with only the cluster replaced: a
+# tuner calibrates a simulated chip, writes quantify.device.yml, and an executor
+# loads that file and runs circuits on the same chip. Needs a scheduler *and*
+# the simulator, which is why it is its own environment rather than folded into
+# test-py-quantify or test-py-sim.
+test-py-loop:
+	@echo "Running the calibrate/process loop against the simulated chip..."
+	$(UV) sync --project qpi-driver/py --extra quantify --group sim --dev
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; \
+	fi
+	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/test_calibration_loop.py -v
 
 test-js-client:
 	@echo "Running JS client tests..."

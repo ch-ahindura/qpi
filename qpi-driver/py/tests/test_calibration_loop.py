@@ -1,0 +1,219 @@
+"""Calibrate a simulated chip, then run circuits on it (RFC 0004 §7).
+
+This is the loop the two operations are supposed to form, with nothing faked in
+the middle. A `QuantifyTuner` calibrates against
+:class:`~qpi_driver.simulation.SimulatedCoordinator`, writes a real
+`quantify.device.yml`, and a `QuantifyExecutor` then loads *that file* and runs
+circuits against the same simulated chip. Every component is the shipped one:
+the real routines, the real fits, the real write-back, the real loader, the real
+compiler. Only the cluster is replaced.
+
+What makes it a test rather than a demonstration is that the calibration is
+load-bearing. The drive amplitude the executor plays is the `amp180` the tuner
+fitted, and the drive frequency is the `f01` it found; the fixture device starts
+over 200 MHz off resonance, where an X gate does nothing at all. So an X gate
+that lands in |1> is evidence that a number survived the fit, the write-back,
+the YAML, the loader and the compiler with its meaning intact — which is the one
+thing no single-component test can show.
+
+Needs both a scheduler and the `sim` group:
+
+    make test-py-loop
+"""
+
+import shutil
+from pathlib import Path
+
+import pytest
+import yaml
+
+pytest.importorskip("quantify_scheduler", reason="needs a scheduler extra")
+pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
+pytest.importorskip("qutip", reason="needs the [sim] dependency group")
+
+from qpi_driver.compat.quantify import Instrument  # noqa: E402
+from qpi_driver.executors import resolve_executor  # noqa: E402
+from qpi_driver.executors.base import CircuitPayload, JobPayload  # noqa: E402
+from qpi_driver.simulation import GHZ, TransmonSimulator  # noqa: E402
+from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig  # noqa: E402
+from qpi_driver.tuners.base.device import read_path  # noqa: E402
+from qpi_driver.tuners.routines import routine_names  # noqa: E402
+
+pytestmark = pytest.mark.scqubits
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+#: The routines this loop runs. Each writes a parameter the executor then plays,
+#: which is the point — a routine that only measures would prove nothing here.
+#:
+#: Ramsey is not optional. Spectroscopy drives a 20 ns pulse, so its line is
+#: Fourier-limited to tens of MHz and it lands within about 10 MHz — enough to
+#: find a lost qubit, not enough to drive it, since 10 MHz over a 20 ns gate is
+#: most of a radian of phase error. Refining that is what Ramsey is for, and the
+#: real graph already orders it after Rabi for exactly this reason.
+CALIBRATED = ("qubit_spectroscopy", "rabi", "ramsey")
+
+QASM_HEAD = 'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[1] q;\nbit[1] c;\n'
+QASM_TAIL = "c[0] = measure q[0];\n"
+
+
+def circuit(body: str) -> str:
+    return QASM_HEAD + body + QASM_TAIL
+
+
+def calibration_config() -> CalibrationConfig:
+    """Only the two routines, with a sweep wide enough to find a lost qubit.
+
+    The span is deliberately large. The fixture device claims 5.0 GHz and the
+    simulated transmon is at 5.21 GHz, so a routine scanning the default 40 MHz
+    would never see the line — which is the honest starting point for a chip
+    nobody has calibrated yet.
+    """
+    return CalibrationConfig(
+        target_qubits=["q0"],
+        routines={
+            name: RoutineConfig(enabled=name in CALIBRATED, params=_sweep(name))
+            for name in routine_names()
+        },
+    )
+
+
+def _sweep(name: str) -> dict:
+    return {
+        "qubit_spectroscopy": {"span": 600e6, "points": 61},
+        "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
+        # Ramsey's sweep is squeezed from both ends, which is worth stating
+        # because getting either wrong looks like a broken routine.
+        #
+        # Fine enough: spectroscopy leaves a residual of several MHz, so the
+        # fringe is ~9 MHz and 40 ns steps put Nyquist at 12.5 MHz. The
+        # routine's 250 ns default would alias it to something plausible and
+        # wrong.
+        #
+        # Long enough: the fit rejects a T2* outside the window that produced it
+        # — rightly — so a sweep shorter than T2 (20 µs here) cannot measure the
+        # decay it is being asked for.
+        "ramsey": {
+            "delays": [round(4e-9 + 4e-8 * i, 11) for i in range(601)],
+            "artificial_detuning": 1e6,
+        },
+    }.get(name, {})
+
+
+@pytest.fixture(scope="module")
+def calibrated_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+    """Run a real calibration against the simulator and return what it wrote."""
+    simulator = TransmonSimulator()
+    directory = tmp_path_factory.mktemp("loop")
+    device = directory / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    from qpi_driver.tuners.quantify import QuantifyTuner
+
+    Instrument.close_all()
+    tuner = QuantifyTuner(
+        name="loop_tuner",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(calibration_config())
+    assert report.status == "success", report.errors
+    tuner.close()
+    Instrument.close_all()
+    return device, simulator
+
+
+def run(
+    device: Path, simulator: TransmonSimulator, qasm: str, shots: int = 400
+) -> dict:
+    """Counts from the executor, over the calibrated file and the same chip."""
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    dataset = executor.execute(
+        JobPayload(circuits=[CircuitPayload(circuit=qasm)], shots=shots)
+    )
+    return executor.process_result(dataset, "loop-job")["counts"]
+
+
+# --- what the calibration found ------------------------------------------------
+
+
+def test_the_calibration_finds_the_simulated_chip(calibrated_device):
+    """Before trusting any circuit, check the numbers the calibration wrote."""
+    device, simulator = calibrated_device
+    written = yaml.safe_load(device.read_text())["q0"]
+
+    # Spectroscopy then Ramsey: the fixture starts 214 MHz out, and what is
+    # written has to be good enough to drive with, not merely in the right area.
+    assert written["clock_freqs"]["f01"] == pytest.approx(simulator.f01 * GHZ, abs=1e6)
+    # The instrument's drive strength puts a pi rotation at 0.2, and nothing
+    # told the tuner that — Rabi had to find it.
+    assert written["rxy"]["amp180"] == pytest.approx(0.2, rel=0.05)
+
+
+def test_the_executor_loads_exactly_what_the_tuner_wrote(calibrated_device):
+    device, simulator = calibrated_device
+    written = yaml.safe_load(device.read_text())["q0"]
+
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    element = executor._device.get_element("q0")
+    assert read_path(element, "rxy.amp180") == written["rxy"]["amp180"]
+    assert read_path(element, "clock_freqs.f01") == written["clock_freqs"]["f01"]
+
+
+# --- circuits against the calibration ------------------------------------------
+
+
+def test_an_x_gate_lands_in_the_excited_state(calibrated_device):
+    """The pi pulse the tuner calibrated, played by the executor.
+
+    Not exactly 100%: the qubit relaxes during the readout integration, which is
+    what a real chip does too.
+    """
+    counts = run(*calibrated_device, circuit("x q[0];\n"))
+    assert counts["1"] / sum(counts.values()) > 0.9
+
+
+def test_two_x_gates_return_to_the_ground_state(calibrated_device):
+    """The control for the test above: a miscalibrated pi is still a fixed
+    rotation, so it would fail *here* rather than passing both."""
+    counts = run(*calibrated_device, circuit("x q[0];\nx q[0];\n"))
+    assert counts["0"] / sum(counts.values()) > 0.95
+
+
+def test_a_hadamard_is_an_even_superposition(calibrated_device):
+    counts = run(*calibrated_device, circuit("h q[0];\n"), shots=800)
+    assert 0.4 < counts["1"] / sum(counts.values()) < 0.6
+
+
+def test_an_uncalibrated_chip_gets_the_answer_wrong(tmp_path):
+    """The whole loop, negated — this is what makes the tests above mean something.
+
+    The same X gate on the *uncalibrated* fixture device, whose f01 is 214 MHz
+    from where the qubit actually is. The pulse compiles, runs and returns
+    counts; they are simply wrong. If calibration were not load-bearing, this
+    would pass too.
+    """
+    simulator = TransmonSimulator()
+    device = tmp_path / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    counts = run(device, simulator, circuit("x q[0];\n"))
+    assert counts["1"] / sum(counts.values()) < 0.1, (
+        "an X gate 214 MHz off resonance should not excite the qubit"
+    )
