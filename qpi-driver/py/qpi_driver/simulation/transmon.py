@@ -34,6 +34,11 @@ NS = 1e-9
 #: integrator's default step budget, which surfaces as "excess work done".
 _SOLVER_OPTIONS = {"nsteps": 200_000}
 
+#: Rabi rate in GHz per unit drive amplitude, so a spectroscopy sweep here means the
+#: same thing by an amplitude as a schedule does. Derived from the coordinator's
+#: `DEFAULT_DRIVE_STRENGTH`: a pi rotation at 0.2 in 20 ns.
+_RABI_GHZ_PER_UNIT = 1.0 / (2 * 0.2 * 20.0)
+
 
 @dataclass
 class TransmonSimulator:
@@ -363,26 +368,35 @@ class TransmonSimulator:
             populations.append(float(np.real(final[1, 1])))
         return self._measure(np.array(populations))
 
-    def qubit_spectroscopy(self, frequencies_hz) -> np.ndarray:
-        """Steady-state response of a weakly driven qubit, swept in frequency.
+    def qubit_spectroscopy(self, frequencies_hz, drive_amps=None) -> np.ndarray:
+        """Steady-state response of a driven qubit, swept in frequency.
 
         The Lorentzian comes out of the steady state of the driven, damped
         system — it is not written down. Its centre is the scqubits f01.
+
+        With *drive_amps* it sweeps power too and returns one row per amplitude,
+        flattened the way the schedule orders its acquisitions. Power broadening is
+        not modelled either: a stronger drive saturates the steady state and the line
+        widens because that is what the master equation does.
         """
         import qutip
 
         _destroy, excited, collapse = self._operators()
         destroy = qutip.destroy(self.levels)
-        drive_rate = 2 * np.pi * 0.0005  # weak, so the line is not power-broadened
+        amplitudes = [0.0005 / _RABI_GHZ_PER_UNIT] if drive_amps is None else drive_amps
 
-        response = []
-        for frequency in np.asarray(frequencies_hz, dtype=float) / GHZ:
-            hamiltonian = self._anharmonic_hamiltonian(
-                detuning_ghz=frequency - self.f01
-            ) + (drive_rate / 2) * (destroy + destroy.dag())
-            state = qutip.steadystate(hamiltonian, collapse)
-            response.append(float(np.real((state * excited).tr())))
-        return self._measure(np.array(response))
+        rows = []
+        for amplitude in np.asarray(amplitudes, dtype=float).reshape(-1):
+            drive_rate = 2 * np.pi * float(amplitude) * _RABI_GHZ_PER_UNIT
+            response = []
+            for frequency in np.asarray(frequencies_hz, dtype=float) / GHZ:
+                hamiltonian = self._anharmonic_hamiltonian(
+                    detuning_ghz=frequency - self.f01
+                ) + (drive_rate / 2) * (destroy + destroy.dag())
+                state = qutip.steadystate(hamiltonian, collapse)
+                response.append(float(np.real((state * excited).tr())))
+            rows.append(self._measure(np.array(response)))
+        return np.concatenate(rows) if len(rows) > 1 else rows[0]
 
     def randomized_benchmarking(self, depths, circuits_per_depth, error_per_gate):
         """Survival probability after real Clifford sequences with a known error.

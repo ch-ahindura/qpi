@@ -1,7 +1,7 @@
 # file containing the calibration data for the device
 q0:
   element_type:
-    path: "quantify_scheduler.device_under_test.transmon_element.BasicTransmonElement"
+    path: "qpi_driver.executors.quantify.elements.calibrated_transmon.CalibratedTransmon"
     args:
       - q0
   rxy:
@@ -29,7 +29,7 @@ q0:
 
 q1:
   element_type:
-    path: "quantify_scheduler.device_under_test.transmon_element.BasicTransmonElement"
+    path: "qpi_driver.executors.quantify.elements.calibrated_transmon.CalibratedTransmon"
     kwargs:
       name: q1
   rxy:
@@ -68,7 +68,7 @@ q0_q1:
 
 q2:
   element_type:
-    path: "quantify_scheduler.device_under_test.transmon_element.BasicTransmonElement"
+    path: "qpi_driver.executors.quantify.elements.calibrated_transmon.CalibratedTransmon"
     kwargs:
       name: q2
   rxy:

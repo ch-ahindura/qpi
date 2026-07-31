@@ -28,6 +28,7 @@ from .lorentzian import (
     fit_punchout,
     fit_qubit_spectroscopy,
     fit_resonator_spectroscopy,
+    fit_spectroscopy_power,
     lorentzian,
 )
 from .trace import fit_readout_timing
@@ -41,6 +42,7 @@ __all__ = [
     "lorentzian",
     "fit_resonator_spectroscopy",
     "fit_qubit_spectroscopy",
+    "fit_spectroscopy_power",
     "fit_punchout",
     "fit_readout_timing",
     "fit_readout_discrimination",

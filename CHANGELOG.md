@@ -214,6 +214,42 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**Spectroscopy no longer guesses how hard to drive** (RFC 0005 §7). `qubit_spectroscopy`
+drove at a fixed 1% of full scale, which on the simulated chip moves the population half
+a per cent — a signal-to-noise of about five, at which the same sweep returned centres
+14 MHz low, 12 MHz high and 62 MHz low on nothing but noise. The full-DAG test was
+passing on that margin with a hand-set 3% in its config.
+
+It now sweeps drive power alongside frequency and reports both, the way
+`resonator_punchout` reports the power it chose along with the frequency it found there.
+The chosen row wins on contrast over residual scatter, not on peak height: height climbs
+with power straight through saturation, so the tallest peak is reliably the most
+broadened one. Rows more than twice as broad as the narrowest are dropped as
+power-broadened, and rows fitting a line narrower than the sweep's own step are dropped
+first — a row with no visible line still fits, narrowly and tidily, to the noise between
+two setpoints, and left in it becomes the reference every real row is then rejected
+against.
+
+This could not be a node of its own. Choosing a spectroscopy power means comparing how
+clearly each power shows the line, so it needs a line — and that is what
+`qubit_spectroscopy` produces. Before it, the choice is a guess; after it, the guess is
+already written to `clock_freqs.f01`.
+
+**`CalibratedTransmon`, an element with room for what the graph measures** (RFC 0005
+§13). `BasicTransmonElement` has `clock_freqs`, `measure`, `ports`,
+`pulse_compensation`, `reset` and `rxy`, and no home for a spectroscopy drive amplitude.
+A routine with nowhere to write its result cannot exist, so the value was typed in by
+hand instead. There is now one such element per scheduler — qcodes submodule for
+quantify, pydantic for qblox — selected by `element_type.path` exactly as
+`FluxTunableCoupler` already is for edges, carrying `spec.amplitude` and
+`spec.amplitude_12`.
+
+Opt-in, per element. A config that keeps `BasicTransmonElement` still calibrates:
+`spectroscopy_amplitude_path` returns `None`, and the routine measures the best power,
+uses it, and does not persist it. Phase 5's EF and three-state parameters
+(`r12.ef_amp180`, `clock_freqs.readout_2`, a `measure_3state` submodule) have a home
+here too, which is what unblocks them.
+
 The drive ports in the hardware fixture pin their LO and let the intermediate
 frequency float, for the reason the readout ports already did: two clocks on one output
 cannot each derive the LO from their own configured frequency. Choosing the value is

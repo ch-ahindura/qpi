@@ -161,6 +161,20 @@ def drag_parameter_name(element: Any) -> str | None:
     return None
 
 
+def spectroscopy_amplitude_path(element: Any, transition: str = "01") -> str | None:
+    """Where this element stores its spectroscopy drive amplitude, if anywhere.
+
+    Not a spelling difference like :func:`drag_parameter_name` — a
+    `BasicTransmonElement` has no such parameter under any name, and a config is free
+    to keep using one. Returning ``None`` is how a routine learns it has nowhere to
+    write, so it can decline rather than raise.
+    """
+    if getattr(element, "spec", None) is None:
+        return None
+    name = "amplitude" if transition == "01" else f"amplitude_{transition}"
+    return f"spec.{name}" if hasattr(element.spec, name) else None
+
+
 def construction_args(component: Any) -> list[str]:
     """The positional arguments *component*'s class is rebuilt from.
 

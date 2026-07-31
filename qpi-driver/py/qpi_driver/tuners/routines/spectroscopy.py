@@ -11,7 +11,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import read_path, write_path
+from qpi_driver.tuners.base.device import (
+    read_path,
+    spectroscopy_amplitude_path,
+    write_path,
+)
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -25,8 +29,13 @@ from qpi_driver.tuners.fitting import (
     fit_qubit_spectroscopy,
     fit_readout_timing,
     fit_resonator_spectroscopy,
+    fit_spectroscopy_power,
     signal_of,
 )
+
+#: Full scale. The elements validate the same bound on `spec.amplitude`; past it a
+#: waveform clips and the schedule will not compile.
+MAX_SPECTROSCOPY_AMPLITUDE = 1.0
 
 
 def _frequency_sweep(
@@ -440,11 +449,33 @@ class ResonatorPunchout(CalibrationRoutine):
 
 
 class QubitSpectroscopy(CalibrationRoutine):
-    """Two-tone spectroscopy: find f01 (Schuster et al., Nature 445, 515)."""
+    """Two-tone spectroscopy: find f01 (Schuster et al., Nature 445, 515).
+
+    Sweeps drive power alongside frequency, and reports both. The power cannot be
+    calibrated by a separate node before this one — choosing a spectroscopy power
+    means comparing how clearly each power shows the line, and there is no line to
+    look at until this routine has found it. Nor can it be calibrated after, since
+    this routine's own answer depends on it. So it is one measurement of two
+    quantities, the way `resonator_punchout` is.
+
+    ``spec.amplitude`` only exists on a `CalibratedTransmon`. Against a config that
+    keeps `BasicTransmonElement` the sweep still runs and still picks its best row —
+    the power just is not remembered between calibrations.
+    """
 
     name = "qubit_spectroscopy"
     depends_on = ("resonator_spectroscopy", "resonator_punchout")
-    updates = ("clock_freqs.f01",)
+    updates = ("clock_freqs.f01", "spec.amplitude")
+
+    #: Drive powers to compare, as a fraction of full scale. Wide, because on a first
+    #: bring-up nothing yet says which end of it the chip wants.
+    DEFAULT_AMPLITUDES = (0.005, 0.01, 0.02, 0.04, 0.08)
+
+    #: Multiples of a remembered power to bracket on a recalibration. Three rather
+    #: than five, because this sweep costs one acquisition per power *per frequency*:
+    #: a bring-up pays that to find the right end of a wide range, and a
+    #: recalibration should not pay it again to confirm what it already knows.
+    RECALIBRATION_FACTORS = (0.5, 1.0, 2.0)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -452,6 +483,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         self._frequencies = _frequency_sweep(
             config, device, target, "f01", default_span=40e6
         )
+        self._amplitudes = self._drive_amplitudes(config, device, target)
         clock = f"{target}.01"
         # A weak drive at the calibrated pulse shape, deliberately.
         #
@@ -466,34 +498,65 @@ class QubitSpectroscopy(CalibrationRoutine):
         # Precision is not lost by that choice, it is delegated: `ramsey` runs
         # after `rabi` and refines f01 to hertz. Spectroscopy finds the qubit,
         # Ramsey measures it — which is what the dependency order already says.
-        drive_amp = float(config.get("drive_amp", 0.01))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(self._frequencies):
-            schedule.add(backend.Reset(target))
-            schedule.add(
-                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
-            )
-            schedule.add(backend.Rxy(theta=180, phi=0, qubit=target, amp180=drive_amp))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+        index = 0
+        for drive_amp in self._amplitudes:
+            for frequency in self._frequencies:
+                schedule.add(backend.Reset(target))
+                schedule.add(
+                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
                 )
-            )
+                schedule.add(
+                    backend.Rxy(theta=180, phi=0, qubit=target, amp180=drive_amp)
+                )
+                schedule.add(
+                    backend.Measure(
+                        target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                    )
+                )
+                index += 1
         return schedule
+
+    def _drive_amplitudes(
+        self, config: RoutineConfig, device: Any, target: str
+    ) -> list[float]:
+        if "drive_amps" in config:
+            return setpoints_of(config, "drive_amps", [])
+        if "drive_amp" in config:
+            return [float(config["drive_amp"])]
+
+        path = spectroscopy_amplitude_path(device.get_element(target))
+        remembered = read_path(device.get_element(target), path) if path else 0.0
+        if not remembered:
+            return list(self.DEFAULT_AMPLITUDES)
+        return [
+            min(factor * float(remembered), MAX_SPECTROSCOPY_AMPLITUDE)
+            for factor in self.RECALIBRATION_FACTORS
+        ]
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
-        fitted = fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
+        signal = signal_of(dataset)
+        columns = len(self._frequencies)
+        expected = len(self._amplitudes) * columns
+        if signal.size < expected:
+            raise RoutineError(
+                f"qubit spectroscopy expected {expected} acquisitions, got {signal.size}"
+            )
+        rows = signal[:expected].reshape(len(self._amplitudes), columns)
+        fitted = fit_spectroscopy_power(self._amplitudes, self._frequencies, rows)
         _require_resolved_line(fitted["linewidth"], self._frequencies)
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
-        write_path(
-            device.get_element(target), "clock_freqs.f01", params["clock_freq_01"]
-        )
+        element = device.get_element(target)
+        write_path(element, "clock_freqs.f01", params["clock_freq_01"])
+        path = spectroscopy_amplitude_path(element)
+        if path:
+            write_path(element, path, params["drive_amplitude"])
 
 
 class F12Spectroscopy(CalibrationRoutine):

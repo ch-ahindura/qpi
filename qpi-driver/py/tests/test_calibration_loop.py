@@ -129,11 +129,7 @@ def calibration_config() -> CalibrationConfig:
 
 def _sweep(name: str) -> dict:
     return {
-        # 3% drive, for the reason FULL_DAG_SWEEPS gives: the routine's 1% default is
-        # a signal-to-noise of about five, and a Lorentzian fitted at that ratio lands
-        # anywhere. Here it left an 8.8 MHz residual that Ramsey then could not
-        # refine away, because the fringe it produces is close to the sweep's Nyquist.
-        "qubit_spectroscopy": {"span": 600e6, "points": 61, "drive_amp": 0.03},
+        "qubit_spectroscopy": {"span": 600e6, "points": 61},
         "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
         # 400 MHz about f01 minus 300, which brackets a transmon's anharmonicity without
         # trusting the f12 already on the device — the fixture's is 134 MHz wrong, which is
@@ -219,6 +215,13 @@ def test_the_calibration_finds_the_simulated_chip(calibrated_device):
     # The instrument's drive strength puts a pi rotation at 0.2, and nothing
     # told the tuner that — Rabi had to find it.
     assert written["rxy"]["amp180"] == pytest.approx(0.2, rel=0.05)
+
+    # And the power spectroscopy chose for itself. Asserting it is non-zero rather
+    # than a value: which power reads best is a property of this chip and this
+    # sweep, and pinning it would only record what the fit happened to return. What
+    # matters is that the sweep is no longer a hand-set constant — the fixture ships
+    # 0, and a config kept working by a hardcoded 3% is how f01 came back 62 MHz out.
+    assert written["spec"]["amplitude"] > 0.0
 
 
 def test_the_executor_loads_exactly_what_the_tuner_wrote(calibrated_device):
@@ -982,13 +985,11 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
         "centre_frequency": 5.06e9,
         "span": 420e6,
         "points": 85,
-        # Three per cent, not the routine's one. A 1% drive on this chip rotates
-        # by a tenth of a radian, so it moves the population by half a per cent —
-        # against per-shot readout noise that is a signal-to-noise of about five,
-        # and a fit at that ratio lands anywhere. Three per cent puts the centre
-        # within a megahertz and is still weak enough not to saturate the line or
-        # reach the two-photon 0-2 transition, which sits only 70 MHz above f01.
-        "drive_amp": 0.03,
+        # No drive amplitude: the routine sweeps power itself and picks the row that
+        # shows the line most clearly. A single hand-set 3% was needed while it did
+        # not — a 1% drive moves the population half a per cent, which against
+        # per-shot readout noise is a signal-to-noise of about five, and a Lorentzian
+        # fitted at that ratio lands anywhere.
     },
     "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
     "ramsey": {

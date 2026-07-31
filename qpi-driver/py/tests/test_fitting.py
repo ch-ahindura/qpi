@@ -25,6 +25,7 @@ from qpi_driver.tuners.fitting import (
     fit_readout_discrimination,
     fit_readout_timing,
     fit_resonator_spectroscopy,
+    fit_spectroscopy_power,
     fit_t1,
     fit_t2,
     lorentzian,
@@ -229,6 +230,56 @@ def test_qubit_spectroscopy_finds_a_dip():
     signal = lorentzian(frequencies, -1.0, centre, 3e6, 1.0)
     fitted = fit_qubit_spectroscopy(frequencies, signal + _noise(201, 0.005))
     assert fitted["clock_freq_01"] == pytest.approx(centre, abs=2e5)
+
+
+def _power_sweep(
+    frequencies: np.ndarray, centre: float, widths_and_depths: list[tuple[float, float]]
+) -> np.ndarray:
+    """One spectroscopy row per drive power, each with its own linewidth and depth."""
+    return np.vstack(
+        [
+            lorentzian(frequencies, -depth, centre, width, 1.0)
+            + _noise(frequencies.size, 0.01)
+            for width, depth in widths_and_depths
+        ]
+    )
+
+
+def test_spectroscopy_power_prefers_signal_to_noise_over_depth():
+    """The deepest row is the most broadened one, so depth is the wrong criterion."""
+    centre = 5.03e9
+    frequencies = np.linspace(4.9e9, 5.2e9, 201)
+    powers = np.array([0.01, 0.02, 0.04])
+    # Depth climbs with power, but so does width: the last row is twice as deep and
+    # nine times as broad. Choosing on depth takes it; choosing on contrast-over-
+    # scatter takes the middle one, which is what resolves the line.
+    signal = _power_sweep(frequencies, centre, [(3e6, 0.4), (4e6, 1.0), (36e6, 2.0)])
+    fitted = fit_spectroscopy_power(powers, frequencies, signal)
+    assert fitted["drive_amplitude"] == pytest.approx(0.02)
+    assert fitted["clock_freq_01"] == pytest.approx(centre, abs=5e5)
+
+
+def test_spectroscopy_power_ignores_a_line_the_sweep_could_not_resolve():
+    """A noise-fitted spike is the *narrowest* row, so it must not set the reference.
+
+    Left in, it becomes the linewidth every real row is judged against, and a sweep
+    that plainly found the qubit returns nothing usable.
+    """
+    centre = 5.03e9
+    frequencies = np.linspace(4.9e9, 5.2e9, 61)  # 5 MHz steps
+    powers = np.array([0.005, 0.02])
+    signal = _power_sweep(frequencies, centre, [(2e5, 0.05), (12e6, 1.0)])
+    fitted = fit_spectroscopy_power(powers, frequencies, signal)
+    assert fitted["drive_amplitude"] == pytest.approx(0.02)
+    assert fitted["linewidth"] > 5e6
+
+
+def test_spectroscopy_power_refuses_a_sweep_with_no_resolved_line():
+    frequencies = np.linspace(4.9e9, 5.2e9, 61)
+    powers = np.array([0.005, 0.01])
+    signal = np.vstack([_noise(61, 0.01) + 1.0 for _ in powers])
+    with pytest.raises(FitError, match="no drive power"):
+        fit_spectroscopy_power(powers, frequencies, signal)
 
 
 def test_a_spectroscopy_centre_outside_the_scan_is_refused():

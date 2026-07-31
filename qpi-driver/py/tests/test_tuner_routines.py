@@ -315,3 +315,40 @@ def test_the_two_qubit_routines_write_parameters_the_edge_actually_has(tuner_nam
     parent_name, child_name = names
     assert read_path(edge, f"cz.{parent_name}") == pytest.approx(12.0)
     assert read_path(edge, f"cz.{child_name}") == pytest.approx(-34.0)
+
+
+@pytest.mark.parametrize("tuner_name", ["quantify", "qblox"])
+def test_spectroscopy_still_applies_to_an_element_with_no_spec_submodule(tuner_name):
+    """`spec.amplitude` is opt-in, so a plain transmon must still calibrate.
+
+    The fixture opts every qubit into `CalibratedTransmon`, which means nothing else
+    covers the configs that do not — and those are every config written before this
+    element existed. A routine that raised here would make the extension a breaking
+    change to the device file format rather than an addition to it.
+    """
+    if tuner_name == "qblox":
+        if not IS_QBLOX_SCHEDULER_INSTALLED:
+            pytest.skip("qblox-scheduler is not installed")
+        from qpi_driver.compat.qblox import BasicTransmonElement, Instrument
+    else:
+        if not IS_QUANTIFY_INSTALLED:
+            pytest.skip("quantify-scheduler is not installed")
+        from qpi_driver.compat.quantify import BasicTransmonElement, Instrument
+
+    from qpi_driver.tuners.base.device import (
+        read_path,
+        spectroscopy_amplitude_path,
+    )
+
+    Instrument.close_all()
+    plain = BasicTransmonElement("q0")
+    assert spectroscopy_amplitude_path(plain) is None
+
+    class _OneElement:
+        def get_element(self, _name):
+            return plain
+
+    routine("qubit_spectroscopy").apply(
+        _OneElement(), "q0", {"clock_freq_01": 5.01e9, "drive_amplitude": 0.02}
+    )
+    assert read_path(plain, "clock_freqs.f01") == pytest.approx(5.01e9)

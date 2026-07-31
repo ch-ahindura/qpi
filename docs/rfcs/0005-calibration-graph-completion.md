@@ -136,7 +136,7 @@ graph and a script.
 | Routine interface | **Unchanged.** `build_schedule` / `analyse` / `apply` absorbs every new node. If a node does not fit, that is a finding to record, not a reason to add a second interface. |
 | Where parameters live | **Unchanged** — dotted paths on the real `QuantumDevice`, written to `quantify.device.yml` through the verified write-back. No key–value store. §11. |
 | Readout amplitude producer | Move from `resonator_punchout` to `readout_amplitude_two_state`, which optimises it against assignment fidelity. Punchout keeps `clock_freqs.readout` and becomes a **check** node for the dressed regime. |
-| Spectroscopy drive amplitude | Becomes a calibrated parameter (`spec.amplitude`) with its own node, replacing the `drive_amp` default. |
+| Spectroscopy drive amplitude | Becomes a calibrated parameter (`spec.amplitude`), measured by `qubit_spectroscopy` itself as a second sweep axis rather than by a node of its own — **revised during implementation, see below**. |
 | EF subspace | In scope. It is seven nodes and the only route to leakage-aware readout, which the hardware config already expects. |
 | Coupler bias current | In scope. `bias.parking_current` is carried, validated and applied today, and set by hand. |
 | Check / diagnose | In scope, and first — it needs no new physics and it changes what every other node must provide. |
@@ -181,8 +181,7 @@ graph TD
         RS --> PO["resonator_punchout"]
         RS --> RR["resonator_relaxation"]
     end
-    PO --> SA["qubit_spectroscopy_amplitude"]
-    SA --> QS["qubit_spectroscopy"]
+    PO --> QS["qubit_spectroscopy"]
     QS --> RABI["rabi"] --> RAM["ramsey"] --> DRAG["drag"] --> FA["fine_amplitude"]
     RAM --> T1["t1"] --> T2["t2_echo"]
     FA --> AXY["allxy"]
@@ -223,7 +222,7 @@ cannot claim.
 |---|---|---|
 | `time_of_flight` | `measure.acq_delay` | ✅ a propagation delay before the acquisition window |
 | `resonator_relaxation` | — (reports the linewidth) | ✅ the ring-up, already present in `_trace` |
-| `qubit_spectroscopy_amplitude` | `spec.amplitude` | nothing new; the line power-broadens already |
+| `qubit_spectroscopy` (2nd axis) | `spec.amplitude` | nothing new; the line power-broadens already |
 | `readout_discrimination` | `measure.acq_rotation`, `measure.acq_threshold` | ✅ the dispersive pull, plus a chain rotation so `0`/`0` is not right by construction |
 | `resonator_spectroscopy_excited` | `clock_freqs.readout_1` | ✅ **the dispersive pull** — resonance per qubit state |
 | `readout_frequency_two_state` | `clock_freqs.readout_2state_opt` | the pull, plus separation as a function of drive frequency |
@@ -384,12 +383,35 @@ after the machinery.
      the window, which needs phase 4's discrimination fidelity. Three time constants
      would have cut the fixture's 1 µs window to 240 ns on a criterion that
      never mentions noise.
-   - `qubit_spectroscopy_amplitude`: **blocked**, and the blocker is §13's open
-     question rather than effort. There is nowhere to put the value: the transmon
+   - `spec.amplitude`: **done**, and not as the planned separate node. Two things
+     changed on contact with the problem.
+
+     The blocker went first. There was nowhere to put the value — the transmon
      element has `clock_freqs`, `measure`, `ports`, `pulse_compensation`, `reset` and
-     `rxy`, and none of them holds a spectroscopy drive amplitude. Adding one means a
-     custom element class and an `element_type` change in every device config, which
-     is a decision about the config format rather than a routine to write.
+     `rxy`, and none of them holds a spectroscopy drive amplitude. `CalibratedTransmon`
+     is that home, one per scheduler, selected by `element_type.path` exactly as
+     `FluxTunableCoupler` already is. It is opt-in: a config that keeps
+     `BasicTransmonElement` still calibrates, and `spectroscopy_amplitude_path`
+     returns `None` so the routine measures the power, uses it, and does not persist
+     it.
+
+     Then the separate node turned out to be impossible, not merely optional.
+     Choosing a spectroscopy power means comparing how clearly each power shows the
+     line — so it needs a line, which is what `qubit_spectroscopy` produces. Ordering
+     it before means guessing; ordering it after means the guess is already written to
+     `clock_freqs.f01`. It is one measurement of two quantities, the way
+     `resonator_punchout` is, and the graph is a node shorter for it.
+
+     The criterion is not the reference pipelines'. They take the **tallest** peak,
+     which is reliably the most power-broadened one — the bound on their answer is the
+     hardcoded sweep range, not the criterion. This takes the best
+     contrast-over-residual-scatter among rows that are not broader than twice the
+     narrowest, so broadening is *detected*. One trap, found by the full-DAG test: a
+     row with no visible line still fits — narrowly, tidily, to the noise between two
+     setpoints — and being narrowest it became the reference every real row was then
+     rejected against. Rows fitting a line narrower than the sweep's own step are
+     dropped before selection, the same criterion `_require_resolved_line` applies to
+     the winner.
 3. ~~**Dispersive readout in the simulator.**~~ **Done.** Each level pulls the
    resonance to `bare + chi(1-2n)`, so the levels return different *complex*
    responses and the IQ clouds are derived rather than placed — `GROUND_IQ` and
@@ -418,10 +440,11 @@ after the machinery.
      from `|1⟩`.
    - `rabi_12`, `ramsey_12`, `drag_12`, `fine_amplitude_12`,
      `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
-     `readout_amplitude_three_state`, `three_state_discrimination`: **blocked on the
-     same decision as `qubit_spectroscopy_amplitude`.** They need `r12.ef_amp180`,
-     `r12.ef_motzoi`, `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a
-     `measure_3state` submodule, and the transmon element has none of them. §13.
+     `readout_amplitude_three_state`, `three_state_discrimination`: **unblocked, not
+     yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
+     `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a `measure_3state`
+     submodule, and the transmon element has none of them — but `CalibratedTransmon`
+     is now where those go, so what is left is routines rather than a format decision.
 6. **The coupler.** A coupler frequency in the simulator, the two arcs,
    `coupler_anticrossing` → `bias.parking_current`, `cz_parametrization`. Replaces
    two chosen constants with measured ones.
@@ -438,10 +461,14 @@ whose absence is currently a wrong answer rather than a missing feature.
   shape for it.
 - **Is `readout_fidelity` a node or a report field?** It writes nothing. RFC 0004
   gives benchmarks the same shape (`updates = ()`), so precedent says node.
-- **Where does the three-state discriminator live in the device file?** quantify's
-  transmon has one `measure` submodule. `measure_2state_opt` / `measure_3state_opt`
-  as sibling submodules follows the reference pipelines, but it is a custom element
-  extension, like `FluxTunableCoupler` already is.
+- ~~**Where does the three-state discriminator live in the device file?**~~
+  **Settled by `CalibratedTransmon`.** A custom element per scheduler, opted into by
+  `element_type.path` like `FluxTunableCoupler`, carrying whatever submodules the
+  graph needs — `spec` first, and `measure_2state_opt` / `measure_3state_opt` as
+  sibling submodules when phase 5 needs them. The constraint it has to keep meeting:
+  every routine reads the path through a resolver (`spectroscopy_amplitude_path`,
+  `drag_parameter_name`) so a config on `BasicTransmonElement` still calibrates as
+  far as its own parameters allow, rather than failing to load.
 - **Should the DAG refuse an edge whose qubits are not targeted?** Carried over
   from RFC 0004 §11, still open, and `coupler_anticrossing` makes it sharper: the
   bias current is a property of the edge, measured through its qubits.
