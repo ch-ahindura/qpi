@@ -400,3 +400,132 @@ def test_two_virtual_z_gates_compose(calibrated_device):
     assert counts["1"] / sum(counts.values()) > 0.9, (
         f"two S gates should compose to a Z, got {counts}"
     )
+
+
+# --- the three measurement levels -----------------------------------------------
+#
+# A job asks for one of three acquisition protocols, and they do not differ only
+# in how much averaging they do — they return different *kinds* of thing. A
+# simulator that answers all three with integrated IQ lets a level-0 job produce
+# a one-sample waveform and a level-2 job quietly take the software
+# discrimination path instead of the hardware one production runs on.
+
+
+def run_at(
+    device: Path,
+    simulator: TransmonSimulator,
+    qasm: str,
+    *,
+    meas_level: int,
+    meas_return: str = "single",
+    shots: int = 200,
+) -> dict:
+    """The whole result dict, not just counts, since levels 0 and 1 have none."""
+    Instrument.close_all()
+    executor = resolve_executor(
+        "quantify",
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    dataset = executor.execute(
+        JobPayload(
+            circuits=[CircuitPayload(circuit=qasm)],
+            shots=shots,
+            meas_level=meas_level,
+            meas_return=meas_return,
+        )
+    )
+    assert dataset.attrs.get("meas_level") == meas_level
+    return executor.process_result(dataset, "loop-job")
+
+
+def test_meas_level_0_returns_a_raw_trace(calibrated_device):
+    """A Trace is a time series, and it has to ring up rather than just appear.
+
+    The integration window is 1 µs and the digitiser samples at 1 GSa/s, so a
+    correct trace is a thousand points. One point is what this used to give.
+    """
+    result = run_at(*calibrated_device, circuit("x q[0];\n"), meas_level=0)
+    memory = np.asarray(result["memory"])
+
+    assert memory.shape == (1, 1000, 2), (
+        f"expected one 1 us trace sampled per ns, as [I, Q] pairs, got {memory.shape}"
+    )
+    trace = memory[0, :, 0] + 1j * memory[0, :, 1]
+    # The resonator fills over its own linewidth, so the start of the window is
+    # nearer the origin than the end. Averaging over many samples beats the
+    # per-sample noise, which is what makes this comparison meaningful.
+    assert abs(np.mean(trace[:20])) < abs(np.mean(trace[-200:])), (
+        "the trace should ring up, not start settled"
+    )
+
+
+def test_meas_level_1_returns_integrated_iq(calibrated_device):
+    """One IQ point per shot, and the excited state lands on the excited blob."""
+    excited = run_at(*calibrated_device, circuit("x q[0];\n"), meas_level=1, shots=200)
+    ground = run_at(*calibrated_device, circuit(""), meas_level=1, shots=200)
+
+    excited_memory = np.asarray(excited["memory"])
+    assert excited_memory.shape == (200, 1, 2), (
+        f"expected one IQ pair per shot, got {excited_memory.shape}"
+    )
+
+    # The two states have to be separable, or no discriminator could work.
+    excited_i = float(np.mean(excited_memory[:, 0, 0]))
+    ground_i = float(np.mean(np.asarray(ground["memory"])[:, 0, 0]))
+    assert excited_i > ground_i + 1.0, (
+        f"the blobs should separate along I: ground {ground_i:.2f}, excited {excited_i:.2f}"
+    )
+
+
+def test_meas_level_1_averaged_collapses_the_shots(calibrated_device):
+    result = run_at(
+        *calibrated_device,
+        circuit("x q[0];\n"),
+        meas_level=1,
+        meas_return="avg",
+        shots=200,
+    )
+    assert np.asarray(result["memory"]).shape == (1, 1, 2), (
+        "an averaged level-1 acquisition is one point, however many shots ran"
+    )
+
+
+def test_meas_level_2_is_discriminated_on_the_instrument(calibrated_device):
+    """Counts, and by the hardware's own rule rather than in software.
+
+    `ThresholdedAcquisition` discriminates on the module and returns 0 or 1. A
+    simulator that hands back IQ here still produces the right counts — the
+    executor falls through to discriminating in software — so the path a real
+    job takes would never be exercised.
+    """
+    result = run_at(*calibrated_device, circuit("x q[0];\n"), meas_level=2, shots=200)
+    counts = result["counts"]
+    assert counts["1"] / sum(counts.values()) > 0.9, (
+        f"an X gate should read 1: {counts}"
+    )
+
+
+def test_every_measurement_level_agrees_about_the_same_circuit(calibrated_device):
+    """The three levels are three views of one experiment, not three experiments.
+
+    Level 2 says the qubit is excited; level 1's IQ has to sit on the excited
+    blob and level 0's settled trace has to point the same way. A level that
+    disagrees is reporting a different circuit than the one that ran.
+    """
+    device, simulator = calibrated_device
+    qasm = circuit("x q[0];\n")
+
+    counts = run_at(device, simulator, qasm, meas_level=2, shots=200)["counts"]
+    iq = np.asarray(run_at(device, simulator, qasm, meas_level=1, shots=200)["memory"])
+    memory = np.asarray(run_at(device, simulator, qasm, meas_level=0)["memory"])
+
+    excited_fraction = counts["1"] / sum(counts.values())
+    mean_i = float(np.mean(iq[:, 0, 0]))
+    settled_i = float(np.mean(memory[0, -200:, 0]))
+
+    assert excited_fraction > 0.9
+    assert mean_i > 0, f"level 1 should sit on the excited blob, got I={mean_i:.2f}"
+    assert settled_i > 0, f"level 0's settled trace should agree, got I={settled_i:.2f}"

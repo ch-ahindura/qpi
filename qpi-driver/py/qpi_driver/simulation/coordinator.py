@@ -102,6 +102,13 @@ class _Acquisition:
     #: register. ``None`` for a qubit entangled with nothing, where an
     #: independent draw from the marginal is the same thing.
     outcomes: Any = None
+    #: Integration window, in seconds — the length of a `Trace`.
+    duration: float = 0.0
+    #: What a `ThresholdedAcquisition` discriminates against, as the hardware
+    #: does it: rotate the IQ point by *rotation* degrees, compare the real part
+    #: against *threshold*.
+    threshold: float = 0.0
+    rotation: float = 0.0
 
 
 #: The most qubits allowed in one entangled register. Each one multiplies the
@@ -676,6 +683,9 @@ class SimulatedCoordinator:
                 bin_mode=str(acquisition.get("bin_mode") or "average"),
                 excited_population=float(np.clip(population, 0.0, 1.0)),
                 outcomes=self._joint_outcomes(register).get(qubit),
+                duration=float(acquisition.get("duration") or 0.0),
+                threshold=float(acquisition.get("acq_threshold") or 0.0),
+                rotation=float(acquisition.get("acq_rotation") or 0.0),
             )
         )
 
@@ -728,12 +738,26 @@ class SimulatedCoordinator:
     # --- the acquisition dataset ------------------------------------------------
 
     def _to_dataset(self, acquisitions: list[_Acquisition]) -> xr.Dataset:
-        """The shape a real cluster returns: one complex variable per channel.
+        """The shape a real cluster returns, which depends on the protocol asked for.
 
-        `BinMode.AVERAGE` gives one IQ point per acquisition index, on the line
-        between the two blobs. `BinMode.APPEND` gives one per shot, sampled from
-        the population — which is what a `meas_level=2` job needs, because the
-        executor discriminates every shot itself.
+        The three acquisition protocols do not differ only in how much averaging
+        they do — they return different *kinds* of thing, and a simulator that
+        returns integrated IQ for all three lets a job take a code path it would
+        never take against hardware:
+
+        - ``Trace`` (``meas_level=0``) is a time series, one sample per
+          nanosecond across the integration window. Returning a single point
+          instead makes a raw-waveform job look like it worked and produce a
+          one-sample waveform.
+        - ``ThresholdedAcquisition`` (``meas_level=2``) is discriminated *on the
+          instrument* and comes back as 0 or 1. Returning IQ here means the
+          executor silently falls through to discriminating in software, so the
+          hardware path — the one production uses — goes untested.
+        - ``SSBIntegrationComplex`` (``meas_level=1``) is the integrated IQ
+          point, which is the only one of the three this used to be right about.
+
+        Within that, `BinMode.AVERAGE` gives one value per acquisition index and
+        `BinMode.APPEND` one per shot.
         """
         by_channel: dict[int, list[_Acquisition]] = {}
         for acquisition in acquisitions:
@@ -746,15 +770,19 @@ class SimulatedCoordinator:
             axis = f"acq_index_{channel}"
             single_shot = any(entry.bin_mode == "append" for entry in entries)
 
+            if any(entry.protocol == "Trace" for entry in entries):
+                traces = np.stack([self._trace(entry) for entry in entries], axis=0)
+                # One trace per acquisition index, sampled along time. A Trace is
+                # averaged over repetitions on the instrument, so there is no
+                # shot axis here however many shots were asked for.
+                variables[channel] = ((axis, f"trace_index_{channel}"), traces)
+                coordinates[f"trace_index_{channel}"] = np.arange(traces.shape[1])
+                coordinates[axis] = np.array([entry.index for entry in entries])
+                continue
+
             if single_shot:
                 shots = np.stack(
-                    [
-                        self._shots(entry.excited_population)
-                        if entry.outcomes is None
-                        else self._blobs(entry.outcomes)
-                        for entry in entries
-                    ],
-                    axis=-1,
+                    [self._single_shots(entry) for entry in entries], axis=-1
                 )
                 variables[channel] = (("repetition", axis), shots)
                 coordinates["repetition"] = np.arange(self._repetitions)
@@ -768,6 +796,52 @@ class SimulatedCoordinator:
         if not variables:
             return xr.Dataset()
         return xr.Dataset(variables, coords=coordinates)
+
+    def _single_shots(self, entry: _Acquisition) -> np.ndarray:
+        """One value per shot, in whatever the entry's protocol returns."""
+        outcomes = (
+            self._rng.random(self._repetitions) < entry.excited_population
+            if entry.outcomes is None
+            else np.asarray(entry.outcomes, dtype=bool)
+        )
+        points = self._blobs(outcomes)
+        if entry.protocol != "ThresholdedAcquisition":
+            return points
+
+        # What the instrument does: rotate the IQ plane so the two blobs
+        # separate along the real axis, then compare against the threshold. The
+        # simulator runs the same rule rather than reporting `outcomes`
+        # directly, so a device configured with the wrong rotation or threshold
+        # produces the wrong bits here exactly as it would on the bench.
+        rotated = points * np.exp(-1j * np.deg2rad(entry.rotation))
+        return (np.real(rotated) >= entry.threshold).astype(np.int32)
+
+    def _trace(self, entry: _Acquisition) -> np.ndarray:
+        """The readout resonator's response over the integration window.
+
+        A `Trace` is what the digitiser saw, so it has to *ring up* rather than
+        appear at its final value: the resonator fills at its own linewidth, and
+        only the settled part of the trace carries the qubit's state. Sampled at
+        1 GSa/s, which is the Qblox digitiser's rate.
+
+        The noise here is per sample and much larger than on an integrated
+        point, because integrating the window is what averages it down — that
+        ratio is most of why a trace looks the way it does.
+        """
+        samples = max(int(round(entry.duration / NS)), 1)
+        times = np.arange(samples, dtype=float)
+
+        settled = GROUND_IQ * (1 - entry.excited_population) + (
+            EXCITED_IQ * entry.excited_population
+        )
+        # Ring-up at the resonator linewidth: kappa in GHz gives ns directly.
+        tau = 1.0 / (2 * np.pi * max(self.simulator.readout_linewidth_ghz, 1e-6))
+        envelope = 1.0 - np.exp(-times / tau)
+
+        noise = self._rng.normal(0.0, READOUT_NOISE, samples) + 1j * self._rng.normal(
+            0.0, READOUT_NOISE, samples
+        )
+        return settled * envelope + noise
 
     def _averaged(self, population: float) -> complex:
         """The mean IQ point, with the noise an averaged acquisition still has."""
