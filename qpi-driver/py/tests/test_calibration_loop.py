@@ -24,6 +24,7 @@ Needs both a scheduler and the `sim` group:
 import shutil
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
@@ -216,4 +217,132 @@ def test_an_uncalibrated_chip_gets_the_answer_wrong(tmp_path):
     counts = run(device, simulator, circuit("x q[0];\n"))
     assert counts["1"] / sum(counts.values()) < 0.1, (
         "an X gate 214 MHz off resonance should not excite the qubit"
+    )
+
+
+# --- two qubits, through the coordinator ----------------------------------------
+#
+# Everything above is one qubit at a time. A CZ is the first gate the executor can
+# play that needs two held in one state, and the first whose result cannot be
+# faked by a pair of independent simulations: entanglement lives between qubits,
+# not in either of them.
+
+
+@pytest.fixture(scope="module")
+def two_qubit_device(tmp_path_factory) -> tuple[Path, TransmonSimulator]:
+    """A device already at the simulator's true parameters, edge included.
+
+    Deliberately *not* calibrated by a tuner here. The loop above proves the
+    tuner finds a qubit; this fixture isolates the gate, so a failure below is
+    the CZ rather than a single-qubit calibration that drifted.
+    """
+    from qpi_driver.simulation.coupled import CoupledTransmons
+
+    simulator = TransmonSimulator()
+    pair = CoupledTransmons()
+    directory = tmp_path_factory.mktemp("twoqubit")
+    device = directory / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    config = yaml.safe_load(device.read_text())
+    for qubit in ("q0", "q1", "q2"):
+        config[qubit]["clock_freqs"]["f01"] = float(simulator.f01 * GHZ)
+        config[qubit]["rxy"]["amp180"] = 0.2
+    config["q0_q1"]["cz"]["square_amp"] = float(pair.resonant_amplitude)
+    # Whole nanoseconds: the hardware plays pulses on a 1 ns grid and the
+    # compiler refuses anything else, so the ideal 110.5 ns round trip is not a
+    # duration a CZ can actually have.
+    config["q0_q1"]["cz"]["square_duration"] = round(pair.cz_duration_ns) * 1e-9
+    device.write_text(yaml.safe_dump(config))
+    return device, simulator
+
+
+TWO_QUBIT_HEAD = 'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[2] q;\nbit[2] c;\n'
+TWO_QUBIT_TAIL = "c[0] = measure q[0];\nc[1] = measure q[1];\n"
+
+
+def run_pair(device: Path, simulator: TransmonSimulator, body: str, shots: int = 400):
+    return run(device, simulator, TWO_QUBIT_HEAD + body + TWO_QUBIT_TAIL, shots=shots)
+
+
+def correlation(counts: dict) -> float:
+    """|Pearson correlation| between the two measured bits, from 0 to 1.
+
+    Absolute because an uncorrected CZ leaves a local phase on each qubit, and a
+    local phase turns ``|00>+|11>`` into ``|01>+|10>`` without touching how
+    entangled the pair is. What a Bell state guarantees is that each outcome
+    *determines* the other; which of the two pairings carries it is a
+    single-qubit rotation, and correcting that is what `conditional_phase`
+    writes ``cz.phase_correction`` for.
+
+    Pearson rather than "how often do the bits agree", because that shortcut
+    calls a state with lopsided marginals strongly correlated: if one qubit is
+    excited nine times in ten, the bits disagree nine times in ten whatever the
+    other does. Dividing by the marginals is what separates a correlation from
+    a coincidence.
+    """
+    total = sum(counts.values()) or 1
+    probability = {key: value / total for key, value in counts.items()}
+    first = sum(p for key, p in probability.items() if key[0] == "1")
+    second = sum(p for key, p in probability.items() if key[1] == "1")
+    both = probability.get("11", 0.0)
+
+    spread = (first * (1 - first)) * (second * (1 - second))
+    if spread <= 0:
+        return 0.0  # a bit that never varies cannot be correlated with anything
+    return abs((both - first * second) / np.sqrt(spread))
+
+
+def test_a_cz_entangles_two_qubits(two_qubit_device):
+    """H, CZ, H is a CNOT, and on a superposition that is a Bell state.
+
+    Before this the coordinator raised on a flux pulse. The claim now is
+    stronger than "it runs": the two qubits come out correlated, which no pair
+    of independently simulated qubits can be.
+    """
+    counts = run_pair(*two_qubit_device, "h q[0];\nh q[1];\ncz q[0], q[1];\nh q[1];\n")
+    total = sum(counts.values())
+
+    assert correlation(counts) > 0.85, (
+        f"the pair should be nearly perfectly correlated, got {counts}"
+    )
+    # And each qubit alone is still a coin toss — an entangled pair carries its
+    # information between the qubits, not in either marginal.
+    q0_excited = (counts.get("01", 0) + counts.get("11", 0)) / total
+    assert 0.35 < q0_excited < 0.65, f"q0's marginal should be ~0.5, got {q0_excited}"
+
+
+def test_a_cz_leaves_basis_states_alone(two_qubit_device):
+    """The population half of the gate: |11> must come back, not stay in |02>.
+
+    A CZ works by driving |11> to |02> and back. Stopping half way is a
+    perfectly good population transfer and a completely broken gate, and this is
+    what tells the two apart.
+    """
+    counts = run_pair(*two_qubit_device, "x q[0];\nx q[1];\ncz q[0], q[1];\n")
+    total = sum(counts.values())
+    assert counts.get("11", 0) / total > 0.85, (
+        f"|11> should survive a full exchange round trip, got {counts}"
+    )
+
+
+def test_a_mistimed_cz_does_not_entangle(two_qubit_device):
+    """The control that makes the test above mean something.
+
+    Half the duration is half a round trip: population sits in |02> instead of
+    returning, so there is no conditional phase and no Bell state. If the CZ
+    were being applied as a nominal gate rather than integrated, this would pass
+    identically to the real one.
+    """
+    device, simulator = two_qubit_device
+    broken = device.parent / "mistimed.device.yml"
+    config = yaml.safe_load(device.read_text())
+    config["q0_q1"]["cz"]["square_duration"] = (
+        round(config["q0_q1"]["cz"]["square_duration"] * 1e9 / 2) * 1e-9
+    )
+    broken.write_text(yaml.safe_dump(config))
+
+    counts = run_pair(broken, simulator, "h q[0];\nh q[1];\ncz q[0], q[1];\nh q[1];\n")
+    assert correlation(counts) < 0.5, (
+        f"half a CZ should not produce an entangled pair, got {counts}"
     )

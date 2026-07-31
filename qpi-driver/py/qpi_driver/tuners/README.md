@@ -78,10 +78,20 @@ measured.
 
 **What it models, and what it does not.** One- and two-qubit gates, clock
 detuning, relaxation and dephasing, and a readout discriminated from two IQ
-blobs. Not modelled: crosstalk, leakage during a gate, and any readout chain
-beyond the blobs. The qubits are all the same simulated transmon, so it will
-never show you a chip whose qubits differ — which on real hardware is most of
-what calibration is for.
+blobs. A CZ is a flux pulse walking the pair through the `|11>`-`|02>` avoided
+crossing, so the conditional phase is integrated rather than asserted and a Bell
+state comes out entangled. Not modelled: crosstalk and any readout chain beyond
+the blobs. The qubits are all the same simulated transmon, so it will never show
+you a chip whose qubits differ — which on real hardware is most of what
+calibration is for.
+
+**The two-qubit model is weaker than the one-qubit one.** A transmon's levels
+come from diagonalising a real Cooper-pair-box Hamiltonian: nothing in it was
+chosen. The coupler's exchange strength and its flux-to-frequency curve *were*
+chosen, because this project has no device to measure them from. The dynamics
+they produce are real and a routine still has to find a crossing it was not told
+the location of, but read a two-qubit result as "against a plausible coupler",
+not "against a real one".
 
 Only `quantify_tuner` and the `quantify` executor support it. qblox-scheduler
 reaches its hardware through a different interface, and passing the flag there

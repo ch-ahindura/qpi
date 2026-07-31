@@ -618,6 +618,24 @@ simulator's parameters has been tested against physics rather than against
 itself. Tests are marked `@pytest.mark.scqubits`, live in the `sim` dependency
 group, and skip when it is absent.
 
+**Two qubits, and where the argument above weakens.** A CZ needs a joint state —
+two independent density matrices cannot be entangled, so a Bell state could not
+come out wrong because it could not come out at all. `simulation/coupled.py`
+holds both transmons in one 9-dimensional register and couples them, and the
+gate falls out of walking the control through the `|11⟩`–`|02⟩` avoided
+crossing: conditional phase 179.3°, Bell concurrence above 0.98, leakage under
+0.5%, none of it written down.
+
+But two of its numbers are *chosen* rather than derived — the exchange coupling
+`G_MHZ` and the flux-to-detuning curve `FLUX_CURVATURE_GHZ` — because they
+describe a coupler and a flux line this project has no device to measure. Given
+them the dynamics are real, and a routine still has to find a crossing it was
+not told the location of. The sentence above about nothing being generated from
+a fitting model is a claim about the one-qubit tier; it is weaker here. Read a
+two-qubit result as "the routine recovers the operating point of a plausible
+coupler", not "of a real one". That is a smaller claim than the one-qubit tier
+makes, and larger than the nothing that preceded it.
+
 **Tolerances are part of the design here.** A loose one makes a test that passes
 without discriminating. Fitting a *Gaussian* decay to this simulator's
 exponential relaxation still recovers T1 to within 7%, so a 15% tolerance would
@@ -644,8 +662,17 @@ then produces that experiment; only RB is played gate by gate. So this tier
 validates that each *fit model* describes real physics, and that each routine
 swept the axis it meant to — not that each *schedule* produces the physics its
 fit assumes. Closing that gap needs a simulator driven by the compiled
-programme, which is a larger piece of work and is not done. Hardware remains the
-only answer for it (§9).
+programme, which is a larger piece of work and is not done for the routines.
+Hardware remains the only answer for it (§9).
+
+It *is* done on the other side of the loop. `SimulationCoordinator` reads the
+compiled schedule and plays it, which is what `test_calibration_loop.py` runs
+circuits against — including a CZ, whose flux pulse reaches it not as one pulse
+but as a held DC offset plus a 4 ns tail, so a reader of the pulses alone would
+apply 4 ns of a gate that ran for 110. Entanglement survives to the counts
+there only because the shots are drawn from the pair's *joint* distribution;
+sampling each qubit from its own marginal reproduces both marginals perfectly
+and destroys the correlation that was the whole content of the state.
 
 ### Test files
 
@@ -668,9 +695,10 @@ alone. The last column below is part of the design, not bookkeeping:
 | `tests/test_clifford.py` | 1 | `test-py-base` | Clifford group generation + inverse correctness |
 | `tests/test_calibrate_driver.py` | 1 | `test-py-base` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
 | `tests/test_tuner_routines.py` | 2 | `test-py-quantify` + `test-py-qblox` | Schedule compilation for each routine |
-| `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries |
+| `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries; the CZ routines against a coupled pair |
 | `tests/test_calibration_e2e.py` | 3 | `test-py-sim` | A whole calibration through `_execute_calibration`: full, partial, drift and the job it queues, write-back |
-| `tests/fixtures/simulation.py` | 3 | — | The transmon simulator, and the backends and tuner built on it |
+| `tests/fixtures/simulation.py` | 3 | — | The backends, fake device and tuner built on the simulators |
+| `tests/test_calibration_loop.py` | 3 | `test-py-loop` | Calibrate then run circuits through the compiled schedule, CZ and Bell state included |
 
 Keeping the driver's own tests in tier 1 is what makes `CalibrateDriver`
 testable without a lab: the tuner is resolved by name, class *or instance*
@@ -790,8 +818,10 @@ verified write-back; the calibrate driver with its drift check; the dispatch
 queue, endpoint and result handler; the catalog entries; the dashboard panel; and
 the docs.
 
-Two faults were found by testing a whole calibration end to end rather than
-routine by routine, and both are fixed:
+Faults found by testing a whole calibration end to end rather than routine by
+routine, all fixed. The first two came from driving `_execute_calibration`
+against the one-qubit simulator; the next three from putting the two-qubit
+routines in front of a coupled pair for the first time:
 
 - **The RB fit could not measure a good chip.** `fit_rb_decay` bounded the
   model's amplitude to ±2, which suits a raw survival probability but not the
@@ -805,14 +835,39 @@ routine by routine, and both are fixed:
   was written and tested but never wired in, so a partial recalibration ran the
   whole enabled graph over fewer targets — including the readout bring-up, which
   is most of the cost a partial run exists to avoid.
+- **`fit_chevron` looked for the brightest pixel.** The CZ is where population
+  has left `|11⟩` for `|02⟩` and *returned*, so the control reads ≈1 there — but
+  it also reads ≈1 everywhere the flux pulse did nothing, and the maximum of
+  that surface is as likely to land on an off-resonant row as on the gate. It
+  now finds resonance by oscillation contrast and the duration by the round trip
+  along that row.
+- **A chevron sweep can step straight over the crossing.** The avoided crossing
+  is about 4.5 MHz wide and the default amplitude grid moves the control ~75 MHz
+  per step, so the surface comes back flat to within its noise — from which a
+  peak-finder still returns a confident answer that goes to the device as a CZ.
+  It now refuses below a minimum contrast, the same guard qubit spectroscopy
+  applies to a line narrower than its own step size.
+- **`fit_conditional_phase` measured the wrong angle, in the wrong units.** It
+  read the zero crossing of the two fringes' difference, which sits at
+  `φ₀ + φ_cz/2` — half the wanted angle, displaced by the control's dynamical
+  phase over the flux pulse. That phase runs to tens of turns and is exactly
+  what having two fringes is for. It now fits each fringe and subtracts. The
+  correction was also `np.pi - crossing` with the crossing in degrees, so a gate
+  needing 30° back was told to apply −26.86.
+
+The tier-1 test for the last of these asserted
+`phase_correction == np.pi - conditional_phase` — it encoded the bug as the
+expectation, which is why none of it surfaced there.
 
 Not implemented, deliberately:
 
-- **Schedule-level simulation** (§7). Tier 3 validates each fit model against
-  physics, but the simulator supplies the acquisition rather than interpreting
-  the compiled schedule — so a schedule that does not produce the physics its
-  fit assumes would still pass. That needs a simulator driven by the compiled
-  programme.
+- **Schedule-level simulation for the routines** (§7). The tuner's tier 3
+  supplies the acquisition rather than interpreting the compiled schedule, so a
+  routine whose schedule does not produce the physics its fit assumes would
+  still pass. Note this gap is now closed on the *executor* side —
+  `SimulationCoordinator` plays the compiled schedule, flux pulses included —
+  but the routines are still tested against a simulator that reads their sweeps
+  rather than their pulses.
 - **Hardware validation** (§9). No routine here has been run against a physical
   transmon. Until the manual verification in §9 has been done on a lab node, the
   honest description of this feature is "complete and untested against
