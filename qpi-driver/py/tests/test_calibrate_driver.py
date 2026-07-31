@@ -108,6 +108,7 @@ def test_build_from_options_reads_every_key():
                 "fidelity_threshold": "0.9995",
                 "fidelity_2q_threshold": "0.98",
                 "is_dummy": "yes",
+                "is_simulated": "no",
                 "quantify_hardware_config": "./hw.json",
                 "quantify_device_config": "./dev.yml",
             }
@@ -119,7 +120,19 @@ def test_build_from_options_reads_every_key():
     assert driver.fidelity_threshold == 0.9995
     assert driver.fidelity_2q_threshold == 0.98
     assert driver.tuner_options["is_dummy"] is True
+    assert driver.tuner_options["is_simulated"] is False
     assert driver.tuner_options["quantify_device_config"] == Path("./dev.yml")
+
+
+def test_is_simulated_reaches_the_tuner():
+    """``-o is_simulated=true`` is what runs a node with no hardware at all."""
+    driver = build_from_options(
+        tuner="quantify",
+        **_transport(),
+        options=Options({"is_simulated": "true"}),
+    )
+    assert driver.tuner_options["is_simulated"] is True
+    assert driver.tuner_options["is_dummy"] is False
 
 
 def test_build_from_options_needs_no_options_at_all():

@@ -73,6 +73,17 @@ class QbloxExecutor(Executor):
             Instrument.close_all()
 
         self._data_dir = data_dir
+        if kwargs.pop("is_simulated", False):
+            # qblox-scheduler reaches its hardware through a HardwareAgent that
+            # compiles and runs in one call, not through quantify's four-call
+            # coordinator, so SimulatedCoordinator does not drop in here. Saying
+            # so beats accepting the flag and quietly running a dummy cluster,
+            # which returns nan and looks like a chip that answered.
+            raise NotImplementedError(
+                "is_simulated is not supported by the qblox backend; the "
+                "simulator plugs into quantify's instrument coordinator. Use "
+                "the quantify device for a simulated node."
+            )
         self._is_dummy = is_dummy
         self._acquisition_timeout = acquisition_timeout
         self._hardware_config = load_quantify_hardware_config(quantify_hardware_config)

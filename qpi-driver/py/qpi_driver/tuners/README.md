@@ -34,7 +34,8 @@ filesystem and nothing else.
 | `calibration_config` | `./calibration.yml` | Which routines run, over what, and how far. |
 | `quantify_device_config` | `./quantify.device.yml` | The device calibration file, read at start and written back. |
 | `quantify_hardware_config` | `./quantify.hardware.json` | Hardware connectivity. |
-| `is_dummy` | `false` | Run against the vendor's dummy cluster. |
+| `is_dummy` | `false` | Run against the vendor's dummy cluster. Compiles and runs; every acquisition is `nan`, so every routine fails. |
+| `is_simulated` | `false` | Run against a simulated chip instead — see below. `quantify_tuner` only. |
 | `drift_check_interval` | `0` | Seconds between periodic benchmark runs. `0` disables them. |
 | `fidelity_threshold` | `0.999` | 1Q fidelity below which a recalibration is triggered. |
 | `fidelity_2q_threshold` | `0.99` | 2Q fidelity below which a recalibration is triggered. |
@@ -42,6 +43,49 @@ filesystem and nothing else.
 All of them have working defaults except the calibration config, which must
 exist: a tuner with no config would have nothing to run, and a run that does
 nothing raises nothing, so it would report success.
+
+## A node with no hardware
+
+`-o is_simulated=true` puts a simulated chip where the cluster goes. The
+compiled schedule is played through a transmon built from a real Hamiltonian
+(`scqubits`) and evolved with the Lindblad master equation (`qutip`), so the
+routines fit real physics and the calibration written back is a calibration of
+*something*.
+
+```bash
+pip install 'qpi-driver[cli,quantify_tuner]' scqubits qutip
+
+qpi-driver start --operation calibrate --device quantify_tuner \
+    -o calibration_config=./calibration.yml -o is_simulated=true
+```
+
+The `process` driver takes the same option, and that is the point — point both
+at the same `quantify.device.yml` and the whole node runs with no instruments:
+
+```bash
+qpi-driver start --operation process --device quantify -o is_simulated=true
+```
+
+Use it to rehearse a bring-up, to develop against, or to check a change to a
+routine before taking the cryostat down for it. It is not a substitute for
+hardware — see the limits below.
+
+**Not the same as `is_dummy`.** The vendor's dummy cluster compiles and runs a
+schedule and then returns `nan` for every acquisition, so nothing distinguishes
+a correct calibration from a wrong one. The simulator reads the schedule it was
+given, so an `amp180` off by a factor of ten produces the wrong population,
+measured.
+
+**What it models, and what it does not.** One- and two-qubit gates, clock
+detuning, relaxation and dephasing, and a readout discriminated from two IQ
+blobs. Not modelled: crosstalk, leakage during a gate, and any readout chain
+beyond the blobs. The qubits are all the same simulated transmon, so it will
+never show you a chip whose qubits differ — which on real hardware is most of
+what calibration is for.
+
+Only `quantify_tuner` and the `quantify` executor support it. qblox-scheduler
+reaches its hardware through a different interface, and passing the flag there
+is an error rather than a silent fallback.
 
 ## The calibration graph
 

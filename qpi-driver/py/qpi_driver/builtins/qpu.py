@@ -167,6 +167,7 @@ def build_from_options(
     executor_options: dict[str, Any] = {
         "job_timeout": options.get_int("job_timeout", 10),
         "is_dummy": options.get_bool("is_dummy"),
+        "is_simulated": options.get_bool("is_simulated"),
         "quantify_hardware_config": options.get_path(
             "quantify_hardware_config", "./quantify.hardware.json"
         ),
