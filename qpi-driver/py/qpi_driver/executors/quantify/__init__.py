@@ -1,3 +1,4 @@
+import logging
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,10 @@ from qpi_driver.executors.utils.counts import (
 )
 from qpi_driver.executors.utils.qiskit import load_qasm
 from qpi_driver.executors.utils.types import cast_to
+
+log = logging.getLogger(__name__)
+
+log = logging.getLogger(__name__)
 
 
 class QuantifyExecutor(Executor):
@@ -105,6 +110,7 @@ class QuantifyExecutor(Executor):
                 f"{name}_ic", hardware_config=hardware_config, is_dummy=is_dummy
             )
         self._device.hardware_config(hardware_config)
+        self._bias_source = self._park_couplers(kwargs.get("spi_rack_address"))
         self._compiler = SerialCompiler(
             name=f"{name}_compiler", quantum_device=self._device
         )
@@ -213,6 +219,55 @@ class QuantifyExecutor(Executor):
         if "acq_threshold" in acq_kwargs:
             dataset.attrs["acq_threshold"] = acq_kwargs["acq_threshold"]
         return dataset
+
+    def _park_couplers(self, spi_rack_address: str | None):
+        """Hold every tunable coupler at its calibrated DC bias.
+
+        Done once at startup rather than per job, because that is what the bias
+        physically is: a current that sits there while the fridge is cold. It is
+        not part of any schedule — quantify has no way to express an SPI rack —
+        so if this does not happen, nothing else will do it, and every CZ runs
+        against a coupler parked wherever it was left.
+
+        Replacing the cluster replaces the rack too: with ``is_simulated`` or
+        ``is_dummy`` there is no instrument to talk to, so the intended currents
+        are recorded and not applied.
+        """
+        from qpi_driver.executors.quantify.coupler_bias import (
+            RecordingBias,
+            apply_coupler_bias,
+            resolve_bias_source,
+        )
+
+        try:
+            source = (
+                RecordingBias()
+                if (self._is_simulated or self._is_dummy)
+                else resolve_bias_source(
+                    self._device,
+                    cluster=self._cluster(),
+                    spi_address=spi_rack_address,
+                )
+            )
+            self._parked = apply_coupler_bias(self._device, source)
+        except Exception:
+            # A coupler that cannot be parked is a broken two-qubit gate, not a
+            # broken node: single-qubit work is unaffected, and refusing to
+            # start would take the whole QPU out for it.
+            log.exception("could not park the couplers; two-qubit gates will be wrong")
+            self._parked = {}
+            return RecordingBias()
+        return source
+
+    def _cluster(self):
+        """The Cluster behind the instrument coordinator, if there is one."""
+        for component in getattr(
+            self._instrument_coordinator, "components", lambda: []
+        )():
+            instrument = getattr(component, "instrument", None)
+            if instrument is not None:
+                return instrument
+        return None
 
     def _resolve_acq_protocol(self, payload: JobPayload) -> tuple[str, dict]:
         """Determine the quantify-scheduler acquisition protocol for the given meas_level.

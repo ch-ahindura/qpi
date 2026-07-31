@@ -66,6 +66,31 @@ class EdgeBias(InstrumentChannel):
             parameter_class=ManualParameter,
             initial_value=kwargs.get("source", "spi"),
         )
+        # Which output the coupler is wired to, for whichever source is in use.
+        # Wiring is a property of the rack, and the device file is where the
+        # rest of this coupler's setup already lives.
+        for wiring, default in (
+            ("spi_module", 0),
+            ("spi_output", 0),
+            ("qcm_module", 0),
+            ("qcm_output", 0),
+        ):
+            self.add_parameter(
+                wiring,
+                parameter_class=ManualParameter,
+                initial_value=kwargs.get(wiring, default),
+                vals=Numbers(min_value=0, max_value=64),
+            )
+        #: A QCM holds a voltage, not a current, so turning one into the other
+        #: needs the line's resistance. Zero means "not measured", and the QCM
+        #: path refuses rather than guessing.
+        self.add_parameter(
+            "line_resistance_ohm",
+            parameter_class=ManualParameter,
+            unit="Ohm",
+            initial_value=kwargs.get("line_resistance_ohm", 0.0),
+            vals=Numbers(min_value=0, max_value=1e6),
+        )
 
 
 class FluxTunableCoupler(CompositeSquareEdge):

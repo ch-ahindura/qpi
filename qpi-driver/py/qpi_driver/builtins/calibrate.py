@@ -235,6 +235,10 @@ def build_from_options(
         "quantify_device_config": options.get_path(
             "quantify_device_config", "./quantify.device.yml"
         ),
+        # Where the SPI rack is, for chips whose couplers are parked by one.
+        # Empty is correct for a chip with no tunable couplers, and for one
+        # whose couplers are biased from inside the cluster.
+        "spi_rack_address": options.get_str("spi_rack_address"),
     }
 
     calibration_config = options.get_path("calibration_config", "./calibration.yml")

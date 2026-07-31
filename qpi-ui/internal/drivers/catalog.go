@@ -60,6 +60,16 @@ func processOptions() []Option {
 			Default: "./quantify.device.yml",
 			Example: "./quantify.device.yml",
 		},
+		{
+			Key: "spi_rack_address",
+			// A tunable coupler's DC parking current is not part of any
+			// schedule — quantify cannot express an SPI rack — so the driver
+			// sets it directly at startup. Empty is right for a chip with no
+			// tunable couplers, and for one biased from inside the cluster.
+			Help:    "Serial port of the SPI rack that parks the tunable couplers.",
+			Default: "",
+			Example: "/dev/ttyACM0",
+		},
 	}
 }
 
@@ -99,6 +109,16 @@ func calibrateOptions() []Option {
 			Help:    "Path to the quantify device configuration YAML.",
 			Default: "./quantify.device.yml",
 			Example: "./quantify.device.yml",
+		},
+		{
+			Key: "spi_rack_address",
+			// A tunable coupler's DC parking current is not part of any
+			// schedule — quantify cannot express an SPI rack — so the driver
+			// sets it directly at startup. Empty is right for a chip with no
+			// tunable couplers, and for one biased from inside the cluster.
+			Help:    "Serial port of the SPI rack that parks the tunable couplers.",
+			Default: "",
+			Example: "/dev/ttyACM0",
 		},
 		{
 			Key:     "is_dummy",
