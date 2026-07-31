@@ -860,3 +860,29 @@ def test_a_raw_trace_over_two_qubits_takes_one_run_each(calibrated_device):
         f"q0 was excited and q1 was not, but their traces settle at "
         f"{excited:.2f} and {ground:.2f}"
     )
+
+
+def test_a_coupler_that_declares_its_own_gap_is_believed(coupler_device, tmp_path):
+    """The device's `sideband_gap` overrides the simulator's chosen constant.
+
+    `SIDEBAND_GAP_GHZ` exists because this project has no coupler to measure. A
+    chip that *has* measured its own gap should not be simulated against a
+    guess, so the edge can declare it — and declaring a different one has to
+    change the answer, or the field is decoration.
+
+    Moving the gap without moving the drive detunes the gate, so the Bell state
+    it built stops being one.
+    """
+    device, simulator, scheduler = coupler_device
+    moved = tmp_path / "moved-gap.device.yml"
+    config = yaml.safe_load(device.read_text())
+    drive = float(config["q1_q2"]["clock_freqs"]["cz"])
+    # 50 MHz away from where this edge's drive is played.
+    config["q1_q2"]["clock_freqs"]["sideband_gap"] = drive + 50e6
+    moved.write_text(yaml.safe_dump(config))
+
+    counts = run(moved, simulator, scheduler, bell_circuit(), shots=400)
+    aligned = (counts.get("00", 0) + counts.get("11", 0)) / sum(counts.values())
+    assert aligned < 0.8, (
+        f"a declared gap 50 MHz off the drive should spoil the gate, got {counts}"
+    )

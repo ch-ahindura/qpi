@@ -268,3 +268,26 @@ def resolve_bias_source(
             "pass -o spi_rack_address=<port>"
         )
     return SpiRackBias(spi_address)
+
+
+def declared_sideband_gaps(device: Any) -> dict[str, float]:
+    """Each coupler edge's ``clock_freqs.sideband_gap``, in Hz.
+
+    Only edges that declare a non-zero one: zero means uncharacterised, and the
+    simulator should fall back to its own constant rather than be told the gap
+    is at DC.
+    """
+    from qpi_driver.executors.utils.coupler_bias import edge_names
+
+    gaps: dict[str, float] = {}
+    for name in edge_names(device):
+        clocks = getattr(device.get_edge(name), "clock_freqs", None)
+        value = getattr(clocks, "sideband_gap", None) if clocks else None
+        if callable(value):
+            try:
+                value = value()
+            except Exception:  # noqa: BLE001 - an unreadable parameter is not a gap
+                continue
+        if value:
+            gaps[name] = float(value)
+    return gaps

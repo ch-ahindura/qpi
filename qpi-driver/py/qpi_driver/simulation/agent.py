@@ -103,6 +103,7 @@ def simulated_agent(
     quantum_device_configuration: Any,
     output_dir: Any = None,
     simulator: Any = None,
+    sideband_gaps: Any = None,
 ) -> SimulatedAgent:
     """A :class:`SimulatedAgent` over a real, dummy-connected ``HardwareAgent``.
 
@@ -119,4 +120,6 @@ def simulated_agent(
         create_dummy_connections=True,
         output_dir=output_dir,
     )
-    return SimulatedAgent(agent, SimulatedCoordinator(simulator))
+    return SimulatedAgent(
+        agent, SimulatedCoordinator(simulator, sideband_gaps=sideband_gaps)
+    )

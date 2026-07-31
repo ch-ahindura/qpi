@@ -105,6 +105,9 @@ class QbloxTuner(Tuner):
         if is_simulated:
             # The agent's `compile` is the only part a chip is not needed for,
             # so that half stays real and the simulator takes over execution.
+            from qpi_driver.executors.utils.coupler_bias import (
+                declared_sideband_gaps,
+            )
             from qpi_driver.simulation.agent import simulated_agent
 
             self._agent = simulated_agent(
@@ -112,6 +115,7 @@ class QbloxTuner(Tuner):
                 quantum_device_configuration=self._device,
                 output_dir=self._data_dir,
                 simulator=simulator,
+                sideband_gaps=declared_sideband_gaps(self._device),
             )
         else:
             self._agent = HardwareAgent(

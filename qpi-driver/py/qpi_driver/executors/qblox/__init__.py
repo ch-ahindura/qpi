@@ -90,6 +90,9 @@ class QbloxExecutor(Executor):
             # A real agent for compilation, the simulator for execution — the
             # agent's `run` is the only part a chip is needed for. See
             # `qpi_driver.simulation.agent`.
+            from qpi_driver.executors.utils.coupler_bias import (
+                declared_sideband_gaps,
+            )
             from qpi_driver.simulation.agent import simulated_agent
 
             self._agent = simulated_agent(
@@ -97,6 +100,7 @@ class QbloxExecutor(Executor):
                 quantum_device_configuration=self._device,
                 output_dir=data_dir,
                 simulator=kwargs.get("simulator"),
+                sideband_gaps=declared_sideband_gaps(self._device),
             )
         else:
             self._agent = HardwareAgent(

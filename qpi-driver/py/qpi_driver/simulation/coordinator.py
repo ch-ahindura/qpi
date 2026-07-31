@@ -278,8 +278,14 @@ class SimulatedCoordinator:
         *,
         drive_strength: float = DEFAULT_DRIVE_STRENGTH,
         seed: int = 20260731,
+        sideband_gaps: dict[str, float] | None = None,
     ) -> None:
         self.simulator = simulator or TransmonSimulator()
+        #: Edge name to the ``|11>-|02>`` gap its CZ drive is meant to bridge,
+        #: in Hz, as that edge's own config declares it. An edge that has not
+        #: been characterised falls back to `SIDEBAND_GAP_GHZ` — which is a
+        #: chosen number, so a device that knows its own gap should say so.
+        self.sideband_gaps = dict(sideband_gaps or {})
         self.drive_strength = drive_strength
         self._rng = np.random.default_rng(seed)
         self._compiled: Any = None
@@ -623,7 +629,10 @@ class SimulatedCoordinator:
         )
 
         levels = register.levels
-        detuning = 2 * np.pi * (SIDEBAND_GAP_GHZ - drive_hz / GHZ)
+        gap_ghz = self.sideband_gaps.get(f"{parent}_{child}", 0.0) / GHZ or (
+            SIDEBAND_GAP_GHZ
+        )
+        detuning = 2 * np.pi * (gap_ghz - drive_hz / GHZ)
         rate = 2 * np.pi * PARAMETRIC_RATE_MHZ * 1e-3 * abs(amplitude)
         stark = 2 * np.pi * STARK_SHIFT_MHZ * 1e-3 * amplitude**2
 

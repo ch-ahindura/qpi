@@ -27,6 +27,19 @@ class EdgeClockFrequencies(InstrumentChannel):
             initial_value=kwargs.get("cz", 0.0),
             vals=Numbers(min_value=-1e12, max_value=1e12, allow_nan=True),
         )
+        # The transition the CZ drive is meant to bridge. `cz` above is the
+        # frequency the drive is *played at*; this is what it should equal for
+        # the gate to happen, and the two being separate is what lets a
+        # mistuned drive be a detectable mistake rather than a definition. Zero
+        # means "not characterised", and the simulator falls back to its own
+        # constant with a note rather than pretending a measurement exists.
+        self.add_parameter(
+            "sideband_gap",
+            parameter_class=ManualParameter,
+            unit="Hz",
+            initial_value=kwargs.get("sideband_gap", 0.0),
+            vals=Numbers(min_value=0, max_value=1e12, allow_nan=True),
+        )
 
 
 class EdgeBias(InstrumentChannel):

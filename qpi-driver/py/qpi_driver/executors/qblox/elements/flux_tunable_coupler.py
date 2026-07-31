@@ -26,6 +26,15 @@ class EdgeClockFrequencies(SchedulerSubmodule):
         initial_value=0.0,
         vals=Numbers(min_value=-1e12, max_value=1e12, allow_nan=True),
     )
+    # The transition the CZ drive is meant to bridge, as opposed to `cz` which
+    # is the frequency it is played at. Keeping them separate is what lets a
+    # mistuned drive be a detectable mistake rather than a definition.
+    sideband_gap: float = Parameter(
+        docstring="The |11>-|02> transition the CZ drive bridges. 0 if uncharacterised.",
+        unit="Hz",
+        initial_value=0.0,
+        vals=Numbers(min_value=0, max_value=1e12, allow_nan=True),
+    )
 
 
 class EdgeBias(SchedulerSubmodule):

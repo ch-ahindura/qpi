@@ -139,7 +139,53 @@ Switching is a config change. The current is validated to ±3.1 mA, a chip whose
 couplers disagree about the mechanism is refused, and a chip with no tunable
 couplers needs no rack at all. New option: `-o spi_rack_address`.
 
+**qblox is no longer the partial one.** `is_simulated` works there too: its
+`HardwareAgent` compiles offline, so a real agent keeps compilation and the
+simulator takes over only execution — meaning a schedule that would not assemble
+for a cluster still does not assemble here. The multi-qubit raw trace split, the
+`SoftSquarePulse`, the coupler's parking current and wiring, and the tier-2
+compile check are all present on both sides now, and `test_calibration_loop` is
+parametrised over the two rather than duplicated, so every claim is proved for
+both. quantify-scheduler is being deprecated, which makes this the path that has
+to keep working.
+
+A coupler can also declare the transition its CZ drive is meant to bridge
+(`clock_freqs.sideband_gap`), so a chip that has measured its own gap is
+simulated against that rather than against a constant chosen for want of a
+device.
+
 ### Fixed
+- `qpi-driver`: The qblox tuner had never completed a calibration. Its
+  write-back walked `device.elements()` and `device.edges()`, which are methods
+  under quantify and *dicts* under qblox, so it raised and every report came
+  back `partial_failure`. What it wrote, qblox could then not read back: edges
+  carried positional constructor arguments and qblox's edges are pydantic models,
+  which take none; and `element_type`, `name`, `edge_type` and the two endpoints
+  were written as if they were calibration, so the loader tried to assign to
+  fields that refuse it.
+- `qpi-driver`: `conditional_phase` applied nothing at all, on either scheduler.
+  It wrote `cz.phase_correction` — a name neither has, quantify naming them
+  after the qubits and qblox after the roles — behind a `hasattr` guard that was
+  therefore never true. Fixing the name exposed the larger gap: those parameters
+  cancel each qubit's *single-qubit* phase, which is not the conditional phase
+  and not derivable from it, so the routine now measures four fringes (a Ramsey
+  on each qubit with the other down and up) instead of two.
+- `qpi-driver`: Both device loaders added elements in file order, so an edge
+  listed before either of its qubits failed to load — and anything that rewrites
+  the YAML alphabetically, which is `yaml.safe_dump`'s default, produced a
+  config that could no longer be read.
+- `qpi-ui`: A failed job rendered nothing at all. The status badge went red and
+  each of the three result tabs reported "No counts data available" while the
+  reason the driver had already sent sat unread in the record. The reason is
+  shown in place of the tabs now.
+- `make test` was red on macOS, and for two unrelated reasons. `uv sync`
+  reinstalls qblox_instruments and macOS strips the signature from its bundled
+  q1asm assembler; only three of the eight targets that sync put it back, so
+  whichever ran last decided whether the next one could assemble. And
+  `test-docs-static` reported 17 documented CLI flags as removed: `check_docs`
+  forces `PYTHONPATH` at the source tree, so `qpi_driver.cli` imports without
+  the `cli` extra, prints a near-empty help and exits 0 — and only a non-zero
+  exit was treated as "could not run".
 - `qpi-driver`: A virtual Z did nothing at all under `is_simulated`.
   `ShiftClockPhase` never reached the simulated coordinator's pulse walk, so
   every `rz`, `z`, `s` and `t` ran as an identity — silently, because a frame

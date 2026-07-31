@@ -618,6 +618,14 @@ simulator's parameters has been tested against physics rather than against
 itself. Tests are marked `@pytest.mark.scqubits`, live in the `sim` dependency
 group, and skip when it is absent.
 
+**Both schedulers, not one.** Everything in this tier runs under
+quantify-scheduler and qblox-scheduler, parametrised rather than duplicated —
+`test_calibration_loop` proves each of its claims twice. That is not symmetry for
+its own sake: quantify-scheduler is being deprecated, and the qblox path having
+been a stub is how a tuner that could never complete a write-back went
+unnoticed. A claim proved for one scheduler and untested for the other is the
+shape this gap took, so the tests are arranged to make it impossible.
+
 **Two qubits, and where the argument above weakens.** A CZ needs a joint state —
 two independent density matrices cannot be entangled, so a Bell state could not
 come out wrong because it could not come out at all. `simulation/coupled.py`
