@@ -214,6 +214,33 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**The calibration graph runs on a chip, not only on the simulator** (RFC 0005 §12b).
+Two things stood between it and that.
+
+**The coupler bias had no rack.** `coupler_anticrossing` was only ever handed a
+simulated source, so on real hardware it declined and the graph was permanently a node
+short. Both tuners now resolve a real one — an S4g over SPI, or a baseband output
+inside the cluster — through the same `resolve_bias_source` the executor uses, take a
+new `spi_rack_address` option, and release the rack on close.
+
+The resolution asks with `require_current=False`, which is the difference between
+parking and calibrating. Parking needs a rack only when there is a current to hold;
+calibrating is the opposite case, because an uncalibrated chip has zero everywhere and
+zero is exactly when the current must be measured. Requiring one to open the rack would
+have meant the bias could never be calibrated on a chip that had not been calibrated.
+
+A source that cannot touch the chip is now refused outright. `RecordingBias` applies
+nothing, so a sweep against it returns the same frequency at every point and the fit
+reports a crossing with complete confidence — a number written to the device that no
+instrument produced. `BiasSource.holds_current` separates a rack from a notebook.
+
+**Half the graph raised on a stock element.** The EF chain and both readout operating
+points need submodules only a `CalibratedTransmon` carries, and they *raised* on a
+`BasicTransmonElement` — which is what a device file written before this RFC uses. Six
+failures for parameters the element was never going to have reads as six broken
+routines. They now decline, so such a chip calibrates everything it can and returns
+`success`. The tuner README lists which node needs which submodule.
+
 **`cz_parametrization`, and RFC 0005 is complete** (§12). A parametric CZ is
 `cz_chevron`'s counterpart, not a variant: the two gates are resonant in different
 variables. A DC-flux CZ is pushed onto the `|11>`-`|02>` crossing by *amplitude*, so it

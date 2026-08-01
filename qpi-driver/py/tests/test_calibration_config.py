@@ -163,3 +163,38 @@ def test_an_edge_that_is_not_a_pair_is_refused():
 def test_no_edges_is_not_an_error():
     """A single-qubit-only calibration is an ordinary thing to ask for."""
     CalibrationConfig(target_qubits=["q0"]).validate_targets()
+
+
+# --- the coupler bias, on hardware that may not have one ------------------------
+
+
+def test_a_recorder_cannot_be_used_to_measure_a_parking_current():
+    """`RecordingBias` applies nothing, so sweeping against it measures nothing.
+
+    The dangerous shape, and the reason this is an error rather than a warning: every
+    bias point returns the same qubit frequency, the sweep is flat, and the fit reports
+    a crossing with complete confidence. That number then goes to the device. A routine
+    that measures the chip has to refuse a source that cannot touch it.
+    """
+    from qpi_driver.executors.utils.coupler_bias import RecordingBias
+    from qpi_driver.tuners.base.routines import RoutineError
+    from qpi_driver.tuners.routines import all_routines
+
+    routine = next(r for r in all_routines() if r.name == "coupler_anticrossing")
+    with pytest.raises(RoutineError, match="hold a parking current"):
+        routine.measure("q0_q1", None, None, None, RecordingBias())
+    with pytest.raises(RoutineError, match="hold a parking current"):
+        routine.measure("q0_q1", None, None, None, None)
+
+
+def test_the_sources_that_do_hold_a_current_say_so():
+    """The flag is what separates a rack from a notebook, and both are BiasSource."""
+    from qpi_driver.executors.utils.coupler_bias import (
+        QcmBias,
+        RecordingBias,
+        SpiRackBias,
+    )
+
+    assert RecordingBias.holds_current is False
+    assert QcmBias.holds_current is True
+    assert SpiRackBias.holds_current is True

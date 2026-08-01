@@ -36,6 +36,7 @@ filesystem and nothing else.
 | `quantify_hardware_config` | `./quantify.hardware.json` | Hardware connectivity. |
 | `is_dummy` | `false` | Run against the vendor's dummy cluster. Compiles and runs; every acquisition is `nan`, so every routine fails. |
 | `is_simulated` | `false` | Run against a simulated chip instead — see below. Both tuners. |
+| `spi_rack_address` | *(none)* | Serial address of the SPI rack holding the couplers' S4g current sources. Only `coupler_anticrossing` uses it, and only when the couplers say `bias.source: spi`; without it that node declines rather than sweeping a bias it cannot hold. |
 | `drift_check_interval` | `0` | Seconds between periodic benchmark runs. `0` disables them. |
 | `fidelity_threshold` | `0.999` | 1Q fidelity below which a recalibration is triggered. |
 | `fidelity_2q_threshold` | `0.99` | 2Q fidelity below which a recalibration is triggered. |
@@ -43,6 +44,26 @@ filesystem and nothing else.
 All of them have working defaults except the calibration config, which must
 exist: a tuner with no config would have nothing to run, and a run that does
 nothing raises nothing, so it would report success.
+
+### What the graph needs from a device file
+
+Every node runs against a stock `BasicTransmonElement` except the ones whose result
+has nowhere to go. Those *decline* rather than fail, so a chip configured before
+RFC 0005 calibrates everything it can and reports success rather than a column of
+red for parameters its elements were never going to have:
+
+| Needs | Nodes that decline without it |
+|-------|-------------------------------|
+| `spec` on a `CalibratedTransmon` | none — `qubit_spectroscopy` still sweeps power, it just does not remember the answer |
+| `measure_2state` | `readout_operating_point` |
+| `r12` | `rabi_12`, `resonator_spectroscopy_second_excited` |
+| `measure_3state` | `ramsey_12`, `drag_12`, `fine_amplitude_12`, `three_state_operating_point`, `three_state_discrimination` |
+| `bias.parking_current` **and** a rack that can hold it | `coupler_anticrossing` |
+| `clock_freqs.cz` on the edge | `cz_spectroscopy`, `cz_parametrization` — a `CompositeSquareEdge` has no drive frequency, and `cz_chevron` is its counterpart |
+
+Point an element at
+`qpi_driver.executors.quantify.elements.calibrated_transmon.CalibratedTransmon` (or the
+`qblox` twin) to opt that qubit into the rest.
 
 ## A node with no hardware
 

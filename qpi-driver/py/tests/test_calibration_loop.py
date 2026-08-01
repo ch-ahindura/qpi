@@ -386,6 +386,65 @@ def test_the_parametric_cz_is_parametrised(two_qubit_device, tmp_path):
     )
 
 
+def test_the_graph_completes_on_a_plain_transmon_chip(scheduler, tmp_path):
+    """A config using `BasicTransmonElement` calibrates, minus what it cannot hold.
+
+    This is the shape of a device file written before any of RFC 0005 existed, and it
+    is what a real chip is most likely to be running. Every node that needs a
+    `CalibratedTransmon` submodule — the EF chain, the two readout operating points —
+    has to *decline* rather than fail: six red entries in a report for parameters the
+    element was never going to have is indistinguishable from six broken routines, and
+    it is the report a chip owner would see first.
+
+    What must still run is everything a plain transmon can do, and it must come back
+    `success`.
+    """
+    simulator = TransmonSimulator()
+    device = tmp_path / "quantify.device.yml"
+    config = yaml.safe_load((FIXTURES / "quantify.device.yml").read_text())
+    for qubit in ("q0", "q1", "q2"):
+        # Back to the stock element, and drop what only the richer one can hold.
+        config[qubit]["element_type"]["path"] = (
+            "quantify_scheduler.device_under_test.transmon_element.BasicTransmonElement"
+        )
+        for submodule in ("spec", "r12", "measure_2state", "measure_3state"):
+            config[qubit].pop(submodule, None)
+        config[qubit]["clock_freqs"]["f01"] = float(simulator.f01 * GHZ)
+        config[qubit]["rxy"]["amp180"] = 0.2
+    device.write_text(yaml.safe_dump(config, sort_keys=False))
+
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"plain_{scheduler}",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(
+        CalibrationConfig(
+            target_qubits=["q0"],
+            routines={
+                name: RoutineConfig(
+                    enabled=name in ("resonator_spectroscopy", "rabi", "rabi_12"),
+                    params=_sweep(name),
+                )
+                for name in routine_names()
+            },
+        )
+    )
+    tuner.close()
+    close_instruments(scheduler)
+
+    assert report.status == "success", report.errors
+    ran = {result.routine_name for result in report.routine_results}
+    assert "resonator_spectroscopy" in ran and "rabi" in ran
+    # And the one that cannot: declined, not failed.
+    assert "rabi_12" not in ran
+    assert report.errors == []
+
+
 def test_the_coupler_crossing_is_found_and_a_parking_current_written(
     two_qubit_device, tmp_path
 ):

@@ -139,11 +139,16 @@ class CouplerAnticrossing(CalibrationRoutine):
         backend: SchedulerBackend,
         bias: Any = None,
     ) -> dict[str, Any]:
-        if bias is None:
+        if bias is None or not getattr(bias, "holds_current", False):
+            # A recorder counts as nothing here, and that distinction is the point.
+            # Against one, every bias point returns the same qubit frequency, the
+            # sweep is flat, and the fit reports a crossing with total confidence —
+            # a number written to the device that no instrument ever produced. It is
+            # the exact failure this whole node exists to make impossible.
             raise RoutineError(
-                f"{target} has no way to hold a parking current, so its coupler's "
-                f"crossing cannot be swept — the bias is delivered out of band and "
-                f"this routine needs to drive it"
+                f"{target} has no source that can actually hold a parking current, so "
+                f"its coupler's crossing cannot be swept — the bias is delivered out "
+                f"of band, and a recorder would make this measure nothing at all"
             )
         from qpi_driver.executors.utils.coupler_bias import bias_settings
 

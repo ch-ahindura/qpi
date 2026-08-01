@@ -1,6 +1,7 @@
 """The ``quantify_tuner`` device: calibration through quantify-scheduler."""
 
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +120,10 @@ class QuantifyTuner(Tuner):
                 Mutually exclusive with *is_dummy*.
         """
         super().__init__(name, **kwargs)
+        #: Where the SPI rack lives, when the couplers are biased through one.
+        #: `coupler_anticrossing` needs to drive it; every other node ignores it.
+        self._spi_rack_address = kwargs.get("spi_rack_address")
+        self._bias: Any = None
         if is_dummy and is_simulated:
             raise ValueError(
                 "is_dummy and is_simulated both replace the cluster; pick one"
@@ -169,22 +174,65 @@ class QuantifyTuner(Tuner):
 
     @property
     def bias(self):
-        """A simulated rack when the cluster is simulated, and nothing otherwise.
+        """Whatever can hold this chip's couplers at a DC current.
 
-        `coupler_anticrossing` is the only routine that asks. Against a real cluster
-        the bias belongs to the *executor* — it is held for as long as the fridge is
-        cold, not for the length of one calibration — so wiring a live rack in here is
-        a separate decision from making the sweep possible at all, and that routine
-        declines rather than guessing.
+        A real rack on real hardware — an S4g over SPI, or a baseband output inside
+        the cluster — and the simulated one when the cluster is simulated.
+        `coupler_anticrossing` is the only routine that asks, and it is the node the
+        DAG cannot complete on a chip without.
+
+        Resolved with ``require_current=False``, which is the difference between
+        parking and calibrating. The executor opens a rack only when some edge
+        declares a current to hold; here there may be none *yet*, and that is exactly
+        when it has to be measured.
         """
-        from qpi_driver.simulation import SimulatedBias
+        if getattr(self, "_bias", None) is not None:
+            return self._bias
 
         coordinator = self._instrument_coordinator
-        if type(coordinator).__name__ != "SimulatedCoordinator":
-            return None
-        if getattr(self, "_bias", None) is None:
+        if type(coordinator).__name__ == "SimulatedCoordinator":
+            from qpi_driver.simulation import SimulatedBias
+
             self._bias = SimulatedBias(coordinator)
+            return self._bias
+
+        from qpi_driver.executors.utils.coupler_bias import resolve_bias_source
+
+        try:
+            self._bias = resolve_bias_source(
+                self._device,
+                cluster=self._cluster(),
+                spi_address=self._spi_rack_address,
+                require_current=False,
+            )
+        except Exception:
+            # A rack that will not open is a coupler that cannot be calibrated, not a
+            # tuner that cannot start: every single-qubit node still runs, and
+            # `coupler_anticrossing` declines rather than sweeping against nothing.
+            log.exception(
+                "could not open a bias source; the coupler nodes will decline"
+            )
+            self._bias = None
         return self._bias
+
+    def _cluster(self):
+        """The Cluster behind the instrument coordinator, if there is one."""
+        for component in getattr(
+            self._instrument_coordinator, "components", lambda: []
+        )():
+            instrument = getattr(component, "instrument", None)
+            if type(instrument).__name__ == "Cluster":
+                return instrument
+        return None
+
+    def _release_bias(self) -> None:
+        """Let go of the rack, if one was opened. Best-effort, like every step
+        of shutdown: a rack held open outlives this process and blocks the next."""
+        source = getattr(self, "_bias", None)
+        if source is not None:
+            with suppress(Exception):
+                source.close()
+            self._bias = None
 
     def close(self) -> None:
         """Detach the coordinator's components, then release every instrument.
@@ -197,6 +245,7 @@ class QuantifyTuner(Tuner):
         Every step is best-effort, including reading the component list: by the
         time this runs the coordinator may already have been closed.
         """
+        self._release_bias()
         try:
             components = list(self._instrument_coordinator.components())
         except Exception:  # noqa: BLE001 - shutdown is best-effort

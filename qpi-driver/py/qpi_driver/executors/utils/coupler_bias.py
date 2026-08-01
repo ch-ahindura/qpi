@@ -40,6 +40,13 @@ QCM = "qcm"
 class BiasSource(Protocol):
     """Something that can hold a coupler at a DC current."""
 
+    #: Whether applying actually changes the chip. `RecordingBias` says no, and a
+    #: routine that *measures* the bias has to know: sweeping a current against a
+    #: recorder produces a flat response and a confidently wrong crossing, which is
+    #: worse than declining. Parking at startup does not care — there is nothing to
+    #: park when there is no rack — so only the calibration path checks it.
+    holds_current: bool
+
     def apply(self, edge: str, current_a: float, settings: dict[str, Any]) -> None:
         """Park *edge*'s coupler at *current_a*."""
 
@@ -55,6 +62,8 @@ class RecordingBias:
     because the interesting part is *which current goes where*, which is
     decided long before any instrument is touched.
     """
+
+    holds_current = False
 
     def __init__(self) -> None:
         self.applied: dict[str, float] = {}
@@ -74,6 +83,8 @@ class SpiRackBias:
     current outputs, and several couplers usually sit on one. Each edge says
     which module and which output it is wired to.
     """
+
+    holds_current = True
 
     def __init__(self, address: str, name: str = "spi_rack") -> None:
         from qblox_instruments import SpiRack
@@ -120,6 +131,8 @@ class QcmBias:
     The offset is a voltage into the flux line's own resistance, so the edge
     carries the conversion rather than this class inventing one.
     """
+
+    holds_current = True
 
     def __init__(self, cluster: Any) -> None:
         self._cluster = cluster
@@ -228,7 +241,11 @@ def apply_coupler_bias(device: Any, source: BiasSource) -> dict[str, float]:
 
 
 def resolve_bias_source(
-    device: Any, *, cluster: Any = None, spi_address: str | None = None
+    device: Any,
+    *,
+    cluster: Any = None,
+    spi_address: str | None = None,
+    require_current: bool = True,
 ) -> BiasSource:
     """The mechanism this device's couplers are biased through.
 
@@ -237,10 +254,22 @@ def resolve_bias_source(
     port. A chip whose couplers disagree about the mechanism is a
     misconfiguration rather than a setup to support.
     """
+    # *require_current* is what separates parking from calibrating. Parking only
+    # needs a rack when there is a current to hold, so the executor asks for one only
+    # if some edge declares a non-zero parking_current. `coupler_anticrossing` is the
+    # opposite case: an uncalibrated chip has zero everywhere, and zero is precisely
+    # when the current has to be measured — requiring one to open the rack would mean
+    # the bias could never be calibrated on a chip that had not been calibrated.
     sources = {
         str(bias_settings(device.get_edge(name)).get("source") or SPI)
         for name in edge_names(device)
-        if bias_settings(device.get_edge(name)).get("parking_current")
+        if (
+            bias_settings(device.get_edge(name)).get("parking_current")
+            if require_current
+            else hasattr(
+                getattr(device.get_edge(name), "bias", None), "parking_current"
+            )
+        )
     }
     if not sources:
         return RecordingBias()

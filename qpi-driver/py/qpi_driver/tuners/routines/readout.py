@@ -73,6 +73,16 @@ class ReadoutOperatingPoint(CalibrationRoutine):
     depends_on = ("rabi",)
     updates = (f"{TWO_STATE}.frequency", f"{TWO_STATE}.pulse_amp")
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an element that can keep a discriminated readout point.
+
+        A `BasicTransmonElement` cannot, and a chip using one is not misconfigured —
+        it discriminates at the calibration point, which is what every config written
+        before `measure_2state` existed does. Running the sweep and discarding the
+        answer would spend the shots and change nothing.
+        """
+        return _two_state_path(device.get_element(target), "frequency") is not None
+
     #: Multiples of the readout power punchout chose. Most of the grid goes here
     #: rather than on frequency, and that split is measured rather than assumed: the
     #: frequency optimum sits about a tenth of a linewidth off the resonance, so that

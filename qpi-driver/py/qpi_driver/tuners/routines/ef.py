@@ -54,6 +54,26 @@ THREE_STATE = "measure_3state"
 DEFAULT_EF_DURATION = 20e-9
 
 
+def has_ef_drive(device: Any, target: str) -> bool:
+    """Whether *target* can hold an EF pulse at all.
+
+    `CalibratedTransmon` carries `r12`; a `BasicTransmonElement` does not, and a chip
+    configured with one is not broken — it simply has no EF chain. Declining is what
+    lets the graph complete on such a chip instead of reporting six failures for
+    parameters the element was never going to have.
+    """
+    return ef_path(device.get_element(target), "ef_amp180") is not None
+
+
+def has_three_state_readout(device: Any, target: str) -> bool:
+    """Whether *target* can hold a three-state readout point."""
+    element = device.get_element(target)
+    return (
+        has_ef_drive(device, target)
+        and three_state_path(element, "frequency") is not None
+    )
+
+
 def ef_path(element: Any, name: str) -> str | None:
     """``r12.<name>`` if this element has one, else ``None``."""
     submodule = getattr(element, EF, None)
@@ -134,15 +154,14 @@ class Rabi12(CalibrationRoutine):
     depends_on = ("f12_spectroscopy",)
     updates = (f"{EF}.ef_amp180",)
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an element with somewhere to keep an EF pulse."""
+        return has_ef_drive(device, target)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         element = device.get_element(target)
-        if ef_path(element, "ef_amp180") is None:
-            raise RoutineError(
-                f"{target} has no '{EF}' submodule to write an EF pi pulse to — this "
-                f"routine needs a CalibratedTransmon, see the element's docstring"
-            )
         self._amplitudes = setpoints_of(
             config, "amplitudes", linear_setpoints(0.0, 0.5, 41)
         )
@@ -239,6 +258,9 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
     #: Three prepared states per setting against the register budget
     #: `ReadoutOperatingPoint` explains, so this grid is smaller than that node's.
     MAX_SINGLE_SHOT_ACQUISITIONS = 32
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_three_state_readout(device, target)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -370,6 +392,9 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
     depends_on = ("rabi_12",)
     updates = ()
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_ef_drive(device, target)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -445,6 +470,9 @@ class FineAmplitude12(CalibrationRoutine):
     name = "fine_amplitude_12"
     depends_on = ("three_state_operating_point",)
     updates = (f"{EF}.ef_amp180",)
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_three_state_readout(device, target)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -553,6 +581,9 @@ class Ramsey12(CalibrationRoutine):
     depends_on = ("three_state_operating_point",)
     updates = ("clock_freqs.f12",)
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_three_state_readout(device, target)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -653,6 +684,9 @@ class Drag12(CalibrationRoutine):
     depends_on = ("ramsey_12",)
     updates = (f"{EF}.ef_motzoi",)
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_three_state_readout(device, target)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -741,6 +775,9 @@ class ThreeStateDiscrimination(CalibrationRoutine):
 
     #: Prepared states, in the order the confusion matrix indexes them.
     STATES = (0, 1, 2)
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        return has_three_state_readout(device, target)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

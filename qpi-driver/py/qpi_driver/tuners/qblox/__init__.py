@@ -6,6 +6,7 @@ differ, and both live in :class:`QbloxBackend`.
 """
 
 import logging
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -115,6 +116,10 @@ class QbloxTuner(Tuner):
                 "is_dummy and is_simulated both replace the cluster; pick one"
             )
         super().__init__(name, **kwargs)
+        #: Where the SPI rack lives, when the couplers are biased through one.
+        #: `coupler_anticrossing` needs to drive it; every other node ignores it.
+        self._spi_rack_address = kwargs.get("spi_rack_address")
+        self._bias: Any = None
         self._is_dummy = is_dummy
         self._is_simulated = is_simulated
         self._data_dir = Path(data_dir)
@@ -164,19 +169,47 @@ class QbloxTuner(Tuner):
 
     @property
     def bias(self):
-        """A simulated rack when the cluster is simulated. See the quantify twin."""
-        from qpi_driver.simulation import SimulatedBias
+        """Whatever can hold this chip's couplers at a DC current. See the quantify twin."""
+        if getattr(self, "_bias", None) is not None:
+            return self._bias
 
         # Through the agent: `SimulatedAgent` is what holds the coordinator here,
         # where the quantify tuner holds it directly.
         coordinator = getattr(self._agent, "_coordinator", None)
-        if coordinator is None:
-            return None
-        if getattr(self, "_bias", None) is None:
+        if coordinator is not None:
+            from qpi_driver.simulation import SimulatedBias
+
             self._bias = SimulatedBias(coordinator)
+            return self._bias
+
+        from qpi_driver.executors.utils.coupler_bias import resolve_bias_source
+
+        try:
+            clusters = getattr(self._agent, "get_clusters", lambda: [])()
+            self._bias = resolve_bias_source(
+                self._device,
+                cluster=clusters[0] if clusters else None,
+                spi_address=self._spi_rack_address,
+                require_current=False,
+            )
+        except Exception:
+            log.exception(
+                "could not open a bias source; the coupler nodes will decline"
+            )
+            self._bias = None
         return self._bias
 
+    def _release_bias(self) -> None:
+        """Let go of the rack, if one was opened. Best-effort, like every step
+        of shutdown: a rack held open outlives this process and blocks the next."""
+        source = getattr(self, "_bias", None)
+        if source is not None:
+            with suppress(Exception):
+                source.close()
+            self._bias = None
+
     def close(self) -> None:
+        self._release_bias()
         try:
             self._agent.close()
         except Exception:  # noqa: BLE001 - shutdown is best-effort

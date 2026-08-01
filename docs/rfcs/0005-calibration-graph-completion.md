@@ -769,6 +769,40 @@ after the machinery.
 Phases 1–2 are worth doing regardless of how far the rest gets. Phase 4 is the one
 whose absence is currently a wrong answer rather than a missing feature.
 
+## 12b. Running the graph on a chip
+
+The simulator is a test harness. What the graph has to do is calibrate hardware, and
+two things stood between it and that:
+
+**The coupler bias had no rack.** `coupler_anticrossing` asks for something that can
+hold a DC current, and the tuner only ever handed it a simulated one — so on real
+hardware the node declined and the graph was permanently one node short of complete.
+Both tuners now resolve a real source, an S4g over SPI or a baseband output inside the
+cluster, through the same `resolve_bias_source` the executor uses, and release it on
+close.
+
+That resolution asks with `require_current=False`, and the difference matters.
+*Parking* only needs a rack when there is a current to hold, so the executor opens one
+only if an edge declares a non-zero `parking_current`. *Calibrating* is the opposite
+case: an uncalibrated chip has zero everywhere, and zero is precisely when the current
+has to be measured. Requiring one to open the rack would mean the bias could never be
+calibrated on a chip that had not been calibrated.
+
+And a source that cannot touch the chip is refused outright. `RecordingBias` applies
+nothing, so a sweep against it returns the same qubit frequency at every point, the
+response is flat, and the fit reports a crossing with complete confidence — a number
+written to the device that no instrument produced. `BiasSource.holds_current` is what
+separates a rack from a notebook, and the routine checks it.
+
+**Half the graph raised on a stock element.** The EF chain and the two readout
+operating points need submodules only a `CalibratedTransmon` carries, and they *raised*
+on a `BasicTransmonElement` — which is what a device file written before this RFC uses,
+and what a real chip is most likely running. Six failures in a report for parameters the
+element was never going to have is indistinguishable from six broken routines, and it is
+the first thing a chip owner sees. They now decline through `applies_to`, so such a chip
+calibrates everything it can and comes back `success`. The tuner README lists which node
+needs which submodule.
+
 ## 13. Open questions
 
 - ~~**Does `resonator_punchout` survive as a calibrate node at all?**~~ **Decided:

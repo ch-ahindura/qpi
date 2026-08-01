@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 class SimulatedBias:
     """Parks a coupler by telling the simulated coordinator about it."""
 
+    #: It really does change the chip — the simulated one. That is the whole point of
+    #: it existing beside `RecordingBias`, which does not.
+    holds_current = True
+
     def __init__(self, coordinator: Any) -> None:
         self._coordinator = coordinator
         #: What was applied, in the shape `RecordingBias` reports it, so a test can
