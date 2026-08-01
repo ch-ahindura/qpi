@@ -59,6 +59,7 @@ nav:
       - 0002 Dashboard Theming: rfcs/0002-dashboard-theming.md
       - 0003 Driver Extensibility: rfcs/0003-driver-extensibility.md
       - 0004 Calibration Tuners: rfcs/0004-calibration-tuners.md
+      - 0005 Calibration Graph Completion: rfcs/0005-calibration-graph-completion.md
   - Changelog: changelog.md
 
 markdown_extensions:

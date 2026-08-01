@@ -193,6 +193,25 @@ own collection, not part of the `events` log, so `eventsRetention` leaves it
 alone. Reports are rare and small in number; if they ever need pruning it is a
 separate decision, made deliberately.
 
+**A skipped node is not a failed one.** Several routines write parameters only a
+`CalibratedTransmon` element carries — the EF chain and the two readout operating
+points — and on a chip whose elements are `BasicTransmonElement` they *decline*
+rather than fail. The report comes back `success` with those nodes absent. That is
+the intended reading: the chip calibrated everything its device file has room for.
+To opt a qubit into the rest, point its `element_type.path` at
+`CalibratedTransmon`; the [tuner reference](tuners.md) lists which node needs which
+submodule.
+
+**The coupler bias is set outside the schedule.** `coupler_anticrossing` walks a DC
+current through the coupler, and no schedule can express that — it goes over qcodes,
+to an S4g in an SPI rack (`-o spi_rack_address=`, and `bias.source: spi` on the
+edge) or to a baseband output on the cluster (`bias.source: qcm`). Without a source
+that can actually hold a current the node **fails**, deliberately — an edge
+declaring a bias nothing can deliver is a misconfiguration, and a sweep against
+something that applies nothing returns the same frequency at every point and would
+fit a confident crossing out of a flat line. The node restores the previous current
+when it finishes, including on failure.
+
 ## Troubleshooting
 
 **The `events` table keeps growing.** Confirm `eventsRetention > 0` and that the
@@ -219,6 +238,13 @@ the admin UI to let the next calibration through.
 **The tuner will not start: "calibration config not found".** Deliberate.
 `-o calibration_config=` must point at a real file, because a tuner with nothing
 to run would otherwise report success having measured nothing.
+
+**Only `coupler_anticrossing` failed: "no source that can actually hold a parking
+current".** The rack did not open. The reason is in the driver's journal — the
+resolution is logged where it fails — and it is almost always a missing
+`-o spi_rack_address=`, couplers disagreeing about `bias.source`, or `qcm` on a
+node with no cluster. Everything else in the run is unaffected; the coupler is left
+at the current it started from.
 
 **Every routine failed with a fit error.** Expected against a dummy cluster,
 which returns no real data — the fits refuse rather than writing zeros to the

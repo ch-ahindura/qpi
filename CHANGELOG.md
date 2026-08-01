@@ -22,7 +22,7 @@ qpi-driver start --operation calibrate --device quantify_tuner \
 
 - Two devices: `quantify_tuner` (quantify-scheduler) and `qblox_tuner`
   (qblox-scheduler), installed by the `[quantify_tuner]` and `[qblox_tuner]`
-  extras. Both run the same sixteen routines — the two schedulers share a gate
+  extras. Both run the same routines — the two schedulers share a gate
   vocabulary, so the experiments are written once and a backend supplies only the
   schedule class and a way to run one.
 - The routine graph runs from resonator spectroscopy through Rabi, Ramsey, T1,
@@ -127,9 +127,52 @@ leakage it cancels comes from the same three-level ladder that produces it, so
 `drag` finds its optimum rather than being handed one.
 
 Together these close the last gaps in running the whole calibration graph against
-the simulator: `test_calibration_loop` now drives all sixteen routines over two
+the simulator: `test_calibration_loop` now drives all of RFC 0004's sixteen over two
 qubits and the edge between them, through the shipped tuner and a real device file,
 and requires the report to come back `success` having skipped none of them.
+
+**The calibration graph is finished** (RFC 0005). RFC 0004 built the machinery and
+sixteen routines. The graph is thirty-three nodes now, and what was added is what the
+device file could not do without: `measure.acq_rotation` and `measure.acq_threshold`
+decide the bit of every `meas_level=2` shot — the default job path — and nothing
+produced them. `clock_freqs.f12`, `measure.acq_delay` and the coupler's parking
+current were in the same position. A parameter no routine writes is a parameter
+somebody typed.
+
+Three things came with the nodes. **Readout calibration no longer sits above the
+qubit chain**: measuring the resonance with the qubit in `|1>` needs a π pulse, so the
+readout chain *straddles* the qubit chain, which is a shape RFC 0004's graph could not
+express and is why the missing nodes could not simply be appended. **A node may carry
+a check** alongside the sweep that derives it, so a partial recalibration measures
+staleness rather than assuming it. And **what the graph measures has somewhere to
+go** — `CalibratedTransmon`, opt-in per element, with the nodes that need it declining
+on a chip that keeps `BasicTransmonElement` rather than failing.
+
+The whole graph runs against the simulated chip in `make test-py-loop`, and the two
+things that stopped it running against a real one are fixed. It has still never been
+run on physical hardware.
+
+**`CalibratedTransmon`, an element with room for what the graph measures** (RFC 0005
+§13). `BasicTransmonElement` has `clock_freqs`, `measure`, `ports`,
+`pulse_compensation`, `reset` and `rxy`, and no home for a spectroscopy drive amplitude.
+A routine with nowhere to write its result cannot exist, so the value was typed in by
+hand instead. There is now one such element per scheduler — qcodes submodule for
+quantify, pydantic for qblox — selected by `element_type.path` exactly as
+`FluxTunableCoupler` already is for edges, carrying `spec.amplitude` and
+`spec.amplitude_12`.
+
+Opt-in, per element. A config that keeps `BasicTransmonElement` still calibrates:
+`spectroscopy_amplitude_path` returns `None`, and the routine measures the best power,
+uses it, and does not persist it. Phase 5's EF and three-state parameters
+(`r12.ef_amp180`, `clock_freqs.readout_2`, a `measure_3state` submodule) have a home
+here too, which is what unblocks them.
+
+The drive ports in the hardware fixture pin their LO and let the intermediate
+frequency float, for the reason the readout ports already did: two clocks on one output
+cannot each derive the LO from their own configured frequency. Choosing the value is
+tighter than it looks — the NCO's ±500 MHz window has to hold *both* the `.01`
+spectroscopy sweep and the `.12` one, and picking each LO from the fixture's declared
+`f01` put q1's sweep 5 MHz over the edge. 4.99 GHz leaves both inside with margin.
 
 **Calibration checks, so staleness is measured rather than assumed** (RFC 0005 §8).
 A routine may now supply a cheap *check* — "does this parameter still hold?" —
@@ -176,6 +219,53 @@ late by a quarter of the ring-up — 20 ns here — and fitting the ring-up need
 where it began. One straight line through `ln(1 - rise)` gives both, consistent by
 construction, recovering 148 ns and 2.02 MHz against a true 148 ns and 2.00 MHz.
 
+**Spectroscopy no longer guesses how hard to drive** (RFC 0005 §7). `qubit_spectroscopy`
+drove at a fixed 1% of full scale, which on the simulated chip moves the population half
+a per cent — a signal-to-noise of about five, at which the same sweep returned centres
+14 MHz low, 12 MHz high and 62 MHz low on nothing but noise. The full-DAG test was
+passing on that margin with a hand-set 3% in its config.
+
+It now sweeps drive power alongside frequency and reports both, the way
+`resonator_punchout` reports the power it chose along with the frequency it found there.
+The chosen row wins on contrast over residual scatter, not on peak height: height climbs
+with power straight through saturation, so the tallest peak is reliably the most
+broadened one. Rows more than twice as broad as the narrowest are dropped as
+power-broadened, and rows fitting a line narrower than the sweep's own step are dropped
+first — a row with no visible line still fits, narrowly and tidily, to the noise between
+two setpoints, and left in it becomes the reference every real row is then rejected
+against.
+
+This could not be a node of its own. Choosing a spectroscopy power means comparing how
+clearly each power shows the line, so it needs a line — and that is what
+`qubit_spectroscopy` produces. Before it, the choice is a guess; after it, the guess is
+already written to `clock_freqs.f01`.
+
+**`resonator_spectroscopy_excited`, which measures the dispersive shift** (RFC 0005
+§7). The readout works because the two qubit states pull the resonator to different
+frequencies, and nothing measured by how much. This prepares `|1>` and sweeps the
+readout clock, reporting that resonance and the shift between it and the ground-state
+one. A characterisation: it writes nothing, like `resonator_relaxation`. The frequency
+that best separates the two states is deliberately not derived from it — that depends
+on how the two Lorentzians overlap, not on where their centres are.
+
+The simulated readout response now **scales with the power it is driven with**, which
+it did not. A reflected field is proportional to the drive that produced it, and
+without that half the model made readout power purely harmful: the only thing left for
+it to do was collapse the dispersive pull, so the best power was always the lowest one
+and there was no operating point to find. `readout_gain` is now per unit amplitude
+(14.4 x the fixture's 0.25 is the 3.6 it was), so every existing cloud sits exactly
+where it did.
+
+Two readout nodes were written against that model and **backed out**, and the reason is
+worth recording. Optimising the readout operating point for *discrimination* moves it
+away from the point that maximises *magnitude* contrast, and every calibration routine
+reads magnitude. Measured on the simulated chip: complex separation rose 2.6% while
+magnitude contrast fell 14%, and the CZ chevron's answer moved from 110 ns to 100 ns,
+past its own tolerance. Doing it properly needs a discriminated-readout operating point
+separate from the calibration one, with the executor overriding the readout clock for
+`meas_level=2` — a change to every discriminated job rather than a routine to add. RFC
+0005 §12 carries the numbers.
+
 **Dispersive readout, and the routine that calibrates its discriminator**
 (RFC 0005 §7, §9). Each qubit level pulls the resonator to its own frequency, so at one
 drive frequency the levels return different *complex* responses — differing in phase as
@@ -200,6 +290,70 @@ separate node, since splitting them would measure the same two clouds twice. It 
 on `rabi`, because preparing `|1⟩` needs a calibrated π pulse — the readout chain
 straddles the qubit chain rather than preceding it.
 
+**Every qubit is discriminated against its own line** (RFC 0005 §7). Both executors
+read `acq_rotation` and `acq_threshold` from whichever device element had them first
+and applied that one pair to every qubit in the circuit. It was invisible for as long
+as nothing measured them — an uncalibrated chip carries zero everywhere, and one
+qubit's zero is as good as another's — and it stopped being invisible the moment
+`readout_discrimination` started writing real ones. Both the instrument path and the
+software fallback now resolve the pair per qubit, through a shared
+`executors/utils/discriminator.py`, and `ThresholdedAcquisition` is chosen only when
+*every* qubit has a line to threshold against, since a schedule mixing the two
+protocols returns one qubit's bits beside another's raw IQ.
+
+Measured end to end: with the collapse in place, `x q[0]` on a calibrated pair reads
+q1 — untouched, in its ground state — as `1` on all 400 shots.
+
+The software fallback also rotated the wrong way. `fit_readout_discrimination` defines
+the rotation as the direction between the cloud centres and turns the plane *back* by
+it so the separation lands on the real axis; the simulated instrument does the same;
+the fallback turned the other way. Turning the other way is the same rotation only
+when it is zero, which is why an uncalibrated chip could never show it.
+
+**The simulated chip's qubits have different cables.** `readout_phase_deg` was one
+number for the whole device, and with the same gain, linewidth and pull, each qubit
+read on its own resonance, all three came out with the same rotation and threshold to
+four decimal places. That is one qubit copied three times, and it made the defect above
+untestable — a first attempt at a test for it passed with the bug reinstated, because
+it could only assert that two identical numbers differed in the last digits of shot
+noise. `readout_phases_deg` overrides per qubit, in the pattern
+`resonator_frequencies_ghz` already set.
+
+**Discriminated readout has its own operating point** (RFC 0005 §7). The readout that
+best separates `|0>` from `|1>` is not the one that returns the most signal, and the
+graph now says so with two points instead of one compromise.
+
+`resonator_spectroscopy` and `resonator_punchout` keep `clock_freqs.readout` and
+`measure.pulse_amp` — where the most signal comes back, which is what every routine
+that reduces an acquisition to a magnitude needs, and that is nearly all of them. A
+discriminator uses the complex separation between the clouds, most of which is phase
+once the drive is off resonance, so its best point is elsewhere: 2.6% more separation
+for 14% less magnitude contrast, measured. Sharing one point moved the CZ chevron's
+answer by 10 ns, which is why the two nodes that tried it were backed out last time.
+
+`readout_operating_point` sweeps frequency and amplitude *together* and writes
+`measure_2state`, a new submodule on `CalibratedTransmon`. One node over both axes
+rather than one each, because the resonance moves with power — choosing a frequency
+and then a power leaves the frequency stale by 183 kHz, a tenth of a linewidth, which
+is the mistake `resonator_punchout` already exists to not make.
+
+The executors apply it for `meas_level=2` only. The amplitude rides on `Measure`; the
+frequency cannot, since the measure operation's clock is fixed at `{qubit}.ro` in the
+device config, so it is applied by moving that clock — the same mechanism every
+calibration routine already uses to sweep a readout. Levels 0 and 1 are untouched:
+applying a point chosen for phase separation to a raw trace would degrade exactly the
+measurement that wants the signal.
+
+`readout_discrimination` runs after it and fits its line *at* that point, because a
+line fitted where the clouds are not is a line fitted somewhere else.
+
+Single-shot sweeps are bounded at 32 acquisitions per schedule, with an error that
+says so. Every appended bin takes a sequencer register and a Q1 sequencer has 64; past
+that the qblox backend dies inside its register allocator with a bare `IndexError`, a
+long way from the sweep that asked for too much. `resonator_punchout` sweeps a far
+larger grid unaffected because it averages — this cannot, since the width of each
+cloud is what it measures.
+
 **`f12_spectroscopy`, and an EF drive to run it against** (RFC 0005 §7). The
 `|1⟩`-`|2⟩` transition has been a field on the transmon element all along with nothing
 measuring it: the fixture pins `clock_freqs.f12` 131 MHz from where the
@@ -213,180 +367,6 @@ drives that clock now, in its own rotating frame with the detuning on `|2⟩` an
 spectator; what that leaves out is the off-resonant `0-1` excitation, so a strong EF
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
-
-**The calibration graph runs on a chip, not only on the simulator** (RFC 0005 §12b).
-Two things stood between it and that.
-
-**The coupler bias had no rack.** `coupler_anticrossing` was only ever handed a
-simulated source, so on real hardware it declined and the graph was permanently a node
-short. Both tuners now resolve a real one — an S4g over SPI, or a baseband output
-inside the cluster — through the same `resolve_bias_source` the executor uses, take a
-new `spi_rack_address` option, and release the rack on close.
-
-The resolution asks with `require_current=False`, which is the difference between
-parking and calibrating. Parking needs a rack only when there is a current to hold;
-calibrating is the opposite case, because an uncalibrated chip has zero everywhere and
-zero is exactly when the current must be measured. Requiring one to open the rack would
-have meant the bias could never be calibrated on a chip that had not been calibrated.
-
-A source that cannot touch the chip is now refused outright. `RecordingBias` applies
-nothing, so a sweep against it returns the same frequency at every point and the fit
-reports a crossing with complete confidence — a number written to the device that no
-instrument produced. `BiasSource.holds_current` separates a rack from a notebook.
-
-**Half the graph raised on a stock element.** The EF chain and both readout operating
-points need submodules only a `CalibratedTransmon` carries, and they *raised* on a
-`BasicTransmonElement` — which is what a device file written before this RFC uses. Six
-failures for parameters the element was never going to have reads as six broken
-routines. They now decline, so such a chip calibrates everything it can and returns
-`success`. The tuner README lists which node needs which submodule.
-
-**`cz_parametrization`, and RFC 0005 is complete** (§12). A parametric CZ is
-`cz_chevron`'s counterpart, not a variant: the two gates are resonant in different
-variables. A DC-flux CZ is pushed onto the `|11>`-`|02>` crossing by *amplitude*, so it
-needs a 2D chevron; a parametric one is brought there by *frequency*, which
-`cz_spectroscopy` already found, leaving amplitude to set only how fast the exchange
-runs. There is no chevron left — the population oscillates in duration, linearly faster
-with drive — and measuring that slope is what makes the gate predictable.
-
-It recovers the simulator's `PARAMETRIC_RATE_MHZ` to within a few per cent. The
-conversion carries a factor of four rather than two, written down rather than folded
-in: the exchange term carries the rate undivided, so the population oscillates at twice
-it, and a chip calibrated in another convention differs by exactly that factor.
-
-It writes a full `|11> -> |02> -> |11>` round trip, not half of one. Half is complete
-transfer into `|02>` — a perfectly good gate, measured just as confidently, and not a
-CZ. That mistake cost `cz_chevron` a 55 ns duration against a 110 ns round trip for as
-long as nothing checked the number itself.
-
-**`coupler_anticrossing` measures the coupler's parking current** (RFC 0005 §12). It
-sets a DC bias, runs a spectroscopy, reads the qubit back, and repeats — walking the
-coupler down through the qubit and locating the crossing from where the qubit moves
-fastest. The current it writes is a stated fraction of that crossing, reported
-alongside it: a coupler is parked *away* from its qubits, and how far is a choice about
-residual coupling against CZ reach rather than a measurement.
-
-**It is the node that broke the routine interface, deliberately.** A coupler's bias is
-not a pulse — it is held over qcodes for as long as the fridge is cold, through an SPI
-rack or a cluster output, and *neither can be scheduled*: the QCM path sets an output
-offset over qcodes too. So a routine sweeping it has to set instrument state between
-acquisitions.
-
-RFC §4 said the routine interface stays unchanged; §11 said this one case should be
-handled explicitly in the routine. `CalibrationRoutine.measure` resolves that toward
-§11: one routine takes over its own acquisition loop rather than every node gaining a
-second sweep axis. Exactly one routine overrides it.
-
-It puts the coupler back when it finishes. A sweep that left the chip at whatever
-current it tried last would corrupt everything after it — which is not hypothetical: a
-first version of the test wrote into a shared fixture and left the coupler at 1.9 mA,
-breaking the CZ tests that read it next.
-
-**The coupler is a mode with a frequency, not just a drive** (RFC 0005 §12). A
-`TunableCoupler` sits above both qubits at its flux sweet spot and tunes down
-quadratically with parking current, coupled to each qubit strongly enough to push it.
-
-That push is the observable the whole of phase 6 waits on. `bias.parking_current` has
-been carried, validated and applied since RFC 0004 and **nothing in the simulator
-responded to it** — so a routine could have written any current at all and no
-measurement would have contradicted it. Now a current in the device config moves the
-qubits on that edge, and sweeping it walks the coupler through them: the push runs to
-−44 MHz just below the crossing and flips to +63 MHz just above, which is the
-signature `coupler_anticrossing` will look for.
-
-**Measured from zero bias, not from nothing.** A qubit beside a coupler is always
-repelled; what a bias changes is by how much. Defining the shift as the difference
-from the unbiased push keeps the simulator's `f01` meaning what it always meant, so
-every expectation measured before this model existed still holds for a chip whose
-couplers are unparked — which is every fixture in the suite.
-
-**Three open questions closed** (RFC 0005 §13).
-
-**An edge whose qubits are not calibrated is refused at startup.** A CZ is measured
-*through* its qubits — the chevron prepares `|11>` with a π pulse on each and reads
-one back — so over an uncalibrated qubit it still fits a curve, still writes an
-amplitude and duration, and the gate does not work. The wrong answer is a
-calibrated-looking gate rather than an exception, and startup is the only cheap moment
-to catch it. This also changed partial recalibration: narrowing to a drifted qubit used
-to carry in the edges touching it and leave their far ends alone, which is exactly the
-configuration now forbidden. An edge brings both its ends.
-
-**`resonator_punchout` gains a check.** Not a cheaper sweep — the question is not
-"where is the resonance" but "is the power still below the crossover", which is about
-how the resonance *responds* to power. Two short scans, at the configured power and
-half of it: dressed, the line does not move; punched through, it walks. Punchout still
-produces `measure.pulse_amp`, because nothing else does — making it check-only needs a
-producer for the calibration amplitude, and `readout_operating_point` writes the
-*discriminated* point deliberately instead.
-
-**`readout_fidelity` is its own benchmark node.** It measures the same two clouds
-`readout_discrimination` does, which is the cost. The reason it is worth paying: only
-a node participates in drift monitoring. A benchmark is what a drift check runs and
-what queues a recalibration; a number inside another routine's parameters is read by
-nobody. Readout fidelity is the quantity that degrades quietly — every gate fidelity
-on top of it inherits the error — so it is the last one that should be invisible.
-
-**A parametric coupler drive kept its frequency through a held offset** (RFC 0005 §9).
-The qblox backend emits a long flux pulse as a held DC offset plus a short tail, and
-the branch replaying the held part dropped the drive frequency — so a 100 ns coupler
-drive ran as 96 ns at zero, infinitely detuned, plus 4 ns at the real frequency.
-
-Harmless for a baseband CZ, whose resonance is the flux amplitude and which ignores
-the frequency entirely. Fatal for a parametric one, which is nothing without it: the
-gate ran at 4% of its length and looked simply weak. The parametric CZ had never
-worked in simulation, and nothing said so because no test drove it — `cz_spectroscopy`
-is the first thing that did.
-
-**`cz_spectroscopy` finds the frequency a parametric CZ has to be driven at** (RFC
-0005 §12). The coupler is modulated and a sideband bridges `|11>`-`|02>`: amplitude
-sets how fast the exchange runs, frequency sets whether it runs *at all*, so a drive
-off the transition is a gate that compiles, plays and does nothing. `clock_freqs.cz`
-was hand-set on every edge that has one and nothing measured it.
-
-It needed a routine-level applicability hook, `CalibrationRoutine.applies_to`. A
-`CompositeSquareEdge` drives its CZ with a baseband flux pulse and has no drive
-frequency: running this on one is not a failure, it is a question that does not arise.
-The DAG filters targets by it, and the full-DAG test computes its expectation the same
-way rather than asserting every routine runs on every edge.
-
-**The test fixture could not play the coupler it declared.** `q1_q2:fl` was wired to a
-baseband QCM output, which tops out at ±500 MHz against a 3.9 GHz sideband, and the
-edge carried no `clock_freqs.cz` at all — so its parametric CZ was inert, and nothing
-noticed because no test drove it. It is now on an RF module with an LO, and declares a
-drive 50 MHz off its own sideband gap for the routine to correct.
-
-**`drag_12`, the last of the EF chain** (RFC 0005 §7). A pulse on the 1-2 transition
-sits only a few linewidths from 0-1, so it off-resonantly excites it — about 2.6% —
-and the DRAG quadrature is what cancels that. Two sequences equal only at the right
-coefficient, so their difference crosses zero there and the fit is a line.
-
-It finds −0.043 against a swept span of 0.2: a real interior optimum, nowhere near
-either edge. **Negative**, where the 0-1 optimum is positive, and that sign is physics
-rather than convention — DRAG cancels leakage into the neighbouring level, which for
-an 0-1 pulse is `|2>` above it and for an EF pulse is `|0>` below.
-
-Reaching it needed a DRAG-shaped pulse on the `.12` clock, through a new
-`SchedulerBackend.drag_pulse` rather than a bound class: the two schedulers disagree
-about the argument names *and* the units — `G_amp`/`D_amp` as a ratio against
-`amplitude`/`beta` in seconds, the divergence `drag_span` already exists for.
-
-**`ramsey_12` refines f12 to kilohertz** (RFC 0005 §7). `f12_spectroscopy` drives a
-20 ns pulse, so its line is Fourier-limited and it lands within a few megahertz —
-enough to find the transition, not enough to drive it. Same split `qubit_spectroscopy`
-and `ramsey` already have one rung down. It reports a T2* for the 1-2 coherence too,
-which nothing else measures.
-
-It detunes the clock rather than phase-advancing the second π/2, the opposite of what
-`ramsey` does, and not a preference: a `ShiftClockPhase` on the `.12` clock produced no
-fringe at all — the fitted detuning came back at minus the artificial one whatever f12
-was set to.
-
-**It also exposed a too-coarse three-state point.** Three frequencies stepped 3 MHz
-against a 2 MHz linewidth is enough to *classify* three states and not enough for
-anything measured at that point: `ramsey_12` reads `|1>` against `|2>`, and on the
-coarse point its f12 came back a megahertz out — no better than the spectroscopy it
-exists to refine. `three_state_operating_point` now sweeps five frequencies by two
-amplitudes, the split chosen by which axis the criterion actually varies on.
 
 **The EF drive is a real drive on the ladder, not a two-level subspace** (RFC 0005 §9).
 It was `|1>`-`|2>` in a rotating frame of its own, and that one choice was behind three
@@ -414,51 +394,6 @@ amplitude — while this one puts a π exactly at `amp180 / sqrt(2)`.
 Stepping is the cost: a drive off its frame's own frequency is time-dependent however
 flat its envelope. `ramsey_12` and `drag_12` are both writable on top of this; neither
 is written yet.
-
-**`resonator_spectroscopy_second_excited`, which checks the ladder rather than a
-parameter** (RFC 0005 §7). The dispersive pull is supposed to go as `chi(1 - 2n)` —
-`|0>` at `+chi`, `|1>` at `-chi`, `|2>` at `-3chi` — and nothing in the graph checked
-that the spacing was *even*. This sweeps the resonator with the qubit in `|2>`, so the
-excited-state sweep sees two shifts of gap and this one sees four; dividing each by its
-own factor has to give the same chi, and that agreement is the measurement.
-
-It matters because three-state readout rests on it. A ladder that bunched up would
-leave `three_state_operating_point` optimising against a chip whose levels cannot be
-separated however it is tuned, and that would read as a tuning failure rather than a
-model one. A characterisation: it writes nothing.
-
-**`fine_amplitude_12` refines the EF pi pulse** (RFC 0005 §7). A π/2 pre-rotation then
-n EF π pulses, so a per-pulse error grows linearly against a readout noise that does
-not. That residual is invisible to `rabi_12`, which fits a whole oscillation and cannot
-see a few per cent of over-rotation — a single π pulse is second order in its own
-error. It refines to under 0.05 rad per pulse on both simulated qubits.
-
-The first node to depend on `three_state_operating_point` for *contrast* rather than
-for a classifier: its two references are `|1>` and `|2>`, all but on top of each other
-at a 0-1 readout and 14 sigma apart in magnitude at the three-state point. That point
-turns out to be what makes the whole EF chain measurable, not just the leakage number.
-
-**Leakage into `|2>` is measured** (RFC 0005 §7). The number the EF chain exists to
-produce. Every gate leaves a little population on the third rung, and a two-state
-readout does not lose those shots — it reports them as `|0>` or `|1>`, so leakage
-arrives as an answer and every fidelity built on it is quietly optimistic.
-
-`three_state_discrimination` prepares all three states and classifies each shot by
-nearest centre. Not by a rotation and a threshold: those describe a *line*, and three
-clouds have none — `|2>` sits off the axis joining the other two, because the
-resonances are evenly spaced while the complex responses at one drive frequency are
-not. It writes nothing; using three-state assignment in the job path would mean a
-measurement level returning three outcomes, which is an API question rather than a
-calibration one.
-
-`three_state_operating_point` finds where to read. A third point rather than a variant
-of the two-state one, because tuned for `|0>` against `|1>` the readout sits where
-`|1>` and `|2>` both return almost nothing and collapse together — **2.95 sigma apart,
-against 39** where this node puts them. It ranks on the *closest* pair of the three,
-since a classifier is only as good as the two states it confuses most.
-
-Both were written once before and reverted: they were correct, and the simulated
-acquisition could not report a third level to feed them. It can now.
 
 **The simulated acquisition reports every level, not two** (RFC 0005 §9). The
 simulator's transmon has had three rungs and correct three-level dynamics for a while
@@ -512,138 +447,224 @@ chip would give, because it folds the 1-2 matrix element into the subspace opera
 instead of taking the ladder's `sqrt(2)`. So the EF path can be tested for wiring —
 right clock, right port, right envelope — but not for the ladder's own scaling.
 
-**Discriminated readout has its own operating point** (RFC 0005 §7). The readout that
-best separates `|0>` from `|1>` is not the one that returns the most signal, and the
-graph now says so with two points instead of one compromise.
+**`resonator_spectroscopy_second_excited`, which checks the ladder rather than a
+parameter** (RFC 0005 §7). The dispersive pull is supposed to go as `chi(1 - 2n)` —
+`|0>` at `+chi`, `|1>` at `-chi`, `|2>` at `-3chi` — and nothing in the graph checked
+that the spacing was *even*. This sweeps the resonator with the qubit in `|2>`, so the
+excited-state sweep sees two shifts of gap and this one sees four; dividing each by its
+own factor has to give the same chi, and that agreement is the measurement.
 
-`resonator_spectroscopy` and `resonator_punchout` keep `clock_freqs.readout` and
-`measure.pulse_amp` — where the most signal comes back, which is what every routine
-that reduces an acquisition to a magnitude needs, and that is nearly all of them. A
-discriminator uses the complex separation between the clouds, most of which is phase
-once the drive is off resonance, so its best point is elsewhere: 2.6% more separation
-for 14% less magnitude contrast, measured. Sharing one point moved the CZ chevron's
-answer by 10 ns, which is why the two nodes that tried it were backed out last time.
+It matters because three-state readout rests on it. A ladder that bunched up would
+leave `three_state_operating_point` optimising against a chip whose levels cannot be
+separated however it is tuned, and that would read as a tuning failure rather than a
+model one. A characterisation: it writes nothing.
 
-`readout_operating_point` sweeps frequency and amplitude *together* and writes
-`measure_2state`, a new submodule on `CalibratedTransmon`. One node over both axes
-rather than one each, because the resonance moves with power — choosing a frequency
-and then a power leaves the frequency stale by 183 kHz, a tenth of a linewidth, which
-is the mistake `resonator_punchout` already exists to not make.
+**Leakage into `|2>` is measured** (RFC 0005 §7). The number the EF chain exists to
+produce. Every gate leaves a little population on the third rung, and a two-state
+readout does not lose those shots — it reports them as `|0>` or `|1>`, so leakage
+arrives as an answer and every fidelity built on it is quietly optimistic.
 
-The executors apply it for `meas_level=2` only. The amplitude rides on `Measure`; the
-frequency cannot, since the measure operation's clock is fixed at `{qubit}.ro` in the
-device config, so it is applied by moving that clock — the same mechanism every
-calibration routine already uses to sweep a readout. Levels 0 and 1 are untouched:
-applying a point chosen for phase separation to a raw trace would degrade exactly the
-measurement that wants the signal.
+`three_state_discrimination` prepares all three states and classifies each shot by
+nearest centre. Not by a rotation and a threshold: those describe a *line*, and three
+clouds have none — `|2>` sits off the axis joining the other two, because the
+resonances are evenly spaced while the complex responses at one drive frequency are
+not. It writes nothing; using three-state assignment in the job path would mean a
+measurement level returning three outcomes, which is an API question rather than a
+calibration one.
 
-`readout_discrimination` runs after it and fits its line *at* that point, because a
-line fitted where the clouds are not is a line fitted somewhere else.
+`three_state_operating_point` finds where to read. A third point rather than a variant
+of the two-state one, because tuned for `|0>` against `|1>` the readout sits where
+`|1>` and `|2>` both return almost nothing and collapse together — **2.95 sigma apart,
+against 39** where this node puts them. It ranks on the *closest* pair of the three,
+since a classifier is only as good as the two states it confuses most.
 
-Single-shot sweeps are bounded at 32 acquisitions per schedule, with an error that
-says so. Every appended bin takes a sequencer register and a Q1 sequencer has 64; past
-that the qblox backend dies inside its register allocator with a bare `IndexError`, a
-long way from the sweep that asked for too much. `resonator_punchout` sweeps a far
-larger grid unaffected because it averages — this cannot, since the width of each
-cloud is what it measures.
+Both were written once before and reverted: they were correct, and the simulated
+acquisition could not report a third level to feed them. It can now.
 
-**Every qubit is discriminated against its own line** (RFC 0005 §7). Both executors
-read `acq_rotation` and `acq_threshold` from whichever device element had them first
-and applied that one pair to every qubit in the circuit. It was invisible for as long
-as nothing measured them — an uncalibrated chip carries zero everywhere, and one
-qubit's zero is as good as another's — and it stopped being invisible the moment
-`readout_discrimination` started writing real ones. Both the instrument path and the
-software fallback now resolve the pair per qubit, through a shared
-`executors/utils/discriminator.py`, and `ThresholdedAcquisition` is chosen only when
-*every* qubit has a line to threshold against, since a schedule mixing the two
-protocols returns one qubit's bits beside another's raw IQ.
+**`ramsey_12` refines f12 to kilohertz** (RFC 0005 §7). `f12_spectroscopy` drives a
+20 ns pulse, so its line is Fourier-limited and it lands within a few megahertz —
+enough to find the transition, not enough to drive it. Same split `qubit_spectroscopy`
+and `ramsey` already have one rung down. It reports a T2* for the 1-2 coherence too,
+which nothing else measures.
 
-Measured end to end: with the collapse in place, `x q[0]` on a calibrated pair reads
-q1 — untouched, in its ground state — as `1` on all 400 shots.
+It detunes the clock rather than phase-advancing the second π/2, the opposite of what
+`ramsey` does, and not a preference: a `ShiftClockPhase` on the `.12` clock produced no
+fringe at all — the fitted detuning came back at minus the artificial one whatever f12
+was set to.
 
-The software fallback also rotated the wrong way. `fit_readout_discrimination` defines
-the rotation as the direction between the cloud centres and turns the plane *back* by
-it so the separation lands on the real axis; the simulated instrument does the same;
-the fallback turned the other way. Turning the other way is the same rotation only
-when it is zero, which is why an uncalibrated chip could never show it.
+**It also exposed a too-coarse three-state point.** Three frequencies stepped 3 MHz
+against a 2 MHz linewidth is enough to *classify* three states and not enough for
+anything measured at that point: `ramsey_12` reads `|1>` against `|2>`, and on the
+coarse point its f12 came back a megahertz out — no better than the spectroscopy it
+exists to refine. `three_state_operating_point` now sweeps five frequencies by two
+amplitudes, the split chosen by which axis the criterion actually varies on.
 
-**The simulated chip's qubits have different cables.** `readout_phase_deg` was one
-number for the whole device, and with the same gain, linewidth and pull, each qubit
-read on its own resonance, all three came out with the same rotation and threshold to
-four decimal places. That is one qubit copied three times, and it made the defect above
-untestable — a first attempt at a test for it passed with the bug reinstated, because
-it could only assert that two identical numbers differed in the last digits of shot
-noise. `readout_phases_deg` overrides per qubit, in the pattern
-`resonator_frequencies_ghz` already set.
+**`drag_12`, the last of the EF chain** (RFC 0005 §7). A pulse on the 1-2 transition
+sits only a few linewidths from 0-1, so it off-resonantly excites it — about 2.6% —
+and the DRAG quadrature is what cancels that. Two sequences equal only at the right
+coefficient, so their difference crosses zero there and the fit is a line.
 
-**`resonator_spectroscopy_excited`, which measures the dispersive shift** (RFC 0005
-§7). The readout works because the two qubit states pull the resonator to different
-frequencies, and nothing measured by how much. This prepares `|1>` and sweeps the
-readout clock, reporting that resonance and the shift between it and the ground-state
-one. A characterisation: it writes nothing, like `resonator_relaxation`. The frequency
-that best separates the two states is deliberately not derived from it — that depends
-on how the two Lorentzians overlap, not on where their centres are.
+It finds −0.043 against a swept span of 0.2: a real interior optimum, nowhere near
+either edge. **Negative**, where the 0-1 optimum is positive, and that sign is physics
+rather than convention — DRAG cancels leakage into the neighbouring level, which for
+an 0-1 pulse is `|2>` above it and for an EF pulse is `|0>` below.
 
-The simulated readout response now **scales with the power it is driven with**, which
-it did not. A reflected field is proportional to the drive that produced it, and
-without that half the model made readout power purely harmful: the only thing left for
-it to do was collapse the dispersive pull, so the best power was always the lowest one
-and there was no operating point to find. `readout_gain` is now per unit amplitude
-(14.4 x the fixture's 0.25 is the 3.6 it was), so every existing cloud sits exactly
-where it did.
+Reaching it needed a DRAG-shaped pulse on the `.12` clock, through a new
+`SchedulerBackend.drag_pulse` rather than a bound class: the two schedulers disagree
+about the argument names *and* the units — `G_amp`/`D_amp` as a ratio against
+`amplitude`/`beta` in seconds, the divergence `drag_span` already exists for.
 
-Two readout nodes were written against that model and **backed out**, and the reason is
-worth recording. Optimising the readout operating point for *discrimination* moves it
-away from the point that maximises *magnitude* contrast, and every calibration routine
-reads magnitude. Measured on the simulated chip: complex separation rose 2.6% while
-magnitude contrast fell 14%, and the CZ chevron's answer moved from 110 ns to 100 ns,
-past its own tolerance. Doing it properly needs a discriminated-readout operating point
-separate from the calibration one, with the executor overriding the readout clock for
-`meas_level=2` — a change to every discriminated job rather than a routine to add. RFC
-0005 §12 carries the numbers.
+**`fine_amplitude_12` refines the EF pi pulse** (RFC 0005 §7). A π/2 pre-rotation then
+n EF π pulses, so a per-pulse error grows linearly against a readout noise that does
+not. That residual is invisible to `rabi_12`, which fits a whole oscillation and cannot
+see a few per cent of over-rotation — a single π pulse is second order in its own
+error. It refines to under 0.05 rad per pulse on both simulated qubits.
 
-**Spectroscopy no longer guesses how hard to drive** (RFC 0005 §7). `qubit_spectroscopy`
-drove at a fixed 1% of full scale, which on the simulated chip moves the population half
-a per cent — a signal-to-noise of about five, at which the same sweep returned centres
-14 MHz low, 12 MHz high and 62 MHz low on nothing but noise. The full-DAG test was
-passing on that margin with a hand-set 3% in its config.
+The first node to depend on `three_state_operating_point` for *contrast* rather than
+for a classifier: its two references are `|1>` and `|2>`, all but on top of each other
+at a 0-1 readout and 14 sigma apart in magnitude at the three-state point. That point
+turns out to be what makes the whole EF chain measurable, not just the leakage number.
 
-It now sweeps drive power alongside frequency and reports both, the way
-`resonator_punchout` reports the power it chose along with the frequency it found there.
-The chosen row wins on contrast over residual scatter, not on peak height: height climbs
-with power straight through saturation, so the tallest peak is reliably the most
-broadened one. Rows more than twice as broad as the narrowest are dropped as
-power-broadened, and rows fitting a line narrower than the sweep's own step are dropped
-first — a row with no visible line still fits, narrowly and tidily, to the noise between
-two setpoints, and left in it becomes the reference every real row is then rejected
-against.
+**The coupler is a mode with a frequency, not just a drive** (RFC 0005 §12). A
+`TunableCoupler` sits above both qubits at its flux sweet spot and tunes down
+quadratically with parking current, coupled to each qubit strongly enough to push it.
 
-This could not be a node of its own. Choosing a spectroscopy power means comparing how
-clearly each power shows the line, so it needs a line — and that is what
-`qubit_spectroscopy` produces. Before it, the choice is a guess; after it, the guess is
-already written to `clock_freqs.f01`.
+That push is the observable the whole of phase 6 waits on. `bias.parking_current` has
+been carried, validated and applied since RFC 0004 and **nothing in the simulator
+responded to it** — so a routine could have written any current at all and no
+measurement would have contradicted it. Now a current in the device config moves the
+qubits on that edge, and sweeping it walks the coupler through them: the push runs to
+−44 MHz just below the crossing and flips to +63 MHz just above, which is the
+signature `coupler_anticrossing` will look for.
 
-**`CalibratedTransmon`, an element with room for what the graph measures** (RFC 0005
-§13). `BasicTransmonElement` has `clock_freqs`, `measure`, `ports`,
-`pulse_compensation`, `reset` and `rxy`, and no home for a spectroscopy drive amplitude.
-A routine with nowhere to write its result cannot exist, so the value was typed in by
-hand instead. There is now one such element per scheduler — qcodes submodule for
-quantify, pydantic for qblox — selected by `element_type.path` exactly as
-`FluxTunableCoupler` already is for edges, carrying `spec.amplitude` and
-`spec.amplitude_12`.
+**Measured from zero bias, not from nothing.** A qubit beside a coupler is always
+repelled; what a bias changes is by how much. Defining the shift as the difference
+from the unbiased push keeps the simulator's `f01` meaning what it always meant, so
+every expectation measured before this model existed still holds for a chip whose
+couplers are unparked — which is every fixture in the suite.
 
-Opt-in, per element. A config that keeps `BasicTransmonElement` still calibrates:
-`spectroscopy_amplitude_path` returns `None`, and the routine measures the best power,
-uses it, and does not persist it. Phase 5's EF and three-state parameters
-(`r12.ef_amp180`, `clock_freqs.readout_2`, a `measure_3state` submodule) have a home
-here too, which is what unblocks them.
+**`coupler_anticrossing` measures the coupler's parking current** (RFC 0005 §12). It
+sets a DC bias, runs a spectroscopy, reads the qubit back, and repeats — walking the
+coupler down through the qubit and locating the crossing from where the qubit moves
+fastest. The current it writes is a stated fraction of that crossing, reported
+alongside it: a coupler is parked *away* from its qubits, and how far is a choice about
+residual coupling against CZ reach rather than a measurement.
 
-The drive ports in the hardware fixture pin their LO and let the intermediate
-frequency float, for the reason the readout ports already did: two clocks on one output
-cannot each derive the LO from their own configured frequency. Choosing the value is
-tighter than it looks — the NCO's ±500 MHz window has to hold *both* the `.01`
-spectroscopy sweep and the `.12` one, and picking each LO from the fixture's declared
-`f01` put q1's sweep 5 MHz over the edge. 4.99 GHz leaves both inside with margin.
+**It is the node that broke the routine interface, deliberately.** A coupler's bias is
+not a pulse — it is held over qcodes for as long as the fridge is cold, through an SPI
+rack or a cluster output, and *neither can be scheduled*: the QCM path sets an output
+offset over qcodes too. So a routine sweeping it has to set instrument state between
+acquisitions.
+
+RFC §4 said the routine interface stays unchanged; §11 said this one case should be
+handled explicitly in the routine. `CalibrationRoutine.measure` resolves that toward
+§11: one routine takes over its own acquisition loop rather than every node gaining a
+second sweep axis. Exactly one routine overrides it.
+
+It puts the coupler back when it finishes. A sweep that left the chip at whatever
+current it tried last would corrupt everything after it — which is not hypothetical: a
+first version of the test wrote into a shared fixture and left the coupler at 1.9 mA,
+breaking the CZ tests that read it next.
+
+**`cz_spectroscopy` finds the frequency a parametric CZ has to be driven at** (RFC
+0005 §12). The coupler is modulated and a sideband bridges `|11>`-`|02>`: amplitude
+sets how fast the exchange runs, frequency sets whether it runs *at all*, so a drive
+off the transition is a gate that compiles, plays and does nothing. `clock_freqs.cz`
+was hand-set on every edge that has one and nothing measured it.
+
+It needed a routine-level applicability hook, `CalibrationRoutine.applies_to`. A
+`CompositeSquareEdge` drives its CZ with a baseband flux pulse and has no drive
+frequency: running this on one is not a failure, it is a question that does not arise.
+The DAG filters targets by it, and the full-DAG test computes its expectation the same
+way rather than asserting every routine runs on every edge.
+
+**The test fixture could not play the coupler it declared.** `q1_q2:fl` was wired to a
+baseband QCM output, which tops out at ±500 MHz against a 3.9 GHz sideband, and the
+edge carried no `clock_freqs.cz` at all — so its parametric CZ was inert, and nothing
+noticed because no test drove it. It is now on an RF module with an LO, and declares a
+drive 50 MHz off its own sideband gap for the routine to correct.
+
+**A parametric coupler drive kept its frequency through a held offset** (RFC 0005 §9).
+The qblox backend emits a long flux pulse as a held DC offset plus a short tail, and
+the branch replaying the held part dropped the drive frequency — so a 100 ns coupler
+drive ran as 96 ns at zero, infinitely detuned, plus 4 ns at the real frequency.
+
+Harmless for a baseband CZ, whose resonance is the flux amplitude and which ignores
+the frequency entirely. Fatal for a parametric one, which is nothing without it: the
+gate ran at 4% of its length and looked simply weak. The parametric CZ had never
+worked in simulation, and nothing said so because no test drove it — `cz_spectroscopy`
+is the first thing that did.
+
+**`cz_parametrization`, the last node in the graph** (RFC 0005 §12). A parametric CZ is
+`cz_chevron`'s counterpart, not a variant: the two gates are resonant in different
+variables. A DC-flux CZ is pushed onto the `|11>`-`|02>` crossing by *amplitude*, so it
+needs a 2D chevron; a parametric one is brought there by *frequency*, which
+`cz_spectroscopy` already found, leaving amplitude to set only how fast the exchange
+runs. There is no chevron left — the population oscillates in duration, linearly faster
+with drive — and measuring that slope is what makes the gate predictable.
+
+It recovers the simulator's `PARAMETRIC_RATE_MHZ` to within a few per cent. The
+conversion carries a factor of four rather than two, written down rather than folded
+in: the exchange term carries the rate undivided, so the population oscillates at twice
+it, and a chip calibrated in another convention differs by exactly that factor.
+
+It writes a full `|11> -> |02> -> |11>` round trip, not half of one. Half is complete
+transfer into `|02>` — a perfectly good gate, measured just as confidently, and not a
+CZ. That mistake cost `cz_chevron` a 55 ns duration against a 110 ns round trip for as
+long as nothing checked the number itself.
+
+**Three open questions closed** (RFC 0005 §13).
+
+**An edge whose qubits are not calibrated is refused at startup.** A CZ is measured
+*through* its qubits — the chevron prepares `|11>` with a π pulse on each and reads
+one back — so over an uncalibrated qubit it still fits a curve, still writes an
+amplitude and duration, and the gate does not work. The wrong answer is a
+calibrated-looking gate rather than an exception, and startup is the only cheap moment
+to catch it. This also changed partial recalibration: narrowing to a drifted qubit used
+to carry in the edges touching it and leave their far ends alone, which is exactly the
+configuration now forbidden. An edge brings both its ends.
+
+**`resonator_punchout` gains a check.** Not a cheaper sweep — the question is not
+"where is the resonance" but "is the power still below the crossover", which is about
+how the resonance *responds* to power. Two short scans, at the configured power and
+half of it: dressed, the line does not move; punched through, it walks. Punchout still
+produces `measure.pulse_amp`, because nothing else does — making it check-only needs a
+producer for the calibration amplitude, and `readout_operating_point` writes the
+*discriminated* point deliberately instead.
+
+**`readout_fidelity` is its own benchmark node.** It measures the same two clouds
+`readout_discrimination` does, which is the cost. The reason it is worth paying: only
+a node participates in drift monitoring. A benchmark is what a drift check runs and
+what queues a recalibration; a number inside another routine's parameters is read by
+nobody. Readout fidelity is the quantity that degrades quietly — every gate fidelity
+on top of it inherits the error — so it is the last one that should be invisible.
+
+**The calibration graph runs on a chip, not only on the simulator** (RFC 0005 §12b).
+Two things stood between it and that.
+
+**The coupler bias had no rack.** `coupler_anticrossing` was only ever handed a
+simulated source, so on real hardware it declined and the graph was permanently a node
+short. Both tuners now resolve a real one — an S4g over SPI, or a baseband output
+inside the cluster — through the same `resolve_bias_source` the executor uses, take a
+new `spi_rack_address` option, and release the rack on close.
+
+The resolution asks with `require_current=False`, which is the difference between
+parking and calibrating. Parking needs a rack only when there is a current to hold;
+calibrating is the opposite case, because an uncalibrated chip has zero everywhere and
+zero is exactly when the current must be measured. Requiring one to open the rack would
+have meant the bias could never be calibrated on a chip that had not been calibrated.
+
+A source that cannot touch the chip is now refused outright. `RecordingBias` applies
+nothing, so a sweep against it returns the same frequency at every point and the fit
+reports a crossing with complete confidence — a number written to the device that no
+instrument produced. `BiasSource.holds_current` separates a rack from a notebook.
+
+**Half the graph raised on a stock element.** The EF chain and both readout operating
+points need submodules only a `CalibratedTransmon` carries, and they *raised* on a
+`BasicTransmonElement` — which is what a device file written before this RFC uses. Six
+failures for parameters the element was never going to have reads as six broken
+routines. They now decline, so such a chip calibrates everything it can and returns
+`success`. The tuner README lists which node needs which submodule.
 
 ### Fixed
 

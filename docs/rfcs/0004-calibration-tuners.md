@@ -1,6 +1,7 @@
 # RFC 0004 — Calibration Tuners
 
-- **Status:** Accepted — implemented except where §7 and §9 say otherwise
+- **Status:** Implemented — except the hardware tier of §7 and the manual half of
+  §9, which need a chip. RFC 0005 completes the graph this one framed.
 - **Author:** Martin Ahindura
 - **Created:** 2026-07-30
 - **Depends on:** RFC 0001 (driver framework, events), RFC 0003 (operations and devices)

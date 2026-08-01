@@ -377,6 +377,13 @@ run and over what. A tuner cannot start without it — a calibration with nothin
 would report success having measured nothing, so its absence is a startup error rather
 than a default.
 
+The graph is thirty-three routines, from finding the resonators through the readout
+discriminator, the 1-2 transition and leakage, to a two-qubit gate. A node may carry a
+*check* beside its sweep, so a partial recalibration re-runs what is measurably stale
+rather than a fixed list. Nodes whose result needs a submodule the chip's element does
+not have decline instead of failing, so a stock `BasicTransmonElement` config still
+calibrates everything it has room for.
+
 * **Quantify Tuner** (quantify-scheduler):
   ```bash
   # Install the package with quantify_tuner extra
@@ -408,7 +415,8 @@ curl -X POST "$QPI_ADDR/api/op/calibrate/dispatch" \
 ```
 
 `mode` is one of `fidelity_check` (benchmarks only — minutes, changes nothing), `partial`
-(re-runs the routines downstream of `target_qubits`), or `full` (the whole graph, hours).
+(narrows to `target_qubits` and re-runs what the checks blame), or `full` (the whole
+graph, hours).
 The request is queued rather than sent: it survives a restart and runs when an offline
 driver reconnects. A tuner runs one calibration at a time.
 

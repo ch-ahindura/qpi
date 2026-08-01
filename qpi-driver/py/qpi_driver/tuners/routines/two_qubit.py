@@ -148,7 +148,9 @@ class CouplerAnticrossing(CalibrationRoutine):
             raise RoutineError(
                 f"{target} has no source that can actually hold a parking current, so "
                 f"its coupler's crossing cannot be swept — the bias is delivered out "
-                f"of band, and a recorder would make this measure nothing at all"
+                f"of band, and a recorder would make this measure nothing at all. On "
+                f"hardware: check `bias.source` on the edge, and pass "
+                f"-o spi_rack_address=<port> if it says `spi`"
             )
         from qpi_driver.executors.utils.coupler_bias import bias_settings
 

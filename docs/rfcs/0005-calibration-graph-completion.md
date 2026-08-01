@@ -174,6 +174,9 @@ that defaults is a wrong answer with no symptom.
 
 ## 6. The target graph
 
+> This is the plan. The graph as built differs in four places, all recorded in
+> §14 — read that for what actually runs.
+
 ```mermaid
 graph TD
     subgraph coarse["Readout — coarse pass"]
@@ -216,7 +219,8 @@ would be two names for one experiment.
 Sixteen existing nodes keep their names, dependencies and written parameters except
 where §4 says otherwise. The new ones, in dependency order, with the simulator
 capability each requires — because a node the simulator cannot pose is a node we
-cannot claim.
+cannot claim. Names and written parameters moved during implementation; §14 is the
+inventory as built.
 
 | Node | Writes | Simulator needs |
 |---|---|---|
@@ -847,3 +851,86 @@ needs which submodule.
   carry in the edges touching it while leaving their far ends alone — which is the
   configuration the guard forbids. A partial recalibration that keeps an edge now
   keeps both its ends, which is the smallest honest unit of work.
+
+## 14. What shipped, and what did not
+
+The graph is thirty-three nodes. Everything §5 called missing is measured, and the
+device file has a producer for every parameter it carries. What follows is where the
+built graph differs from §6 and §7, because a plan read after the fact is only useful
+if its divergences are written down.
+
+```
+resonator_spectroscopy → { time_of_flight, resonator_relaxation }
+resonator_spectroscopy → resonator_punchout → qubit_spectroscopy → rabi
+
+rabi → resonator_spectroscopy_excited
+rabi → readout_operating_point → readout_discrimination → readout_fidelity
+rabi → ramsey → drag → { allxy, fine_amplitude → { rb, allxy_check } }
+rabi → { t1, t2_echo }
+
+rabi → f12_spectroscopy → rabi_12 → resonator_spectroscopy_second_excited
+{ rabi_12, readout_operating_point } → three_state_operating_point
+three_state_operating_point → { ramsey_12 → drag_12,
+                                fine_amplitude_12,
+                                three_state_discrimination }
+
+qubit_spectroscopy → flux_spectroscopy
+rabi → coupler_anticrossing
+rabi → cz_spectroscopy → cz_parametrization
+{ rb, flux_spectroscopy } → cz_chevron → conditional_phase → interleaved_rb
+```
+
+**Frequency and amplitude are one node, not two.** §6 has
+`readout_frequency_two_state → readout_amplitude_two_state`, and the same pair again
+for three-state. They are `readout_operating_point` and `three_state_operating_point`,
+each sweeping both axes at once, because the resonance *moves with power*: choosing a
+frequency and then a power leaves the frequency stale by 183 kHz on the simulated
+chip — a tenth of a linewidth, and exactly the mistake `resonator_punchout` already
+exists to avoid. Two nodes in sequence would have encoded that mistake in the graph.
+
+**The state-resolved pass hangs off `rabi`, not `fine_amplitude`.** All it needs is a
+π pulse good enough to prepare `|1>`; waiting for the refined one would put the entire
+readout chain behind DRAG for no measurement it uses.
+
+**`clock_freqs.readout_1` and `readout_2` are not written.**
+`resonator_spectroscopy_excited` and `resonator_spectroscopy_second_excited` report
+the resonance per state and write nothing, because nothing reads a per-state readout
+clock: the operating points are chosen by *separation*, which depends on how the
+Lorentzians overlap rather than on where their centres sit. The second is a
+characterisation of the ladder itself — that the pull really goes as `chi(1-2n)` —
+which three-state readout rests on and nothing else checked.
+
+**The coupler is measured through one node, not three.** §6 planned
+`resonator_spectroscopy_vs_bias → qubit_spectroscopy_vs_bias → coupler_anticrossing`.
+`coupler_anticrossing` does the qubit-versus-bias sweep itself, in its own measurement
+loop, because a DC bias cannot be scheduled — so the sweep is an acquisition loop with
+instrument writes in it rather than a schedule, and splitting it across nodes would
+mean setting and re-setting the same rack from three places. `flux_spectroscopy` was
+therefore **not** subsumed, as §6 said it would be: it measures a pulsed flux arc,
+which is a different instrument path and still the only thing `cz_chevron` depends on.
+
+**`cz_spectroscopy` was not in the plan.** §7 gave `cz_parametrization` "CZ operating
+point candidates" and left the drive frequency implicit. Frequency decides whether a
+parametric gate runs at all, amplitude only how fast — so they are two experiments,
+and the second is meaningless before the first.
+
+**Not built.** Three things, deliberately:
+
+- **Three-state assignment in the job path.** `three_state_discrimination` measures
+  leakage and writes nothing. Returning three outcomes from a measurement is an API
+  question — `meas_level`, the counts schema, every client — and not a calibration
+  one.
+- **`measure.integration_time`.** §5 lists it as unproduced and it still is.
+  `resonator_relaxation` measures the ring-up, which is a *floor* on the window rather
+  than an optimum; the optimum trades signal-to-noise against relaxation during it,
+  and nothing here measures noise.
+- **Two of the simulator's chosen constants.** §7 predicted the coupler nodes would
+  replace `G_MHZ`, `FLUX_CURVATURE_GHZ`, `SIDEBAND_GAP_GHZ`, `STARK_SHIFT_MHZ` and
+  `STARK_ASYMMETRY` with measured numbers. `cz_parametrization` recovers the exchange
+  rate and an edge can declare its own `clock_freqs.sideband_gap`; the rest are still
+  chosen. A two-qubit result reads as "against a plausible coupler".
+
+**And the verification that matters is still outstanding.** Every number in this RFC
+was measured against a simulator. The graph is now wired for hardware — a real bias
+rack, nodes that decline on an element with nowhere to put their result — but wired
+for it is not run against it. RFC 0004 §9's manual verification is what remains.

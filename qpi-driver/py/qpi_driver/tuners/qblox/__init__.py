@@ -194,7 +194,7 @@ class QbloxTuner(Tuner):
             )
         except Exception:
             log.exception(
-                "could not open a bias source; the coupler nodes will decline"
+                "could not open a bias source; coupler_anticrossing will fail"
             )
             self._bias = None
         return self._bias

@@ -494,7 +494,13 @@ having measured nothing, so its absence is a startup error rather than a default
 
 Add `-o drift_check_interval=1800` and the tuner benchmarks on its own schedule,
 recalibrating the qubits whose fidelity has fallen below `fidelity_threshold` (or
-`fidelity_2q_threshold`, for an edge).
+`fidelity_2q_threshold`, for an edge). A recalibration re-runs what the routines'
+*checks* blame rather than a fixed list, so a run in which nothing has drifted
+measures that and stops.
+
+On a chip with tunable couplers, `-o spi_rack_address=<port>` gives
+`coupler_anticrossing` the S4g rack it sets the DC parking bias through — the one
+quantity no schedule can express.
 
 Both tuners run the same routines: the two schedulers share a gate vocabulary, so the
 experiments are written once and a backend supplies only the schedule class and a way to

@@ -207,10 +207,13 @@ class QuantifyTuner(Tuner):
             )
         except Exception:
             # A rack that will not open is a coupler that cannot be calibrated, not a
-            # tuner that cannot start: every single-qubit node still runs, and
-            # `coupler_anticrossing` declines rather than sweeping against nothing.
+            # tuner that cannot start: every other node still runs, and
+            # `coupler_anticrossing` fails with the reason rather than sweeping
+            # against nothing. Failing rather than declining is deliberate — an edge
+            # declaring a bias nobody can deliver is a misconfiguration, and the
+            # report is where the operator will look for it.
             log.exception(
-                "could not open a bias source; the coupler nodes will decline"
+                "could not open a bias source; coupler_anticrossing will fail"
             )
             self._bias = None
         return self._bias
