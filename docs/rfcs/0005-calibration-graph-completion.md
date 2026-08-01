@@ -608,9 +608,23 @@ after the machinery.
      Writing it needs a genuinely three-level driven Hamiltonian on the EF clock — the
      off-resonant ``0-1`` excitation and its Stark shift, which `_drive_ef`'s own
      docstring already names as what it leaves out.
-   - `ramsey_12`, `fine_amplitude_12`,
-     `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
-     `readout_amplitude_three_state`: **unblocked, not yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
+   - `ramsey_12`: **blocked by a frame mismatch, measured.** The EF pulses are applied
+     in `_drive_ef`'s own rotating frame, with the detuning carried on ``|2>``, but a
+     free evolution between them runs under `_drift` — the *0-1* drive frame, where the
+     ``|1>``-``|2>`` splitting is the whole anharmonicity. So the phase between two EF
+     pi/2 pulses accumulates at ~283 MHz rather than at the EF detuning: sweeping the
+     delay on a 1 ns grid swings ``P(|2>)`` from 0.008 to 0.978, aliasing a 3.5 ns
+     period. A Ramsey there would measure the mismatch between two frames, not the
+     transition.
+
+     Fixing it means the EF drive and the idles agreeing on one frame — either
+     `_drive_ef` working in the 0-1 frame the rest of the simulator uses, or the
+     register tracking an EF detuning that `_drift` honours. Both are real changes to
+     how the coordinator keeps time, and neither is a routine.
+   - `readout_frequency_three_state`, `readout_amplitude_three_state`: **superseded**
+     by `three_state_operating_point`, which sweeps both axes at once for the reason
+     `readout_operating_point` does: the resonance walks with power, so choosing them
+     in sequence leaves the first stale. They need `r12.ef_amp180`, `r12.ef_motzoi`,
      `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a `measure_3state`
      submodule. `CalibratedTransmon` is where those go — `r12` and `measure_2state`
      are already there — and the three-state readout point can follow `measure_2state`

@@ -214,6 +214,18 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`resonator_spectroscopy_second_excited`, which checks the ladder rather than a
+parameter** (RFC 0005 §7). The dispersive pull is supposed to go as `chi(1 - 2n)` —
+`|0>` at `+chi`, `|1>` at `-chi`, `|2>` at `-3chi` — and nothing in the graph checked
+that the spacing was *even*. This sweeps the resonator with the qubit in `|2>`, so the
+excited-state sweep sees two shifts of gap and this one sees four; dividing each by its
+own factor has to give the same chi, and that agreement is the measurement.
+
+It matters because three-state readout rests on it. A ladder that bunched up would
+leave `three_state_operating_point` optimising against a chip whose levels cannot be
+separated however it is tuned, and that would read as a tuning failure rather than a
+model one. A characterisation: it writes nothing.
+
 **`fine_amplitude_12` refines the EF pi pulse** (RFC 0005 §7). A π/2 pre-rotation then
 n EF π pulses, so a per-pulse error grows linearly against a readout noise that does
 not. That residual is invisible to `rabi_12`, which fits a whole oscillation and cannot

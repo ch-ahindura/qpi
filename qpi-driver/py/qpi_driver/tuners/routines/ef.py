@@ -33,6 +33,7 @@ from qpi_driver.tuners.base.routines import (
 from qpi_driver.tuners.fitting import (
     fit_fine_amplitude,
     fit_rabi,
+    fit_resonator_spectroscopy,
     fit_three_state_discrimination,
     fit_three_state_operating_point,
     signal_of,
@@ -313,6 +314,80 @@ def open_three_state_readout(
         )
     )
     return {"pulse_amp": point["pulse_amp"]}
+
+
+class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
+    """The resonator again with the qubit in ``|2>`` — the third rung of the ladder.
+
+    `resonator_spectroscopy` and `resonator_spectroscopy_excited` give the first two
+    resonances, and their difference is the dispersive shift. This gives the third,
+    and what it adds is a *test of the model rather than a parameter*: the pull is
+    supposed to go as ``chi(1 - 2n)``, evenly spaced in the excitation number, and
+    nothing else in the graph checks that the spacing is even.
+
+    It matters because three-state readout rests on it. A ladder that bunched up would
+    put ``|1>`` and ``|2>`` closer than ``|0>`` and ``|1>``, and
+    `three_state_operating_point` would be optimising against a chip whose levels
+    cannot be separated however it is tuned. This is the node that would say so.
+
+    A characterisation, like the other two resonator sweeps that write nothing.
+    """
+
+    name = "resonator_spectroscopy_second_excited"
+    depends_on = ("rabi_12",)
+    updates = ()
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        amplitude = _required_ef_amplitude(element, target)
+        duration = ef_duration(element, config)
+        centre = float(read_path(element, "clock_freqs.readout"))
+        span = float(config.get("span", 20e6))
+        points = int(config.get("points", 51))
+        self._frequencies = setpoints_of(
+            config,
+            "frequencies",
+            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        )
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        for index, frequency in enumerate(self._frequencies):
+            schedule.add(backend.Reset(target))
+            schedule.add(backend.X(target))
+            add_ef_pulse(schedule, backend, target, amplitude, duration)
+            schedule.add(
+                backend.SetClockFrequency(
+                    clock=f"{target}.ro", clock_freq_new=frequency
+                )
+            )
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        second = fitted["readout_frequency"]
+        ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
+        return {
+            "readout_frequency_second_excited": second,
+            # Quarter of the gap, because |0> sits at +chi and |2> at -3chi: four
+            # dispersive shifts apart. Equal to the shift the excited-state sweep
+            # reports if the ladder is linear, and that equality is the measurement.
+            "dispersive_shift": 0.25 * (second - ground),
+            "linewidth": fitted["linewidth"],
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Nothing to write — see the class docstring."""
 
 
 class FineAmplitude12(CalibrationRoutine):

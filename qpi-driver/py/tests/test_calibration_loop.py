@@ -1146,6 +1146,46 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
         assert ef == pytest.approx(written[qubit]["rxy"]["amp180"], rel=0.15)
 
 
+def test_the_dispersive_ladder_is_evenly_spaced(fully_calibrated):
+    """Two sweeps, two ways to the same chi — and agreeing is the measurement.
+
+    The pull is supposed to go as ``chi(1 - 2n)``: ``|0>`` at ``+chi``, ``|1>`` at
+    ``-chi``, ``|2>`` at ``-3chi``. So the excited-state sweep sees two shifts of gap
+    and the second-excited sweep sees four, and dividing each by its own factor has to
+    give the same number. Nothing else in the graph checks the *spacing* rather than
+    the size.
+
+    It matters because three-state readout rests on it. A ladder that bunched up would
+    leave `three_state_operating_point` optimising against a chip whose levels cannot
+    be separated however it is tuned, and it would look like a tuning failure rather
+    than a model one.
+    """
+    report, _device, _simulator, _scheduler = fully_calibrated
+    shifts = {}
+    for name in (
+        "resonator_spectroscopy_excited",
+        "resonator_spectroscopy_second_excited",
+    ):
+        shifts[name] = {
+            result.target: result.parameters["dispersive_shift"]
+            for result in report.routine_results
+            if result.routine_name == name
+        }
+        assert shifts[name], f"{name} reported nothing"
+
+    for qubit in shifts["resonator_spectroscopy_excited"]:
+        first = shifts["resonator_spectroscopy_excited"][qubit]
+        second = shifts["resonator_spectroscopy_second_excited"][qubit]
+        assert first < 0 and second < 0, f"{qubit}: {first}, {second}"
+        # Loosely, because each is a Lorentzian centre fitted at a different readout
+        # contrast — |2> returns less signal than |1> does, so its sweep is noisier.
+        # What a bunched ladder would do is miss by a factor, not by a fifth.
+        assert second == pytest.approx(first, rel=0.25), (
+            f"{qubit}'s dispersive ladder is not evenly spaced: chi from |1> is "
+            f"{first / 1e6:.3f} MHz, from |2> it is {second / 1e6:.3f} MHz"
+        )
+
+
 def test_the_ef_pi_pulse_is_refined_to_a_small_residual_error(fully_calibrated):
     """`fine_amplitude_12` amplifies what is left of `rabi_12`'s error and removes it.
 
