@@ -124,6 +124,8 @@ def _make_dataset(
     return dataset
 
 
-def _discriminate(val: complex) -> str:
+def _discriminate(val: complex, _qubit: int = 0) -> str:
+    """Takes the qubit index the real one does, and ignores it: these tests are
+    about bit *placement*, not about which line each qubit is assigned against."""
     r = val.real if not np.isnan(val.real) else 0.0
     return "1" if r >= 1 else "0"

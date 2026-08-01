@@ -31,6 +31,10 @@ from qpi_driver.executors.utils.counts import (
     per_shot_values,
     qubit_key,
 )
+from qpi_driver.executors.utils.discriminator import (
+    discriminators_by_qubit,
+    resolve_discriminators,
+)
 from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
 from qpi_driver.executors.utils.types import cast_to
 
@@ -130,7 +134,7 @@ class QbloxExecutor(Executor):
         Returns:
             xr.Dataset: Raw acquisition dataset.
         """
-        acq_protocol, acq_kwargs = self._resolve_acq_protocol(payload)
+        acq_protocol, acq_kwargs, acq_overrides = self._resolve_acq_protocol(payload)
         sub_datasets: list[xr.Dataset] = []
 
         for circ in payload.circuits:
@@ -143,7 +147,12 @@ class QbloxExecutor(Executor):
                     bound_circuit = circuit.assign_parameters(param_values)
                 sub_datasets.append(
                     self._acquire_circuit(
-                        payload, bound_circuit, circ_shots, acq_protocol, acq_kwargs
+                        payload,
+                        bound_circuit,
+                        circ_shots,
+                        acq_protocol,
+                        acq_kwargs,
+                        acq_overrides,
                     )
                 )
 
@@ -194,6 +203,7 @@ class QbloxExecutor(Executor):
         shots: int,
         acq_protocol: str,
         acq_kwargs: dict,
+        acq_overrides: dict[int, dict[str, float]],
     ) -> xr.Dataset:
         """One circuit's acquisition, in as many runs as the hardware requires.
 
@@ -208,7 +218,9 @@ class QbloxExecutor(Executor):
         """
         measured = measured_qubits(circuit)
         if acq_protocol != "Trace" or len(measured) < 2:
-            return self._run_circuit(payload, circuit, shots, acq_protocol, acq_kwargs)
+            return self._run_circuit(
+                payload, circuit, shots, acq_protocol, acq_kwargs, acq_overrides
+            )
 
         log.info(
             "raw trace over %d qubits: taking %d runs, one scope-mode acquisition each",
@@ -217,7 +229,13 @@ class QbloxExecutor(Executor):
         )
         passes = [
             self._run_circuit(
-                payload, circuit, shots, acq_protocol, acq_kwargs, only_qubit=qubit
+                payload,
+                circuit,
+                shots,
+                acq_protocol,
+                acq_kwargs,
+                acq_overrides,
+                only_qubit=qubit,
             )
             for qubit in measured
         ]
@@ -230,6 +248,7 @@ class QbloxExecutor(Executor):
         shots: int,
         acq_protocol: str,
         acq_kwargs: dict,
+        acq_overrides: dict[int, dict[str, float]],
         only_qubit: int | None = None,
     ) -> xr.Dataset:
         """Run a single (parameter-bound) circuit and return its acquisition dataset."""
@@ -239,6 +258,7 @@ class QbloxExecutor(Executor):
             shots=shots,
             acq_protocol=acq_protocol,
             acq_kwargs=acq_kwargs,
+            acq_overrides=acq_overrides,
             only_qubit=only_qubit,
         )
 
@@ -255,41 +275,42 @@ class QbloxExecutor(Executor):
                 "num_clbits": num_clbits,
             }
         )
-        if "acq_rotation" in acq_kwargs:
-            dataset.attrs["acq_rotation"] = acq_kwargs["acq_rotation"]
-        if "acq_threshold" in acq_kwargs:
-            dataset.attrs["acq_threshold"] = acq_kwargs["acq_threshold"]
+        # Per qubit, because the discriminator is. `process_result` reads this back
+        # when it has to threshold in software, and a single pair here would send it
+        # down the same collapse the schedule no longer has.
+        if acq_overrides:
+            dataset.attrs["acq_discriminators"] = {
+                str(index): dict(values) for index, values in acq_overrides.items()
+            }
         return dataset
 
-    def _resolve_acq_protocol(self, payload: JobPayload) -> tuple[str, dict]:
+    def _resolve_acq_protocol(
+        self, payload: JobPayload
+    ) -> tuple[str, dict, dict[int, dict[str, float]]]:
         """Determine the qblox-scheduler acquisition protocol for the given meas_level.
 
         Args:
             payload: JobPayload specifying meas_level, acq_threshold, acq_rotation, etc.
 
         Returns:
-            Tuple of (protocol_name, extra_kwargs_for_Measure).
+            Tuple of (protocol_name, kwargs_for_every_Measure, kwargs_per_qubit).
         """
         bin_mode = self._resolve_bin_mode(payload.meas_level, payload.meas_return)
 
         if payload.meas_level == 0:
-            return "Trace", {"bin_mode": bin_mode}
+            return "Trace", {"bin_mode": bin_mode}, {}
 
         if payload.meas_level == 1:
-            return "SSBIntegrationComplex", {"bin_mode": bin_mode}
+            return "SSBIntegrationComplex", {"bin_mode": bin_mode}, {}
 
-        # meas_level == 2: try ThresholdedAcquisition if device or payload has threshold params
-        dev_params = self._get_threshold_params()
-        if payload.acq_rotation is not None:
-            dev_params["acq_rotation"] = payload.acq_rotation
-        if payload.acq_threshold is not None:
-            dev_params["acq_threshold"] = payload.acq_threshold
-
-        if "acq_rotation" in dev_params and "acq_threshold" in dev_params:
-            return "ThresholdedAcquisition", {**dev_params, "bin_mode": bin_mode}
-
-        # Fallback to SSBIntegrationComplex + software discrimination in process_result()
-        return "SSBIntegrationComplex", {**dev_params, "bin_mode": bin_mode}
+        # meas_level == 2: threshold on the instrument when every qubit has a line to
+        # threshold against, in software otherwise. Per qubit either way — see
+        # `qpi_driver.executors.utils.discriminator`.
+        per_qubit, complete = resolve_discriminators(
+            self._device, payload.acq_rotation, payload.acq_threshold
+        )
+        protocol = "ThresholdedAcquisition" if complete else "SSBIntegrationComplex"
+        return protocol, {"bin_mode": bin_mode}, per_qubit
 
     def _resolve_bin_mode(self, meas_level: int, meas_return: str) -> BinMode:
         """Choose the acquisition bin mode implied by the requested measurement mode.
@@ -305,38 +326,9 @@ class QbloxExecutor(Executor):
             return BinMode.AVERAGE
         return BinMode.APPEND
 
-    def _get_threshold_params(self) -> dict:
-        """Extract acq_threshold and acq_rotation from the first device element that has them.
-
-        Returns:
-            Dict with 'acq_rotation' and 'acq_threshold' if found, else empty dict.
-        """
-        elements = self._device.elements
-        if callable(elements):
-            element_names = elements()
-        else:
-            element_names = list(elements.keys())
-
-        for element_name in element_names:
-            if hasattr(self._device, "get_element"):
-                element = self._device.get_element(element_name)
-            else:
-                element = self._device.elements[element_name]
-            try:
-                threshold = element.measure.acq_threshold
-                rotation = element.measure.acq_rotation
-                if callable(threshold):
-                    threshold = threshold()
-                if callable(rotation):
-                    rotation = rotation()
-                if threshold is not None and rotation is not None:
-                    return {
-                        "acq_threshold": float(threshold),
-                        "acq_rotation": float(rotation),
-                    }
-            except (AttributeError, KeyError):
-                continue
-        return {}
+    def _get_threshold_params(self) -> dict[int, dict[str, float]]:
+        """Every qubit's discriminator, by qubit index."""
+        return discriminators_by_qubit(self._device)
 
     def process_result(self, dataset: xr.Dataset, job_id: str) -> dict:
         """Convert a qblox-scheduler acquisition dataset into a Qiskit-compatible result dict.

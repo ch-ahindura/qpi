@@ -79,6 +79,14 @@ class TransmonSimulator:
             rather than a formality: at 35° the two clouds land with real parts of
             2.95 and 0.41, both above a threshold of zero, so every shot reads as
             ``|1>`` until `readout_discrimination` has run.
+        readout_phases_deg: per-qubit chain rotations, overriding
+            ``readout_phase_deg``. Empty — the default — gives every qubit the same
+            one, which makes a chip whose qubits are *identical* in their readout:
+            same gain, same linewidth, same pull, each read on its own resonance, so
+            each ends up with the same rotation and threshold to four decimal places.
+            That is not a chip, it is one qubit copied, and it makes a whole class of
+            mistake untestable — applying one qubit's discriminator to another is
+            invisible when they agree. Supply it to give the qubits different cables.
         resonator_frequencies_ghz: per-qubit resonator frequencies, where the
             chip's actually are. The one thing here that is a property of a *chip*
             rather than of a transmon, because it is the one a device config
@@ -107,6 +115,7 @@ class TransmonSimulator:
     readout_gain: float = 14.4
     readout_phase_deg: float = 35.0
     resonator_frequencies_ghz: dict[str, float] = field(default_factory=dict)
+    readout_phases_deg: dict[str, float] = field(default_factory=dict)
     shot_noise: float = 0.004
     seed: int = 20260731
     levels: int = 3
@@ -185,6 +194,10 @@ class TransmonSimulator:
             dispersive_shift_ghz=self.readout_dispersive_shift_ghz,
             punchout_amplitude=self.readout_punchout_amplitude,
         )
+
+    def readout_phase(self, qubit: str) -> float:
+        """How far *qubit*'s chain rotates its IQ plane, in degrees."""
+        return float(self.readout_phases_deg.get(qubit, self.readout_phase_deg))
 
     # --- the dynamics, from qutip ---------------------------------------------
 

@@ -459,6 +459,16 @@ after the machinery.
      cannot do alone is leave `clock_freqs.readout` behind — refining 0.45 to 0.5175
      walks the resonance 183 kHz, which is punchout's own lesson repeating.
 
+     Extending the executor to carry that turned up a defect of its own, now fixed:
+     both read the rotation and threshold from whichever element had them first and
+     applied that one pair to **every** qubit in the circuit. Invisible while nothing
+     measured them — an uncalibrated chip is zero everywhere — and wrong from the
+     moment `readout_discrimination` wrote real ones. With the collapse in place,
+     `x q[0]` on a calibrated pair reads the untouched q1 as `1` on all 400 shots.
+     Fixing it needed the simulated chip to stop being one qubit copied three times:
+     with a single `readout_phase_deg` every qubit came out with the same line to four
+     decimal places, so the first test written for this passed with the bug reinstated.
+
      So both nodes need a **discriminated-readout operating point separate from the
      calibration one**, and the executor emitting a `SetClockFrequency` for
      `meas_level=2` — the measure operation's clock is fixed at `{qubit}.ro` in the

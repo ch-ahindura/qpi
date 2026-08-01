@@ -177,8 +177,14 @@ measure q[0] -> c[0];"""
         acq_threshold=0.1,
     )
     dataset = executor.execute(payload)
-    assert dataset.attrs.get("acq_rotation") == 45.0
-    assert dataset.attrs.get("acq_threshold") == 0.1
+    # Every qubit, not the first one: a job naming a line is naming it for all of
+    # its shots. The attr is a per-qubit map because the device's own values are.
+    lines = dataset.attrs["acq_discriminators"]
+    assert lines, "the payload's discriminator did not reach the dataset"
+    assert all(
+        entry == {"acq_rotation": 45.0, "acq_threshold": 0.1}
+        for entry in lines.values()
+    ), lines
 
     res = executor.process_result(dataset, "job-rotation-threshold")
     assert "counts" in res

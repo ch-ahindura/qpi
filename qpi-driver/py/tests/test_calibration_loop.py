@@ -951,6 +951,16 @@ def test_a_coupler_that_declares_its_own_gap_is_believed(coupler_device, tmp_pat
 #: move the number for the readout to work.
 TRUE_RESONATORS = {"q0": 6.004, "q1": 6.014, "q2": 6.024}
 
+#: Different cables to different qubits, which is what a chip has and what the
+#: simulator's single ``readout_phase_deg`` does not give it.
+#:
+#: With one shared phase the three qubits are identical in their readout — same gain,
+#: same linewidth, same pull, each read on its own resonance — so all three come out
+#: with *the same* rotation and threshold to four decimal places. That makes a whole
+#: class of mistake untestable: applying one qubit's discriminator to another is
+#: invisible when they agree, which is how the executors came to do exactly that.
+TRUE_READOUT_PHASES = {"q0": 35.0, "q1": 155.0, "q2": 265.0}
+
 #: Sweeps sized for the simulated chip. Every one of these is a property of the
 #: simulator's own parameters — T1 of 30 us wants a sweep several times that, and
 #: a sweep shorter than the decay cannot measure it.
@@ -1019,7 +1029,10 @@ def fully_calibrated(scheduler, tmp_path_factory):
     not where the config says, so the two resonator routines have something to
     find and the readout frequency they write is load-bearing for everything after.
     """
-    simulator = TransmonSimulator(resonator_frequencies_ghz=TRUE_RESONATORS)
+    simulator = TransmonSimulator(
+        resonator_frequencies_ghz=TRUE_RESONATORS,
+        readout_phases_deg=TRUE_READOUT_PHASES,
+    )
     directory = tmp_path_factory.mktemp(f"fulldag_{scheduler}")
     device = directory / "quantify.device.yml"
     shutil.copy(FIXTURES / "quantify.device.yml", device)
@@ -1106,6 +1119,50 @@ def test_the_dispersive_shift_is_measured_and_not_assumed(fully_calibrated):
             f"{qubit}'s measured pull {abs(shift) / 1e6:.3f} MHz exceeds the "
             f"{full / 1e6:.3f} MHz the model has to give, at any power"
         )
+
+
+def test_each_qubit_is_discriminated_against_its_own_line(fully_calibrated):
+    """Two qubits, two readout chains, two rotations — and X on one of them.
+
+    The executors used to take the rotation and threshold from whichever element had
+    them first and apply that pair to every qubit in the circuit. Nothing caught it
+    because nothing measured those numbers: an uncalibrated chip carries zero
+    everywhere, and one qubit's zero is as good as another's. Once
+    `readout_discrimination` puts a real line on each qubit, q0's applied to q1 reads
+    q1's shots against a boundary drawn somewhere else.
+
+    ``x q[0]`` and nothing on q[1], so the two qubits must come back *different*. A
+    collapsed discriminator does not merely lose accuracy here, it assigns q1 with a
+    threshold placed for q0's cloud positions.
+    """
+    _report, device, simulator, scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+
+    lines = {
+        qubit: (
+            written[qubit]["measure"]["acq_rotation"],
+            written[qubit]["measure"]["acq_threshold"],
+        )
+        for qubit in ("q0", "q1")
+    }
+    # Far apart, not merely unequal. An earlier version of this guard asserted only
+    # that the two differ, and passed on the last digits of shot noise while the
+    # qubits were physically identical — so it would have gone on passing with the
+    # collapse reinstated. `TRUE_READOUT_PHASES` is what makes them really differ.
+    apart = abs(lines["q0"][0] - lines["q1"][0]) % 360.0
+    assert 30.0 < apart < 330.0, (
+        f"the two readout lines are {apart:.2f} degrees apart, which is too close for "
+        f"this test to tell a per-qubit discriminator from a collapsed one: {lines}"
+    )
+
+    counts = run_pair(device, simulator, scheduler, "x q[0];\n", shots=400)
+    total = sum(counts.values()) or 1
+    # Bit order is little-endian: c[1]c[0], so q0 is the right-hand character.
+    excited = sum(value for key, value in counts.items() if key[1] == "1") / total
+    ground = sum(value for key, value in counts.items() if key[0] == "1") / total
+
+    assert excited > 0.9, f"q0 was driven to |1> and should read 1: {counts}"
+    assert ground < 0.1, f"q1 was left alone and should read 0: {counts}"
 
 
 def test_the_two_qubit_gate_is_written_and_playable(fully_calibrated):

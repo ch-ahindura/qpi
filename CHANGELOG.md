@@ -214,6 +214,35 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**Every qubit is discriminated against its own line** (RFC 0005 §7). Both executors
+read `acq_rotation` and `acq_threshold` from whichever device element had them first
+and applied that one pair to every qubit in the circuit. It was invisible for as long
+as nothing measured them — an uncalibrated chip carries zero everywhere, and one
+qubit's zero is as good as another's — and it stopped being invisible the moment
+`readout_discrimination` started writing real ones. Both the instrument path and the
+software fallback now resolve the pair per qubit, through a shared
+`executors/utils/discriminator.py`, and `ThresholdedAcquisition` is chosen only when
+*every* qubit has a line to threshold against, since a schedule mixing the two
+protocols returns one qubit's bits beside another's raw IQ.
+
+Measured end to end: with the collapse in place, `x q[0]` on a calibrated pair reads
+q1 — untouched, in its ground state — as `1` on all 400 shots.
+
+The software fallback also rotated the wrong way. `fit_readout_discrimination` defines
+the rotation as the direction between the cloud centres and turns the plane *back* by
+it so the separation lands on the real axis; the simulated instrument does the same;
+the fallback turned the other way. Turning the other way is the same rotation only
+when it is zero, which is why an uncalibrated chip could never show it.
+
+**The simulated chip's qubits have different cables.** `readout_phase_deg` was one
+number for the whole device, and with the same gain, linewidth and pull, each qubit
+read on its own resonance, all three came out with the same rotation and threshold to
+four decimal places. That is one qubit copied three times, and it made the defect above
+untestable — a first attempt at a test for it passed with the bug reinstated, because
+it could only assert that two identical numbers differed in the last digits of shot
+noise. `readout_phases_deg` overrides per qubit, in the pattern
+`resonator_frequencies_ghz` already set.
+
 **`resonator_spectroscopy_excited`, which measures the dispersive shift** (RFC 0005
 §7). The readout works because the two qubit states pull the resonator to different
 frequencies, and nothing measured by how much. This prepares `|1>` and sweeps the

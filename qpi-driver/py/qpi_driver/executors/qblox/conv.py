@@ -33,6 +33,7 @@ def to_qblox_gates(
     acq_indices: dict[int, int],
     acq_protocol: str = "SSBIntegrationComplex",
     acq_kwargs: dict | None = None,
+    acq_overrides: dict[int, dict] | None = None,
     clbit_map: list[tuple[int, int, int]] | None = None,
     only_qubit: int | None = None,
 ) -> list[Operation]:
@@ -44,6 +45,10 @@ def to_qblox_gates(
         acq_indices: A mapping of qubit and current acquisitions/measurements done on said qubit in circuit..
         acq_protocol: Acquisition protocol to use when measuring.
         acq_kwargs: Additional arguments passed for acquisition.
+        acq_overrides: Per-qubit acquisition arguments, keyed by qubit index,
+            merged over ``acq_kwargs``. The discriminator is per qubit — each
+            has its own readout chain and so its own rotation and threshold —
+            and applying one qubit's to all of them misassigns the others.
         clbit_map: If given, appended to with a ``(qubit_idx, acq_index, clbit_idx)``
             triple for every Measure operation, recording which classical bit
             each acquisition targets.
@@ -197,6 +202,7 @@ def to_qblox_gates(
     if isinstance(gate, qiskit_library.Measure):
         result = []
         extra = acq_kwargs or {}
+        overrides = acq_overrides or {}
         clbit_indices = [circuit.find_bit(c).index for c in instruction.clbits]
         for idx, clbit_idx in zip(qubit_indices, clbit_indices):
             acq_idx = acq_indices.get(idx, 0)
@@ -209,7 +215,7 @@ def to_qblox_gates(
                     acq_channel=idx,
                     acq_index=acq_idx,
                     acq_protocol=acq_protocol,
-                    **extra,
+                    **{**extra, **overrides.get(idx, {})},
                 )
             )
             if clbit_map is not None:
@@ -247,6 +253,7 @@ def generate_schedule(
     shots: int,
     acq_protocol: str,
     acq_kwargs: dict,
+    acq_overrides: dict[int, dict] | None = None,
     only_qubit: int | None = None,
 ) -> tuple[Schedule, list[tuple[int, int, int]], int]:
     """Generate a schedule from the given circuit.
@@ -257,6 +264,7 @@ def generate_schedule(
         shots: number of shots for the experiment
         acq_protocol: Acquisition protocol to use when measuring
         acq_kwargs: Additional arguments passed for acquisition.
+        acq_overrides: Per-qubit acquisition arguments, keyed by qubit index.
 
     Returns:
         A tuple of the Schedule with all the proper timings, the clbit_map
@@ -275,6 +283,7 @@ def generate_schedule(
             acq_indices=acq_indices,
             acq_protocol=acq_protocol,
             acq_kwargs=acq_kwargs,
+            acq_overrides=acq_overrides,
             clbit_map=clbit_map,
             only_qubit=only_qubit,
         )

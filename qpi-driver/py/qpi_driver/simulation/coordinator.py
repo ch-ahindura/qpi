@@ -1135,7 +1135,7 @@ class SimulatedCoordinator:
         chain = (
             self.simulator.readout_gain
             * amplitude
-            * np.exp(1j * np.deg2rad(self.simulator.readout_phase_deg))
+            * np.exp(1j * np.deg2rad(self.simulator.readout_phase(qubit)))
         )
         return tuple(
             complex(chain * resonator.reflection(drive, amplitude, level))

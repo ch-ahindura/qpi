@@ -76,64 +76,103 @@ def parse_clbit_map(
 def build_discriminator(
     dataset: xr.Dataset,
     acq_protocol: str,
-    get_threshold_params: Callable[[], dict],
-) -> Callable[[complex], str]:
-    """Build a function mapping a raw acquisition value to a "0"/"1" bit.
+    get_threshold_params: Callable[[], dict[int, dict[str, float]]],
+) -> Callable[[complex, int], str]:
+    """Build a function mapping one qubit's raw acquisition value to a "0"/"1" bit.
 
-    Shared by the Qblox and Quantify executors, whose only difference is how
-    ``acq_rotation``/``acq_threshold`` device defaults are looked up (hence
-    the ``get_threshold_params`` callback).
+    Shared by the Qblox and Quantify executors, whose only difference is how the
+    device defaults are looked up (hence the ``get_threshold_params`` callback).
+
+    Takes the qubit index as well as the value, because the rotation and threshold
+    are properties of that qubit's readout chain. Applying one qubit's line to
+    another's shots assigns them against a boundary drawn somewhere else — invisible
+    while every qubit's line was the uncalibrated `0`/`0`, and wrong as soon as
+    `readout_discrimination` measures them.
 
     Args:
-        dataset: Acquisition dataset, used to read per-job ``acq_rotation``/
-            ``acq_threshold`` overrides from its attrs.
+        dataset: Acquisition dataset, carrying per-job overrides in its attrs.
         acq_protocol: "ThresholdedAcquisition" or "SSBIntegrationComplex".
-        get_threshold_params: Returns a dict with "acq_rotation" and
-            "acq_threshold" device defaults, used when the dataset attrs
-            don't carry them.
+        get_threshold_params: Returns each qubit's rotation and threshold by index,
+            used for qubits the dataset attrs do not carry.
 
     Returns:
-        Callable discriminating a single raw acquisition value.
+        Callable discriminating one raw acquisition value for one qubit.
     """
     if acq_protocol == "ThresholdedAcquisition":
 
-        def discriminate(val: complex) -> str:
+        def discriminate(val: complex, _qubit: int = 0) -> str:
             r = val.real if not np.isnan(val.real) else 0.0
             return "1" if r >= 0.5 else "0"
 
         return discriminate
 
-    # SSBIntegrationComplex software discrimination.
-    # Check dataset.attrs first, fallback to device config, default to 0.0.
-    acq_rotation = dataset.attrs.get("acq_rotation")
-    acq_threshold = dataset.attrs.get("acq_threshold")
-    if acq_rotation is None or acq_threshold is None:
-        dev_params = get_threshold_params()
-        acq_rotation = (
-            dev_params.get("acq_rotation", 0.0)
-            if acq_rotation is None
-            else acq_rotation
-        )
-        acq_threshold = (
-            dev_params.get("acq_threshold", 0.0)
-            if acq_threshold is None
-            else acq_threshold
-        )
-    rot_rad = np.radians(acq_rotation)
+    lines = _discriminator_lines(dataset, get_threshold_params)
 
-    def discriminate(val: complex) -> str:
+    def discriminate(val: complex, qubit: int = 0) -> str:
         if np.isnan(val.real) and np.isnan(val.imag):
             return "0"
-        rotated = val * np.exp(1j * rot_rad)
-        return "1" if rotated.real > acq_threshold else "0"
+        rotation, threshold = lines.get(qubit, (0.0, 0.0))
+        # Negative, matching `fit_readout_discrimination`, which defines the rotation
+        # as the direction from one cloud centre to the other and then turns the
+        # plane *back* by it so the separation lands on the real axis. The simulated
+        # instrument applies the same sign. Turning the other way is the same
+        # rotation only when it is zero, which is why an uncalibrated chip could not
+        # show the difference.
+        rotated = val * np.exp(-1j * np.radians(rotation))
+        return "1" if rotated.real > threshold else "0"
 
     return discriminate
+
+
+def _discriminator_lines(
+    dataset: xr.Dataset,
+    get_threshold_params: Callable[[], dict[int, dict[str, float]]],
+) -> dict[int, tuple[float, float]]:
+    """Each qubit's ``(rotation, threshold)``, from the job first and the device after.
+
+    Also accepts the single ``acq_rotation``/``acq_threshold`` pair older datasets
+    carry, applying it to every qubit — which is what those datasets meant by it.
+    """
+    lines = {
+        int(index): (
+            float(v.get("acq_rotation", 0.0)),
+            float(v.get("acq_threshold", 0.0)),
+        )
+        for index, v in (dataset.attrs.get("acq_discriminators") or {}).items()
+    }
+    if lines:
+        return lines
+
+    legacy_rotation = dataset.attrs.get("acq_rotation")
+    legacy_threshold = dataset.attrs.get("acq_threshold")
+    if legacy_rotation is not None and legacy_threshold is not None:
+        pair = (float(legacy_rotation), float(legacy_threshold))
+        return _EveryQubit(pair)
+
+    return {
+        int(index): (
+            float(values.get("acq_rotation", 0.0)),
+            float(values.get("acq_threshold", 0.0)),
+        )
+        for index, values in (get_threshold_params() or {}).items()
+    }
+
+
+class _EveryQubit(dict):
+    """A mapping that answers with the same line whatever qubit is asked for."""
+
+    def __init__(self, pair: tuple[float, float]) -> None:
+        super().__init__()
+        self._pair = pair
+
+    def get(self, _key, _default=None):  # noqa: D102 - dict's own contract
+        return self._pair
 
 
 def build_acquisition_counts(
     dataset: xr.Dataset,
     qubit_vars: list[int],
-    discriminate: Callable[[complex], str],
+    discriminate: Callable[[complex, int], str],
 ) -> dict[str, int]:
     """Assemble a Qiskit-style counts dict from a hardware acquisition dataset.
 
@@ -148,7 +187,7 @@ def build_acquisition_counts(
     Args:
         dataset: Dataset with one data variable per qubit acquisition channel.
         qubit_vars: Sorted qubit indices present in the dataset.
-        discriminate: Maps a raw acquisition value to ``"0"`` or ``"1"``.
+        discriminate: Maps one qubit's raw acquisition value to ``"0"`` or ``"1"``.
 
     Returns:
         Binary-string-keyed counts dict, zero-padded for every state of the
@@ -159,16 +198,20 @@ def build_acquisition_counts(
 
     if clbit_map:
         measurements = [
-            (clbit_idx, per_shot_values(dataset[qubit_key(dataset, q_idx)], acq_idx))
+            (
+                clbit_idx,
+                q_idx,
+                per_shot_values(dataset[qubit_key(dataset, q_idx)], acq_idx),
+            )
             for q_idx, acq_idx, clbit_idx in clbit_map
             if q_idx in qubit_vars
         ]
         width = num_clbits
-        num_samples = len(measurements[0][1]) if measurements else 0
+        num_samples = len(measurements[0][2]) if measurements else 0
         for s in range(num_samples):
             bits = ["0"] * width
-            for clbit_idx, values in measurements:
-                bits[width - 1 - clbit_idx] = discriminate(values[s])
+            for clbit_idx, q_idx, values in measurements:
+                bits[width - 1 - clbit_idx] = discriminate(values[s], q_idx)
             state = "".join(bits)
             counts[state] = counts.get(state, 0) + 1
     else:
@@ -179,7 +222,10 @@ def build_acquisition_counts(
         }
         num_samples = len(per_shot[qubit_vars[0]]) if qubit_vars else 0
         for s in range(num_samples):
-            bits = [discriminate(per_shot[q_idx][s]) for q_idx in reversed(qubit_vars)]
+            bits = [
+                discriminate(per_shot[q_idx][s], q_idx)
+                for q_idx in reversed(qubit_vars)
+            ]
             state = "".join(bits)
             counts[state] = counts.get(state, 0) + 1
 
