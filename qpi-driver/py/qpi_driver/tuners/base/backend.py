@@ -53,6 +53,32 @@ class SchedulerBackend(ABC):
     #: Advances a clock's phase for everything played on it afterwards.
     #: Cumulative, so a sweep that shifts must shift back.
     ShiftClockPhase: Any
+
+    def drag_pulse(
+        self,
+        *,
+        amp: float,
+        drag: float,
+        duration: float,
+        port: str,
+        clock: str,
+        phase_deg: float = 0.0,
+    ) -> Any:
+        """A Gaussian pulse with a derivative quadrature, as a *raw* pulse.
+
+        A method rather than a bound class, because the two schedulers disagree about
+        both the names and the units: quantify takes ``G_amp``/``D_amp`` where the
+        second is a dimensionless ratio, qblox takes ``amplitude``/``beta`` where the
+        second is in seconds — the same divergence :attr:`drag_span` exists for. A
+        routine sweeping *drag* therefore sweeps this backend's own units.
+
+        Raw, because the EF transition has no gate: `Rxy` is built for the ``.01``
+        clock, and a shaped pulse on ``.12`` has to be assembled. It carries a phase
+        of its own, which is what a `SquarePulse` lacks — and that lack is why an EF
+        Ramsey could not be built out of phase advances.
+        """
+        raise NotImplementedError
+
     BinMode: Any
 
     @abstractmethod

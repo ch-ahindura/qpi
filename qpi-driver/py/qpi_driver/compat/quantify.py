@@ -52,6 +52,7 @@ try:
         Z,
     )
     from quantify_scheduler.operations.pulse_library import (
+        DRAGPulse,
         IdlePulse,
         SetClockFrequency,
         ShiftClockPhase,
@@ -90,6 +91,8 @@ except ImportError as exp:
     class DeviceElement(BasicCompatClass): ...
 
     class ShiftClockPhase(BasicCompatClass): ...
+
+    class DRAGPulse(BasicCompatClass): ...
 
     class SetClockFrequency(BasicCompatClass): ...
 

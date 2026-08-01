@@ -591,8 +591,22 @@ after the machinery.
      which at a 0-1 readout are all but on top of each other; at the three-state point
      they are 14 sigma apart in magnitude alone. The three-state point turns out to be
      what makes the whole EF chain measurable, not just the leakage number.
-   - ~~`drag_12`: **blocked twice over.**~~ **Unblocked, see above** — the drive has
-     an envelope and a neighbour to leak into. Kept for the record:
+   - `drag_12` → `r12.ef_motzoi`: **done**, and it finds a real interior optimum:
+     −0.043 against a swept span of 0.2, a fifth of the way out and nowhere near
+     either edge. **Negative**, where the 0-1 optimum is positive, and that sign is
+     the physics rather than a convention — DRAG cancels leakage into the
+     *neighbouring* level, which for an 0-1 pulse is ``|2>`` above it and for an EF
+     pulse is ``|0>`` below.
+
+     It needed a DRAG-shaped pulse on the ``.12`` clock, which neither compat layer
+     exported. That pulse is reached through a new `SchedulerBackend.drag_pulse`
+     rather than a bound class, because the two schedulers disagree about the argument
+     names *and* the units — ``G_amp``/``D_amp`` as a ratio against
+     ``amplitude``/``beta`` in seconds, the same divergence `drag_span` already exists
+     for. It also carries a phase, which `SquarePulse` does not, and that absence is
+     why an EF Ramsey could not be built out of phase advances.
+
+     Kept for the record, since it was blocked twice over:
 
      First, an EF pulse has no envelope at all: `_drive_ef` propagates a *constant*
      Hamiltonian, where the ``.01`` path builds one from `_envelope_of(pulse)` and
@@ -629,10 +643,7 @@ after the machinery.
        where ``|0>`` used to be a spectator. That is what a DRAG quadrature cancels,
        so `drag_12` now has a curve to fit instead of a flat line.
 
-     `ramsey_12` is written on top of this; `drag_12` needs a DRAG-shaped pulse
-     primitive on the ``.12`` clock, which is plumbing rather than physics — neither
-     compat layer exports one, and `_envelope_of` only recognises a waveform whose
-     function ends in ``drag`` or ``gauss``.
+     `ramsey_12` and `drag_12` are both written on top of this.
    - `ramsey_12` → `clock_freqs.f12`: **done**, and accurate to a couple of kilohertz.
      It detunes the clock rather than phase-advancing the second pi/2, which is the
      opposite of what `ramsey` does one rung down and is not a preference: a

@@ -214,6 +214,21 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`drag_12`, the last of the EF chain** (RFC 0005 §7). A pulse on the 1-2 transition
+sits only a few linewidths from 0-1, so it off-resonantly excites it — about 2.6% —
+and the DRAG quadrature is what cancels that. Two sequences equal only at the right
+coefficient, so their difference crosses zero there and the fit is a line.
+
+It finds −0.043 against a swept span of 0.2: a real interior optimum, nowhere near
+either edge. **Negative**, where the 0-1 optimum is positive, and that sign is physics
+rather than convention — DRAG cancels leakage into the neighbouring level, which for
+an 0-1 pulse is `|2>` above it and for an EF pulse is `|0>` below.
+
+Reaching it needed a DRAG-shaped pulse on the `.12` clock, through a new
+`SchedulerBackend.drag_pulse` rather than a bound class: the two schedulers disagree
+about the argument names *and* the units — `G_amp`/`D_amp` as a ratio against
+`amplitude`/`beta` in seconds, the divergence `drag_span` already exists for.
+
 **`ramsey_12` refines f12 to kilohertz** (RFC 0005 §7). `f12_spectroscopy` drives a
 20 ns pulse, so its line is Fourier-limited and it lands within a few megahertz —
 enough to find the transition, not enough to drive it. Same split `qubit_spectroscopy`

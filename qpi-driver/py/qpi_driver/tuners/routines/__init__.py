@@ -16,6 +16,7 @@ from qpi_driver.tuners.routines.benchmarks import (
     RandomizedBenchmarking,
 )
 from qpi_driver.tuners.routines.ef import (
+    Drag12,
     FineAmplitude12,
     Rabi12,
     Ramsey12,
@@ -64,6 +65,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     ResonatorSpectroscopySecondExcited,
     ThreeStateOperatingPoint,
     Ramsey12,
+    Drag12,
     FineAmplitude12,
     ThreeStateDiscrimination,
     Ramsey,

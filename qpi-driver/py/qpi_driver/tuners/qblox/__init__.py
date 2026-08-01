@@ -15,6 +15,7 @@ from qpi_driver.compat.qblox import (
     CZ,
     IS_QBLOX_SCHEDULER_INSTALLED,
     BinMode,
+    DRAGPulse,
     HardwareAgent,
     IdlePulse,
     Instrument,
@@ -55,6 +56,18 @@ class QbloxBackend(SchedulerBackend):
     SquarePulse = SquarePulse
     SetClockFrequency = SetClockFrequency
     ShiftClockPhase = ShiftClockPhase
+
+    def drag_pulse(self, *, amp, drag, duration, port, clock, phase_deg=0.0):
+        """``beta`` is in seconds — one pulse sigma larger than quantify's ratio."""
+        return DRAGPulse(
+            amplitude=amp,
+            beta=drag,
+            phase=phase_deg % 360.0,
+            duration=duration,
+            port=port,
+            clock=clock,
+        )
+
     BinMode = BinMode
     drag_parameter = "beta"
     # Seconds: qblox divides the derivative by sigma squared where quantify

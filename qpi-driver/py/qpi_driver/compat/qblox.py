@@ -41,6 +41,7 @@ try:
         Z,
     )
     from qblox_scheduler.operations.pulse_library import (
+        DRAGPulse,
         SetClockFrequency,
         ShiftClockPhase,
         SoftSquarePulse,
@@ -78,6 +79,8 @@ except ImportError as exp:
     class DeviceElement(BasicCompatClass): ...
 
     class ShiftClockPhase(BasicCompatClass): ...
+
+    class DRAGPulse(BasicCompatClass): ...
 
     class SetClockFrequency(BasicCompatClass): ...
 

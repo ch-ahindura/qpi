@@ -1149,6 +1149,44 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
         )
 
 
+#: What each backend's DRAG sweep spans, in its own units — see `drag_span`. Needed
+#: here because a fitted coefficient only means something against the range it came
+#: from: the same physical pulse is 0.04 to quantify and 1e-10 to qblox.
+DRAG_SPANS = {"quantify": 0.2, "qblox": 5e-10}
+
+
+def test_the_ef_drag_coefficient_is_measured_and_negative(fully_calibrated):
+    """`drag_12` finds a real interior optimum, and on the far side of zero from 0-1.
+
+    DRAG cancels the leakage a pulse drives into its *neighbouring* level. For an 0-1
+    pulse that neighbour is ``|2>``, above it; for an EF pulse it is ``|0>``, below.
+    The sign follows, and it is the assertion that a flat fit could not pass by luck.
+
+    Interior, too: a coefficient railed at the edge of its sweep means the optimum is
+    outside and the fitted line is extrapolating, while one at zero means the sweep
+    found nothing — which is exactly what this routine would have done before the EF
+    drive gained an envelope and a neighbour to leak into.
+    """
+    report, _device, _simulator, scheduler = fully_calibrated
+    span = DRAG_SPANS[scheduler]
+    measured = {
+        result.target: result.parameters["ef_motzoi"]
+        for result in report.routine_results
+        if result.routine_name == "drag_12"
+    }
+    assert measured, "drag_12 reported nothing"
+
+    for qubit, drag in measured.items():
+        assert drag < 0, (
+            f"{qubit}'s EF DRAG coefficient is {drag:+.5g}: the leakage an EF pulse "
+            f"drives is into |0>, below it, so the correction should be negative"
+        )
+        assert 0.02 * span < abs(drag) < 0.8 * span, (
+            f"{qubit}'s EF DRAG coefficient is {drag:+.5g} against a span of {span:g} "
+            f"— too close to zero to be a measurement, or railed at the edge"
+        )
+
+
 def test_ramsey_refines_f12_past_what_spectroscopy_can_reach(fully_calibrated):
     """Spectroscopy finds the transition; Ramsey measures it. Same split as 0-1.
 

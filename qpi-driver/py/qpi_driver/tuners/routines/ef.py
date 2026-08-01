@@ -32,6 +32,7 @@ from qpi_driver.tuners.base.routines import (
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
+    fit_drag,
     fit_fine_amplitude,
     fit_rabi,
     fit_ramsey,
@@ -80,26 +81,36 @@ def add_ef_pulse(
     amplitude: float,
     duration: float,
     phase_deg: float = 0.0,
+    drag: float = 0.0,
 ) -> None:
-    """One square pulse on the ``.12`` clock, into the port ``rxy`` uses.
+    """One pulse on the ``.12`` clock, into the port ``rxy`` uses.
 
-    A phase goes through the clock rather than the pulse: `SquarePulse` has no phase
-    argument, and the raw-pulse layer is where a gate's ``phi`` would otherwise live.
-    It is shifted back afterwards because a clock phase is *cumulative* — left in
-    place, the second point of a sweep would inherit the first point's advance and
-    the fringe would wind up rather than oscillate.
+    Square by default, and shaped as soon as a phase or a DRAG coefficient is asked
+    for — `SquarePulse` carries neither. The pulse *area* is what sets the rotation
+    and the simulator normalises a shaped envelope to unit mean, so a Gaussian of the
+    same amplitude and duration turns the same angle: `ef_amp180` keeps its meaning
+    across the switch.
+
+    *drag* is in the backend's own units, which differ between the two schedulers —
+    see `SchedulerBackend.drag_pulse`.
     """
     clock = f"{target}.12"
-    phase = phase_deg % 360.0
-    if phase:
-        schedule.add(backend.ShiftClockPhase(phase_shift=phase, clock=clock))
-    schedule.add(
-        backend.SquarePulse(
-            amp=amplitude, duration=duration, port=f"{target}:mw", clock=clock
+    port = f"{target}:mw"
+    if drag or phase_deg % 360.0:
+        schedule.add(
+            backend.drag_pulse(
+                amp=amplitude,
+                drag=drag,
+                duration=duration,
+                port=port,
+                clock=clock,
+                phase_deg=phase_deg,
+            )
         )
+        return
+    schedule.add(
+        backend.SquarePulse(amp=amplitude, duration=duration, port=port, clock=clock)
     )
-    if phase:
-        schedule.add(backend.ShiftClockPhase(phase_shift=-phase, clock=clock))
 
 
 class Rabi12(CalibrationRoutine):
@@ -618,6 +629,95 @@ class Ramsey12(CalibrationRoutine):
         write_path(
             device.get_element(target), "clock_freqs.f12", params["clock_freq_12"]
         )
+
+
+class Drag12(CalibrationRoutine):
+    """Sweep the EF pulse's derivative quadrature to cancel what it leaks.
+
+    The same idea as `drag` one rung down, against a different neighbour. A pulse on
+    the 1-2 transition is only a few linewidths from 0-1, so it off-resonantly excites
+    it — about 2.6% here — and the DRAG quadrature is what cancels that.
+
+    Two sequences that are equal only at the right coefficient: a 90 then a 180 at
+    right angles, and the same pair with the angles swapped. Their difference crosses
+    zero at the optimum and is linear about it, so the fit is a line rather than a
+    peak.
+
+    None of this could be measured until the EF drive became a real drive on the
+    ladder. Before, it had no envelope for a coefficient to shape *and* no neighbour
+    to leak into — ``|0>`` was a spectator — so the sweep would have found zero by
+    construction rather than by measurement.
+    """
+
+    name = "drag_12"
+    depends_on = ("ramsey_12",)
+    updates = (f"{EF}.ef_motzoi",)
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        amplitude = _required_ef_amplitude(element, target)
+        duration = ef_duration(element, config)
+        # In the backend's own units, for the reason `drag` gives: a span sized for
+        # quantify's ratio is nine orders out for qblox's seconds.
+        self._drags = setpoints_of(
+            config, "drags", linear_setpoints(-backend.drag_span, backend.drag_span, 31)
+        )
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        measure = open_three_state_readout(schedule, backend, target, element)
+        for index, drag in enumerate(self._drags):
+            for offset, (first, second) in enumerate(((0.0, 90.0), (90.0, 0.0))):
+                schedule.add(backend.Reset(target))
+                schedule.add(backend.X(target))
+                add_ef_pulse(
+                    schedule,
+                    backend,
+                    target,
+                    amplitude / 2.0,
+                    duration,
+                    phase_deg=first,
+                    drag=drag,
+                )
+                add_ef_pulse(
+                    schedule,
+                    backend,
+                    target,
+                    amplitude,
+                    duration,
+                    phase_deg=second,
+                    drag=drag,
+                )
+                schedule.add(
+                    backend.Measure(
+                        target,
+                        acq_index=2 * index + offset,
+                        bin_mode=backend.BinMode.AVERAGE,
+                        **measure,
+                    )
+                )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        signal = signal_of(dataset)
+        if signal.size < 2 * len(self._drags):
+            raise RoutineError(
+                f"drag_12 expected {2 * len(self._drags)} acquisitions, got {signal.size}"
+            )
+        paired = signal[: 2 * len(self._drags)].reshape(-1, 2)
+        fitted = fit_drag(np.asarray(self._drags), paired[:, 0] - paired[:, 1])
+        return {"ef_motzoi": fitted["motzoi"], **fitted}
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        element = device.get_element(target)
+        path = ef_path(element, "ef_motzoi")
+        if path:
+            write_path(element, path, params["ef_motzoi"])
 
 
 class ThreeStateDiscrimination(CalibrationRoutine):

@@ -10,6 +10,7 @@ from qpi_driver.compat.quantify import (
     CZ,
     IS_QUANTIFY_INSTALLED,
     BinMode,
+    DRAGPulse,
     IdlePulse,
     Instrument,
     Measure,
@@ -51,6 +52,18 @@ class QuantifyBackend(SchedulerBackend):
     SquarePulse = SquarePulse
     SetClockFrequency = SetClockFrequency
     ShiftClockPhase = ShiftClockPhase
+
+    def drag_pulse(self, *, amp, drag, duration, port, clock, phase_deg=0.0):
+        """``D_amp`` is the dimensionless ratio of derivative to Gaussian."""
+        return DRAGPulse(
+            G_amp=amp,
+            D_amp=drag,
+            phase=phase_deg % 360.0,
+            duration=duration,
+            port=port,
+            clock=clock,
+        )
+
     BinMode = BinMode
     drag_parameter = "motzoi"
     # Dimensionless: the derivative component as a fraction of the Gaussian.
