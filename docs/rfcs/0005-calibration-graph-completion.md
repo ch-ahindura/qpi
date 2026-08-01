@@ -529,10 +529,41 @@ after the machinery.
      1-2 matrix element into the subspace operator rather than taking the ladder's
      `sqrt(2)`. So the EF chain can be tested for wiring — right clock, right port,
      right envelope — but not for the ladder's own scaling.
+   - `three_state_operating_point`, `three_state_discrimination`: **written, run, and
+     backed out — the simulator's readout cannot report a third outcome.** Worth
+     recording in full, because the blocker is not where §9 said it was.
+
+     Both were built and both were correct as far as they could be. The three-state
+     point is real and large: sweeping frequency and amplitude, the closest of the
+     three clouds reaches **39 sigma** where the two-state point leaves ``|1>`` and
+     ``|2>`` **2.95 sigma** apart — off resonance both return almost nothing and
+     collapse together, so a point tuned for ``|0>`` against ``|1>`` genuinely cannot
+     resolve the ladder. The amplitude wants to run to full scale: the separation does
+     peak and fall as punch-through collapses all three, but it peaks near *twice*
+     full scale, so within what an instrument can play more is always better.
+
+     What stops it is one level down. The dynamics are three-level and correct —
+     traced through the coordinator, ``X`` then an EF pi pulse leaves 98.5% of the
+     population in ``|2>`` — but the *acquisition* is two-outcome: `_cloud_pair`
+     returns two clouds and `_blobs` mixes them by a single `excited_population`, so a
+     ``|2>`` population is sampled as one of the other two. The clouds it derives are
+     already per level, which is why this looked ready; the sampler is not. A
+     ``|2>``-prepared shot came back on ``|0>``'s cloud, and the classifier rightly
+     refused three states it could not see.
+
+     So the prerequisite is a **simulator change, not a routine**: the acquisition has
+     to carry a population per level rather than one excited fraction, through
+     `_Acquisition`, `_blobs`, `_averaged`, `_trace` and the joint-outcome path that
+     keeps entangled registers correlated. That is the core readout every other test
+     depends on, and it belongs in its own change rather than at the end of this one.
+
+     One thing survives the revert as a caution: `rabi_12` works *despite* this. Its
+     oscillation moves population out of ``|1>``, and the sampler reports the arrival
+     in ``|2>`` as ``|0>`` — same period, right answer, wrong reason. A routine can be
+     correct here and still not be evidence that the model underneath it is.
    - `ramsey_12`, `drag_12`, `fine_amplitude_12`,
      `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
-     `readout_amplitude_three_state`, `three_state_discrimination`: **unblocked, not
-     yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
+     `readout_amplitude_three_state`: **unblocked, not yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
      `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a `measure_3state`
      submodule. `CalibratedTransmon` is where those go — `r12` and `measure_2state`
      are already there — and the three-state readout point can follow `measure_2state`
