@@ -412,13 +412,39 @@ after the machinery.
      rejected against. Rows fitting a line narrower than the sweep's own step are
      dropped before selection, the same criterion `_require_resolved_line` applies to
      the winner.
-3. ~~**Dispersive readout in the simulator.**~~ **Done.** Each level pulls the
+3. ~~**Dispersive readout in the simulator.**~~ **Done**, and extended later to
+   three levels — see the end of this entry. Each level pulls the
    resonance to `bare + chi(1-2n)`, so the levels return different *complex*
    responses and the IQ clouds are derived rather than placed — `GROUND_IQ` and
    `EXCITED_IQ` are gone. Through an amplifier chain (gain 3.6, phase 35°) they land
    at 3.60, 0.665 and 0.337 in magnitude: a monotone ladder, 14σ separation, and both
    real parts positive so the defaults of `0`/`0` assign every shot as `|1⟩`. It did
    not land with only simulator tests — see below.
+
+   **The acquisition now reports every level, not two.** The clouds were per level
+   from the start; the sampler was not, and a ``|2>`` shot came back on ``|0>``'s
+   cloud. `_Acquisition` carries a population vector, `_blobs` indexes the cloud by
+   the level drawn, `_averaged` and `_trace` weight every level, and the joint-outcome
+   path returns levels rather than booleans so an entangled register keeps its
+   correlations. Thresholded acquisition still returns one bit — the *instrument* is
+   two-outcome however many levels the chip has.
+
+   The draw is ordered ``|1>`` first, then ``|0>``, then the rest. That looks arbitrary
+   and is not: it consumes the same uniforms as the `rng.random(n) < P(excited)` it
+   replaces, so a chip with no population above ``|1>`` draws exactly what it drew
+   before. Every existing expectation — pi pulse amplitudes, coherence times, gate
+   fidelities — was measured against that stream, and reordering it would have moved
+   all of them at once, leaving no way to tell a physics regression from a reshuffle.
+   A test asserts the two agree shot for shot.
+
+   **It exposed one number that had been resting on the bug.** `f12_spectroscopy`
+   drove at 3% of full scale, and that default was tuned when ``|2>`` was reported at
+   ``|0>``'s cloud: a 5% population transfer swung the signal across the whole readout
+   axis and the line looked strong. Read correctly, ``|1>`` and ``|2>`` sit close
+   together at a 0-1 readout point and the same transfer is a 5% wiggle — enough to
+   put the fitted centre 7.4 MHz out and fail its own test. At 10% the contrast is 26%
+   and the fit lands within a megahertz. The routine was never right; it was being
+   flattered.
 4. ~~**The state-resolved readout pass.**~~ **Done**, in three nodes rather than four and not the four that were planned.
    - `readout_discrimination`: **done.** Prepares `|0⟩`/`|1⟩` single-shot, fits the
      rotation as the direction between cloud centres and the threshold as the
@@ -542,25 +568,16 @@ after the machinery.
      peak and fall as punch-through collapses all three, but it peaks near *twice*
      full scale, so within what an instrument can play more is always better.
 
-     What stops it is one level down. The dynamics are three-level and correct —
+     What stopped it was one level down. The dynamics are three-level and correct —
      traced through the coordinator, ``X`` then an EF pi pulse leaves 98.5% of the
-     population in ``|2>`` — but the *acquisition* is two-outcome: `_cloud_pair`
-     returns two clouds and `_blobs` mixes them by a single `excited_population`, so a
-     ``|2>`` population is sampled as one of the other two. The clouds it derives are
-     already per level, which is why this looked ready; the sampler is not. A
-     ``|2>``-prepared shot came back on ``|0>``'s cloud, and the classifier rightly
-     refused three states it could not see.
+     population in ``|2>`` — but the *acquisition* was two-outcome: `_cloud_pair`
+     returned two clouds and `_blobs` mixed them by a single `excited_population`, so
+     a ``|2>`` population was sampled as one of the other two. The clouds were already
+     derived per level, which is why this looked ready; the sampler was not.
 
-     So the prerequisite is a **simulator change, not a routine**: the acquisition has
-     to carry a population per level rather than one excited fraction, through
-     `_Acquisition`, `_blobs`, `_averaged`, `_trace` and the joint-outcome path that
-     keeps entangled registers correlated. That is the core readout every other test
-     depends on, and it belongs in its own change rather than at the end of this one.
-
-     One thing survives the revert as a caution: `rabi_12` works *despite* this. Its
-     oscillation moves population out of ``|1>``, and the sampler reports the arrival
-     in ``|2>`` as ``|0>`` — same period, right answer, wrong reason. A routine can be
-     correct here and still not be evidence that the model underneath it is.
+     **That is now fixed** — the acquisition carries a population per level — so these
+     two nodes are unblocked and can be rewritten from the versions this revert
+     removed. See phase 3 below for what the fix cost and what it exposed.
    - `drag_12`: **blocked the same way, and found by reading rather than by running.**
      An EF pulse has no envelope at all in the simulator, let alone a DRAG term:
      `_drive_ef` propagates a *constant* Hamiltonian, where the ``.01`` path builds one

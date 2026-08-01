@@ -97,9 +97,15 @@ class _Acquisition:
     index: int
     protocol: str
     bin_mode: str
-    excited_population: float
-    #: Per-shot outcomes for this qubit, drawn jointly with the rest of its
-    #: register. ``None`` for a qubit entangled with nothing, where an
+    #: The marginal probability of each level, indexed by level. A vector rather
+    #: than one excited fraction because the transmon has three rungs and the third
+    #: is not a variant of the second: leakage into ``|2>`` lands somewhere else in
+    #: the IQ plane, and an acquisition that carried only ``P(excited)`` reported it
+    #: as one of the other two. That is what made three-state readout unmeasurable
+    #: while the dynamics underneath were already right.
+    populations: tuple[float, ...]
+    #: Per-shot outcomes for this qubit, as level indices, drawn jointly with the
+    #: rest of its register. ``None`` for a qubit entangled with nothing, where an
     #: independent draw from the marginal is the same thing.
     outcomes: Any = None
     #: Integration window, in seconds — the length of a `Trace`.
@@ -1066,15 +1072,18 @@ class SimulatedCoordinator:
         )
         register = registers.of(qubit)
         # The marginal, so reading one half of a Bell pair averages to the 50/50
-        # it physically is.
-        population = register.population(qubit)
+        # it physically is. Every level of it, not just the first excited one.
+        populations = tuple(
+            float(np.clip(register.population(qubit, level), 0.0, 1.0))
+            for level in range(register.levels)
+        )
         found.append(
             _Acquisition(
                 channel=int(acquisition.get("acq_channel") or 0),
                 index=int(acquisition.get("acq_index") or 0),
                 protocol=str(acquisition.get("protocol") or ""),
                 bin_mode=str(acquisition.get("bin_mode") or "average"),
-                excited_population=float(np.clip(population, 0.0, 1.0)),
+                populations=populations,
                 outcomes=self._joint_outcomes(register).get(qubit),
                 duration=float(acquisition.get("duration") or 0.0),
                 threshold=float(acquisition.get("acq_threshold") or 0.0),
@@ -1182,9 +1191,11 @@ class SimulatedCoordinator:
         outcomes: dict[str, Any] = {}
         for position, name in enumerate(register.qubits):
             divisor = levels ** (count - position - 1)
-            # Anything above the ground state reads as a 1: a discriminator sees
-            # "not |0>", and leakage to |2> is not a third outcome it can report.
-            outcomes[name] = (draws // divisor) % levels >= 1
+            # The level itself, not "is it excited". Collapsing to a bit here is what
+            # made a shot in |2> indistinguishable from one in |1>; a discriminator
+            # may still choose to report one bit, but that is its decision to make
+            # further down, where the clouds are known.
+            outcomes[name] = (draws // divisor) % levels
         self._sample_cache[id(register)] = outcomes
         return outcomes
 
@@ -1249,26 +1260,62 @@ class SimulatedCoordinator:
         return xr.Dataset(variables, coords=coordinates)
 
     @staticmethod
-    def _cloud_pair(entry: _Acquisition) -> tuple[complex, complex]:
-        """Where ``|0>`` and ``|1>`` land for this acquisition.
+    def _cloud_of(entry: _Acquisition, level: int) -> complex:
+        """Where *level* lands in the IQ plane for this acquisition.
 
-        The fallback is the pair a perfect readout at resonance would give — one at
-        the ground cloud's own place and the excited one attenuated and phase-rotated
-        by sitting two dispersive shifts off. It is used only for an acquisition whose
-        readout clock the schedule never mentioned, where there is nothing to derive.
+        The fallback is what a perfect readout at resonance would give — the ground
+        state at its own place and everything above it at the origin. It is used only
+        for an acquisition whose readout clock the schedule never mentioned, where
+        there is nothing to derive, and it deliberately does not distinguish ``|1>``
+        from ``|2>``: with no readout to model there is nothing to say they differ.
         """
-        if len(entry.clouds) >= 2:
-            return entry.clouds[0], entry.clouds[1]
-        return complex(1.0, 0.0), complex(0.0, 0.0)
+        if level < len(entry.clouds):
+            return entry.clouds[level]
+        return complex(1.0, 0.0) if level == 0 else complex(0.0, 0.0)
+
+    def _settled(self, entry: _Acquisition) -> complex:
+        """The mean IQ point: every level's cloud, weighted by its population."""
+        return sum(
+            self._cloud_of(entry, level) * weight
+            for level, weight in enumerate(entry.populations)
+        )
+
+    def _draw_levels(self, entry: _Acquisition) -> np.ndarray:
+        """One level per shot, drawn from this acquisition's population vector.
+
+        Ordered ``|1>`` first, then ``|0>``, then the rest — which looks arbitrary and
+        is not. This used to be ``rng.random(n) < P(excited)``: one uniform per shot,
+        excited when it fell below. Comparing against the cumulative distribution in
+        that order consumes the same uniforms and makes the same decision, so a chip
+        with no population above ``|1>`` draws exactly what it drew before.
+
+        That matters more than the tidiness of counting up from zero. Every existing
+        expectation about this simulator — pi pulse amplitudes, coherence times, gate
+        fidelities — was measured against the old stream, and reordering it would move
+        all of them at once. A test that then failed would be reporting a change in
+        the random numbers rather than in the physics, with no way to tell which.
+        """
+        weights = np.asarray(entry.populations, dtype=float)
+        if weights.size == 0:
+            return np.zeros(self._repetitions, dtype=int)
+        order = [1, 0, *range(2, weights.size)] if weights.size > 1 else [0]
+        ordered = np.clip(weights[order], 0.0, None)
+        total = ordered.sum()
+        if total <= 0:
+            return np.zeros(self._repetitions, dtype=int)
+
+        draws = self._rng.random(self._repetitions)
+        picked = np.searchsorted(np.cumsum(ordered / total), draws, side="right")
+        return np.asarray(order, dtype=int)[np.clip(picked, 0, len(order) - 1)]
 
     def _single_shots(self, entry: _Acquisition) -> np.ndarray:
         """One value per shot, in whatever the entry's protocol returns."""
-        outcomes = (
-            self._rng.random(self._repetitions) < entry.excited_population
+        levels = (
+            self._draw_levels(entry)
             if entry.outcomes is None
-            else np.asarray(entry.outcomes, dtype=bool)
+            else np.asarray(entry.outcomes, dtype=int)
         )
-        points = self._blobs(outcomes, entry)
+        points = self._blobs(levels, entry)
         if entry.protocol != "ThresholdedAcquisition":
             return points
 
@@ -1305,10 +1352,7 @@ class SimulatedCoordinator:
         samples = max(int(round(entry.duration / NS)), 1)
         times = np.arange(samples, dtype=float)
 
-        ground, excited = self._cloud_pair(entry)
-        settled = (
-            ground * (1 - entry.excited_population) + excited * entry.excited_population
-        )
+        settled = self._settled(entry)
         # Nothing arrives until the signal has travelled. Before that the digitiser
         # samples noise, and how many samples that is is exactly what
         # `time_of_flight` measures — see `_dead_time`.
@@ -1327,25 +1371,24 @@ class SimulatedCoordinator:
 
     def _averaged(self, entry: _Acquisition) -> complex:
         """The mean IQ point, with the noise an averaged acquisition still has."""
-        population = entry.excited_population
-        ground, excited = self._cloud_pair(entry)
-        centre = ground * (1 - population) + excited * population
+        centre = self._settled(entry)
         spread = READOUT_NOISE / np.sqrt(max(self._repetitions, 1))
         return complex(
             centre.real + self._rng.normal(0.0, spread),
             centre.imag + self._rng.normal(0.0, spread),
         )
 
-    def _blobs(self, excited: np.ndarray, entry: _Acquisition) -> np.ndarray:
+    def _blobs(self, levels: np.ndarray, entry: _Acquisition) -> np.ndarray:
         """The IQ point each already-drawn outcome lands on, with readout noise.
 
         The clouds move and the noise does not, which is the whole reason a mistuned
-        readout is bad rather than merely different: off resonance the two responses
-        both shrink towards the origin and towards each other, so a discriminator that
+        readout is bad rather than merely different: off resonance the responses all
+        shrink towards the origin and towards each other, so a discriminator that
         separated them cleanly stops being able to.
         """
-        ground, excited_cloud = self._cloud_pair(entry)
-        centres = np.where(excited, excited_cloud, ground)
+        available = max(len(entry.clouds), int(np.max(levels, initial=0)) + 1)
+        clouds = np.array([self._cloud_of(entry, n) for n in range(available)])
+        centres = clouds[np.clip(levels, 0, available - 1)]
         noise = self._rng.normal(0.0, READOUT_NOISE, self._repetitions) + 1j * (
             self._rng.normal(0.0, READOUT_NOISE, self._repetitions)
         )

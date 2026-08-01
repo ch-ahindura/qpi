@@ -214,6 +214,35 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**The simulated acquisition reports every level, not two** (RFC 0005 §9). The
+simulator's transmon has had three rungs and correct three-level dynamics for a while
+— `X` then an EF pi pulse leaves 98.5% of the population in `|2>` — but the
+*acquisition* carried a single `P(excited)`, so a `|2>` shot was sampled onto one of
+the other two clouds. The clouds were already derived per level; the sampler was not,
+which is what made three-state readout unmeasurable while the physics underneath was
+already right.
+
+`_Acquisition` now carries a population vector. `_blobs` indexes the cloud by the
+level drawn, `_averaged` and `_trace` weight every level, and the joint-outcome path
+returns levels rather than booleans so an entangled register keeps its correlations.
+Thresholded acquisition still returns one bit: the instrument is two-outcome however
+many levels the chip has.
+
+The draw is ordered `|1>` first, then `|0>`, then the rest — which looks arbitrary and
+is not. It consumes the same uniforms as the `rng.random(n) < P(excited)` it replaces,
+so a chip with no population above `|1>` draws exactly what it drew before. Every
+existing expectation about this simulator was measured against that stream, and
+reordering it would have moved all of them at once, leaving no way to tell a physics
+regression from a reshuffle. A test asserts the two agree shot for shot.
+
+**One number was resting on the bug.** `f12_spectroscopy` drove at 3% of full scale,
+and that default was tuned when `|2>` was reported at `|0>`'s cloud: a 5% population
+transfer swung the signal across the whole readout axis and the line looked strong.
+Read correctly, `|1>` and `|2>` sit close together at a 0-1 readout point and the same
+transfer is a 5% wiggle — enough to put the fitted centre 7.4 MHz out and fail its own
+test. The default is now 10%, where the contrast is 26% and the fit lands within a
+megahertz. The routine was never right; it was being flattered.
+
 **`rabi_12`, the first EF gate parameter that is measured** (RFC 0005 §7). A transmon
 is not a qubit, it is an anharmonic ladder used as one, and the third rung is the
 difference: every gate leaks a little population into `|2>`, where two-state readout

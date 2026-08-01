@@ -661,7 +661,18 @@ class F12Spectroscopy(CalibrationRoutine):
         )
 
         clock = f"{target}.12"
-        amplitude = float(config.get("drive_amp", 0.03))
+        # A tenth, not the 3% this asked for before the simulator learned where |2>
+        # lands. That default was tuned against an artefact: with |2> reported on
+        # |0>'s cloud, a 5% population transfer swung the signal across the whole
+        # readout axis and the line looked strong. Read correctly, |1> and |2> sit
+        # close together at a 0-1 readout point and the same transfer is a 5% wiggle —
+        # measured, and enough to put the fitted centre 7 MHz out.
+        #
+        # A tenth gives 26% contrast and lands within a megahertz. Not more: half a pi
+        # pulse is already the point where `_drive_ef`'s neglected off-resonant 0-1
+        # term starts to matter, and this routine only has to find the line for
+        # `rabi_12` to refine.
+        amplitude = float(config.get("drive_amp", 0.10))
         duration = float(config.get("duration", 20e-9))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))

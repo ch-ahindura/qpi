@@ -575,3 +575,95 @@ def test_the_conditional_phase_survives_the_controls_own_dynamical_phase(coupled
     # half-exchange either way — so a reader of the winding could not land near
     # the gate's phase twice.
     assert angle_apart(measured[0], 180.0) < 5.0
+
+
+# --- the acquisition, which is where the third level was being lost ------------
+
+
+def _acquisition(populations, clouds, **kwargs):
+    from qpi_driver.simulation.coordinator import _Acquisition
+
+    return _Acquisition(
+        channel=0,
+        index=0,
+        protocol=kwargs.pop("protocol", "SSBIntegrationComplex"),
+        bin_mode="append",
+        populations=tuple(populations),
+        clouds=tuple(clouds),
+        **kwargs,
+    )
+
+
+def _coordinator(simulator, shots=4000):
+    from qpi_driver.simulation.coordinator import SimulatedCoordinator
+
+    coordinator = SimulatedCoordinator(simulator)
+    coordinator._repetitions = shots
+    return coordinator
+
+
+def test_a_shot_in_the_second_excited_state_lands_on_its_own_cloud(simulator):
+    """The acquisition used to carry one excited fraction, so it could not.
+
+    A `|2>` population was reported as one of the other two — measured, and by the
+    widest possible margin: the dynamics put 98.5% of the population in `|2>` and the
+    acquisition returned `|0>`'s cloud. The clouds were already derived per level;
+    the sampler was not, and that is what made three-state readout unmeasurable while
+    the physics underneath was already right.
+    """
+    clouds = (5 + 0j, 1 + 0j, 0 + 3j)
+    coordinator = _coordinator(simulator)
+
+    for level, expected in enumerate(clouds):
+        shots = coordinator._single_shots(
+            _acquisition([1.0 if n == level else 0.0 for n in range(3)], clouds)
+        )
+        assert complex(shots.mean()) == pytest.approx(expected, abs=0.05), (
+            f"a shot prepared in |{level}> did not land on |{level}>'s cloud"
+        )
+
+
+def test_a_mixed_state_lands_shots_on_every_cloud_it_populates(simulator):
+    """And in the right proportions, which is what a leakage number is made of."""
+    clouds = (5 + 0j, 1 + 0j, 0 + 3j)
+    coordinator = _coordinator(simulator, shots=8000)
+    shots = coordinator._single_shots(_acquisition([0.2, 0.5, 0.3], clouds))
+
+    nearest = np.argmin(
+        np.abs(np.asarray(shots)[:, None] - np.asarray(clouds)[None, :]), axis=1
+    )
+    fractions = [float(np.mean(nearest == level)) for level in range(3)]
+    assert fractions == pytest.approx([0.2, 0.5, 0.3], abs=0.03)
+
+
+def test_an_averaged_acquisition_weights_every_level_it_populates(simulator):
+    """`|2>` used to be folded into `1 - P(excited)` and so read as `|0>`.
+
+    That is what made `f12_spectroscopy` look easy: transferring population into
+    `|2>` swung the averaged point across the whole readout axis, because `|2>` was
+    being reported at the ground cloud. Weighted correctly the same transfer is a
+    much smaller move, which is the honest contrast an EF measurement has.
+    """
+    clouds = (5 + 0j, 1 + 0j, 0 + 3j)
+    coordinator = _coordinator(simulator, shots=100_000)
+    centre = coordinator._averaged(_acquisition([0.2, 0.5, 0.3], clouds))
+
+    assert centre == pytest.approx(0.2 * 5 + 0.5 * 1 + 0.3 * 3j, abs=0.05)
+
+
+def test_the_draw_is_unchanged_for_a_chip_with_no_second_excited_state(simulator):
+    """The stream had to survive this change, or every number measured against it moves.
+
+    Pi pulse amplitudes, coherence times and gate fidelities were all measured against
+    `rng.random(n) < P(excited)`. Drawing a level from a cumulative distribution
+    ordered `|1>` first, then `|0>`, consumes the same uniforms and makes the same
+    decision — so a test that fails afterwards is reporting physics rather than a
+    reshuffled random stream.
+    """
+    populations = [0.3, 0.7, 0.0]
+    drawn = _coordinator(simulator)._draw_levels(_acquisition(populations, ()))
+
+    expected = (np.random.default_rng(20260731).random(4000) < populations[1]).astype(
+        int
+    )
+    assert np.array_equal(drawn, expected)
