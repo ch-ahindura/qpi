@@ -214,6 +214,28 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**Leakage into `|2>` is measured** (RFC 0005 §7). The number the EF chain exists to
+produce. Every gate leaves a little population on the third rung, and a two-state
+readout does not lose those shots — it reports them as `|0>` or `|1>`, so leakage
+arrives as an answer and every fidelity built on it is quietly optimistic.
+
+`three_state_discrimination` prepares all three states and classifies each shot by
+nearest centre. Not by a rotation and a threshold: those describe a *line*, and three
+clouds have none — `|2>` sits off the axis joining the other two, because the
+resonances are evenly spaced while the complex responses at one drive frequency are
+not. It writes nothing; using three-state assignment in the job path would mean a
+measurement level returning three outcomes, which is an API question rather than a
+calibration one.
+
+`three_state_operating_point` finds where to read. A third point rather than a variant
+of the two-state one, because tuned for `|0>` against `|1>` the readout sits where
+`|1>` and `|2>` both return almost nothing and collapse together — **2.95 sigma apart,
+against 39** where this node puts them. It ranks on the *closest* pair of the three,
+since a classifier is only as good as the two states it confuses most.
+
+Both were written once before and reverted: they were correct, and the simulated
+acquisition could not report a third level to feed them. It can now.
+
 **The simulated acquisition reports every level, not two** (RFC 0005 §9). The
 simulator's transmon has had three rungs and correct three-level dynamics for a while
 — `X` then an EF pi pulse leaves 98.5% of the population in `|2>` — but the

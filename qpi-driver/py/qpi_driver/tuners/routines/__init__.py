@@ -15,7 +15,11 @@ from qpi_driver.tuners.routines.benchmarks import (
     InterleavedRB,
     RandomizedBenchmarking,
 )
-from qpi_driver.tuners.routines.ef import Rabi12
+from qpi_driver.tuners.routines.ef import (
+    Rabi12,
+    ThreeStateDiscrimination,
+    ThreeStateOperatingPoint,
+)
 from qpi_driver.tuners.routines.readout import (
     ReadoutDiscrimination,
     ReadoutOperatingPoint,
@@ -54,6 +58,8 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     ReadoutDiscrimination,
     F12Spectroscopy,
     Rabi12,
+    ThreeStateOperatingPoint,
+    ThreeStateDiscrimination,
     Ramsey,
     T1,
     T2Echo,

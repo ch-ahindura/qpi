@@ -20,6 +20,8 @@ from .cosine import (
 from .discrimination import (
     fit_readout_discrimination,
     fit_readout_operating_point,
+    fit_three_state_discrimination,
+    fit_three_state_operating_point,
 )
 from .exponential import (
     exponential_decay,
@@ -50,6 +52,8 @@ __all__ = [
     "fit_readout_timing",
     "fit_readout_discrimination",
     "fit_readout_operating_point",
+    "fit_three_state_discrimination",
+    "fit_three_state_operating_point",
     "decaying_cosine",
     "fit_rabi",
     "fit_ramsey",

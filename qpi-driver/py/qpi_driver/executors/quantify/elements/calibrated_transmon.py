@@ -114,6 +114,38 @@ class TwoStateReadout(InstrumentChannel):
         )
 
 
+class ThreeStateReadout(InstrumentChannel):
+    """The readout point that resolves ``|0>``, ``|1>`` and ``|2>`` at once.
+
+    A third point rather than a variant of `TwoStateReadout`, because the two solve
+    different problems. Tuned for ``|0>`` against ``|1>``, the readout sits where
+    ``|1>`` and ``|2>`` both return almost nothing and their clouds collapse together
+    — 2.95 sigma apart on the simulated chip, against 39 where the three-state point
+    puts them. One setting cannot be best at both.
+
+    No rotation and no threshold: three clouds have no line between them, so shots are
+    classified by nearest centre instead. See `fit_three_state_discrimination`.
+    """
+
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
+
+        self.add_parameter(
+            "frequency",
+            parameter_class=ManualParameter,
+            unit="Hz",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1e12, allow_nan=True),
+        )
+        self.add_parameter(
+            "pulse_amp",
+            parameter_class=ManualParameter,
+            unit="",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+        )
+
+
 class EFDrive(InstrumentChannel):
     """The pulse that drives ``|1>`` to ``|2>``, as ``rxy`` is for ``|0>`` to ``|1>``.
 
@@ -162,3 +194,4 @@ class CalibratedTransmon(BasicTransmonElement):
         self.add_submodule("spec", SpectroscopySettings(self, "spec"))
         self.add_submodule("measure_2state", TwoStateReadout(self, "measure_2state"))
         self.add_submodule("r12", EFDrive(self, "r12"))
+        self.add_submodule("measure_3state", ThreeStateReadout(self, "measure_3state"))

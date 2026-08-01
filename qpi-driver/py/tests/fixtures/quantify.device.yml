@@ -7,6 +7,12 @@ q0:
   rxy:
     amp180: 0.1
     motzoi: 0
+  # A hand-set guess like `rxy.amp180` above, and wrong in the same way:
+  # `rabi_12` measures it. Non-zero because zero means "no EF pulse", and the
+  # routines that prepare |2> refuse to play one rather than playing something
+  # else.
+  r12:
+    ef_amp180: 0.1
   clock_freqs:
     f01: 5e9
     f12: 4.8e9
@@ -35,6 +41,12 @@ q1:
   rxy:
     amp180: 0.1
     motzoi: 0
+  # A hand-set guess like `rxy.amp180` above, and wrong in the same way:
+  # `rabi_12` measures it. Non-zero because zero means "no EF pulse", and the
+  # routines that prepare |2> refuse to play one rather than playing something
+  # else.
+  r12:
+    ef_amp180: 0.1
   clock_freqs:
     f01: 5e9
     f12: 4.8e9
@@ -74,6 +86,12 @@ q2:
   rxy:
     amp180: 0.1
     motzoi: 0
+  # A hand-set guess like `rxy.amp180` above, and wrong in the same way:
+  # `rabi_12` measures it. Non-zero because zero means "no EF pulse", and the
+  # routines that prepare |2> refuse to play one rather than playing something
+  # else.
+  r12:
+    ef_amp180: 0.1
   clock_freqs:
     f01: 5e9
     f12: 4.8e9

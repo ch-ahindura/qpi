@@ -75,6 +75,23 @@ class TwoStateReadout(SchedulerSubmodule):
     )
 
 
+class ThreeStateReadout(SchedulerSubmodule):
+    """The readout point that resolves all three levels. See the quantify twin."""
+
+    frequency: float = Parameter(
+        docstring="Readout frequency for three-state shots. 0 if uncalibrated.",
+        unit="Hz",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1e12, allow_nan=True),
+    )
+    pulse_amp: float = Parameter(
+        docstring="Readout amplitude for three-state shots. 0 if uncalibrated.",
+        unit="",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+    )
+
+
 class EFDrive(SchedulerSubmodule):
     """The pulse that drives ``|1>`` to ``|2>``. See the quantify twin."""
 
@@ -109,3 +126,6 @@ class CalibratedTransmon(BasicTransmonElement):
         default_factory=lambda: TwoStateReadout(name="measure_2state")
     )
     r12: EFDrive = Field(default_factory=lambda: EFDrive(name="r12"))
+    measure_3state: ThreeStateReadout = Field(
+        default_factory=lambda: ThreeStateReadout(name="measure_3state")
+    )

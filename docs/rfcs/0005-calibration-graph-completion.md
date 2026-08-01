@@ -533,7 +533,7 @@ after the machinery.
      backend dies inside its register allocator with a bare `IndexError`.
      `resonator_punchout` sweeps a far larger grid unaffected because it averages;
      this cannot, since the width of each cloud is the measurement.
-5. **The EF subspace.** Begun.
+5. **The EF subspace.** Mostly done — the leakage measurement it exists for is in.
    - `f12_spectroscopy` → `clock_freqs.f12`: **done.** The `.12` clock is driven in
      the simulator now — its own rotating frame, detuning on `|2⟩`, `|0⟩` a spectator —
      and the routine recovers 4.9304 GHz against a true 4.9312, with an anharmonicity
@@ -575,9 +575,12 @@ after the machinery.
      a ``|2>`` population was sampled as one of the other two. The clouds were already
      derived per level, which is why this looked ready; the sampler was not.
 
-     **That is now fixed** — the acquisition carries a population per level — so these
-     two nodes are unblocked and can be rewritten from the versions this revert
-     removed. See phase 3 below for what the fix cost and what it exposed.
+     **Both are now in**, unchanged from the versions the revert removed — the code was
+     right, the model underneath was not. `three_state_operating_point` writes
+     `measure_3state`, and `three_state_discrimination` classifies at that point by
+     nearest centre and reports the leakage. On the simulated chip the three states
+     assign at better than 90% and the two readout points are measurably different,
+     which is the premise for carrying both. See phase 3 for what the fix cost.
    - `drag_12`: **blocked the same way, and found by reading rather than by running.**
      An EF pulse has no envelope at all in the simulator, let alone a DRAG term:
      `_drive_ef` propagates a *constant* Hamiltonian, where the ``.01`` path builds one

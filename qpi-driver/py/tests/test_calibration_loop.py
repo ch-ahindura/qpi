@@ -1146,6 +1146,58 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
         assert ef == pytest.approx(written[qubit]["rxy"]["amp180"], rel=0.15)
 
 
+def test_leakage_into_the_third_level_is_measured(fully_calibrated):
+    """The number the whole EF chain exists to produce.
+
+    A two-state readout does not lose a leaked shot — it reports it as ``|0>`` or
+    ``|1>``, so leakage arrives as an answer and every fidelity built on it is quietly
+    optimistic. This is the only node that can see it, and it can only see it because
+    the simulated acquisition now reports a third level: before that, a ``|2>``-prepared
+    shot came back on ``|0>``'s cloud and the classifier refused to fit.
+
+    Asserting the classifier works rather than pinning a leakage figure. How much a
+    given X pulse leaks is a property of this chip and this pulse; what would make the
+    node worthless is three states it cannot tell apart.
+    """
+    report, _device, _simulator, _scheduler = fully_calibrated
+    measured = {
+        result.target: result.parameters
+        for result in report.routine_results
+        if result.routine_name == "three_state_discrimination"
+    }
+    assert measured, "three_state_discrimination reported nothing"
+
+    for qubit, params in measured.items():
+        assert params["assignment_fidelity"] > 0.9, (
+            f"{qubit}'s three states are not being told apart: {params}"
+        )
+        # A leakage figure at all, and a physical one. It is a fraction of shots, so
+        # anything outside [0, 1] would be a counting mistake rather than a chip.
+        assert 0.0 <= params["leakage"] <= 1.0
+
+
+def test_the_three_state_readout_point_is_not_the_two_state_one(fully_calibrated):
+    """Two points because one setting cannot be best at both, measured.
+
+    At the two-state point ``|1>`` and ``|2>`` both return almost nothing and collapse
+    together — 2.95 sigma apart on this chip, against 39 where the three-state sweep
+    puts them. A run where the two points coincided would mean the sweep found nothing
+    to prefer, and the extra submodule would be carrying a duplicate.
+    """
+    _report, device, _simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+
+    for qubit in ("q0", "q1"):
+        three = written[qubit]["measure_3state"]
+        two = written[qubit]["measure_2state"]
+        assert three["frequency"] > 0 and three["pulse_amp"] > 0
+
+        assert (three["frequency"], three["pulse_amp"]) != (
+            two["frequency"],
+            two["pulse_amp"],
+        ), f"{qubit}'s three-state readout landed exactly on its two-state one"
+
+
 def test_the_discriminated_readout_point_is_calibrated_and_sane(fully_calibrated):
     """The two readouts want different things, and the graph now says so separately.
 
