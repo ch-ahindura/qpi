@@ -311,7 +311,11 @@ class SimulatedCoordinator:
         self._acquisitions: list[_Acquisition] = []
         self._repetitions = 1
         #: Flux port to the (amplitude, start time) of an offset currently held.
-        self._flux_offsets: dict[str, tuple[float, float]] = {}
+        #: Port to (amplitude, start time, drive frequency) for a flux pulse the
+        #: backend emitted as a held offset. The frequency belongs here because a
+        #: *parametric* coupler drive rides a microwave clock, and dropping it
+        #: leaves the held part detuned to nothing.
+        self._flux_offsets: dict[str, tuple[float, float, float]] = {}
         #: Clock to its accumulated virtual-Z phase, in degrees.
         self._clock_phases: dict[str, float] = {}
         #: Register id to its per-shot joint outcomes, dropped as it evolves.
@@ -591,11 +595,24 @@ class SimulatedCoordinator:
         if offset is not None:
             amplitude = float(np.real(offset))
             if amplitude != 0.0:
-                self._flux_offsets[port] = (amplitude, start)
+                self._flux_offsets[port] = (amplitude, start, drive_hz)
                 return
             held = self._flux_offsets.pop(port, None)
             if held is not None:
-                self._run_flux(port, held[0], start - held[1], registers, gate_qubits)
+                # With the frequency the offset was set at. A baseband CZ does not
+                # care — its resonance is the flux amplitude — but a parametric one
+                # is nothing without it: the backend splits a 100 ns coupler drive
+                # into 96 ns of held offset plus a 4 ns tail, and replaying the held
+                # part at zero left 96% of the gate infinitely detuned. The gate ran
+                # at 4% of its length and looked simply weak.
+                self._run_flux(
+                    port,
+                    held[0],
+                    start - held[1],
+                    registers,
+                    gate_qubits,
+                    held[2],
+                )
             return
 
         amplitude = _amplitude_of(pulse)

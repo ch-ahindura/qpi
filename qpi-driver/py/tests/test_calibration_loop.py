@@ -323,6 +323,67 @@ def two_qubit_device(
     return device, simulator, scheduler
 
 
+def test_a_mistuned_parametric_coupler_is_found_and_corrected(two_qubit_device):
+    """`cz_spectroscopy` moves the CZ drive onto the transition it means to bridge.
+
+    The fixture declares them apart on purpose: ``clock_freqs.cz`` 50 MHz off the
+    ``clock_freqs.sideband_gap`` the simulator honours as the real resonance. That is
+    a coupler whose gate compiles, plays and does nothing — amplitude sets how fast
+    the exchange runs, frequency sets whether it runs at all — and the only way to
+    see it is to sweep.
+
+    Its own test rather than a line in the full-DAG one: giving that fixture the
+    coupler edge means calibrating q2 as well, which is a wider change than this
+    routine needs to be covered.
+    """
+    device, simulator, scheduler = two_qubit_device
+    # `float` because YAML 1.1 reads `3.9e9` as a *string* — it wants a decimal point
+    # or a signed exponent — and the device loader's own `_to_num` is what converts it
+    # on the way in. The fixture writes every clock that way, so reading one back raw
+    # gives text.
+    declared = {
+        name: float(value)
+        for name, value in yaml.safe_load(device.read_text())["q1_q2"][
+            "clock_freqs"
+        ].items()
+    }
+    assert declared["cz"] != declared["sideband_gap"], (
+        "the fixture is meant to ship a mistuned coupler, or this test proves nothing"
+    )
+
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"cz_spec_{scheduler}",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(
+        CalibrationConfig(
+            target_qubits=["q1", "q2"],
+            target_edges=["q1_q2"],
+            routines={
+                name: RoutineConfig(
+                    enabled=name == "cz_spectroscopy",
+                    params={"span": 300e6, "points": 61},
+                )
+                for name in routine_names()
+            },
+        )
+    )
+    tuner.close()
+    close_instruments(scheduler)
+
+    assert report.status == "success", report.errors
+    written = float(yaml.safe_load(device.read_text())["q1_q2"]["clock_freqs"]["cz"])
+    assert written == pytest.approx(declared["sideband_gap"], abs=10e6), (
+        f"the CZ drive is still at {written / 1e9:.4f} GHz against a sideband gap of "
+        f"{declared['sideband_gap'] / 1e9:.4f} GHz"
+    )
+
+
 TWO_QUBIT_HEAD = 'OPENQASM 3.0;\ninclude "stdgates.inc";\nqubit[2] q;\nbit[2] c;\n'
 TWO_QUBIT_TAIL = "c[0] = measure q[0];\nc[1] = measure q[1];\n"
 

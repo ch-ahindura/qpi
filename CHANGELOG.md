@@ -214,6 +214,17 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**A parametric coupler drive kept its frequency through a held offset** (RFC 0005 §9).
+The qblox backend emits a long flux pulse as a held DC offset plus a short tail, and
+the branch replaying the held part dropped the drive frequency — so a 100 ns coupler
+drive ran as 96 ns at zero, infinitely detuned, plus 4 ns at the real frequency.
+
+Harmless for a baseband CZ, whose resonance is the flux amplitude and which ignores
+the frequency entirely. Fatal for a parametric one, which is nothing without it: the
+gate ran at 4% of its length and looked simply weak. The parametric CZ had never
+worked in simulation, and nothing said so because no test drove it — `cz_spectroscopy`
+is the first thing that did.
+
 **`cz_spectroscopy` finds the frequency a parametric CZ has to be driven at** (RFC
 0005 §12). The coupler is modulated and a sideband bridges `|11>`-`|02>`: amplitude
 sets how fast the exchange runs, frequency sets whether it runs *at all*, so a drive

@@ -701,10 +701,19 @@ after the machinery.
      nothing noticed, because no test drove it. It is now on an RF module with an LO,
      and declares a drive 50 MHz off its own sideband gap for the routine to correct.
 
-     **Not yet covered end to end.** The full-DAG fixture targets ``q0_q1`` only, and
-     giving it ``q1_q2`` means calibrating q2 as well — a longer run and a wider
-     change than this one. `cz_spectroscopy` is compiled under both schedulers and
-     unit-tested; it has no loop-suite assertion yet.
+     **Covered end to end**, in its own loop test rather than by widening the full-DAG
+     fixture — giving that one ``q1_q2`` would mean calibrating q2 as well. The
+     two-qubit fixture ships a coupler mistuned by 50 MHz and the routine moves the
+     drive onto the gap.
+
+     Writing that test found **a simulator defect the routine had been sitting on**.
+     The qblox backend emits a long flux pulse as a *held DC offset* plus a short
+     tail, and the branch replaying the held part dropped the drive frequency: a
+     100 ns coupler drive ran as 96 ns at zero — infinitely detuned — plus 4 ns at
+     the real frequency. Harmless for a baseband CZ, whose resonance is the flux
+     amplitude; fatal for a parametric one, which is nothing without its frequency.
+     The parametric CZ had therefore never worked in simulation, and nothing said so
+     because nothing drove it.
    - A coupler frequency in the simulator, the two arcs, `coupler_anticrossing` →
      `bias.parking_current`, `cz_parametrization`: **not started.** The coupler is not
      modelled as an element with a frequency of its own — `SIDEBAND_GAP_GHZ` says so —
