@@ -581,12 +581,33 @@ after the machinery.
      nearest centre and reports the leakage. On the simulated chip the three states
      assign at better than 90% and the two readout points are measurably different,
      which is the premise for carrying both. See phase 3 for what the fix cost.
-   - `drag_12`: **blocked the same way, and found by reading rather than by running.**
-     An EF pulse has no envelope at all in the simulator, let alone a DRAG term:
-     `_drive_ef` propagates a *constant* Hamiltonian, where the ``.01`` path builds one
-     from `_envelope_of(pulse)` and steps it through `_propagate_shaped`. So a sweep of
-     `r12.ef_motzoi` would move nothing and the fit would have a flat line to explain.
-     Recorded here so the node is not written before the drive can answer it.
+   - `fine_amplitude_12` → `r12.ef_amp180`: **done.** A pi/2 pre-rotation then n EF pi
+     pulses, so a per-pulse error grows linearly against a readout noise that does
+     not — the residual `rabi_12` cannot see, because a single pi pulse is second
+     order in its own error. It refines to under 0.05 rad per pulse on both qubits.
+
+     It is the first node to *depend* on `three_state_operating_point` for its
+     contrast rather than for a classifier. Its two references are ``|1>`` and ``|2>``,
+     which at a 0-1 readout are all but on top of each other; at the three-state point
+     they are 14 sigma apart in magnitude alone. The three-state point turns out to be
+     what makes the whole EF chain measurable, not just the leakage number.
+   - `drag_12`: **blocked twice over, and found by reading rather than by running.**
+
+     First, an EF pulse has no envelope at all: `_drive_ef` propagates a *constant*
+     Hamiltonian, where the ``.01`` path builds one from `_envelope_of(pulse)` and
+     steps it through `_propagate_shaped`. There is nothing for a DRAG coefficient to
+     shape.
+
+     Second — and this is the one that would survive fixing the first — DRAG suppresses
+     leakage into a *neighbouring* level, and in this model the EF drive has no
+     neighbour to leak to. `_drive_ef` couples ``|1>`` to ``|2>`` and treats ``|0>`` as
+     a spectator, and there is no ``|3>`` in a three-level ladder. So even with an
+     envelope, sweeping `r12.ef_motzoi` would move nothing: the optimum would be zero
+     by construction rather than by measurement.
+
+     Writing it needs a genuinely three-level driven Hamiltonian on the EF clock — the
+     off-resonant ``0-1`` excitation and its Stark shift, which `_drive_ef`'s own
+     docstring already names as what it leaves out.
    - `ramsey_12`, `fine_amplitude_12`,
      `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
      `readout_amplitude_three_state`: **unblocked, not yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,

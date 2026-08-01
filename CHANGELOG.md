@@ -214,6 +214,17 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`fine_amplitude_12` refines the EF pi pulse** (RFC 0005 §7). A π/2 pre-rotation then
+n EF π pulses, so a per-pulse error grows linearly against a readout noise that does
+not. That residual is invisible to `rabi_12`, which fits a whole oscillation and cannot
+see a few per cent of over-rotation — a single π pulse is second order in its own
+error. It refines to under 0.05 rad per pulse on both simulated qubits.
+
+The first node to depend on `three_state_operating_point` for *contrast* rather than
+for a classifier: its two references are `|1>` and `|2>`, all but on top of each other
+at a 0-1 readout and 14 sigma apart in magnitude at the three-state point. That point
+turns out to be what makes the whole EF chain measurable, not just the leakage number.
+
 **Leakage into `|2>` is measured** (RFC 0005 §7). The number the EF chain exists to
 produce. Every gate leaves a little population on the third rung, and a two-state
 readout does not lose those shots — it reports them as `|0>` or `|1>`, so leakage

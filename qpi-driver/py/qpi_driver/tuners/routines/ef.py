@@ -31,6 +31,7 @@ from qpi_driver.tuners.base.routines import (
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
+    fit_fine_amplitude,
     fit_rabi,
     fit_three_state_discrimination,
     fit_three_state_operating_point,
@@ -289,6 +290,138 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
                 write_path(element, path, params[key])
 
 
+def open_three_state_readout(
+    schedule: Any, backend: SchedulerBackend, target: str, element: Any
+) -> dict[str, Any]:
+    """Point the readout where all three levels are distinguishable.
+
+    Returns the kwargs the `Measure` needs, having already put the frequency on the
+    schedule — the measure operation's clock is fixed at ``{qubit}.ro`` in the device
+    config, so a frequency is applied by moving that clock rather than as an argument.
+
+    An uncalibrated point means "leave the readout where it is", which is honest: the
+    routines that call this still run, they just run with whatever contrast the
+    two-state point happens to give — and between ``|1>`` and ``|2>`` that is close to
+    none.
+    """
+    point = three_state_point(element)
+    if not point:
+        return {}
+    schedule.add(
+        backend.SetClockFrequency(
+            clock=f"{target}.ro", clock_freq_new=point["frequency"]
+        )
+    )
+    return {"pulse_amp": point["pulse_amp"]}
+
+
+class FineAmplitude12(CalibrationRoutine):
+    """Amplify a small error in the EF pi pulse by repeating it.
+
+    `rabi_12` fits a whole oscillation and lands within a few per cent; this measures
+    the residual by playing the pulse n times, so a per-pulse error grows linearly
+    while the readout noise does not. The same trick `fine_amplitude` plays one rung
+    down, and for the same reason: a single pi pulse is second order in its own error.
+
+    The pi/2 pre-rotation is not decoration. Without it the response goes as
+    ``cos(n(pi+delta))``, identical at integer ``n`` for an over- and an
+    under-rotation; the pre-rotation makes it a sine and the sign measurable.
+
+    Reads at the three-state point, and needs to. Its two reference states are ``|1>``
+    and ``|2>``, and at a 0-1 readout those two are all but on top of each other — the
+    same 5% wiggle that put `f12_spectroscopy` 7 MHz out before its drive was raised.
+    At the three-state point they are 14 sigma apart in magnitude alone, which is what
+    makes this measurable at all.
+    """
+
+    name = "fine_amplitude_12"
+    depends_on = ("three_state_operating_point",)
+    updates = (f"{EF}.ef_amp180",)
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        self._amplitude = _required_ef_amplitude(element, target)
+        self._duration = ef_duration(element, config)
+        self._counts = [
+            int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
+        ]
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        measure = open_three_state_readout(schedule, backend, target, element)
+
+        for index, count in enumerate(self._counts):
+            schedule.add(backend.Reset(target))
+            schedule.add(backend.X(target))
+            # Half the amplitude is half the rotation: the drive is linear in it at
+            # fixed duration, which is the same assumption `rabi_12` fits under.
+            add_ef_pulse(
+                schedule, backend, target, self._amplitude / 2.0, self._duration
+            )
+            for _ in range(count):
+                add_ef_pulse(schedule, backend, target, self._amplitude, self._duration)
+            schedule.add(
+                backend.Measure(
+                    target,
+                    acq_index=index,
+                    bin_mode=backend.BinMode.AVERAGE,
+                    **measure,
+                )
+            )
+
+        # |1> and |2>, so the fit knows the full contrast. Without them only the
+        # product of contrast and rotation error is recoverable, and the error comes
+        # out scaled by whatever fraction of the contrast this sweep happened to
+        # cover. Note these are the *EF* subspace's two states, not |0> and |1>.
+        reference = len(self._counts)
+        for offset, prepare_two in enumerate((False, True)):
+            schedule.add(backend.Reset(target))
+            schedule.add(backend.X(target))
+            if prepare_two:
+                add_ef_pulse(schedule, backend, target, self._amplitude, self._duration)
+            schedule.add(
+                backend.Measure(
+                    target,
+                    acq_index=reference + offset,
+                    bin_mode=backend.BinMode.AVERAGE,
+                    **measure,
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        signal = signal_of(dataset)
+        expected = len(self._counts) + 2
+        if signal.size < expected:
+            raise RoutineError(
+                f"fine amplitude 12 expected {expected} acquisitions, got {signal.size}"
+            )
+        swept = signal[: len(self._counts)]
+        in_one, in_two = (
+            float(signal[len(self._counts)]),
+            float(signal[len(self._counts) + 1]),
+        )
+        fitted = fit_fine_amplitude(
+            np.asarray(self._counts, dtype=float),
+            swept,
+            self._amplitude,
+            ground=in_one,
+            excited=in_two,
+        )
+        return {"ef_amp180": fitted["amp180"], **fitted}
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        element = device.get_element(target)
+        path = ef_path(element, "ef_amp180")
+        if path:
+            write_path(element, path, params["ef_amp180"])
+
+
 class ThreeStateDiscrimination(CalibrationRoutine):
     """Prepare ``|0>``, ``|1>`` and ``|2>``, and measure how often each is misread.
 
@@ -323,14 +456,7 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         )
         # At the three-state point, not the two-state one: there |1> and |2> collapse
         # together and there is nothing to classify.
-        point = three_state_point(element)
-        if point:
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=point["frequency"]
-                )
-            )
-        measure_kwargs = {"pulse_amp": point["pulse_amp"]} if point else {}
+        measure_kwargs = open_three_state_readout(schedule, backend, target, element)
         for index, level in enumerate(self.STATES):
             schedule.add(backend.Reset(target))
             if level >= 1:

@@ -1146,6 +1146,32 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
         assert ef == pytest.approx(written[qubit]["rxy"]["amp180"], rel=0.15)
 
 
+def test_the_ef_pi_pulse_is_refined_to_a_small_residual_error(fully_calibrated):
+    """`fine_amplitude_12` amplifies what is left of `rabi_12`'s error and removes it.
+
+    A single pi pulse is second order in its own error, so `rabi_12` fitting a whole
+    oscillation cannot see a few per cent of over-rotation. Playing the pulse n times
+    turns that into n times the error against a readout noise that does not grow,
+    which is the only way the residual becomes visible.
+
+    What it needed was the three-state readout point: its two reference states are
+    ``|1>`` and ``|2>``, and at a 0-1 readout those are all but on top of each other.
+    """
+    report, _device, _simulator, _scheduler = fully_calibrated
+    measured = {
+        result.target: result.parameters
+        for result in report.routine_results
+        if result.routine_name == "fine_amplitude_12"
+    }
+    assert measured, "fine_amplitude_12 reported nothing"
+
+    for qubit, params in measured.items():
+        assert abs(params["error_per_pulse"]) < 0.05, (
+            f"{qubit}'s EF pi pulse is still {params['error_per_pulse']:.4f} rad per "
+            f"pulse out after refinement: {params}"
+        )
+
+
 def test_leakage_into_the_third_level_is_measured(fully_calibrated):
     """The number the whole EF chain exists to produce.
 
