@@ -667,3 +667,78 @@ def test_the_draw_is_unchanged_for_a_chip_with_no_second_excited_state(simulator
         int
     )
     assert np.array_equal(drawn, expected)
+
+
+# --- the tunable coupler -------------------------------------------------------
+
+
+@pytest.fixture
+def coupler():
+    from qpi_driver.simulation.coupled import TunableCoupler
+
+    return TunableCoupler()
+
+
+def test_the_coupler_tunes_down_from_a_sweet_spot(coupler):
+    """Quadratically, and only downward — which is what a flux sweet spot means.
+
+    The same shape `FLUX_CURVATURE_GHZ` gives a qubit, for the same reason: at the
+    sweet spot the first derivative of frequency with flux vanishes, so the leading
+    behaviour is second order and the sign cannot change.
+    """
+    currents = np.linspace(0.0, 4e-3, 40)
+    frequencies = np.array([coupler.frequency_at(i) for i in currents])
+
+    assert frequencies[0] == coupler.frequency_ghz
+    assert np.all(np.diff(frequencies) < 0), "the coupler should only tune down"
+    # Symmetric in the sign of the current, because it is quadratic in it.
+    assert coupler.frequency_at(-2e-3) == pytest.approx(coupler.frequency_at(2e-3))
+
+
+def test_an_unbiased_coupler_pushes_a_qubit_nowhere(coupler, simulator):
+    """The push is measured from zero bias, and that is not a convenience.
+
+    A qubit beside a coupler is always repelled; what a *bias* changes is by how
+    much. Defining the shift as the difference from the unbiased push keeps the
+    simulator's `f01` meaning what it always meant, so every expectation measured
+    before this model existed still holds for a chip whose couplers are unparked.
+    """
+    assert coupler.push_ghz(simulator.f01, 0.0) == 0.0
+
+
+def test_the_push_runs_away_and_changes_sign_across_the_crossing(coupler, simulator):
+    """The anticrossing, which is the landmark `coupler_anticrossing` looks for.
+
+    Level repulsion pushes a qubit *away* from the coupler, so a coupler above it
+    presses it down and a coupler below it lifts it up. Tuning through the qubit
+    therefore flips the sign, and the magnitude diverges on the way — that pair of
+    facts is the whole signature, and neither alone would identify a crossing.
+    """
+    crossing = np.sqrt(
+        (coupler.frequency_ghz - simulator.f01) / coupler.curvature_ghz_per_a2
+    )
+    below = coupler.push_ghz(simulator.f01, crossing * 0.97)
+    above = coupler.push_ghz(simulator.f01, crossing * 1.02)
+    far = coupler.push_ghz(simulator.f01, crossing * 0.5)
+
+    assert below < 0 and above > 0, "the push must change sign across the crossing"
+    assert abs(below) > 10 * abs(far), "and run away as the crossing is approached"
+
+
+def test_a_parked_coupler_moves_the_qubit_the_simulator_reports(simulator):
+    """The plumbing, not the model: a current in the device config reaches the qubit.
+
+    `bias.parking_current` has been carried, validated and applied since RFC 0004,
+    and nothing in the simulator responded to it — so a routine could write any
+    current at all and no measurement would contradict it. This is what makes the
+    bias measurable rather than merely stored.
+    """
+    from qpi_driver.simulation.coordinator import SimulatedCoordinator
+
+    unparked = SimulatedCoordinator(simulator)
+    parked = SimulatedCoordinator(simulator, parking_currents={"q1_q2": 2.5e-3})
+
+    assert unparked._qubit_frequency_hz("q1") == pytest.approx(simulator.f01 * GHZ)
+    # q1 is on the edge, so it moves; q0 is not, so it does not.
+    assert parked._qubit_frequency_hz("q1") != pytest.approx(simulator.f01 * GHZ)
+    assert parked._qubit_frequency_hz("q0") == pytest.approx(simulator.f01 * GHZ)

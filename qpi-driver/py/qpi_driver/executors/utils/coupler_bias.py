@@ -291,3 +291,24 @@ def declared_sideband_gaps(device: Any) -> dict[str, float]:
         if value:
             gaps[name] = float(value)
     return gaps
+
+
+def declared_parking_currents(device: Any) -> dict[str, float]:
+    """Each coupler edge's ``bias.parking_current``, in amperes.
+
+    Every edge that carries one, including zero — unlike a sideband gap, zero is a
+    *meaningful* current here. It means the coupler sits at its flux sweet spot, which
+    is a real operating point and the one an uncalibrated chip is at.
+    """
+    currents: dict[str, float] = {}
+    for name in edge_names(device):
+        bias = getattr(device.get_edge(name), "bias", None)
+        value = getattr(bias, "parking_current", None) if bias else None
+        if callable(value):
+            try:
+                value = value()
+            except Exception:  # noqa: BLE001 - an unreadable parameter is not a current
+                continue
+        if value is not None:
+            currents[name] = float(value)
+    return currents

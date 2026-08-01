@@ -297,6 +297,7 @@ class SimulatedCoordinator:
         drive_strength: float = DEFAULT_DRIVE_STRENGTH,
         seed: int = 20260731,
         sideband_gaps: dict[str, float] | None = None,
+        parking_currents: dict[str, float] | None = None,
     ) -> None:
         self.simulator = simulator or TransmonSimulator()
         #: Edge name to the ``|11>-|02>`` gap its CZ drive is meant to bridge,
@@ -304,6 +305,13 @@ class SimulatedCoordinator:
         #: been characterised falls back to `SIDEBAND_GAP_GHZ` — which is a
         #: chosen number, so a device that knows its own gap should say so.
         self.sideband_gaps = dict(sideband_gaps or {})
+        #: Edge name to the DC current its coupler is parked at, in amperes, as that
+        #: edge's config declares it. The bias is delivered out of band — see
+        #: `qpi_driver.executors.utils.coupler_bias` — so it reaches the simulator as
+        #: state rather than as a pulse, which is exactly what it is on a chip.
+        self.parking_currents = dict(parking_currents or {})
+        #: The coupler as a mode of its own. What responds to the currents above.
+        self._coupler: Any = None
         self.drive_strength = drive_strength
         self._rng = np.random.default_rng(seed)
         self._compiled: Any = None
@@ -548,7 +556,9 @@ class SimulatedCoordinator:
             return
 
         register = registers.of(qubit)
-        register.detunings[qubit] = clocks.get(clock, 0.0) - self.simulator.f01 * GHZ
+        register.detunings[qubit] = clocks.get(clock, 0.0) - self._qubit_frequency_hz(
+            qubit
+        )
 
         amplitude = _amplitude_of(pulse)
         if amplitude is None or duration <= 0:
@@ -1062,6 +1072,34 @@ class SimulatedCoordinator:
         )
         self._sample_cache.clear()
         self._propagate(register, hamiltonian, duration)
+
+    def _qubit_frequency_hz(self, qubit: str) -> float:
+        """*qubit*'s frequency, including whatever its couplers push it by.
+
+        A parked coupler is not a passive part of the chip: it repels every qubit it
+        touches, and how far depends on the current holding it. So a bias written to
+        the device *moves the qubit*, which is the whole reason
+        `coupler_anticrossing` can find the crossings by looking at a qubit at all.
+
+        Measured from zero bias, so an unparked chip — every ``parking_current`` at
+        its default of zero — reports exactly the frequency it always did.
+        """
+        base = self.simulator.f01 * GHZ
+        if not self.parking_currents:
+            return base
+        from qpi_driver.simulation.coupled import TunableCoupler
+
+        if self._coupler is None:
+            self._coupler = TunableCoupler()
+        shift = 0.0
+        for edge, current in self.parking_currents.items():
+            if qubit not in edge.split("_"):
+                continue
+            shift += self._coupler.push_ghz(self.simulator.f01, current) * GHZ
+        if shift:
+            # The drift is cached by detuning, and this changes what a detuning means.
+            self._drift_cache.clear()
+        return base + shift
 
     def _drift(self, register: _Register):
         """Detuning plus anharmonicity for every qubit, cached per register shape.

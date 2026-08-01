@@ -96,6 +96,7 @@ class QbloxExecutor(Executor):
             # agent's `run` is the only part a chip is needed for. See
             # `qpi_driver.simulation.agent`.
             from qpi_driver.executors.utils.coupler_bias import (
+                declared_parking_currents,
                 declared_sideband_gaps,
             )
             from qpi_driver.simulation.agent import simulated_agent
@@ -106,6 +107,7 @@ class QbloxExecutor(Executor):
                 output_dir=data_dir,
                 simulator=kwargs.get("simulator"),
                 sideband_gaps=declared_sideband_gaps(self._device),
+                parking_currents=declared_parking_currents(self._device),
             )
         else:
             self._agent = HardwareAgent(

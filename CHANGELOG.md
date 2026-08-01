@@ -214,6 +214,24 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**The coupler is a mode with a frequency, not just a drive** (RFC 0005 §12). A
+`TunableCoupler` sits above both qubits at its flux sweet spot and tunes down
+quadratically with parking current, coupled to each qubit strongly enough to push it.
+
+That push is the observable the whole of phase 6 waits on. `bias.parking_current` has
+been carried, validated and applied since RFC 0004 and **nothing in the simulator
+responded to it** — so a routine could have written any current at all and no
+measurement would have contradicted it. Now a current in the device config moves the
+qubits on that edge, and sweeping it walks the coupler through them: the push runs to
+−44 MHz just below the crossing and flips to +63 MHz just above, which is the
+signature `coupler_anticrossing` will look for.
+
+**Measured from zero bias, not from nothing.** A qubit beside a coupler is always
+repelled; what a bias changes is by how much. Defining the shift as the difference
+from the unbiased push keeps the simulator's `f01` meaning what it always meant, so
+every expectation measured before this model existed still holds for a chip whose
+couplers are unparked — which is every fixture in the suite.
+
 **Three open questions closed** (RFC 0005 §13).
 
 **An edge whose qubits are not calibrated is refused at startup.** A CZ is measured

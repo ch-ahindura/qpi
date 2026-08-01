@@ -107,6 +107,7 @@ class QuantifyExecutor(Executor):
         self._device = load_quantum_device(name=name, config=quantify_device_config)
         if is_simulated:
             from qpi_driver.executors.utils.coupler_bias import (
+                declared_parking_currents,
                 declared_sideband_gaps,
             )
             from qpi_driver.simulation import SimulatedCoordinator
@@ -114,6 +115,7 @@ class QuantifyExecutor(Executor):
             self._instrument_coordinator = SimulatedCoordinator(
                 kwargs.get("simulator"),
                 sideband_gaps=declared_sideband_gaps(self._device),
+                parking_currents=declared_parking_currents(self._device),
             )
         else:
             self._instrument_coordinator = load_instrument_coordinator(

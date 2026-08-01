@@ -104,6 +104,7 @@ def simulated_agent(
     output_dir: Any = None,
     simulator: Any = None,
     sideband_gaps: Any = None,
+    parking_currents: Any = None,
 ) -> SimulatedAgent:
     """A :class:`SimulatedAgent` over a real, dummy-connected ``HardwareAgent``.
 
@@ -121,5 +122,10 @@ def simulated_agent(
         output_dir=output_dir,
     )
     return SimulatedAgent(
-        agent, SimulatedCoordinator(simulator, sideband_gaps=sideband_gaps)
+        agent,
+        SimulatedCoordinator(
+            simulator,
+            sideband_gaps=sideband_gaps,
+            parking_currents=parking_currents,
+        ),
     )

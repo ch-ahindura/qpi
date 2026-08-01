@@ -109,6 +109,79 @@ STARK_SHIFT_MHZ = 9.0
 STARK_ASYMMETRY = 1.37
 
 
+#: The coupler's own frequency at zero bias, in GHz — its flux sweet spot.
+#:
+#: Above both qubits, which is where a tunable coupler is normally parked: pushing it
+#: *down* through them with current is what makes the two anticrossings findable, and
+#: what makes the effective coupling tunable through zero on the way.
+COUPLER_FREQUENCY_GHZ = 6.5
+
+#: How far the coupler's frequency falls per squared ampere of parking current, in
+#: GHz. Quadratic for the reason :data:`FLUX_CURVATURE_GHZ` gives — a sweet spot has
+#: no first derivative — and scaled so the two anticrossings land within the few
+#: milliamps an S4g can deliver, which is the range `bias.parking_current` is
+#: validated over.
+COUPLER_CURVATURE_GHZ_PER_A2 = 1.3e5
+
+#: Coupler-to-qubit coupling ``g/2pi`` in MHz. Larger than the direct qubit-qubit
+#: :data:`G_MHZ`, as it must be: the coupler exists to *mediate*, so its legs are the
+#: strong couplings and the residual direct term is the weak one.
+COUPLER_COUPLING_MHZ = 60.0
+
+
+@dataclass
+class TunableCoupler:
+    """A coupler as a mode of its own, with a frequency a DC current moves.
+
+    Until this existed the coupler was only ever a *drive*: `SIDEBAND_GAP_GHZ` was a
+    chosen constant and said so, and `bias.parking_current` was carried, validated,
+    applied — and never measured, because nothing in the simulator responded to it.
+
+    What it adds is the one observable that makes the bias measurable: each qubit is
+    pushed by the coupler it is coupled to, by ``g^2 / (f_qubit - f_coupler)``, and
+    that push runs away as the coupler is tuned onto the qubit. Sweeping the current
+    and watching a qubit's frequency move is `coupler_anticrossing`, and the two
+    crossings it finds are what place the parking point.
+
+    **The push is measured from zero bias, not from nothing.** A qubit sitting near a
+    coupler is always pushed; what a bias *changes* is how much. Defining the shift as
+    the difference from the zero-current push keeps the simulator's ``f01`` meaning
+    what it has always meant — the qubit's frequency as configured — so a chip whose
+    couplers are unparked behaves exactly as it did before this existed.
+    """
+
+    frequency_ghz: float = COUPLER_FREQUENCY_GHZ
+    curvature_ghz_per_a2: float = COUPLER_CURVATURE_GHZ_PER_A2
+    coupling_mhz: float = COUPLER_COUPLING_MHZ
+
+    def frequency_at(self, current_a: float) -> float:
+        """Where the coupler sits at *current_a*, in GHz."""
+        return self.frequency_ghz - self.curvature_ghz_per_a2 * float(current_a) ** 2
+
+    def push_ghz(self, qubit_ghz: float, current_a: float) -> float:
+        """How far the coupler moves a qubit at *qubit_ghz*, relative to zero bias.
+
+        ``g^2/(f_q - f_c)`` at the biased coupler minus the same at the unbiased one.
+        Positive when the coupler is above the qubit and repelling it downward — the
+        sign is the usual level repulsion, and it reverses once the coupler is tuned
+        past the qubit, which is what makes an anticrossing look like one.
+        """
+        return self._dispersive(qubit_ghz, self.frequency_at(current_a)) - (
+            self._dispersive(qubit_ghz, self.frequency_ghz)
+        )
+
+    def _dispersive(self, qubit_ghz: float, coupler_ghz: float) -> float:
+        detuning = float(qubit_ghz) - coupler_ghz
+        # Right on the crossing the dispersive form diverges, which is physics rather
+        # than a bug — but a simulator that returned an infinity there would poison a
+        # sweep that merely stepped over it. Clamped to one coupling, which is the
+        # scale at which the dispersive approximation has stopped holding anyway.
+        floor = self.coupling_mhz * 1e-3
+        if abs(detuning) < floor:
+            detuning = floor if detuning >= 0 else -floor
+        return (self.coupling_mhz * 1e-3) ** 2 / detuning
+
+
 @dataclass
 class CoupledTransmons:
     """Two transmons in one register, exchange-coupled, one of them flux-tunable.
