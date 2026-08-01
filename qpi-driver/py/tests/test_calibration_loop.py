@@ -1121,6 +1121,31 @@ def test_the_dispersive_shift_is_measured_and_not_assumed(fully_calibrated):
         )
 
 
+def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
+    """`rabi_12` drives ``.12`` with a raw pulse and recovers the drive strength.
+
+    Neither scheduler has an EF gate — the device config's operations are built for
+    ``rxy`` on ``.01`` — so this routine assembles the pulse itself: its own clock,
+    its own port, its own envelope. What the assertion covers is that whole path,
+    since a pulse that went to the wrong clock would drive nothing and the fit would
+    have no oscillation to find.
+
+    Against `rxy.amp180` rather than a constant, and *equal* to it rather than the
+    ``1/sqrt(2)`` a chip would give. That is the simulator's documented choice: it
+    folds the 1-2 matrix element into the subspace operator instead of taking the
+    ladder's ``sqrt(2)``, so the same amplitude turns the same angle on both
+    transitions. A real chip's EF pi pulse is weaker than its 0-1 one, and this
+    simulator cannot show that.
+    """
+    _report, device, _simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+
+    for qubit in ("q0", "q1"):
+        ef = written[qubit]["r12"]["ef_amp180"]
+        assert ef > 0, f"{qubit} has no EF pi pulse"
+        assert ef == pytest.approx(written[qubit]["rxy"]["amp180"], rel=0.15)
+
+
 def test_the_discriminated_readout_point_is_calibrated_and_sane(fully_calibrated):
     """The two readouts want different things, and the graph now says so separately.
 

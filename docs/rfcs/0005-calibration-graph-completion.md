@@ -419,7 +419,7 @@ after the machinery.
    at 3.60, 0.665 and 0.337 in magnitude: a monotone ladder, 14σ separation, and both
    real parts positive so the defaults of `0`/`0` assign every shot as `|1⟩`. It did
    not land with only simulator tests — see below.
-4. **The state-resolved readout pass.** Partly done.
+4. ~~**The state-resolved readout pass.**~~ **Done**, in three nodes rather than four and not the four that were planned.
    - `readout_discrimination`: **done.** Prepares `|0⟩`/`|1⟩` single-shot, fits the
      rotation as the direction between cloud centres and the threshold as the
      spread-weighted midpoint, and reports the assignment fidelity from the same
@@ -513,13 +513,31 @@ after the machinery.
      and the routine recovers 4.9304 GHz against a true 4.9312, with an anharmonicity
      of −283.7 MHz against −282.9. It depends on `rabi`, because the transition starts
      from `|1⟩`.
-   - `rabi_12`, `ramsey_12`, `drag_12`, `fine_amplitude_12`,
+   - `rabi_12` → `r12.ef_amp180`: **done.** Prepares ``|1>``, sweeps a raw pulse on
+     the ``.12`` clock, and fits the oscillation into ``|2>``. A raw pulse because
+     neither scheduler has an EF gate — the device config's operations are built for
+     `rxy` on ``.01`` — so the routine assembles clock, port and envelope itself.
+
+     It reads out on the two-state chain and can, because ``|2>`` has its own place in
+     the IQ plane: the pull is `chi(1-2n)`, so the levels form a ladder and a
+     magnitude sees the population move. That is what lets this come *before*
+     three-state readout instead of after — the discriminator needs a calibrated EF
+     pulse to prepare ``|2>`` at all.
+
+     **A simulator limitation worth stating.** It recovers the same amplitude `rabi`
+     does, not the ``1/sqrt(2)`` a chip would give, because the simulator folds the
+     1-2 matrix element into the subspace operator rather than taking the ladder's
+     `sqrt(2)`. So the EF chain can be tested for wiring — right clock, right port,
+     right envelope — but not for the ladder's own scaling.
+   - `ramsey_12`, `drag_12`, `fine_amplitude_12`,
      `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
      `readout_amplitude_three_state`, `three_state_discrimination`: **unblocked, not
      yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
      `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a `measure_3state`
-     submodule, and the transmon element has none of them — but `CalibratedTransmon`
-     is now where those go, so what is left is routines rather than a format decision.
+     submodule. `CalibratedTransmon` is where those go — `r12` and `measure_2state`
+     are already there — and the three-state readout point can follow `measure_2state`
+     exactly, including the executor's clock override, which is now a mechanism rather
+     than a plan.
 6. **The coupler.** A coupler frequency in the simulator, the two arcs,
    `coupler_anticrossing` → `bias.parking_current`, `cz_parametrization`. Replaces
    two chosen constants with measured ones.

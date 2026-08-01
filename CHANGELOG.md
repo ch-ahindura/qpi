@@ -214,6 +214,29 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`rabi_12`, the first EF gate parameter that is measured** (RFC 0005 §7). A transmon
+is not a qubit, it is an anharmonic ladder used as one, and the third rung is the
+difference: every gate leaks a little population into `|2>`, where two-state readout
+reports it as one of the other two — so a leaked shot is not lost, it is counted as an
+answer. Measuring that needs a calibrated pulse on the 1-2 transition, and this is it.
+
+The routine prepares `|1>`, sweeps a raw pulse on the `.12` clock and fits the
+oscillation into `|2>`. Raw, because neither scheduler has an EF gate — the device
+config's operations are built for `rxy` on `.01` — so clock, port and envelope are
+assembled by the routine. The result goes to `r12.ef_amp180`, a new submodule on
+`CalibratedTransmon`.
+
+It reads out on the two-state chain, which works because `|2>` has its own place in
+the IQ plane: the dispersive pull is `chi(1-2n)`, so the three levels form a ladder and
+a magnitude readout sees the population move. That is what lets this node come *before*
+three-state readout rather than after — the discriminator needs a calibrated EF pulse
+to prepare `|2>` in the first place.
+
+The simulator recovers the same amplitude `rabi` does rather than the `1/sqrt(2)` a
+chip would give, because it folds the 1-2 matrix element into the subspace operator
+instead of taking the ladder's `sqrt(2)`. So the EF path can be tested for wiring —
+right clock, right port, right envelope — but not for the ladder's own scaling.
+
 **Discriminated readout has its own operating point** (RFC 0005 §7). The readout that
 best separates `|0>` from `|1>` is not the one that returns the most signal, and the
 graph now says so with two points instead of one compromise.
