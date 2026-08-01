@@ -27,6 +27,7 @@ from qpi_driver.tuners.fitting import (
     FitError,
     fit_chevron,
     fit_conditional_phase,
+    fit_rabi,
     fit_resonator_spectroscopy,
     signal_of,
 )
@@ -344,6 +345,123 @@ class CZSpectroscopy(CalibrationRoutine):
         element = parametric_edge(device, target)
         if element is not None:
             write_path(element, "clock_freqs.cz", params["clock_freq_cz"])
+
+
+class CZParametrization(CalibrationRoutine):
+    """How fast a parametric CZ runs, and the pulse that makes it one round trip.
+
+    `cz_chevron`'s counterpart for a coupler-driven edge, and needed because the two
+    gates are resonant in different variables. A DC-flux CZ is brought onto the
+    ``|11>``-``|02>`` crossing by *amplitude*, so its calibration is a 2D chevron over
+    amplitude and duration. A parametric CZ is brought onto it by *frequency* — which
+    `cz_spectroscopy` has already found — and amplitude only sets how fast the exchange
+    then runs. So there is no chevron here: at the right frequency the population
+    simply oscillates in duration, linearly faster with drive.
+
+    That linearity is the parametrization, and it is what makes the gate predictable:
+    measure the rate once and any (amplitude, duration) pair with the right product is
+    a CZ. `PARAMETRIC_RATE_MHZ` in the simulator is that rate as a *chosen* constant,
+    averaged from four calibrated edges off a real chip — this is the routine that
+    would measure it instead.
+
+    Writes a full ``|11> -> |02> -> |11>`` round trip, not half of one. Half is
+    complete population transfer into ``|02>``: a perfectly good gate, measured just as
+    confidently, and not a CZ. That mistake cost `cz_chevron` a 55 ns duration against
+    a 110 ns round trip for as long as nothing checked the number itself.
+    """
+
+    name = "cz_parametrization"
+    depends_on = ("cz_spectroscopy",)
+    targets = "edges"
+    updates = ("cz.square_amp", "cz.square_duration")
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an edge whose CZ is a drive — the same test `cz_spectroscopy` makes."""
+        return parametric_edge(device, target) is not None
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = parametric_edge(device, target)
+        if element is None:
+            raise RoutineError(
+                f"edge {target!r} drives its CZ with a baseband flux pulse — see "
+                f"`cz_chevron`, which sweeps the amplitude its resonance lives in"
+            )
+        parent, child = qubits_of(target)
+        self._amplitude = float(
+            config.get("amplitude", read_path(element, "cz.square_amp") or 0.5)
+        )
+        self._durations = [
+            grid_duration(duration)
+            for duration in setpoints_of(
+                config, "durations", linear_setpoints(20e-9, 400e-9, 39)
+            )
+        ]
+        frequency = float(read_path(element, "clock_freqs.cz"))
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 512))
+        )
+        clock = f"{target}.cz"
+        schedule.add_resource(backend.ClockResource(name=clock, freq=frequency))
+        for index, duration in enumerate(self._durations):
+            schedule.add(backend.Reset(parent))
+            schedule.add(backend.Reset(child))
+            schedule.add(backend.X(parent))
+            schedule.add(backend.X(child))
+            schedule.add(
+                backend.SquarePulse(
+                    amp=self._amplitude,
+                    duration=duration,
+                    port=f"{target}:fl",
+                    clock=clock,
+                )
+            )
+            schedule.add(
+                backend.Measure(
+                    parent, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        durations = np.asarray(self._durations, dtype=float)
+        # `fit_rabi` fits a cosine and reports where the *half* period falls. Its axis
+        # is normally a drive amplitude and here it is a duration, which changes
+        # nothing about the arithmetic: a cosine is a cosine.
+        fitted = fit_rabi(durations, signal_of(dataset))
+        half = float(fitted["amp180"])
+        if half <= 0:
+            raise RoutineError(
+                f"the parametric exchange did not oscillate over {durations[-1] * 1e9:.0f} "
+                f"ns at amplitude {self._amplitude:.4g} — the drive may be off the "
+                f"transition, which is `cz_spectroscopy`'s job to place"
+            )
+        round_trip = 2.0 * half
+        return {
+            "cz_amplitude": self._amplitude,
+            "cz_duration": grid_duration(round_trip),
+            # Per unit amplitude, which is the parametrization. The factor is four
+            # rather than two and that is a convention rather than an accident: the
+            # exchange term carries the rate *undivided*, so the population oscillates
+            # at twice it and a half period is ``1/(4 x rate x amplitude)``. Reported
+            # in the same convention as the simulator's `PARAMETRIC_RATE_MHZ`, which
+            # is the constant this routine exists to replace — a chip calibrated in
+            # some other convention would differ by exactly this factor, which is why
+            # it is written down rather than folded in.
+            "exchange_rate_hz_per_unit": 1.0 / (4.0 * half * self._amplitude),
+            "half_period": half,
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        element = parametric_edge(device, target)
+        if element is None:
+            return
+        write_path(element, "cz.square_amp", params["cz_amplitude"])
+        write_path(element, "cz.square_duration", params["cz_duration"])
 
 
 class CZChevron(CalibrationRoutine):

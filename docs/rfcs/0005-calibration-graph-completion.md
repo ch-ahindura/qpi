@@ -679,7 +679,7 @@ after the machinery.
      are already there — and the three-state readout point can follow `measure_2state`
      exactly, including the executor's clock override, which is now a mechanism rather
      than a plan.
-6. **The coupler.** Begun.
+6. **The coupler.**
    - `cz_spectroscopy` → `clock_freqs.cz`: **done.** A parametric CZ modulates the
      coupler and a sideband bridges ``|11>``-``|02>``; amplitude sets how fast the
      exchange runs, *frequency* sets whether it runs at all, so a drive off the
@@ -749,7 +749,22 @@ after the machinery.
      tried last would corrupt every routine after it — which the test asserts, because
      a first version of that test left the shared fixture parked at 1.9 mA and broke
      the CZ tests downstream.
-   - `cz_parametrization`: **not started.**
+   - `cz_parametrization` → `cz.square_amp`, `cz.square_duration`: **done**, and it is
+     `cz_chevron`'s counterpart rather than a variant of it. The two gates are resonant
+     in different variables: a DC-flux CZ is brought onto the crossing by *amplitude*,
+     so it needs a 2D chevron; a parametric one is brought there by *frequency*, which
+     `cz_spectroscopy` has already found, leaving amplitude to set only how fast the
+     exchange runs. So there is no chevron — the population simply oscillates in
+     duration, linearly faster with drive, and measuring that slope is what makes the
+     gate predictable.
+
+     It recovers `PARAMETRIC_RATE_MHZ` from the simulator to within a few per cent,
+     which is the constant it exists to replace. The conversion carries a factor of
+     four rather than two, and that is written down rather than folded in: the
+     exchange term carries the rate undivided, so the population oscillates at twice
+     it. A chip calibrated in another convention differs by exactly that factor.
+
+6. ~~**The coupler.**~~ **Done.**
 
 Phases 1–2 are worth doing regardless of how far the rest gets. Phase 4 is the one
 whose absence is currently a wrong answer rather than a missing feature.

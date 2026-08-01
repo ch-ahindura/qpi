@@ -52,6 +52,7 @@ from qpi_driver.tuners.routines.two_qubit import (
     ConditionalPhase,
     CouplerAnticrossing,
     CZChevron,
+    CZParametrization,
     CZSpectroscopy,
 )
 
@@ -85,6 +86,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     FluxSpectroscopy,
     CouplerAnticrossing,
     CZSpectroscopy,
+    CZParametrization,
     CZChevron,
     ConditionalPhase,
     InterleavedRB,

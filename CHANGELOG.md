@@ -214,6 +214,24 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`cz_parametrization`, and RFC 0005 is complete** (§12). A parametric CZ is
+`cz_chevron`'s counterpart, not a variant: the two gates are resonant in different
+variables. A DC-flux CZ is pushed onto the `|11>`-`|02>` crossing by *amplitude*, so it
+needs a 2D chevron; a parametric one is brought there by *frequency*, which
+`cz_spectroscopy` already found, leaving amplitude to set only how fast the exchange
+runs. There is no chevron left — the population oscillates in duration, linearly faster
+with drive — and measuring that slope is what makes the gate predictable.
+
+It recovers the simulator's `PARAMETRIC_RATE_MHZ` to within a few per cent. The
+conversion carries a factor of four rather than two, written down rather than folded
+in: the exchange term carries the rate undivided, so the population oscillates at twice
+it, and a chip calibrated in another convention differs by exactly that factor.
+
+It writes a full `|11> -> |02> -> |11>` round trip, not half of one. Half is complete
+transfer into `|02>` — a perfectly good gate, measured just as confidently, and not a
+CZ. That mistake cost `cz_chevron` a 55 ns duration against a 110 ns round trip for as
+long as nothing checked the number itself.
+
 **`coupler_anticrossing` measures the coupler's parking current** (RFC 0005 §12). It
 sets a DC bias, runs a spectroscopy, reads the qubit back, and repeats — walking the
 coupler down through the qubit and locating the crossing from where the qubit moves

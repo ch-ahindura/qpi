@@ -323,6 +323,69 @@ def two_qubit_device(
     return device, simulator, scheduler
 
 
+def test_the_parametric_cz_is_parametrised(two_qubit_device, tmp_path):
+    """The exchange rate per unit drive, recovered from the simulator's own constant.
+
+    A parametric CZ is resonant in *frequency* and linear in *amplitude*, so once
+    `cz_spectroscopy` has placed the drive there is no chevron left — the population
+    just oscillates in duration, faster with drive. Measuring that slope is what makes
+    the gate predictable, and `PARAMETRIC_RATE_MHZ` is the number it should return.
+
+    Asserted against the simulator's constant rather than a literal, so the test says
+    "the routine measures the chip" rather than "the routine returns 4.4".
+    """
+    from qpi_driver.simulation.coupled import PARAMETRIC_RATE_MHZ
+
+    shared, simulator, scheduler = two_qubit_device
+    device = tmp_path / "quantify.device.yml"
+    device.write_bytes(shared.read_bytes())
+    # On the transition, which is what `cz_spectroscopy` would have written.
+    config = yaml.safe_load(device.read_text())
+    config["q1_q2"]["clock_freqs"]["cz"] = float(
+        config["q1_q2"]["clock_freqs"]["sideband_gap"]
+    )
+    device.write_text(yaml.safe_dump(config))
+
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"czparam_{scheduler}",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(
+        CalibrationConfig(
+            target_qubits=["q1", "q2"],
+            target_edges=["q1_q2"],
+            routines={
+                name: RoutineConfig(enabled=name == "cz_parametrization", params={})
+                for name in routine_names()
+            },
+        )
+    )
+    tuner.close()
+    close_instruments(scheduler)
+
+    assert report.status == "success", report.errors
+    params = next(
+        result.parameters
+        for result in report.routine_results
+        if result.routine_name == "cz_parametrization"
+    )
+    # The simulator's rate is in MHz per unit amplitude; the routine reports Hz.
+    assert params["exchange_rate_hz_per_unit"] == pytest.approx(
+        PARAMETRIC_RATE_MHZ * 1e6, rel=0.15
+    ), f"measured {params['exchange_rate_hz_per_unit'] / 1e6:.3f} MHz per unit"
+
+    written = yaml.safe_load(device.read_text())["q1_q2"]["cz"]
+    duration_ns = float(written["square_duration"]) * 1e9
+    assert duration_ns == pytest.approx(round(duration_ns), abs=1e-6), (
+        f"a CZ duration must be a whole number of nanoseconds, got {duration_ns}"
+    )
+
+
 def test_the_coupler_crossing_is_found_and_a_parking_current_written(
     two_qubit_device, tmp_path
 ):
