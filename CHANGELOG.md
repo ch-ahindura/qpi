@@ -214,6 +214,33 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**The EF drive is a real drive on the ladder, not a two-level subspace** (RFC 0005 §9).
+It was `|1>`-`|2>` in a rotating frame of its own, and that one choice was behind three
+separate blockers. It is now an ordinary drive on the full ladder, in the same frame as
+everything else, offset from that frame by where its clock sits.
+
+- **One frame.** An EF Ramsey at a 20 MHz artificial detuning shows a ~60 ns fringe.
+  Before, the phase between two EF π/2 pulses ran at the whole anharmonicity — a 3.5 ns
+  period, aliased to noise on any usable delay grid, so a Ramsey measured the gap
+  between two frames rather than the transition.
+- **The ladder's √2.** An EF π lands at `amp180 / sqrt(2)`, because the 1-2 matrix
+  element belongs to the operator now instead of being folded into it. `rabi_12`
+  measures 0.1476 against 0.1430 for a perfect ladder; the rest is relaxation during
+  the pulse. The loop test that used to assert *equality* — documenting the limitation
+  — now asserts the factor.
+- **Something to leak into.** An EF pulse off-resonantly excites 0-1 at about 2.6%,
+  where `|0>` used to be a spectator. That is what a DRAG quadrature cancels, so
+  `drag_12` has a curve to fit rather than a flat line.
+
+The sign of the frame offset is negative, which is not obvious and is not free: it
+pairs with the drift's `+(f_drive - f_qubit)` and the `e^{+iφ}` on the raising
+operator. The other sign drives nothing at all — P(`|2>`) stays under 0.003 at every
+amplitude — while this one puts a π exactly at `amp180 / sqrt(2)`.
+
+Stepping is the cost: a drive off its frame's own frequency is time-dependent however
+flat its envelope. `ramsey_12` and `drag_12` are both writable on top of this; neither
+is written yet.
+
 **`resonator_spectroscopy_second_excited`, which checks the ladder rather than a
 parameter** (RFC 0005 §7). The dispersive pull is supposed to go as `chi(1 - 2n)` —
 `|0>` at `+chi`, `|1>` at `-chi`, `|2>` at `-3chi` — and nothing in the graph checked

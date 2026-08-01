@@ -591,7 +591,8 @@ after the machinery.
      which at a 0-1 readout are all but on top of each other; at the three-state point
      they are 14 sigma apart in magnitude alone. The three-state point turns out to be
      what makes the whole EF chain measurable, not just the leakage number.
-   - `drag_12`: **blocked twice over, and found by reading rather than by running.**
+   - ~~`drag_12`: **blocked twice over.**~~ **Unblocked, see above** — the drive has
+     an envelope and a neighbour to leak into. Kept for the record:
 
      First, an EF pulse has no envelope at all: `_drive_ef` propagates a *constant*
      Hamiltonian, where the ``.01`` path builds one from `_envelope_of(pulse)` and
@@ -608,7 +609,28 @@ after the machinery.
      Writing it needs a genuinely three-level driven Hamiltonian on the EF clock — the
      off-resonant ``0-1`` excitation and its Stark shift, which `_drive_ef`'s own
      docstring already names as what it leaves out.
-   - `ramsey_12`: **blocked by a frame mismatch, measured.** The EF pulses are applied
+   - **The EF drive is now an ordinary drive on the full ladder**, in the same frame
+     as everything else, offset from it by where its clock sits. It was a two-level
+     ``|1>``-``|2>`` subspace in a rotating frame of its own, and that one choice was
+     behind all three of the blockers recorded below. Stepping it costs the price a
+     shaped pulse already pays; at the anharmonicity the offset is under six cycles
+     across a 20 ns pulse and the population converges by 40 steps.
+
+     Three things changed, each measured:
+
+     - **One frame.** An EF Ramsey at a 20 MHz artificial detuning now shows a ~60 ns
+       fringe. Before, the phase between two EF pi/2 pulses ran at the whole
+       anharmonicity — a 3.5 ns period, aliased to noise on any usable delay grid.
+     - **The ladder's `sqrt(2)`.** An EF pi lands at ``amp180 / sqrt(2)`` because the
+       1-2 matrix element is the operator's now rather than folded into it. `rabi_12`
+       measures 0.1476 against 0.1430 for a perfect ladder, the few per cent being
+       relaxation during the pulse.
+     - **Something to leak into.** An EF pulse off-resonantly excites 0-1 at about 2.6%,
+       where ``|0>`` used to be a spectator. That is what a DRAG quadrature cancels,
+       so `drag_12` now has a curve to fit instead of a flat line.
+
+     `ramsey_12` and `drag_12` are both writable on top of this. Neither is written.
+   - ~~`ramsey_12`: **blocked by a frame mismatch, measured.**~~ **Unblocked, see above.** The EF pulses are applied
      in `_drive_ef`'s own rotating frame, with the detuning carried on ``|2>``, but a
      free evolution between them runs under `_drift` — the *0-1* drive frame, where the
      ``|1>``-``|2>`` splitting is the whole anharmonicity. So the phase between two EF

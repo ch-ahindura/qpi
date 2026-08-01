@@ -516,6 +516,10 @@ class SimulatedCoordinator:
             if amplitude is None or duration <= 0:
                 self._idle(register, duration)
                 return
+            # Where this pulse's clock sits relative to the frame the register is
+            # kept in — which is the 0-1 drive frame, at f01 plus whatever detuning
+            # the last drive left there.
+            frame_hz = self.simulator.f01 * GHZ + register.detunings.get(qubit, 0.0)
             self._drive_ef(
                 register,
                 qubit,
@@ -523,7 +527,8 @@ class SimulatedCoordinator:
                 duration=duration,
                 phase_deg=float(pulse.get("phase") or 0.0)
                 + self._clock_phases.get(clock, 0.0),
-                detuning_hz=clocks.get(clock, 0.0) - self._f12_hz(),
+                frame_offset_hz=clocks.get(clock, self._f12_hz()) - frame_hz,
+                shape=_envelope_of(pulse),
             )
             for other in registers.distinct():
                 if other is not register:
@@ -669,6 +674,7 @@ class SimulatedCoordinator:
         duration: float,
         phase_deg: float,
         shape: "_Envelope | None" = None,
+        detuning_rad_per_ns: float = 0.0,
     ) -> None:
         """Evolve under a drive of *amplitude* for *duration*.
 
@@ -684,11 +690,15 @@ class SimulatedCoordinator:
         Motzoi parameter a no-op here. So a shaped pulse is stepped.
         """
         self._sample_cache.clear()
-        if shape is None:
+        if shape is None and not detuning_rad_per_ns:
             drive = self._constant_drive(register, qubit, amplitude, phase_deg)
             self._propagate(register, self._drift(register) + drive, duration)
             return
-        self._propagate_shaped(register, qubit, amplitude, duration, phase_deg, shape)
+        # A drive off the frame's own frequency is time-dependent even when its
+        # envelope is flat — the term rotates at the offset — so it steps too.
+        self._propagate_shaped(
+            register, qubit, amplitude, duration, phase_deg, shape, detuning_rad_per_ns
+        )
 
     def _constant_drive(
         self, register: _Register, qubit: str, amplitude: float, phase_deg: float
@@ -716,74 +726,53 @@ class SimulatedCoordinator:
         amplitude: float,
         duration: float,
         phase_deg: float,
-        detuning_hz: float,
+        frame_offset_hz: float,
+        shape: "_Envelope | None" = None,
     ) -> None:
         """A drive on the ``.12`` clock: the ``|1>``-``|2>`` transition.
 
-        Its own rotating frame, and a two-level problem inside three levels. The
-        detuning sits on ``|2>`` and the drive couples ``|1>`` to ``|2>`` only, with
-        ``|0>`` a spectator — which is the leading order, and correct to the extent
-        that the drive is far from ``0-1``. It is: the anharmonicity is some 280 MHz
-        and a 20 ns pulse spans about 50.
+        An ordinary drive on the full ladder, in the *same* frame as everything else,
+        offset from that frame by where its clock sits. It used to be a two-level
+        ``|1>``-``|2>`` subspace in a rotating frame of its own, and three things
+        followed from that which are no longer true:
 
-        What that leaves out is the off-resonant ``0-1`` excitation and the Stark
-        shift it brings, so a *strong* EF pulse leaks more here than it would on a
-        chip. The routines that use this drive it weakly, and a leakage-sensitive
-        experiment on the EF transition would want the neglected term back.
+        - **Frames disagreed.** The pulses ran in the EF frame while the idles between
+          them ran in the 0-1 frame, so the phase between two EF pulses accumulated at
+          the whole anharmonicity. Sweeping a delay on a 1 ns grid swung ``P(|2>)``
+          from 0.008 to 0.978 — a Ramsey there measured the mismatch, not the qubit.
+        - **There was no ladder.** The 1-2 matrix element was folded into the subspace
+          operator, so an EF pi pulse took the same amplitude as an 0-1 one. The real
+          ladder gives ``sqrt(2)``, and it now falls out: a pi lands at ``amp180 /
+          sqrt(2)``.
+        - **There was nothing to leak into.** ``|0>`` was a spectator, so an EF pulse
+          could not off-resonantly excite the 0-1 transition and `drag_12` would have
+          had a flat line to fit. It leaks about a part in a thousand here, which is
+          what a DRAG quadrature exists to cancel.
 
-        The 1-2 matrix element is folded into the subspace operator rather than taken
-        from the ladder's ``sqrt(2)``: the drive strength this simulator applies is
-        calibrated against the 0-1 transition, and an EF pulse that came out
-        ``sqrt(2)`` stronger for the same amplitude would make `rabi_12` measure the
-        ladder rather than the chain.
+        The cost is that this always steps: a drive off its frame's own frequency is
+        time-dependent however flat its envelope. At the anharmonicity that is under
+        six cycles across a 20 ns pulse, and the population converges by 40 steps.
         """
-        import qutip
-
-        levels = register.levels
-        if levels < 3:
+        if register.levels < 3:
             raise SimulationError(
                 "a drive on the .12 clock needs a three-level transmon; this "
-                f"simulator has {levels}"
+                f"simulator has {register.levels}"
             )
-
-        excited = qutip.basis(levels, 1) * qutip.basis(levels, 2).dag()
-        raising = register.embed(excited.dag(), qubit)
-        lowering = register.embed(excited, qubit)
-        second = register.embed(
-            qutip.basis(levels, 2) * qutip.basis(levels, 2).dag(), qubit
-        )
-
-        rabi = self.drive_strength * amplitude * NS  # rad/ns
-        phase = np.exp(1j * np.deg2rad(phase_deg))
-        hamiltonian = (
-            2 * np.pi * (detuning_hz / GHZ) * second
-            + (rabi / 2) * (phase * raising + np.conj(phase) * lowering)
-            + self._drift_of_others(register, qubit)
-        )
         self._sample_cache.clear()
-        self._propagate(register, hamiltonian, duration)
-
-    def _drift_of_others(self, register: _Register, driven: str):
-        """Drift for every qubit in the register *except* the driven one.
-
-        The driven qubit's own drift is replaced by the EF frame's detuning term, but
-        a spectator sharing the register is still accumulating phase and would freeze
-        if this were left out.
-        """
-        import qutip
-
-        total = None
-        for qubit in register.qubits:
-            if qubit == driven:
-                continue
-            single = self.simulator._anharmonic_hamiltonian(
-                detuning_ghz=register.detunings[qubit] / GHZ
-            )
-            embedded = register.embed(single, qubit)
-            total = embedded if total is None else total + embedded
-        if total is None:
-            return qutip.qzero_like(register.ladder(driven))
-        return total
+        self._drive(
+            register,
+            qubit,
+            amplitude=amplitude,
+            duration=duration,
+            phase_deg=phase_deg,
+            shape=shape,
+            # Negative, which is not the obvious sign and is not a free choice: it is
+            # what pairs with `_drift`'s ``+(f_drive - f_qubit)`` and the ``e^{+i phi}``
+            # on the raising operator. The other sign drives nothing at all — measured,
+            # `P(|2>)` stays under 0.003 at every amplitude — while this one puts a pi
+            # exactly at ``amp180 / sqrt(2)``.
+            detuning_rad_per_ns=-2 * np.pi * frame_offset_hz * NS,
+        )
 
     def _propagate_shaped(
         self,
@@ -792,7 +781,8 @@ class SimulatedCoordinator:
         amplitude: float,
         duration: float,
         phase_deg: float,
-        shape: "_Envelope",
+        shape: "_Envelope | None",
+        detuning_rad_per_ns: float = 0.0,
     ) -> None:
         """Step a shaped pulse, composing the steps into one cached propagator.
 
@@ -818,14 +808,22 @@ class SimulatedCoordinator:
             round(amplitude, 12),
             round(duration, 15),
             round(phase_deg % 360.0, 9),
-            round(shape.drag_seconds, 18),
-            round(shape.sigma, 15),
+            round(shape.drag_seconds, 18) if shape else None,
+            round(shape.sigma, 15) if shape else None,
+            round(detuning_rad_per_ns, 12),
             steps,
         )
         propagator = self._propagator_cache.get(key)
         if propagator is None:
             propagator = self._compose_shaped(
-                register, qubit, amplitude, duration, phase_deg, shape, steps
+                register,
+                qubit,
+                amplitude,
+                duration,
+                phase_deg,
+                shape,
+                steps,
+                detuning_rad_per_ns,
             )
             if len(self._propagator_cache) < _PROPAGATOR_CACHE_LIMIT:
                 self._propagator_cache[key] = propagator
@@ -840,8 +838,9 @@ class SimulatedCoordinator:
         amplitude: float,
         duration: float,
         phase_deg: float,
-        shape: "_Envelope",
+        shape: "_Envelope | None",
         steps: int,
+        detuning_rad_per_ns: float = 0.0,
     ):
         import qutip
 
@@ -854,12 +853,26 @@ class SimulatedCoordinator:
         # Midpoints, so the piecewise-constant sampling is second order rather
         # than first, and the derivative's two lobes stay balanced.
         offsets = (np.arange(steps) + 0.5) * (duration / steps) - duration / 2.0
-        sigma = shape.sigma
-        envelope = np.exp(-0.5 * (offsets / sigma) ** 2)
-        mean = float(envelope.mean()) or 1.0
-        envelope = envelope / mean
-        # d/dt of that same normalised Gaussian, analytically.
-        derivative = -(offsets / sigma**2) * envelope
+        if shape is None:
+            # A square pulse, stepped only because its *frame* offset makes it
+            # time-dependent. Flat envelope, no derivative quadrature.
+            envelope = np.ones(steps)
+            derivative = np.zeros(steps)
+            drag_seconds = 0.0
+        else:
+            sigma = shape.sigma
+            envelope = np.exp(-0.5 * (offsets / sigma) ** 2)
+            mean = float(envelope.mean()) or 1.0
+            envelope = envelope / mean
+            # d/dt of that same normalised Gaussian, analytically.
+            derivative = -(offsets / sigma**2) * envelope
+            drag_seconds = shape.drag_seconds
+
+        # How far the drive's own frequency sits from the frame the register is
+        # kept in. Zero for a drive on its own clock; the anharmonicity for an EF
+        # pulse, which is played in the 0-1 frame like everything else so that the
+        # idles between pulses keep the same time as the pulses do.
+        turning = np.exp(1j * detuning_rad_per_ns * (offsets / NS + duration / NS / 2))
 
         rabi = self.drive_strength * amplitude * NS  # rad/ns
         phase = np.exp(1j * np.deg2rad(phase_deg))
@@ -871,8 +884,9 @@ class SimulatedCoordinator:
             # so their product is the dimensionless quadrature ratio.
             wave = (
                 rabi
-                * (envelope[index] + 1j * shape.drag_seconds * derivative[index])
+                * (envelope[index] + 1j * drag_seconds * derivative[index])
                 * phase
+                * turning[index]
             )
             hamiltonian = drift + (wave * raising + np.conj(wave) * destroy) / 2
             step = (qutip.liouvillian(hamiltonian, collapse) * step_ns).expm()

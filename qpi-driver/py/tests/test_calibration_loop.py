@@ -1130,12 +1130,12 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
     since a pulse that went to the wrong clock would drive nothing and the fit would
     have no oscillation to find.
 
-    Against `rxy.amp180` rather than a constant, and *equal* to it rather than the
-    ``1/sqrt(2)`` a chip would give. That is the simulator's documented choice: it
-    folds the 1-2 matrix element into the subspace operator instead of taking the
-    ladder's ``sqrt(2)``, so the same amplitude turns the same angle on both
-    transitions. A real chip's EF pi pulse is weaker than its 0-1 one, and this
-    simulator cannot show that.
+    And it comes out at ``amp180 / sqrt(2)``, which is the ladder's own matrix element
+    rather than anything the routine was told. This used to assert *equality* with
+    ``rxy.amp180``, because the EF drive was a two-level subspace with the 1-2 element
+    folded into its operator; driving the real ladder in the frame the rest of the
+    simulator uses puts the factor back. The remaining few per cent is relaxation
+    during the pulse, which pushes the fitted pi slightly high.
     """
     _report, device, _simulator, _scheduler = fully_calibrated
     written = yaml.safe_load(device.read_text())
@@ -1143,7 +1143,10 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
     for qubit in ("q0", "q1"):
         ef = written[qubit]["r12"]["ef_amp180"]
         assert ef > 0, f"{qubit} has no EF pi pulse"
-        assert ef == pytest.approx(written[qubit]["rxy"]["amp180"], rel=0.15)
+        ladder = written[qubit]["rxy"]["amp180"] / np.sqrt(2)
+        assert ef == pytest.approx(ladder, rel=0.10), (
+            f"{qubit}'s EF pi is {ef:.4f}, against {ladder:.4f} for a sqrt(2) ladder"
+        )
 
 
 def test_the_dispersive_ladder_is_evenly_spaced(fully_calibrated):
