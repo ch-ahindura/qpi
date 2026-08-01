@@ -61,9 +61,63 @@ class SpectroscopySettings(InstrumentChannel):
             )
 
 
+class TwoStateReadout(InstrumentChannel):
+    """The readout operating point used for *discriminating*, as opposed to measuring.
+
+    Separate from ``measure`` because the two want different things and the difference
+    is not small. `resonator_spectroscopy` and `resonator_punchout` find where the most
+    signal comes back, which is what every calibration routine needs: those reduce an
+    acquisition to a magnitude, and the magnitude contrast is largest on resonance. A
+    discriminator uses the *complex* separation between the two clouds, and most of
+    that is phase once the drive is off resonance — so its best point is somewhere
+    else. Measured on the simulated chip: moving to it gains 2.6% of separation and
+    costs 14% of magnitude contrast, which moved the CZ chevron's answer by 10 ns when
+    the two shared one operating point.
+
+    Zero frequency means "not calibrated", and the executor leaves the readout clock
+    where the device config put it.
+    """
+
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
+
+        self.add_parameter(
+            "frequency",
+            parameter_class=ManualParameter,
+            unit="Hz",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1e12, allow_nan=True),
+        )
+        self.add_parameter(
+            "pulse_amp",
+            parameter_class=ManualParameter,
+            unit="",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+        )
+        self.add_parameter(
+            "acq_rotation",
+            parameter_class=ManualParameter,
+            unit="degrees",
+            initial_value=0.0,
+            # The instrument's own range, and it says so: "Attempting to configure
+            # acq_rotation to -153.73 ... while the hardware requires it to be
+            # between 0 and 360."
+            vals=Numbers(min_value=0.0, max_value=360.0, allow_nan=True),
+        )
+        self.add_parameter(
+            "acq_threshold",
+            parameter_class=ManualParameter,
+            unit="",
+            initial_value=0.0,
+            vals=Numbers(min_value=-1e12, max_value=1e12, allow_nan=True),
+        )
+
+
 class CalibratedTransmon(BasicTransmonElement):
     """A transmon with somewhere to put every parameter the graph calibrates."""
 
     def __init__(self, name: str, **kwargs):
         super().__init__(name, **kwargs)
         self.add_submodule("spec", SpectroscopySettings(self, "spec"))
+        self.add_submodule("measure_2state", TwoStateReadout(self, "measure_2state"))

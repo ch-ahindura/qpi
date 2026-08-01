@@ -214,6 +214,41 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**Discriminated readout has its own operating point** (RFC 0005 §7). The readout that
+best separates `|0>` from `|1>` is not the one that returns the most signal, and the
+graph now says so with two points instead of one compromise.
+
+`resonator_spectroscopy` and `resonator_punchout` keep `clock_freqs.readout` and
+`measure.pulse_amp` — where the most signal comes back, which is what every routine
+that reduces an acquisition to a magnitude needs, and that is nearly all of them. A
+discriminator uses the complex separation between the clouds, most of which is phase
+once the drive is off resonance, so its best point is elsewhere: 2.6% more separation
+for 14% less magnitude contrast, measured. Sharing one point moved the CZ chevron's
+answer by 10 ns, which is why the two nodes that tried it were backed out last time.
+
+`readout_operating_point` sweeps frequency and amplitude *together* and writes
+`measure_2state`, a new submodule on `CalibratedTransmon`. One node over both axes
+rather than one each, because the resonance moves with power — choosing a frequency
+and then a power leaves the frequency stale by 183 kHz, a tenth of a linewidth, which
+is the mistake `resonator_punchout` already exists to not make.
+
+The executors apply it for `meas_level=2` only. The amplitude rides on `Measure`; the
+frequency cannot, since the measure operation's clock is fixed at `{qubit}.ro` in the
+device config, so it is applied by moving that clock — the same mechanism every
+calibration routine already uses to sweep a readout. Levels 0 and 1 are untouched:
+applying a point chosen for phase separation to a raw trace would degrade exactly the
+measurement that wants the signal.
+
+`readout_discrimination` runs after it and fits its line *at* that point, because a
+line fitted where the clouds are not is a line fitted somewhere else.
+
+Single-shot sweeps are bounded at 32 acquisitions per schedule, with an error that
+says so. Every appended bin takes a sequencer register and a Q1 sequencer has 64; past
+that the qblox backend dies inside its register allocator with a bare `IndexError`, a
+long way from the sweep that asked for too much. `resonator_punchout` sweeps a far
+larger grid unaffected because it averages — this cannot, since the width of each
+cloud is what it measures.
+
 **Every qubit is discriminated against its own line** (RFC 0005 §7). Both executors
 read `acq_rotation` and `acq_threshold` from whichever device element had them first
 and applied that one pair to every qubit in the circuit. It was invisible for as long

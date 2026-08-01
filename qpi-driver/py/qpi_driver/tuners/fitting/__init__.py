@@ -17,7 +17,10 @@ from .cosine import (
     fit_rabi,
     fit_ramsey,
 )
-from .discrimination import fit_readout_discrimination
+from .discrimination import (
+    fit_readout_discrimination,
+    fit_readout_operating_point,
+)
 from .exponential import (
     exponential_decay,
     fit_rb_decay,
@@ -46,6 +49,7 @@ __all__ = [
     "fit_punchout",
     "fit_readout_timing",
     "fit_readout_discrimination",
+    "fit_readout_operating_point",
     "decaying_cosine",
     "fit_rabi",
     "fit_ramsey",

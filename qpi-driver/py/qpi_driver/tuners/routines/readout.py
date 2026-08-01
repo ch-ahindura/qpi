@@ -23,13 +23,148 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import write_path
+from qpi_driver.tuners.base.device import read_path, write_path
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
+    linear_setpoints,
+    setpoints_of,
 )
-from qpi_driver.tuners.fitting import fit_readout_discrimination
+from qpi_driver.tuners.fitting import (
+    fit_readout_discrimination,
+    fit_readout_operating_point,
+)
+
+#: Where a `CalibratedTransmon` keeps the readout point used for discriminating. An
+#: element without it is not a failure — the routines fall back to `measure`, which is
+#: what every config written before that element has.
+TWO_STATE = "measure_2state"
+
+
+def _two_state_path(element: Any, name: str) -> str | None:
+    """``measure_2state.<name>`` if this element has one, else ``None``."""
+    submodule = getattr(element, TWO_STATE, None)
+    if submodule is None or not hasattr(submodule, name):
+        return None
+    return f"{TWO_STATE}.{name}"
+
+
+class ReadoutOperatingPoint(CalibrationRoutine):
+    """Where to interrogate the resonator, and how hard, so the states look least alike.
+
+    Not where `resonator_spectroscopy` and `resonator_punchout` put it. Those find
+    where the most signal comes back, which is the right question for every routine
+    that reduces an acquisition to a magnitude — nearly all of them. A discriminator
+    uses the *complex* separation between the clouds, and once the drive is off
+    resonance most of that is phase, which a magnitude sees none of. The two answers
+    genuinely differ: 2.6% more separation for 14% less contrast, measured, which
+    moved the CZ chevron's answer by 10 ns the one time both readouts shared a point.
+
+    So this writes its own, and the executor uses it only for ``meas_level=2``.
+
+    One node over both axes rather than one each, because the resonance moves with
+    power. Choosing a frequency and then a power leaves the frequency stale — 183 kHz
+    on the simulated chip, a tenth of a linewidth — which is the mistake
+    `resonator_punchout` already exists to not make.
+    """
+
+    name = "readout_operating_point"
+    depends_on = ("rabi",)
+    updates = (f"{TWO_STATE}.frequency", f"{TWO_STATE}.pulse_amp")
+
+    #: Multiples of the readout power punchout chose. Most of the grid goes here
+    #: rather than on frequency, and that split is measured rather than assumed: the
+    #: frequency optimum sits about a tenth of a linewidth off the resonance, so that
+    #: axis is nearly flat, while the amplitude has a real interior optimum — signal
+    #: grows linearly with drive and punch-through only bends it.
+    AMPLITUDE_FACTORS = (0.5, 0.75, 1.0, 1.25, 1.5)
+
+    #: How many single-shot acquisitions one schedule may ask for.
+    #:
+    #: An instrument constraint, not a preference. Every appended bin takes a
+    #: sequencer register, and a Q1 sequencer has 64 in total — the rest go to loop
+    #: counters and the acquisition machinery, so half is the headroom this leaves.
+    #: Past it the qblox backend dies inside its register allocator with a bare
+    #: `IndexError`, a long way from the sweep that asked for too much.
+    #:
+    #: `resonator_punchout` sweeps a far larger grid and is unaffected because it
+    #: averages: an averaged bin costs no register. This cannot average — the *width*
+    #: of each cloud is exactly what it measures.
+    MAX_SINGLE_SHOT_ACQUISITIONS = 32
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        self._settings = self._grid(element, config)
+        shots = int(config.get("shots", 300))
+        schedule = backend.new_schedule(self.name, repetitions=shots)
+        index = 0
+        for frequency, amplitude in self._settings:
+            schedule.add(
+                backend.SetClockFrequency(
+                    clock=f"{target}.ro", clock_freq_new=frequency
+                )
+            )
+            for prepare in (0, 1):
+                schedule.add(backend.Reset(target))
+                if prepare:
+                    schedule.add(backend.X(target))
+                schedule.add(
+                    backend.Measure(
+                        target,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.APPEND,
+                        pulse_amp=amplitude,
+                    )
+                )
+                index += 1
+        return schedule
+
+    def _grid(self, element: Any, config: RoutineConfig) -> list[tuple[float, float]]:
+        centre = float(read_path(element, "clock_freqs.readout"))
+        # A refinement, not a scan. The optimum sits a fraction of a linewidth off
+        # the resonance — 200 kHz on the simulated chip, against a 2 MHz linewidth —
+        # so a wide span spends the register budget resolving nothing.
+        span = float(config.get("span", 2e6))
+        points = int(config.get("points", 3))
+        frequencies = (
+            setpoints_of(config, "frequencies", [])
+            if "frequencies" in config
+            else linear_setpoints(centre - span / 2, centre + span / 2, points)
+        )
+        current = float(read_path(element, "measure.pulse_amp"))
+        amplitudes = (
+            setpoints_of(config, "amplitudes", [])
+            if "amplitudes" in config
+            else [min(factor * current, 1.0) for factor in self.AMPLITUDE_FACTORS]
+        )
+        grid = [(f, a) for a in amplitudes for f in frequencies]
+        if 2 * len(grid) > self.MAX_SINGLE_SHOT_ACQUISITIONS:
+            raise RoutineError(
+                f"{len(frequencies)} frequencies x {len(amplitudes)} amplitudes needs "
+                f"{2 * len(grid)} single-shot acquisitions, and a sequencer has "
+                f"registers for {self.MAX_SINGLE_SHOT_ACQUISITIONS}. Narrow the grid: "
+                f"this looks for a broad optimum, not a sharp one."
+            )
+        return grid
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        ground, excited = _swept_clouds(dataset, len(self._settings))
+        return fit_readout_operating_point(self._settings, ground, excited)
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        element = device.get_element(target)
+        for name, key in (
+            ("frequency", "readout_frequency"),
+            ("pulse_amp", "readout_amplitude"),
+        ):
+            path = _two_state_path(element, name)
+            if path:
+                write_path(element, path, params[key])
 
 
 class ReadoutDiscrimination(CalibrationRoutine):
@@ -46,7 +181,7 @@ class ReadoutDiscrimination(CalibrationRoutine):
     """
 
     name = "readout_discrimination"
-    depends_on = ("rabi",)
+    depends_on = ("readout_operating_point",)
     updates = ("measure.acq_rotation", "measure.acq_threshold")
 
     def build_schedule(
@@ -54,6 +189,17 @@ class ReadoutDiscrimination(CalibrationRoutine):
     ) -> Any:
         shots = int(config.get("shots", 2000))
         schedule = backend.new_schedule(f"{self.name}", repetitions=shots)
+        point = _operating_point(device.get_element(target))
+        if point:
+            # At the point that will be used, not at the one the calibration reads on.
+            # A line fitted where the clouds are not is a line fitted somewhere else,
+            # which is the whole reason this depends on `readout_operating_point`.
+            schedule.add(
+                backend.SetClockFrequency(
+                    clock=f"{target}.ro", clock_freq_new=point["frequency"]
+                )
+            )
+        measure_kwargs = {"pulse_amp": point["pulse_amp"]} if point else {}
         # Single shots, not an average: the whole measurement is the *distribution* of
         # each cloud, and its width is what sets the threshold and the fidelity. An
         # averaged acquisition gives two points and no way to say how often they are
@@ -64,7 +210,10 @@ class ReadoutDiscrimination(CalibrationRoutine):
                 schedule.add(backend.X(target))
             schedule.add(
                 backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.APPEND
+                    target,
+                    acq_index=index,
+                    bin_mode=backend.BinMode.APPEND,
+                    **measure_kwargs,
                 )
             )
         return schedule
@@ -77,8 +226,16 @@ class ReadoutDiscrimination(CalibrationRoutine):
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
-        write_path(element, "measure.acq_rotation", params["acq_rotation"])
-        write_path(element, "measure.acq_threshold", params["acq_threshold"])
+        # Beside the operating point it was measured at, when there is one — and the
+        # condition is that the point is *calibrated*, not merely that the element
+        # could hold one. `readout_operating_point` can be disabled in a config, and
+        # then the schedule above reads on the calibration point; writing the line
+        # into `measure_2state` anyway would put it exactly where the executor does
+        # not look, since it falls back on an uncalibrated point too.
+        two_state = _operating_point(element) is not None
+        for name in ("acq_rotation", "acq_threshold"):
+            path = (two_state and _two_state_path(element, name)) or f"measure.{name}"
+            write_path(element, path, params[name])
 
     #: Assignment fidelity below which the discriminator counts as stale. A readout
     #: that has drifted far enough to misassign one shot in twenty is worth
@@ -118,6 +275,29 @@ class ReadoutDiscrimination(CalibrationRoutine):
         )
 
 
+def _swept_clouds(dataset: Any, points: int) -> tuple[np.ndarray, np.ndarray]:
+    """The two clouds at each setting, as ``(points, shots)`` complex arrays.
+
+    The schedule interleaves them — ``|0>`` then ``|1>`` at each setting — so the
+    acquisition axis unpacks as pairs, not as two halves.
+    """
+    values = _acquisition_values(dataset)
+    if values.shape[-1] < 2 * points:
+        raise RoutineError(
+            f"expected {2 * points} acquisitions for {points} settings, got "
+            f"{values.shape[-1]} — one prepared state per setting is missing"
+        )
+    shots = values[..., : 2 * points].reshape(-1, points, 2)
+    return shots[..., 0].T, shots[..., 1].T
+
+
+def _acquisition_values(dataset: Any) -> np.ndarray:
+    data_vars = getattr(dataset, "data_vars", None)
+    if data_vars is None or not list(data_vars):
+        raise RoutineError("the discrimination acquisition returned no data variables")
+    return np.asarray(dataset[list(data_vars)[0]].values)
+
+
 def _shot_clouds(dataset: Any) -> tuple[np.ndarray, np.ndarray]:
     """The ``|0>`` and ``|1>`` shot clouds, as complex arrays.
 
@@ -126,11 +306,7 @@ def _shot_clouds(dataset: Any) -> tuple[np.ndarray, np.ndarray]:
     flattened together — which shot belongs to which prepared state is the entire
     content of the measurement.
     """
-    data_vars = getattr(dataset, "data_vars", None)
-    if data_vars is None or not list(data_vars):
-        raise RoutineError("the discrimination acquisition returned no data variables")
-
-    values = np.asarray(dataset[list(data_vars)[0]].values)
+    values = _acquisition_values(dataset)
     if values.ndim < 2 or values.shape[-1] < 2:
         raise RoutineError(
             f"expected single shots of two prepared states, got shape {values.shape} "
@@ -138,3 +314,22 @@ def _shot_clouds(dataset: Any) -> tuple[np.ndarray, np.ndarray]:
             "each cloud is gone and no threshold can be placed"
         )
     return values[..., 0].reshape(-1), values[..., 1].reshape(-1)
+
+
+def _operating_point(element: Any) -> dict[str, float] | None:
+    """The frequency and amplitude discriminated shots are taken at, if calibrated.
+
+    Zero frequency means nothing has run `readout_operating_point` yet, and the
+    readout stays where the device config put it — the same fallback the executor
+    makes, and it has to be the same one or the line is fitted somewhere the shots
+    will not be taken.
+    """
+    paths = {
+        name: _two_state_path(element, name) for name in ("frequency", "pulse_amp")
+    }
+    if not all(paths.values()):
+        return None
+    point = {name: float(read_path(element, path)) for name, path in paths.items()}
+    if point["frequency"] <= 0.0 or point["pulse_amp"] <= 0.0:
+        return None
+    return point

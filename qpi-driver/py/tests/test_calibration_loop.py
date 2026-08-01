@@ -1121,6 +1121,48 @@ def test_the_dispersive_shift_is_measured_and_not_assumed(fully_calibrated):
         )
 
 
+def test_the_discriminated_readout_point_is_calibrated_and_sane(fully_calibrated):
+    """The two readouts want different things, and the graph now says so separately.
+
+    `resonator_spectroscopy` and `resonator_punchout` find where the most signal comes
+    back, which is what every routine reducing an acquisition to a magnitude needs.
+    `readout_operating_point` finds where the two states look least alike, which is
+    what a discriminator needs, and it is not the same place — most of the complex
+    separation off resonance is phase, and a magnitude sees none of it.
+
+    On this chip the two differ mostly in *power*: the frequency optimum sits only
+    about 200 kHz off the resonance, a tenth of a linewidth, while the amplitude has a
+    genuine interior optimum because signal grows linearly with drive and
+    punch-through only bends it. The frequency is swept alongside not because it moves
+    far but because it cannot be chosen separately — the resonance walks with power.
+    """
+    _report, device, _simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+
+    for qubit in ("q0", "q1"):
+        point = written[qubit]["measure_2state"]
+        assert point["frequency"] > 0, f"{qubit} has no discriminated readout point"
+        assert point["pulse_amp"] > 0
+
+        # Inside the bracket it swept, which is what says the value came from the
+        # sweep rather than from a default left in place. Deliberately *not* that it
+        # differs from punchout's power: the grid is coarse and its optimum can land
+        # on punchout's answer, which is the sweep agreeing rather than failing. Two
+        # earlier versions of this test demanded a difference the chip does not
+        # guarantee, and both failed on a routine that was working.
+        punchout = written[qubit]["measure"]["pulse_amp"]
+        assert 0.5 * punchout <= point["pulse_amp"] <= 1.5 * punchout
+
+        # A refinement rather than a second opinion: the optimum sits about 200 kHz
+        # off the resonance here, a tenth of a linewidth, so what this rules out is
+        # the sweep wandering rather than choosing.
+        offset = abs(point["frequency"] - written[qubit]["clock_freqs"]["readout"])
+        assert offset < 2e6, (
+            f"{qubit}'s discriminated readout sits {offset / 1e3:.1f} kHz from the "
+            f"calibration one, further than a linewidth — that is not a refinement"
+        )
+
+
 def test_each_qubit_is_discriminated_against_its_own_line(fully_calibrated):
     """Two qubits, two readout chains, two rotations — and X on one of them.
 
@@ -1138,10 +1180,14 @@ def test_each_qubit_is_discriminated_against_its_own_line(fully_calibrated):
     _report, device, simulator, scheduler = fully_calibrated
     written = yaml.safe_load(device.read_text())
 
+    # From `measure_2state`, where the discriminator now lives: it is fitted at the
+    # operating point discriminated shots are actually taken at, which is not the one
+    # the calibration routines read on. The fixture's hand-set `measure` pair stays
+    # put as the fallback for an element with no `measure_2state`.
     lines = {
         qubit: (
-            written[qubit]["measure"]["acq_rotation"],
-            written[qubit]["measure"]["acq_threshold"],
+            written[qubit]["measure_2state"]["acq_rotation"],
+            written[qubit]["measure_2state"]["acq_threshold"],
         )
         for qubit in ("q0", "q1")
     }

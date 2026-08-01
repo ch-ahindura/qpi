@@ -46,10 +46,42 @@ class SpectroscopySettings(SchedulerSubmodule):
     )
 
 
+class TwoStateReadout(SchedulerSubmodule):
+    """The readout operating point used for discriminating. See the quantify twin."""
+
+    frequency: float = Parameter(
+        docstring="Readout frequency for discriminated shots. 0 if uncalibrated.",
+        unit="Hz",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1e12, allow_nan=True),
+    )
+    pulse_amp: float = Parameter(
+        docstring="Readout amplitude for discriminated shots. 0 if uncalibrated.",
+        unit="",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+    )
+    acq_rotation: float = Parameter(
+        docstring="Rotation applied before thresholding, in the hardware's [0, 360).",
+        unit="degrees",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=360.0, allow_nan=True),
+    )
+    acq_threshold: float = Parameter(
+        docstring="Threshold the rotated real part is compared against.",
+        unit="",
+        initial_value=0.0,
+        vals=Numbers(min_value=-1e12, max_value=1e12, allow_nan=True),
+    )
+
+
 class CalibratedTransmon(BasicTransmonElement):
     """A transmon with somewhere to put every parameter the graph calibrates."""
 
     element_type: Literal["CalibratedTransmon"] = "CalibratedTransmon"
     spec: SpectroscopySettings = Field(
         default_factory=lambda: SpectroscopySettings(name="spec")
+    )
+    measure_2state: TwoStateReadout = Field(
+        default_factory=lambda: TwoStateReadout(name="measure_2state")
     )

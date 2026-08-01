@@ -17,6 +17,7 @@ from qpi_driver.compat.qblox import (
     S,
     Schedule,
     SDagger,
+    SetClockFrequency,
     T,
     TDagger,
     X,
@@ -254,6 +255,7 @@ def generate_schedule(
     acq_protocol: str,
     acq_kwargs: dict,
     acq_overrides: dict[int, dict] | None = None,
+    readout_points: dict[int, dict[str, float]] | None = None,
     only_qubit: int | None = None,
 ) -> tuple[Schedule, list[tuple[int, int, int]], int]:
     """Generate a schedule from the given circuit.
@@ -265,6 +267,9 @@ def generate_schedule(
         acq_protocol: Acquisition protocol to use when measuring
         acq_kwargs: Additional arguments passed for acquisition.
         acq_overrides: Per-qubit acquisition arguments, keyed by qubit index.
+        readout_points: Per-qubit readout frequency for discriminated shots. The
+            measure operation's clock is fixed at ``{qubit}.ro``, so the frequency is
+            applied by moving that clock rather than as a `Measure` argument.
 
     Returns:
         A tuple of the Schedule with all the proper timings, the clbit_map
@@ -273,6 +278,18 @@ def generate_schedule(
         classical bits declared in the circuit.
     """
     schedule = Schedule(name=name, repetitions=shots)
+    # Only for thresholded shots: the point that best separates the two clouds is not
+    # the one that returns the most signal, so applying it to a raw trace or to level-1
+    # IQ would degrade exactly the measurements that want the signal.
+    if acq_protocol == "ThresholdedAcquisition":
+        for index, point in sorted((readout_points or {}).items()):
+            if only_qubit is not None and index != only_qubit:
+                continue
+            schedule.add(
+                SetClockFrequency(
+                    clock=f"q{index}.ro", clock_freq_new=point["frequency"]
+                )
+            )
     acq_indices: dict[int, int] = {}
     clbit_map: list[tuple[int, int, int]] = []
 

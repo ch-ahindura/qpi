@@ -33,6 +33,7 @@ from qpi_driver.executors.utils.counts import (
 )
 from qpi_driver.executors.utils.discriminator import (
     discriminators_by_qubit,
+    readout_points_by_qubit,
     resolve_discriminators,
 )
 from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
@@ -259,6 +260,7 @@ class QbloxExecutor(Executor):
             acq_protocol=acq_protocol,
             acq_kwargs=acq_kwargs,
             acq_overrides=acq_overrides,
+            readout_points=readout_points_by_qubit(self._device),
             only_qubit=only_qubit,
         )
 
@@ -309,6 +311,12 @@ class QbloxExecutor(Executor):
         per_qubit, complete = resolve_discriminators(
             self._device, payload.acq_rotation, payload.acq_threshold
         )
+        # And the power those shots are taken at, where a `CalibratedTransmon` says so.
+        # The matching frequency cannot ride on `Measure` — it is a clock, not a pulse
+        # parameter — so `_readout_overrides` sets it on the schedule instead.
+        for index, point in readout_points_by_qubit(self._device).items():
+            if index in per_qubit:
+                per_qubit[index]["pulse_amp"] = point["pulse_amp"]
         protocol = "ThresholdedAcquisition" if complete else "SSBIntegrationComplex"
         return protocol, {"bin_mode": bin_mode}, per_qubit
 

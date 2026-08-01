@@ -24,7 +24,18 @@ from qpi_driver.tuners.base.device import (
 )
 
 #: Read from each element, and passed to `Measure` under the same names.
-DISCRIMINATOR_PATHS = ("measure.acq_rotation", "measure.acq_threshold")
+DISCRIMINATOR_PATHS = ("acq_rotation", "acq_threshold")
+
+#: Preferred first. A `CalibratedTransmon` carries a readout operating point chosen
+#: for *discrimination* rather than for signal, and a line fitted there — see that
+#: element. An element without one falls back to `measure`, which is what every
+#: config written before it has.
+DISCRIMINATOR_SUBMODULES = ("measure_2state", "measure")
+
+#: Also read from `measure_2state`, and applied only to discriminated shots. The
+#: frequency is not a `Measure` argument: the measure operation's clock is fixed at
+#: ``{qubit}.ro`` in the device config, so it is overridden by setting that clock.
+READOUT_POINT_PATHS = ("frequency", "pulse_amp")
 
 
 def qubit_index(element_name: str) -> int | None:
@@ -54,19 +65,68 @@ def discriminators_by_qubit(device: Any) -> dict[int, dict[str, float]]:
         index = qubit_index(name)
         if index is None:
             continue
-        element = _element(device, name)
+        line = _line_of(_element(device, name))
+        if line is not None:
+            found[index] = line
+    return found
+
+
+def _line_of(element: Any) -> dict[str, float] | None:
+    """The discriminator this element carries, from the best submodule that has one.
+
+    A `measure_2state` left at its defaults is not a calibration — the frequency is
+    zero, which is nowhere — so it is skipped rather than preferred, and the element
+    falls back to whatever `measure` holds.
+    """
+    for submodule in DISCRIMINATOR_SUBMODULES:
         try:
-            values = [read_path(element, path) for path in DISCRIMINATOR_PATHS]
+            values = [
+                read_path(element, f"{submodule}.{path}")
+                for path in DISCRIMINATOR_PATHS
+            ]
         except (ParameterError, AttributeError, KeyError):
             continue
         if any(value is None for value in values):
             continue
+        if submodule == "measure_2state" and not readout_point(element):
+            continue
         rotation, threshold = values
-        found[index] = {
-            "acq_rotation": float(rotation),
-            "acq_threshold": float(threshold),
-        }
-    return found
+        return {"acq_rotation": float(rotation), "acq_threshold": float(threshold)}
+    return None
+
+
+def readout_point(element: Any) -> dict[str, float] | None:
+    """The frequency and amplitude discriminated shots should be taken at.
+
+    ``None`` when the element has no `measure_2state`, or has one nothing has
+    calibrated — a frequency of zero is not a readout, so it means "leave the clock
+    where the device config put it" rather than "drive at DC".
+    """
+    try:
+        values = [
+            read_path(element, f"measure_2state.{path}") for path in READOUT_POINT_PATHS
+        ]
+    except (ParameterError, AttributeError, KeyError):
+        return None
+    if any(value is None for value in values):
+        return None
+    frequency, amplitude = (float(value) for value in values)
+    if frequency <= 0.0 or amplitude <= 0.0:
+        return None
+    return {"frequency": frequency, "pulse_amp": amplitude}
+
+
+def readout_points_by_qubit(device: Any) -> dict[int, dict[str, float]]:
+    """Each qubit's discriminated-readout operating point, by qubit index."""
+    points: dict[int, dict[str, float]] = {}
+    for name in element_names(device):
+        index = qubit_index(name)
+        if index is None:
+            continue
+        point = readout_point(_element(device, name))
+        if point is not None:
+            points[index] = point
+    return points
 
 
 def resolve_discriminators(

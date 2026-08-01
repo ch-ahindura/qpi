@@ -432,9 +432,10 @@ after the machinery.
      nothing else measures. It writes nothing, deliberately: the frequency that best
      separates the states is not derivable from the two resonances, since it depends
      on how the two Lorentzians overlap.
-   - `readout_frequency_two_state`, `readout_amplitude_two_state`: **still deferred,
-     and now for a measured reason rather than an anticipated one.** Both were
-     written, run against the full DAG, and backed out.
+   - `readout_operating_point`: **done**, as one node rather than the planned
+     `readout_frequency_two_state` and `readout_amplitude_two_state`, and only after
+     both of those were written, run against the full DAG, and backed out. What
+     follows is why, kept because the numbers are the argument.
 
      The deferral note used to say they write a clock nothing reads. The real
      obstacle is sharper: **optimising the readout operating point for discrimination
@@ -469,13 +470,43 @@ after the machinery.
      with a single `readout_phase_deg` every qubit came out with the same line to four
      decimal places, so the first test written for this passed with the bug reinstated.
 
-     So both nodes need a **discriminated-readout operating point separate from the
-     calibration one**, and the executor emitting a `SetClockFrequency` for
-     `meas_level=2` — the measure operation's clock is fixed at `{qubit}.ro` in the
-     device config, so this is a schedule-level override rather than a second clock
-     resource. That is a change to every discriminated job, not a routine to add, and
-     it is the same work the EF subspace's `ro2`/`ro_3st_opt` needs.
-     `measure.pulse_amp` and `clock_freqs.readout` stay with punchout until then.
+     So the readout needs **two operating points, not one compromise**, which is what
+     `measure_2state` on `CalibratedTransmon` now carries: a frequency, an amplitude,
+     and the line fitted there. `resonator_spectroscopy` and `resonator_punchout` keep
+     `clock_freqs.readout` and `measure.pulse_amp` for everything that reads a
+     magnitude; the executors use `measure_2state` for `meas_level=2` alone. Levels 0
+     and 1 are untouched, since a point chosen for phase separation degrades exactly
+     the measurement that wants the signal.
+
+     One node over both axes rather than the two planned. The resonance moves with
+     power, so choosing a frequency and then a power leaves the frequency stale — 183
+     kHz here, a tenth of a linewidth — which is the mistake `resonator_punchout`
+     already exists to not make. Frequency and power are one operating point.
+
+     The frequency is applied by moving the `{qubit}.ro` clock rather than through
+     `Measure`: the measure operation's clock is fixed in the device config, so this
+     is a schedule-level override and not a second clock resource. It is the same
+     mechanism every calibration routine already uses to sweep a readout, and the same
+     one the EF subspace's `ro2`/`ro_3st_opt` will need.
+
+     **What it is worth on this chip, honestly.** The frequency optimum sits about
+     200 kHz off the resonance — a tenth of a linewidth — so the frequency axis
+     contributes almost nothing here, and the node earns its place through the
+     amplitude, where signal grows linearly with drive while punch-through only bends
+     it and there is a real interior optimum. The frequency is swept alongside because
+     it cannot be chosen separately, not because it moves far. A chip with asymmetric
+     chains or unequal linewidths would pull it further; this simulator does not model
+     that, and the RFC should not claim more than it can show. A first attempt at a
+     test here asserted the two points must differ by 100 kHz and failed at exactly
+     0.0 — an 8 MHz span over five points steps 2 MHz, so the grid could not resolve
+     the offset it was looking for.
+
+     One instrument constraint surfaced, and is now a named bound with an error that
+     explains it: every appended bin takes a sequencer register and a Q1 sequencer has
+     64, so a single-shot sweep is capped at 32 acquisitions. Past it the qblox
+     backend dies inside its register allocator with a bare `IndexError`.
+     `resonator_punchout` sweeps a far larger grid unaffected because it averages;
+     this cannot, since the width of each cloud is the measurement.
 5. **The EF subspace.** Begun.
    - `f12_spectroscopy` → `clock_freqs.f12`: **done.** The `.12` clock is driven in
      the simulator now — its own rotating frame, detuning on `|2⟩`, `|0⟩` a spectator —

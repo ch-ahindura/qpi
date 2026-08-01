@@ -16,6 +16,7 @@ from qpi_driver.compat.quantify import (
     QbloxHardwareCompilationConfig,
     Schedule,
     SerialCompiler,
+    SetClockFrequency,
     set_datadir,
 )
 from qpi_driver.executors import JobPayload
@@ -38,6 +39,7 @@ from qpi_driver.executors.utils.counts import (
 )
 from qpi_driver.executors.utils.discriminator import (
     discriminators_by_qubit,
+    readout_points_by_qubit,
     resolve_discriminators,
 )
 from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
@@ -235,6 +237,7 @@ class QuantifyExecutor(Executor):
     ) -> xr.Dataset:
         """Run a single (parameter-bound) circuit and return its acquisition dataset."""
         schedule = Schedule(name=payload.id, repetitions=shots)
+        _open_readout_clocks(schedule, self._device, acq_protocol, only_qubit)
         acq_indices: dict[int, int] = {}
         clbit_map: list[tuple[int, int, int]] = []
 
@@ -363,6 +366,12 @@ class QuantifyExecutor(Executor):
         per_qubit, complete = resolve_discriminators(
             self._device, payload.acq_rotation, payload.acq_threshold
         )
+        # And the power those shots are taken at, where a `CalibratedTransmon` says so.
+        # The matching frequency cannot ride on `Measure` — it is a clock, not a pulse
+        # parameter — so `_readout_overrides` sets it on the schedule instead.
+        for index, point in readout_points_by_qubit(self._device).items():
+            if index in per_qubit:
+                per_qubit[index]["pulse_amp"] = point["pulse_amp"]
         protocol = "ThresholdedAcquisition" if complete else "SSBIntegrationComplex"
         return protocol, {"bin_mode": bin_mode}, per_qubit
 
@@ -514,3 +523,30 @@ class QuantifyExecutor(Executor):
 
         with suppress(Exception):
             self._instrument_coordinator.close()
+
+
+def _open_readout_clocks(
+    schedule: Any,
+    device: Any,
+    acq_protocol: str,
+    only_qubit: int | None,
+) -> None:
+    """Move each readout clock to the point discriminated shots are taken at.
+
+    Only for thresholded acquisition: the operating point that best separates the two
+    clouds is not the one that returns the most signal, so applying it to a raw trace
+    or to level-1 IQ would degrade exactly the measurements that want the signal. See
+    `TwoStateReadout`.
+
+    The measure operation's clock is fixed at ``{qubit}.ro`` in the device config, so
+    this is a schedule-level override rather than a second clock resource — the same
+    mechanism every calibration routine already uses to sweep a readout.
+    """
+    if acq_protocol != "ThresholdedAcquisition":
+        return
+    for index, point in sorted(readout_points_by_qubit(device).items()):
+        if only_qubit is not None and index != only_qubit:
+            continue
+        schedule.add(
+            SetClockFrequency(clock=f"q{index}.ro", clock_freq_new=point["frequency"])
+        )

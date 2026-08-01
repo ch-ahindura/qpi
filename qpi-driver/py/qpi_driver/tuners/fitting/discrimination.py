@@ -88,9 +88,70 @@ def fit_readout_discrimination(
         "acq_threshold": threshold,
         "assignment_fidelity": 1.0 - 0.5 * (ground_error + excited_error),
         "separation": separation,
+        # Separation in units of the scatter that has to be crossed to confuse the
+        # two. This is what `fit_readout_operating_point` ranks settings on, and the
+        # reason it does not rank on fidelity: fidelity saturates at 1 and then only
+        # counts the handful of shots that landed the wrong side, so above about four
+        # sigma it stops telling a good readout from a better one.
+        "snr": separation / spread if spread > 0 else float("inf"),
         "ground_error": ground_error,
         "excited_error": excited_error,
     }
+
+
+def fit_readout_operating_point(
+    settings: list[tuple[float, float]], ground: np.ndarray, excited: np.ndarray
+) -> dict[str, float]:
+    """The (frequency, amplitude) whose two clouds are furthest apart, in scatter units.
+
+    One sweep over both axes rather than one node each, because they are one operating
+    point and not two numbers. The resonance moves with power — that is punchout — so
+    a frequency chosen at one amplitude is stale at another; choosing them in sequence
+    means the second choice invalidates the first. `resonator_punchout` learned this
+    for the *magnitude* readout and reports the frequency it found at the power it
+    picked; this is the same lesson for the discriminated one.
+
+    *settings* is one ``(frequency, amplitude)`` per row, and *ground* and *excited*
+    are one row of complex single shots each.
+
+    Settings where the clouds do not separate are skipped rather than failing the
+    sweep: at the edge of a frequency scan, or at a power that has punched the
+    resonator through, there is genuinely nothing to discriminate, and that is the
+    measurement working. Only a sweep where *nothing* separates is an error.
+    """
+    zeros = np.asarray(ground, dtype=complex)
+    ones = np.asarray(excited, dtype=complex)
+    if zeros.shape[0] != len(settings) or ones.shape[0] != len(settings):
+        raise FitError(
+            f"readout operating point expected one row of shots per setting, got "
+            f"{zeros.shape[0]} and {ones.shape[0]} rows for {len(settings)} settings"
+        )
+
+    best: tuple[tuple[float, float], dict[str, float]] | None = None
+    skipped: list[str] = []
+    for setting, zero_row, one_row in zip(settings, zeros, ones):
+        try:
+            fitted = fit_readout_discrimination(zero_row, one_row)
+        except FitError as error:
+            skipped.append(f"{setting}: {error}")
+            continue
+        if best is None or fitted["snr"] > best[1]["snr"]:
+            best = (setting, fitted)
+
+    if best is None:
+        raise FitError(
+            "no readout setting in the sweep separated the two states — "
+            + "; ".join(skipped)
+        )
+
+    (frequency, amplitude), fitted = best
+    log.debug(
+        "readout operating point %.6g Hz at %.4g, snr %.2f",
+        frequency,
+        amplitude,
+        fitted["snr"],
+    )
+    return {"readout_frequency": frequency, "readout_amplitude": amplitude, **fitted}
 
 
 def _weighted_midpoint(low: np.ndarray, high: np.ndarray) -> float:
