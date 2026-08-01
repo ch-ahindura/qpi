@@ -724,13 +724,30 @@ whose absence is currently a wrong answer rather than a missing feature.
 
 ## 13. Open questions
 
-- **Does `resonator_punchout` survive as a calibrate node at all?** The reference
-  pipelines treat it as standalone. If `readout_amplitude_two_state` owns the
-  amplitude and `resonator_spectroscopy` owns the frequency, punchout's remaining
-  job is a check — "are we still in the dressed regime?" — which may be the honest
-  shape for it.
-- **Is `readout_fidelity` a node or a report field?** It writes nothing. RFC 0004
-  gives benchmarks the same shape (`updates = ()`), so precedent says node.
+- ~~**Does `resonator_punchout` survive as a calibrate node at all?**~~ **Decided:
+  it becomes a check node.** It now has one, and the check is a different experiment
+  rather than a cheaper sweep — necessarily, because the question is not "where is
+  the resonance" but "is the power still below the crossover", and that is about how
+  the resonance *responds* to power. Two short scans, at the configured power and at
+  half of it: in the dressed regime the line does not move, above it the line walks.
+
+  It still **produces** `measure.pulse_amp` on a first bring-up, because nothing else
+  does. The decision's precondition did not survive contact: `readout_amplitude_two_state`
+  was merged into `readout_operating_point`, which writes `measure_2state` — the
+  *discriminated* readout point — and deliberately not the calibration one. Making
+  punchout check-only needs a producer for the calibration amplitude first, and there
+  is not one. Recorded rather than forced.
+- ~~**Is `readout_fidelity` a node or a report field?**~~ **Decided: a node**, and a
+  benchmark. The argument that lost was mine — that splitting it from
+  `readout_discrimination` measures the same two clouds twice, which is true and is
+  the cost. The argument that wins is that **only a node participates in drift
+  monitoring**: a benchmark is what a drift check runs and what queues a
+  recalibration, while a number buried in another routine's parameters is read by
+  nobody. Readout fidelity is precisely the quantity that degrades quietly — every
+  gate fidelity measured on top of it inherits the error — so it is the last one that
+  should be invisible to monitoring. `readout_discrimination` still reports its own
+  fidelity from the shots it already has, which says whether the line it just fitted
+  is any good; the node is the standing measurement of whether it still is.
 - ~~**Where does the three-state discriminator live in the device file?**~~
   **Settled by `CalibratedTransmon`.** A custom element per scheduler, opted into by
   `element_type.path` like `FluxTunableCoupler`, carrying whatever submodules the
@@ -739,6 +756,13 @@ whose absence is currently a wrong answer rather than a missing feature.
   every routine reads the path through a resolver (`spectroscopy_amplitude_path`,
   `drag_parameter_name`) so a config on `BasicTransmonElement` still calibrates as
   far as its own parameters allow, rather than failing to load.
-- **Should the DAG refuse an edge whose qubits are not targeted?** Carried over
-  from RFC 0004 §11, still open, and `coupler_anticrossing` makes it sharper: the
-  bias current is a property of the edge, measured through its qubits.
+- ~~**Should the DAG refuse an edge whose qubits are not targeted?**~~ **Decided:
+  yes, at startup.** `CalibrationConfig.validate_targets` rejects it before anything
+  runs. The wrong answer here is not an exception but a calibrated-*looking* gate: a
+  chevron over an uncalibrated qubit still fits a curve and still writes an amplitude
+  and a duration, and startup is the only cheap moment to catch that.
+
+  It changed `recalibrate` too, and correctly. Narrowing to a drifted qubit used to
+  carry in the edges touching it while leaving their far ends alone — which is the
+  configuration the guard forbids. A partial recalibration that keeps an edge now
+  keeps both its ends, which is the smallest honest unit of work.

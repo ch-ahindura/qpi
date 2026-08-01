@@ -102,6 +102,7 @@ class Tuner(ABC):
     def calibrate(self, config: CalibrationConfig) -> CalibrationReport:
         """Walk the whole enabled DAG, then persist what it calibrated."""
         config.validate_against(routine_names())
+        config.validate_targets()
         dag = CalibrationDAG(self.routines(), config)
         report = dag.run(self.device, self.backend, config, mode="full")
         self._persist(report)
@@ -128,6 +129,7 @@ class Tuner(ABC):
         possible outcome and was not previously reachable.
         """
         config.validate_against(routine_names())
+        config.validate_targets()
         narrowed = self._narrow_to(qubits, config)
         dag = CalibrationDAG(self.routines(), narrowed)
         order, notes = dag.diagnose(
@@ -161,6 +163,7 @@ class Tuner(ABC):
         is what reduces it to the per-target numbers a threshold is compared with.
         """
         config.validate_against(routine_names())
+        config.validate_targets()
         routines = self.routines()
         benchmarks = [r.name for r in routines if r.is_benchmark]
         dag = CalibrationDAG(routines, config)
@@ -172,13 +175,26 @@ class Tuner(ABC):
     def _narrow_to(
         self, qubits: list[str], config: CalibrationConfig
     ) -> CalibrationConfig:
-        """*config* restricted to *qubits* and the edges that touch them."""
+        """*config* restricted to *qubits*, the edges touching them, and their partners.
+
+        The partners are not an afterthought. An edge is calibrated *through* its two
+        qubits — a chevron prepares ``|11>`` with a pi pulse on each — so narrowing to
+        the drifted qubit alone would carry the edge in and leave the other end
+        wherever it was. `CalibrationConfig.validate_targets` refuses that outright,
+        and it is right to: the failure it prevents is a confident, wrong gate rather
+        than an error. So a partial recalibration that keeps an edge keeps both its
+        ends, which is the smallest honest unit of work.
+        """
         wanted = [q for q in qubits if q in config.target_qubits] or list(qubits)
         edges = [
             edge
             for edge in config.target_edges
             if any(part in wanted for part in edge.split("_"))
         ]
+        for edge in edges:
+            for part in edge.split("_"):
+                if part not in wanted:
+                    wanted.append(part)
         return CalibrationConfig(
             target_qubits=wanted,
             target_edges=edges,

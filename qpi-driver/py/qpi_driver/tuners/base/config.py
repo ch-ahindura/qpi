@@ -93,6 +93,44 @@ class CalibrationConfig:
                 f"Known routines: {', '.join(sorted(known_routines))}."
             )
 
+    def validate_targets(self) -> None:
+        """Reject an edge whose qubits are not themselves being calibrated.
+
+        A two-qubit gate is measured *through* its qubits: `cz_chevron` prepares
+        ``|11>`` with a pi pulse on each and reads one of them back. Neither is
+        meaningful against a qubit whose own frequency and pi pulse are whatever the
+        config file happened to say — the chevron would fit a real curve to a pair
+        that was never brought up, write a plausible amplitude and duration, and the
+        gate would not work.
+
+        Failing at startup rather than at that point is the whole value. The wrong
+        answer here is not an exception, it is a calibrated-looking edge, and the only
+        moment it is cheap to catch is before anything runs.
+
+        Raises:
+            ConfigError: naming the edge and the qubits it needs.
+        """
+        targeted = set(self.target_qubits)
+        missing: list[str] = []
+        for edge in self.target_edges:
+            parts = edge.split("_")
+            if len(parts) != 2 or not all(parts):
+                raise ConfigError(
+                    f"target edge {edge!r} is not a '<parent>_<child>' pair, so the "
+                    f"qubits it acts on cannot be determined"
+                )
+            absent = [qubit for qubit in parts if qubit not in targeted]
+            if absent:
+                missing.append(f"{edge} needs {', '.join(absent)}")
+        if missing:
+            raise ConfigError(
+                "calibration.yml targets edges whose qubits it does not calibrate: "
+                + "; ".join(missing)
+                + ". A two-qubit gate is measured through its qubits, so an edge over "
+                "an uncalibrated one produces a confident, wrong answer rather than "
+                "an error."
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CalibrationConfig":
         if not isinstance(data, dict):

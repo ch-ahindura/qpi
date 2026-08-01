@@ -214,6 +214,32 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**Three open questions closed** (RFC 0005 §13).
+
+**An edge whose qubits are not calibrated is refused at startup.** A CZ is measured
+*through* its qubits — the chevron prepares `|11>` with a π pulse on each and reads
+one back — so over an uncalibrated qubit it still fits a curve, still writes an
+amplitude and duration, and the gate does not work. The wrong answer is a
+calibrated-looking gate rather than an exception, and startup is the only cheap moment
+to catch it. This also changed partial recalibration: narrowing to a drifted qubit used
+to carry in the edges touching it and leave their far ends alone, which is exactly the
+configuration now forbidden. An edge brings both its ends.
+
+**`resonator_punchout` gains a check.** Not a cheaper sweep — the question is not
+"where is the resonance" but "is the power still below the crossover", which is about
+how the resonance *responds* to power. Two short scans, at the configured power and
+half of it: dressed, the line does not move; punched through, it walks. Punchout still
+produces `measure.pulse_amp`, because nothing else does — making it check-only needs a
+producer for the calibration amplitude, and `readout_operating_point` writes the
+*discriminated* point deliberately instead.
+
+**`readout_fidelity` is its own benchmark node.** It measures the same two clouds
+`readout_discrimination` does, which is the cost. The reason it is worth paying: only
+a node participates in drift monitoring. A benchmark is what a drift check runs and
+what queues a recalibration; a number inside another routine's parameters is read by
+nobody. Readout fidelity is the quantity that degrades quietly — every gate fidelity
+on top of it inherits the error — so it is the last one that should be invisible.
+
 **A parametric coupler drive kept its frequency through a held offset** (RFC 0005 §9).
 The qblox backend emits a long flux pulse as a held DC offset plus a short tail, and
 the branch replaying the held part dropped the drive frequency — so a 100 ns coupler

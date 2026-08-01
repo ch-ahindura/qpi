@@ -26,6 +26,7 @@ from qpi_driver.tuners.routines.ef import (
 )
 from qpi_driver.tuners.routines.readout import (
     ReadoutDiscrimination,
+    ReadoutFidelity,
     ReadoutOperatingPoint,
 )
 from qpi_driver.tuners.routines.single_qubit import (
@@ -64,6 +65,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     ResonatorSpectroscopyExcited,
     ReadoutOperatingPoint,
     ReadoutDiscrimination,
+    ReadoutFidelity,
     F12Spectroscopy,
     Rabi12,
     ResonatorSpectroscopySecondExcited,

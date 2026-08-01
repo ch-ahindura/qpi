@@ -298,6 +298,77 @@ def _acquisition_values(dataset: Any) -> np.ndarray:
     return np.asarray(dataset[list(data_vars)[0]].values)
 
 
+class ReadoutFidelity(CalibrationRoutine):
+    """How often the calibrated discriminator assigns a shot correctly.
+
+    A node rather than a field on `readout_discrimination`, which is where this
+    number used to live. The two arguments pull opposite ways and the deciding one is
+    not tidiness:
+
+    - Against: it measures the same two clouds twice, so the chip pays for the shots
+      again.
+    - For: **only a node participates in drift monitoring.** A benchmark is what a
+      drift check runs and what queues a recalibration when it falls; a value buried
+      in another routine's reported parameters is read by nobody and triggers
+      nothing. Readout fidelity is exactly the quantity that degrades quietly — every
+      gate fidelity measured on top of it inherits the error — so it is the last one
+      that should be invisible to monitoring.
+
+    The shots are the cost of that, and they are cheap next to RB.
+
+    It writes nothing, like every other benchmark. `readout_discrimination` still
+    reports its own fidelity from the shots it already has, which is what says
+    whether the line it just fitted is any good; this is the standing measurement of
+    whether the line still is.
+    """
+
+    name = "readout_fidelity"
+    depends_on = ("readout_discrimination",)
+    updates = ()
+    benchmark = True
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        shots = int(config.get("shots", 2000))
+        schedule = backend.new_schedule(self.name, repetitions=shots)
+        point = _operating_point(device.get_element(target))
+        if point:
+            # Where the discriminator was fitted, which is where the shots it grades
+            # will be taken. Reading anywhere else measures a line against clouds it
+            # was not drawn for.
+            schedule.add(
+                backend.SetClockFrequency(
+                    clock=f"{target}.ro", clock_freq_new=point["frequency"]
+                )
+            )
+        measure_kwargs = {"pulse_amp": point["pulse_amp"]} if point else {}
+        for index, prepare in enumerate((0, 1)):
+            schedule.add(backend.Reset(target))
+            if prepare:
+                schedule.add(backend.X(target))
+            schedule.add(
+                backend.Measure(
+                    target,
+                    acq_index=index,
+                    bin_mode=backend.BinMode.APPEND,
+                    **measure_kwargs,
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        ground, excited = _shot_clouds(dataset)
+        fitted = fit_readout_discrimination(ground, excited)
+        # Named `fidelity` as well, because that is the key a benchmark is read by.
+        return {"fidelity": fitted["assignment_fidelity"], **fitted}
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Nothing to write — a benchmark measures, it does not tune."""
+
+
 def _shot_clouds(dataset: Any) -> tuple[np.ndarray, np.ndarray]:
     """The ``|0>`` and ``|1>`` shot clouds, as complex arrays.
 

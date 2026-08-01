@@ -377,13 +377,19 @@ def test_recalibrate_narrows_both_the_targets_and_the_routines():
             ]
 
     report = StubTuner().recalibrate(
-        ["q0"], _config(target_qubits=["q0", "q1"], target_edges=["q0_q1", "q1_q2"])
+        ["q0"],
+        # q2 is targeted because ``q1_q2`` is: an edge is calibrated *through* its two
+        # qubits, so a config naming one without the other is refused outright — see
+        # `CalibrationConfig.validate_targets`.
+        _config(target_qubits=["q0", "q1", "q2"], target_edges=["q0_q1", "q1_q2"]),
     )
 
     ran = {(r.routine_name, r.target) for r in report.routine_results}
     assert report.status == "success"
-    # q1 is not the drifted qubit, and q1_q2 does not touch the one that is.
-    assert {target for _, target in ran} == {"q0", "q0_q1"}
+    # q0 drifted. `q0_q1` touches it, so it comes in — and q1 with it, because an edge
+    # brings both its ends. `q1_q2` touches neither and stays out, which is the
+    # narrowing this test is about.
+    assert {target for _, target in ran} == {"q0", "q1", "q0_q1"}
     # And the readout bring-up is not re-run for a drift the gates can fix.
     assert {name for name, _ in ran} == {"qubit_spectroscopy", "rabi", "cz_chevron"}
 

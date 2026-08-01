@@ -129,3 +129,37 @@ def test_the_shipped_example_config_is_valid():
     config = CalibrationConfig.from_yaml(example)
     config.validate_against(routine_names())
     assert config.target_qubits
+
+
+# --- targets ------------------------------------------------------------------
+
+
+def test_an_edge_over_an_uncalibrated_qubit_is_refused():
+    """The wrong answer here is a calibrated-looking gate, not an exception.
+
+    A CZ is measured *through* its qubits: the chevron prepares ``|11>`` with a pi
+    pulse on each and reads one back. Over a qubit whose frequency and pi pulse are
+    whatever the file happened to say, it still fits a curve and still writes an
+    amplitude and a duration — and the gate does not work. Startup is the only cheap
+    moment to catch that.
+    """
+    config = CalibrationConfig(target_qubits=["q0", "q1"], target_edges=["q1_q2"])
+    with pytest.raises(ConfigError, match="q1_q2 needs q2"):
+        config.validate_targets()
+
+
+def test_an_edge_whose_qubits_are_both_targeted_is_fine():
+    CalibrationConfig(
+        target_qubits=["q0", "q1", "q2"], target_edges=["q0_q1", "q1_q2"]
+    ).validate_targets()
+
+
+def test_an_edge_that_is_not_a_pair_is_refused():
+    config = CalibrationConfig(target_qubits=["q0"], target_edges=["coupler"])
+    with pytest.raises(ConfigError, match="'<parent>_<child>' pair"):
+        config.validate_targets()
+
+
+def test_no_edges_is_not_an_error():
+    """A single-qubit-only calibration is an ordinary thing to ask for."""
+    CalibrationConfig(target_qubits=["q0"]).validate_targets()

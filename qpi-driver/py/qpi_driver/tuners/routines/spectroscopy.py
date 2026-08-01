@@ -447,6 +447,96 @@ class ResonatorPunchout(CalibrationRoutine):
         write_path(element, "measure.pulse_amp", params["readout_power"])
         write_path(element, "clock_freqs.readout", params["readout_frequency"])
 
+    #: How far the resonance may walk between the configured power and half of it
+    #: before the readout counts as punched through, as a fraction of a linewidth.
+    #:
+    #: Halving the power is the probe because the dressed regime is defined by the
+    #: pull *not* moving: below the crossover the resonance is flat in power, above
+    #: it the resonance walks. So the question "are we still dressed?" is answered by
+    #: changing the power and seeing whether the line follows.
+    CHECK_LINEWIDTH_HZ = 2e6
+    CHECK_MAX_WALK_LINEWIDTHS = 0.5
+
+    def build_check_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """Two short resonator scans, at the configured power and at half of it.
+
+        A cheaper version of the sweep would be the wrong check. Punchout's answer is
+        not "where is the resonance" but "is the power still below the crossover",
+        and that is a question about how the resonance *responds* to power — one scan
+        cannot ask it however finely it is stepped.
+
+        Eight points each against the sweep's eleven powers by fifty-one frequencies.
+        Enough to fit a line, not enough to place it precisely, which is all a check
+        needs: a readout that has drifted into punch-through has moved by a linewidth,
+        not by a hair.
+        """
+        element = device.get_element(target)
+        power = float(read_path(element, "measure.pulse_amp"))
+        self._check_powers = [power, power / 2.0]
+        centre = _current_clock(device, target, "readout")
+        span = float(config.get("check_span", 0.0)) or 6.0 * self._check_linewidth(
+            config
+        )
+        points = int(config.get("check_points", 8))
+        self._check_frequencies = linear_setpoints(
+            centre - span / 2, centre + span / 2, points
+        )
+
+        clock = f"{target}.ro"
+        schedule = backend.new_schedule(
+            f"{self.name}_check", repetitions=int(config.get("check_shots", 512))
+        )
+        index = 0
+        for probe in self._check_powers:
+            for frequency in self._check_frequencies:
+                schedule.add(backend.Reset(target))
+                schedule.add(
+                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+                )
+                schedule.add(
+                    backend.Measure(
+                        target,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                        pulse_amp=probe,
+                    )
+                )
+                index += 1
+        return schedule
+
+    def _check_linewidth(self, config: RoutineConfig) -> float:
+        return float(config.get("check_linewidth", self.CHECK_LINEWIDTH_HZ))
+
+    def analyse_check(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> CheckOutcome:
+        signal = signal_of(dataset)
+        columns = len(self._check_frequencies)
+        if signal.size < 2 * columns:
+            raise RoutineError(
+                f"punchout check expected {2 * columns} acquisitions, got {signal.size}"
+            )
+        resonances = [
+            fit_resonator_spectroscopy(
+                self._check_frequencies, signal[row * columns : (row + 1) * columns]
+            )["readout_frequency"]
+            for row in range(2)
+        ]
+        walk = abs(resonances[0] - resonances[1])
+        allowed = self._check_linewidth(config) * float(
+            config.get("check_max_walk_linewidths", self.CHECK_MAX_WALK_LINEWIDTHS)
+        )
+        return CheckOutcome(
+            passed=walk <= allowed,
+            margin=walk / max(allowed, 1e-9),
+            detail=(
+                f"resonance walks {walk / 1e6:.3f} MHz when the readout power is "
+                f"halved, against {allowed / 1e6:.3f} MHz allowed"
+            ),
+        )
+
 
 class ResonatorSpectroscopyExcited(CalibrationRoutine):
     """The resonator again with the qubit in ``|1>`` — which is where chi comes from.
