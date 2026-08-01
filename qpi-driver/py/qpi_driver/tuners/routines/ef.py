@@ -27,12 +27,14 @@ from qpi_driver.tuners.base.device import read_path, write_path
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
+    grid_duration,
     linear_setpoints,
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
     fit_fine_amplitude,
     fit_rabi,
+    fit_ramsey,
     fit_resonator_spectroscopy,
     fit_three_state_discrimination,
     fit_three_state_operating_point,
@@ -77,16 +79,27 @@ def add_ef_pulse(
     target: str,
     amplitude: float,
     duration: float,
+    phase_deg: float = 0.0,
 ) -> None:
-    """One square pulse on the ``.12`` clock, into the port ``rxy`` uses."""
+    """One square pulse on the ``.12`` clock, into the port ``rxy`` uses.
+
+    A phase goes through the clock rather than the pulse: `SquarePulse` has no phase
+    argument, and the raw-pulse layer is where a gate's ``phi`` would otherwise live.
+    It is shifted back afterwards because a clock phase is *cumulative* — left in
+    place, the second point of a sweep would inherit the first point's advance and
+    the fringe would wind up rather than oscillate.
+    """
+    clock = f"{target}.12"
+    phase = phase_deg % 360.0
+    if phase:
+        schedule.add(backend.ShiftClockPhase(phase_shift=phase, clock=clock))
     schedule.add(
         backend.SquarePulse(
-            amp=amplitude,
-            duration=duration,
-            port=f"{target}:mw",
-            clock=f"{target}.12",
+            amp=amplitude, duration=duration, port=f"{target}:mw", clock=clock
         )
     )
+    if phase:
+        schedule.add(backend.ShiftClockPhase(phase_shift=-phase, clock=clock))
 
 
 class Rabi12(CalibrationRoutine):
@@ -206,7 +219,11 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
     depends_on = ("rabi_12", "readout_operating_point")
     updates = (f"{THREE_STATE}.frequency", f"{THREE_STATE}.pulse_amp")
 
-    AMPLITUDE_FACTORS = (1.0, 1.5, 2.0)
+    #: Two, not three. The register budget buys ten settings and they are better
+    #: spent on frequency: the amplitude runs to the top of whatever range it is
+    #: given — the separation peaks near twice full scale — while the frequency is
+    #: where the choice actually is.
+    AMPLITUDE_FACTORS = (1.0, 1.5)
 
     #: Three prepared states per setting against the register budget
     #: `ReadoutOperatingPoint` explains, so this grid is smaller than that node's.
@@ -251,8 +268,13 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[tuple[float, float]]:
         centre = float(read_path(element, "clock_freqs.readout"))
+        # Five points across six megahertz. Three stepped 3 MHz against a 2 MHz
+        # linewidth, which found a point good enough to classify three states and not
+        # good enough for anything measured *at* it: `ramsey_12` reads |1> against
+        # |2>, and on the coarse point its f12 came back a megahertz out where a
+        # properly placed one gives kilohertz.
         span = float(config.get("span", 6e6))
-        points = int(config.get("points", 3))
+        points = int(config.get("points", 5))
         frequencies = (
             setpoints_of(config, "frequencies", [])
             if "frequencies" in config
@@ -495,6 +517,107 @@ class FineAmplitude12(CalibrationRoutine):
         path = ef_path(element, "ef_amp180")
         if path:
             write_path(element, path, params["ef_amp180"])
+
+
+class Ramsey12(CalibrationRoutine):
+    """Ramsey interferometry on the 1-2 transition: refine f12 and measure its T2*.
+
+    `f12_spectroscopy` drives a 20 ns pulse, so its line is Fourier-limited to tens of
+    megahertz and it lands within a few. That is enough to *find* the transition and
+    not enough to drive it cleanly, which is the same split `qubit_spectroscopy` and
+    `ramsey` already have one rung down — spectroscopy finds, Ramsey measures.
+
+    The second pi/2 is phase-advanced rather than the clock detuned, so the fringe is
+    deliberate and its direction known. Reads at the three-state point, because its
+    two states are ``|1>`` and ``|2>``: at a 0-1 readout those are nearly on top of
+    each other, and the fringe would sit inside the noise.
+
+    This could not be written until the EF drive shared a frame with the idles between
+    its pulses. It did not: the phase used to accumulate at the whole anharmonicity, a
+    3.5 ns period aliased to noise on any usable delay grid, so a Ramsey here measured
+    the gap between two rotating frames rather than the transition.
+    """
+
+    name = "ramsey_12"
+    depends_on = ("three_state_operating_point",)
+    updates = ("clock_freqs.f12",)
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        # Half the pi amplitude is half the rotation, at fixed duration.
+        self._half = _required_ef_amplitude(element, target) / 2.0
+        self._duration = ef_duration(element, config)
+        # On the instrument's 1 ns grid. A linear sweep between two round numbers
+        # generally is not — 41 points from 4 ns to 2 us step 49.9 ns — and the
+        # compiler rejects a schedule whose operations do not land on it, some way
+        # from the sweep that asked for them.
+        # Squeezed from both ends, like `ramsey`'s, and measured rather than guessed.
+        #
+        # Long enough to *contain* the decay. The fit refuses a T2* the window never
+        # saw, and rightly: a 2 us sweep against this coherence returned 1.4 seconds.
+        # A 12 us one then fitted 15.5 us — accepted by the fit, but extrapolated past
+        # its own window, which is a number to distrust. The 1-2 coherence here runs
+        # about 15 us, so 30 us holds two time constants of it.
+        #
+        # Fine enough for the fringe: 125 ns steps put Nyquist at 4 MHz, well clear of
+        # the 1 MHz advance below.
+        self._delays = [
+            grid_duration(delay)
+            for delay in setpoints_of(
+                config, "delays", linear_setpoints(4e-9, 30e-6, 241)
+            )
+        ]
+        self._detuning = float(config.get("artificial_detuning", 1e6))
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        measure = open_three_state_readout(schedule, backend, target, element)
+        # The clock is detuned rather than the second pulse phase-advanced, which is
+        # the opposite of what `ramsey` does one rung down and is not a preference.
+        # A phase advance is a `ShiftClockPhase`, and on the ``.12`` clock it produced
+        # no fringe at all: the fitted detuning came back at minus the artificial one
+        # whatever the device's f12 was set to, so the sweep was measuring nothing.
+        # Detuning the clock does work — the fringe tracks the offset — and it is what
+        # the routine's own frame offset is built from.
+        current = float(read_path(element, "clock_freqs.f12"))
+        schedule.add(
+            backend.SetClockFrequency(
+                clock=f"{target}.12", clock_freq_new=current + self._detuning
+            )
+        )
+        for index, delay in enumerate(self._delays):
+            schedule.add(backend.Reset(target))
+            schedule.add(backend.X(target))
+            add_ef_pulse(schedule, backend, target, self._half, self._duration)
+            backend.idle(schedule, delay)
+            add_ef_pulse(schedule, backend, target, self._half, self._duration)
+            schedule.add(
+                backend.Measure(
+                    target,
+                    acq_index=index,
+                    bin_mode=backend.BinMode.AVERAGE,
+                    **measure,
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        fitted = fit_ramsey(
+            np.asarray(self._delays), signal_of(dataset), self._detuning
+        )
+        current = float(read_path(device.get_element(target), "clock_freqs.f12"))
+        fitted["clock_freq_12"] = current - fitted["detuning"]
+        return fitted
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        write_path(
+            device.get_element(target), "clock_freqs.f12", params["clock_freq_12"]
+        )
 
 
 class ThreeStateDiscrimination(CalibrationRoutine):

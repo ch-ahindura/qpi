@@ -1149,6 +1149,43 @@ def test_the_ef_pi_pulse_is_measured_through_its_own_clock(fully_calibrated):
         )
 
 
+def test_ramsey_refines_f12_past_what_spectroscopy_can_reach(fully_calibrated):
+    """Spectroscopy finds the transition; Ramsey measures it. Same split as 0-1.
+
+    `f12_spectroscopy` drives a 20 ns pulse, so its line is Fourier-limited to tens of
+    megahertz and it lands within a few. This asserts the written f12 is inside a
+    megahertz of the simulator's own, which the spectroscopy alone does not reach.
+
+    It also reports a T2* for the 1-2 coherence, which nothing else measures — and it
+    could not be written at all until the EF drive shared a frame with the idles
+    between its pulses.
+    """
+    report, device, simulator, _scheduler = fully_calibrated
+    written = yaml.safe_load(device.read_text())
+    true_f12 = (simulator.f01 + simulator.anharmonicity) * GHZ
+
+    measured = {
+        result.target: result.parameters
+        for result in report.routine_results
+        if result.routine_name == "ramsey_12"
+    }
+    assert measured, "ramsey_12 reported nothing"
+
+    for qubit, params in measured.items():
+        assert written[qubit]["clock_freqs"]["f12"] == pytest.approx(
+            true_f12, abs=1e6
+        ), f"{qubit}'s f12 is {written[qubit]['clock_freqs']['f12'] / 1e9:.6f} GHz"
+        # Against the simulator's own dephasing rather than a number picked to pass.
+        # The 1-2 coherence should be the same order as the 0-1 one and shorter, since
+        # |2> relaxes faster; what this rules out is a runaway fit — 1.4 seconds, from
+        # a sweep too short to contain the decay — and a collapse to nothing.
+        coherence = simulator.t2_ns * 1e-9
+        assert 0.2 * coherence < params["t2_star"] < 1.5 * coherence, (
+            f"{qubit}'s 1-2 T2* is {params['t2_star'] * 1e6:.2f} us against a 0-1 "
+            f"coherence of {coherence * 1e6:.2f} us"
+        )
+
+
 def test_the_dispersive_ladder_is_evenly_spaced(fully_calibrated):
     """Two sweeps, two ways to the same chi — and agreeing is the measurement.
 

@@ -214,6 +214,24 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`ramsey_12` refines f12 to kilohertz** (RFC 0005 §7). `f12_spectroscopy` drives a
+20 ns pulse, so its line is Fourier-limited and it lands within a few megahertz —
+enough to find the transition, not enough to drive it. Same split `qubit_spectroscopy`
+and `ramsey` already have one rung down. It reports a T2* for the 1-2 coherence too,
+which nothing else measures.
+
+It detunes the clock rather than phase-advancing the second π/2, the opposite of what
+`ramsey` does, and not a preference: a `ShiftClockPhase` on the `.12` clock produced no
+fringe at all — the fitted detuning came back at minus the artificial one whatever f12
+was set to.
+
+**It also exposed a too-coarse three-state point.** Three frequencies stepped 3 MHz
+against a 2 MHz linewidth is enough to *classify* three states and not enough for
+anything measured at that point: `ramsey_12` reads `|1>` against `|2>`, and on the
+coarse point its f12 came back a megahertz out — no better than the spectroscopy it
+exists to refine. `three_state_operating_point` now sweeps five frequencies by two
+amplitudes, the split chosen by which axis the criterion actually varies on.
+
 **The EF drive is a real drive on the ladder, not a two-level subspace** (RFC 0005 §9).
 It was `|1>`-`|2>` in a rotating frame of its own, and that one choice was behind three
 separate blockers. It is now an ordinary drive on the full ladder, in the same frame as

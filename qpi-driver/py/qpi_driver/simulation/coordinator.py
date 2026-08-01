@@ -529,6 +529,7 @@ class SimulatedCoordinator:
                 + self._clock_phases.get(clock, 0.0),
                 frame_offset_hz=clocks.get(clock, self._f12_hz()) - frame_hz,
                 shape=_envelope_of(pulse),
+                origin_ns=(time + float(pulse.get("t0") or 0.0)) / NS,
             )
             for other in registers.distinct():
                 if other is not register:
@@ -675,6 +676,7 @@ class SimulatedCoordinator:
         phase_deg: float,
         shape: "_Envelope | None" = None,
         detuning_rad_per_ns: float = 0.0,
+        origin_ns: float = 0.0,
     ) -> None:
         """Evolve under a drive of *amplitude* for *duration*.
 
@@ -697,7 +699,14 @@ class SimulatedCoordinator:
         # A drive off the frame's own frequency is time-dependent even when its
         # envelope is flat — the term rotates at the offset — so it steps too.
         self._propagate_shaped(
-            register, qubit, amplitude, duration, phase_deg, shape, detuning_rad_per_ns
+            register,
+            qubit,
+            amplitude,
+            duration,
+            phase_deg,
+            shape,
+            detuning_rad_per_ns,
+            origin_ns,
         )
 
     def _constant_drive(
@@ -728,6 +737,7 @@ class SimulatedCoordinator:
         phase_deg: float,
         frame_offset_hz: float,
         shape: "_Envelope | None" = None,
+        origin_ns: float = 0.0,
     ) -> None:
         """A drive on the ``.12`` clock: the ``|1>``-``|2>`` transition.
 
@@ -772,6 +782,7 @@ class SimulatedCoordinator:
             # `P(|2>)` stays under 0.003 at every amplitude — while this one puts a pi
             # exactly at ``amp180 / sqrt(2)``.
             detuning_rad_per_ns=-2 * np.pi * frame_offset_hz * NS,
+            origin_ns=origin_ns,
         )
 
     def _propagate_shaped(
@@ -783,6 +794,7 @@ class SimulatedCoordinator:
         phase_deg: float,
         shape: "_Envelope | None",
         detuning_rad_per_ns: float = 0.0,
+        origin_ns: float = 0.0,
     ) -> None:
         """Step a shaped pulse, composing the steps into one cached propagator.
 
@@ -811,6 +823,10 @@ class SimulatedCoordinator:
             round(shape.drag_seconds, 18) if shape else None,
             round(shape.sigma, 15) if shape else None,
             round(detuning_rad_per_ns, 12),
+            # Only the phase the origin contributes, wrapped: two pulses a whole
+            # number of frame turns apart are the same propagator, and an EF sweep
+            # of hundreds of points would otherwise miss the cache every time.
+            round((detuning_rad_per_ns * origin_ns) % (2 * np.pi), 9),
             steps,
         )
         propagator = self._propagator_cache.get(key)
@@ -824,6 +840,7 @@ class SimulatedCoordinator:
                 shape,
                 steps,
                 detuning_rad_per_ns,
+                origin_ns,
             )
             if len(self._propagator_cache) < _PROPAGATOR_CACHE_LIMIT:
                 self._propagator_cache[key] = propagator
@@ -841,6 +858,7 @@ class SimulatedCoordinator:
         shape: "_Envelope | None",
         steps: int,
         detuning_rad_per_ns: float = 0.0,
+        origin_ns: float = 0.0,
     ):
         import qutip
 
@@ -872,7 +890,13 @@ class SimulatedCoordinator:
         # kept in. Zero for a drive on its own clock; the anharmonicity for an EF
         # pulse, which is played in the 0-1 frame like everything else so that the
         # idles between pulses keep the same time as the pulses do.
-        turning = np.exp(1j * detuning_rad_per_ns * (offsets / NS + duration / NS / 2))
+        # Absolute schedule time, not time within the pulse. The frame keeps turning
+        # between pulses, and a drive that restarted its phase at each one would leave
+        # the delay in a Ramsey uncounted — the fringe then reports where the two
+        # pulses happened to land rather than the detuning between them.
+        turning = np.exp(
+            1j * detuning_rad_per_ns * (origin_ns + offsets / NS + duration / NS / 2)
+        )
 
         rabi = self.drive_strength * amplitude * NS  # rad/ns
         phase = np.exp(1j * np.deg2rad(phase_deg))

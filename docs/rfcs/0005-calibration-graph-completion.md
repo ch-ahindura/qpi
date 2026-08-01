@@ -629,7 +629,23 @@ after the machinery.
        where ``|0>`` used to be a spectator. That is what a DRAG quadrature cancels,
        so `drag_12` now has a curve to fit instead of a flat line.
 
-     `ramsey_12` and `drag_12` are both writable on top of this. Neither is written.
+     `ramsey_12` is written on top of this; `drag_12` needs a DRAG-shaped pulse
+     primitive on the ``.12`` clock, which is plumbing rather than physics — neither
+     compat layer exports one, and `_envelope_of` only recognises a waveform whose
+     function ends in ``drag`` or ``gauss``.
+   - `ramsey_12` → `clock_freqs.f12`: **done**, and accurate to a couple of kilohertz.
+     It detunes the clock rather than phase-advancing the second pi/2, which is the
+     opposite of what `ramsey` does one rung down and is not a preference: a
+     `ShiftClockPhase` on the ``.12`` clock produced no fringe at all — the fitted
+     detuning came back at minus the artificial one whatever f12 was set to.
+
+     **It also found that the three-state point was too coarse.** Three frequencies
+     stepped 3 MHz against a 2 MHz linewidth is enough to classify three states and
+     not enough for anything *measured* at that point: `ramsey_12` reads ``|1>``
+     against ``|2>``, and on the coarse point its f12 came back a megahertz out —
+     no better than the spectroscopy it exists to refine — where a properly placed
+     point gives kilohertz. The grid is now five frequencies by two amplitudes, the
+     axes chosen by which one the criterion actually varies on.
    - ~~`ramsey_12`: **blocked by a frame mismatch, measured.**~~ **Unblocked, see above.** The EF pulses are applied
      in `_drive_ef`'s own rotating frame, with the detuning carried on ``|2>``, but a
      free evolution between them runs under `_drift` — the *0-1* drive frame, where the

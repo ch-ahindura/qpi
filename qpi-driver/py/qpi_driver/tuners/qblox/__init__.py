@@ -23,6 +23,7 @@ from qpi_driver.compat.qblox import (
     Rxy,
     Rz,
     SetClockFrequency,
+    ShiftClockPhase,
     SquarePulse,
     TimeableSchedule,
     X,
@@ -53,6 +54,7 @@ class QbloxBackend(SchedulerBackend):
     IdlePulse = IdlePulse
     SquarePulse = SquarePulse
     SetClockFrequency = SetClockFrequency
+    ShiftClockPhase = ShiftClockPhase
     BinMode = BinMode
     drag_parameter = "beta"
     # Seconds: qblox divides the derivative by sigma squared where quantify

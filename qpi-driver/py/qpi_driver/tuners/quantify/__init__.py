@@ -19,6 +19,7 @@ from qpi_driver.compat.quantify import (
     Schedule,
     SerialCompiler,
     SetClockFrequency,
+    ShiftClockPhase,
     SquarePulse,
     X,
     Y,
@@ -49,6 +50,7 @@ class QuantifyBackend(SchedulerBackend):
     IdlePulse = IdlePulse
     SquarePulse = SquarePulse
     SetClockFrequency = SetClockFrequency
+    ShiftClockPhase = ShiftClockPhase
     BinMode = BinMode
     drag_parameter = "motzoi"
     # Dimensionless: the derivative component as a fraction of the Gaussian.

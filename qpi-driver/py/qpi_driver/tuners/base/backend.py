@@ -50,6 +50,9 @@ class SchedulerBackend(ABC):
     CZ: Any
     IdlePulse: Any
     SquarePulse: Any
+    #: Advances a clock's phase for everything played on it afterwards.
+    #: Cumulative, so a sweep that shifts must shift back.
+    ShiftClockPhase: Any
     BinMode: Any
 
     @abstractmethod
