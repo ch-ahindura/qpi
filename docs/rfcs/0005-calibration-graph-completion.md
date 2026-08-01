@@ -561,7 +561,13 @@ after the machinery.
      oscillation moves population out of ``|1>``, and the sampler reports the arrival
      in ``|2>`` as ``|0>`` — same period, right answer, wrong reason. A routine can be
      correct here and still not be evidence that the model underneath it is.
-   - `ramsey_12`, `drag_12`, `fine_amplitude_12`,
+   - `drag_12`: **blocked the same way, and found by reading rather than by running.**
+     An EF pulse has no envelope at all in the simulator, let alone a DRAG term:
+     `_drive_ef` propagates a *constant* Hamiltonian, where the ``.01`` path builds one
+     from `_envelope_of(pulse)` and steps it through `_propagate_shaped`. So a sweep of
+     `r12.ef_motzoi` would move nothing and the fit would have a flat line to explain.
+     Recorded here so the node is not written before the drive can answer it.
+   - `ramsey_12`, `fine_amplitude_12`,
      `resonator_spectroscopy_second_excited`, `readout_frequency_three_state`,
      `readout_amplitude_three_state`: **unblocked, not yet written.** They need `r12.ef_amp180`, `r12.ef_motzoi`,
      `clock_freqs.readout_2`, `clock_freqs.readout_3state_opt` and a `measure_3state`
