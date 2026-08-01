@@ -1,6 +1,6 @@
 # RFC 0005 — Calibration Graph Completion
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-07-31
 - **Depends on:** RFC 0004 (calibrate operation, tuners, routines, the DAG walk)
