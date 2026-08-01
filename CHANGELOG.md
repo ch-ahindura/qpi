@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-01
+
 ### Added
 
 **A third operation, `calibrate`** (RFC 0004). A tuner runs calibration
