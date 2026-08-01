@@ -136,6 +136,22 @@ class CalibrationRoutine(ABC):
         """
         raise RoutineError(f"{self.name} has no check analysis")
 
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Whether this routine has anything to measure on *target*.
+
+        Defaults to yes. A routine overrides it when a target can be of a kind the
+        routine simply does not describe — not uncalibrated, but *not applicable*. The
+        case it was added for is a chip carrying both edge kinds: a parametric coupler
+        has a CZ drive frequency to find and a DC-flux edge does not, and running
+        `cz_spectroscopy` on the second is not a failure to report, it is a question
+        that does not arise.
+
+        Distinct from a missing parameter, which stays an error. `drag` raising
+        because an element has nowhere to write its optimum means something is wrong;
+        this means nothing is.
+        """
+        return True
+
     @property
     def has_check(self) -> bool:
         """Whether this routine overrides :meth:`build_check_schedule`."""

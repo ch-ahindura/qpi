@@ -47,7 +47,11 @@ from qpi_driver.tuners.routines.spectroscopy import (
     ResonatorSpectroscopyExcited,
     TimeOfFlight,
 )
-from qpi_driver.tuners.routines.two_qubit import ConditionalPhase, CZChevron
+from qpi_driver.tuners.routines.two_qubit import (
+    ConditionalPhase,
+    CZChevron,
+    CZSpectroscopy,
+)
 
 #: Every routine class, in the order RFC 0004 §3 lists the experiments.
 ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
@@ -76,6 +80,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     FineAmplitude,
     RandomizedBenchmarking,
     FluxSpectroscopy,
+    CZSpectroscopy,
     CZChevron,
     ConditionalPhase,
     InterleavedRB,

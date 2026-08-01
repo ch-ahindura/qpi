@@ -119,6 +119,12 @@ q1_q2:
     kwargs:
       parent_element_name: q1
       child_element_name: q2
+  clock_freqs:
+    # Where the drive is played, and the transition it means to bridge. Kept apart
+    # deliberately, and set apart here: 50 MHz off is a mistuned coupler, which is a
+    # gate that compiles, plays and does nothing. `cz_spectroscopy` is what closes it.
+    cz: 3.85e9
+    sideband_gap: 3.9e9
   cz:
     square_amp: 0.5
     square_duration: 20e-9

@@ -15,6 +15,7 @@ from qpi_driver.compat.qblox import (
     CZ,
     IS_QBLOX_SCHEDULER_INSTALLED,
     BinMode,
+    ClockResource,
     DRAGPulse,
     HardwareAgent,
     IdlePulse,
@@ -56,6 +57,7 @@ class QbloxBackend(SchedulerBackend):
     SquarePulse = SquarePulse
     SetClockFrequency = SetClockFrequency
     ShiftClockPhase = ShiftClockPhase
+    ClockResource = ClockResource
 
     def drag_pulse(self, *, amp, drag, duration, port, clock, phase_deg=0.0):
         """``beta`` is in seconds — one pulse sigma larger than quantify's ratio."""

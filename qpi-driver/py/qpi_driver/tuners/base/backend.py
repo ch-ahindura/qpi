@@ -53,6 +53,11 @@ class SchedulerBackend(ABC):
     #: Advances a clock's phase for everything played on it afterwards.
     #: Cumulative, so a sweep that shifts must shift back.
     ShiftClockPhase: Any
+    #: Declares a clock a raw pulse can reference. Device-level clocks
+    #: (``.01``, ``.ro``, ``.12``) come from the element; an edge's ``.cz``
+    #: is added inside the CZ gate's own subschedule, so a routine playing a
+    #: raw pulse on it has to declare it.
+    ClockResource: Any
 
     def drag_pulse(
         self,

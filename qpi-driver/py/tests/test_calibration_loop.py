@@ -1079,13 +1079,34 @@ def test_the_whole_dag_completes_against_the_simulator(fully_calibrated):
     The equality is the point rather than the success: a routine quietly excluded
     from the run is indistinguishable from one that works.
     """
-    report, _device, _simulator, _scheduler = fully_calibrated
+    report, device, _simulator, _scheduler = fully_calibrated
 
     assert report.status == "success", report.errors
     assert report.errors == []
 
     ran = {result.routine_name for result in report.routine_results}
-    expected = set(routine_names())
+    # Every routine that *applies* — which is not quite every routine. A parametric
+    # coupler has a CZ drive frequency to find and a DC-flux edge does not, so
+    # `cz_spectroscopy` declines `q0_q1` rather than failing on it. Computing the
+    # expectation the way the DAG does keeps this a statement about routines being
+    # silently dropped rather than a list to edit whenever one is added.
+    from qpi_driver.tuners.routines import all_routines
+
+    close_instruments(_scheduler)
+    executor = resolve_executor(
+        _scheduler,
+        is_simulated=True,
+        simulator=_simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    loaded = executor._device
+    expected = {
+        routine.name
+        for routine in all_routines()
+        if routine.targets == "qubits"
+        or any(routine.applies_to(loaded, edge) for edge in ("q0_q1",))
+    }
     assert ran == expected, f"did not run {sorted(expected - ran)}"
 
 

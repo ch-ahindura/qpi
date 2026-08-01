@@ -679,9 +679,36 @@ after the machinery.
      are already there — and the three-state readout point can follow `measure_2state`
      exactly, including the executor's clock override, which is now a mechanism rather
      than a plan.
-6. **The coupler.** A coupler frequency in the simulator, the two arcs,
-   `coupler_anticrossing` → `bias.parking_current`, `cz_parametrization`. Replaces
-   two chosen constants with measured ones.
+6. **The coupler.** Begun.
+   - `cz_spectroscopy` → `clock_freqs.cz`: **done.** A parametric CZ modulates the
+     coupler and a sideband bridges ``|11>``-``|02>``; amplitude sets how fast the
+     exchange runs, *frequency* sets whether it runs at all, so a drive off the
+     transition is a gate that compiles, plays and does nothing. Nothing measured it.
+     The device model already keeps ``clock_freqs.cz`` — where the drive is played —
+     apart from ``clock_freqs.sideband_gap`` — the transition it means to bridge —
+     precisely so a mistuned drive is detectable; this is what detects it.
+
+     It needed a **routine-level applicability hook**, `CalibrationRoutine.applies_to`.
+     A `CompositeSquareEdge` drives its CZ with a baseband flux pulse and has no drive
+     frequency at all: running this on one is not a failure to report, it is a question
+     that does not arise. The DAG filters targets by it, and the full-DAG test now
+     computes its expectation the same way rather than asserting every routine runs on
+     every edge — which was never true and would have become a list to edit.
+
+     **The fixture could not play the coupler it declared.** ``q1_q2:fl`` was wired to
+     a baseband QCM output, which tops out at ±500 MHz against a 3.9 GHz sideband, and
+     the edge carried no ``clock_freqs.cz`` at all — so its parametric CZ was inert and
+     nothing noticed, because no test drove it. It is now on an RF module with an LO,
+     and declares a drive 50 MHz off its own sideband gap for the routine to correct.
+
+     **Not yet covered end to end.** The full-DAG fixture targets ``q0_q1`` only, and
+     giving it ``q1_q2`` means calibrating q2 as well — a longer run and a wider
+     change than this one. `cz_spectroscopy` is compiled under both schedulers and
+     unit-tested; it has no loop-suite assertion yet.
+   - A coupler frequency in the simulator, the two arcs, `coupler_anticrossing` →
+     `bias.parking_current`, `cz_parametrization`: **not started.** The coupler is not
+     modelled as an element with a frequency of its own — `SIDEBAND_GAP_GHZ` says so —
+     and that model is the prerequisite for the rest.
 
 Phases 1–2 are worth doing regardless of how far the rest gets. Phase 4 is the one
 whose absence is currently a wrong answer rather than a missing feature.

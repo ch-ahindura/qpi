@@ -214,6 +214,24 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`cz_spectroscopy` finds the frequency a parametric CZ has to be driven at** (RFC
+0005 §12). The coupler is modulated and a sideband bridges `|11>`-`|02>`: amplitude
+sets how fast the exchange runs, frequency sets whether it runs *at all*, so a drive
+off the transition is a gate that compiles, plays and does nothing. `clock_freqs.cz`
+was hand-set on every edge that has one and nothing measured it.
+
+It needed a routine-level applicability hook, `CalibrationRoutine.applies_to`. A
+`CompositeSquareEdge` drives its CZ with a baseband flux pulse and has no drive
+frequency: running this on one is not a failure, it is a question that does not arise.
+The DAG filters targets by it, and the full-DAG test computes its expectation the same
+way rather than asserting every routine runs on every edge.
+
+**The test fixture could not play the coupler it declared.** `q1_q2:fl` was wired to a
+baseband QCM output, which tops out at ±500 MHz against a 3.9 GHz sideband, and the
+edge carried no `clock_freqs.cz` at all — so its parametric CZ was inert, and nothing
+noticed because no test drove it. It is now on an RF module with an LO, and declares a
+drive 50 MHz off its own sideband gap for the routine to correct.
+
 **`drag_12`, the last of the EF chain** (RFC 0005 §7). A pulse on the 1-2 transition
 sits only a few linewidths from 0-1, so it off-resonantly excites it — about 2.6% —
 and the DRAG quadrature is what cancels that. Two sequences equal only at the right

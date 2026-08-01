@@ -11,7 +11,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import phase_correction_names, write_path
+from qpi_driver.tuners.base.device import (
+    phase_correction_names,
+    read_path,
+    write_path,
+)
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
@@ -19,7 +23,12 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
-from qpi_driver.tuners.fitting import fit_chevron, fit_conditional_phase, signal_of
+from qpi_driver.tuners.fitting import (
+    fit_chevron,
+    fit_conditional_phase,
+    fit_resonator_spectroscopy,
+    signal_of,
+)
 
 
 def qubits_of(edge: str) -> tuple[str, str]:
@@ -36,6 +45,132 @@ def qubits_of(edge: str) -> tuple[str, str]:
             "cannot be determined"
         )
     return parts[0], parts[1]
+
+
+def parametric_edge(device: Any, edge: str) -> Any | None:
+    """The edge's ``cz`` clock, if it is driven parametrically rather than by DC flux.
+
+    A `FluxTunableCoupler` plays its CZ as a microwave tone on the coupler and carries
+    a ``clock_freqs.cz`` for it. A `CompositeSquareEdge` pushes one qubit onto the
+    crossing with a baseband flux pulse and has no such clock — for that edge there is
+    no drive frequency to find, and a routine asking for one should decline rather
+    than invent it.
+    """
+    element = device.get_edge(edge)
+    clocks = getattr(element, "clock_freqs", None)
+    if clocks is None or not hasattr(clocks, "cz"):
+        return None
+    return element
+
+
+class CZSpectroscopy(CalibrationRoutine):
+    """Find the frequency a parametric CZ has to be driven at.
+
+    The coupler is modulated at microwave frequency and a sideband of that modulation
+    bridges ``|11>``-``|02>``. Amplitude sets how fast the exchange runs; the
+    *frequency* sets whether it runs at all — so a drive off the transition gives a
+    gate that compiles, plays, and does nothing.
+
+    Nothing measured it. ``clock_freqs.cz`` is hand-set on every edge that has one,
+    and the device model deliberately keeps it separate from ``clock_freqs.sideband_gap``
+    — the frequency it is *played at* against the transition it means to bridge — so
+    that a mistuned drive is a detectable mistake rather than a definition. This is
+    what detects it.
+
+    Prepares ``|11>`` and watches the parent leave it. Off resonance the population
+    stays put and the sweep is flat; on it the exchange runs and the parent drops
+    towards ``|0>``, which is a peak to fit like any other spectroscopy.
+
+    Declines on a `CompositeSquareEdge`: a DC-flux CZ has no drive frequency, and its
+    resonance condition is the flux amplitude `cz_chevron` already sweeps.
+    """
+
+    name = "cz_spectroscopy"
+    depends_on = ("rabi",)
+    targets = "edges"
+    updates = ("clock_freqs.cz",)
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an edge whose CZ is a drive rather than a flux pulse."""
+        return parametric_edge(device, target) is not None
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = parametric_edge(device, target)
+        if element is None:
+            raise RoutineError(
+                f"edge {target!r} drives its CZ with a baseband flux pulse, so it has "
+                f"no drive frequency to find — see `cz_chevron` for its amplitude"
+            )
+        parent, child = qubits_of(target)
+        centre = config.get("centre_frequency")
+        if centre is None:
+            configured = float(read_path(element, "clock_freqs.cz"))
+            # An uncalibrated edge carries zero, which is not a frequency to scan
+            # around. The default centre is a plausible coupler sideband rather than
+            # a measurement, and a chip that knows better says so in its config.
+            centre = configured or float(config.get("prior", 4.0e9))
+        span = float(config.get("span", 400e6))
+        points = int(config.get("points", 81))
+        self._frequencies = setpoints_of(
+            config,
+            "frequencies",
+            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        )
+        amplitude = float(
+            config.get("amplitude", read_path(element, "cz.square_amp") or 0.5)
+        )
+        # Long enough that a resonant drive moves most of the population, short
+        # enough that it has not come back: a quarter of a round trip at the
+        # nominal rate. Off resonance the length makes no difference, which is the
+        # asymmetry the sweep reads.
+        duration = grid_duration(float(config.get("duration", 100e-9)))
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 512))
+        )
+        # The edge's CZ clock is declared inside the CZ gate's own subschedule, not
+        # by the device, so a raw pulse on it has nothing to reference. Every other
+        # spectroscopy sweeps a clock the element already owns; this one brings its
+        # own, then retunes it point by point like the rest.
+        clock = f"{target}.cz"
+        schedule.add_resource(
+            backend.ClockResource(name=clock, freq=self._frequencies[0])
+        )
+        for index, frequency in enumerate(self._frequencies):
+            schedule.add(backend.Reset(parent))
+            schedule.add(backend.Reset(child))
+            schedule.add(backend.X(parent))
+            schedule.add(backend.X(child))
+            schedule.add(
+                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+            )
+            schedule.add(
+                backend.SquarePulse(
+                    amp=amplitude,
+                    duration=duration,
+                    port=f"{target}:fl",
+                    clock=clock,
+                )
+            )
+            schedule.add(
+                backend.Measure(
+                    parent, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        return {"clock_freq_cz": fitted["readout_frequency"], **fitted}
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        element = parametric_edge(device, target)
+        if element is not None:
+            write_path(element, "clock_freqs.cz", params["clock_freq_cz"])
 
 
 class CZChevron(CalibrationRoutine):

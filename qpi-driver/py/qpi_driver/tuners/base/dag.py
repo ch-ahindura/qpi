@@ -186,7 +186,7 @@ class CalibrationDAG:
 
         def outcome_for(name: str) -> CheckOutcome | None:
             if name not in cache:
-                targets = self._targets_for(name, config)
+                targets = self._targets_for(name, config, device)
                 cache[name] = (
                     self.check(name, targets, device, backend, config)
                     if targets
@@ -226,13 +226,18 @@ class CalibrationDAG:
             return [], notes
         return self.partial_order(sorted(blamed)), notes
 
-    def _targets_for(self, name: str, config: CalibrationConfig) -> list[str]:
+    def _targets_for(
+        self, name: str, config: CalibrationConfig, device: Any = None
+    ) -> list[str]:
         routine = self.routines.get(name)
         if routine is None:
             return []
-        return (
+        targets = (
             config.target_qubits if routine.targets == "qubits" else config.target_edges
         )
+        if device is None:
+            return list(targets)
+        return [target for target in targets if _applies(routine, device, target, name)]
 
     def run(
         self,
@@ -274,13 +279,11 @@ class CalibrationDAG:
         for routine_name in order:
             routine = self.routines[routine_name]
             routine_config = config.get_routine(routine_name)
-            targets = (
-                config.target_qubits
-                if routine.targets == "qubits"
-                else config.target_edges
-            )
+            targets = self._targets_for(routine_name, config, device)
             if not targets:
-                log.info("skipping %s: no %s configured", routine_name, routine.targets)
+                log.info(
+                    "skipping %s: no %s it applies to", routine_name, routine.targets
+                )
                 continue
 
             for target in targets:
@@ -349,3 +352,16 @@ class CalibrationDAG:
 def utc_timestamp() -> str:
     """Now, in the millisecond-precision UTC form the report payload uses."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _applies(routine: Any, device: Any, target: str, name: str) -> bool:
+    """Whether *routine* has anything to measure on *target*.
+
+    A routine whose own check raises is treated as applying: refusing a target is a
+    deliberate statement, and an exception is not one.
+    """
+    try:
+        return bool(routine.applies_to(device, target))
+    except Exception:  # noqa: BLE001 - a broken predicate must not silence a routine
+        log.warning("%s could not say whether it applies to %s", name, target)
+        return True

@@ -91,9 +91,27 @@ def routine(name):
     return next(r for r in all_routines() if r.name == name)
 
 
+def _target_for(routine, device):
+    """A target of the right kind that this routine actually applies to.
+
+    ``q0_q1`` is a `CompositeSquareEdge` and ``q1_q2`` a `FluxTunableCoupler`, and a
+    routine may describe only one of them — `cz_spectroscopy` looks for a CZ *drive
+    frequency*, which a DC-flux edge does not have. Picking the first applicable
+    target is what lets both kinds be covered without the test asserting that every
+    routine fits every edge, which is not true and was never meant to be.
+    """
+    if routine.targets == "qubits":
+        return "q0"
+    for edge in ("q0_q1", "q1_q2"):
+        if routine.applies_to(device, edge):
+            return edge
+    return None
+
+
 def _build(routine, tuner):
     """Build *routine*'s schedule for the right kind of target."""
-    target = "q0" if routine.targets == "qubits" else "q0_q1"
+    target = _target_for(routine, tuner.device)
+    assert target is not None, f"{routine.name} applies to no edge on the fixture"
     config = RoutineConfig(params=SMALL_SWEEPS.get(routine.name, {}))
     return routine.build_schedule(target, tuner.device, config, tuner.backend)
 
@@ -149,13 +167,14 @@ def test_every_check_schedule_compiles_under_both_schedulers(
     that is where a check reads the parameters it is judging.
     """
     routine = next(r for r in all_routines() if r.name == routine_name)
-    target = "q0" if routine.targets == "qubits" else "q0_q1"
     config = RoutineConfig(params=SMALL_SWEEPS.get(routine.name, {}))
 
     for tuner, compile_with in (
         (quantify_tuner, lambda s: quantify_tuner._compiler.compile(s)),
         (qblox_tuner, lambda s: qblox_tuner._agent.compile(s)),
     ):
+        target = _target_for(routine, tuner.device)
+        assert target is not None
         schedule = routine.build_check_schedule(
             target, tuner.device, config, tuner.backend
         )
