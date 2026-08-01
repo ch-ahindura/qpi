@@ -42,7 +42,11 @@ SMALL_SWEEPS: dict[str, dict] = {
     "interleaved_rb": {"depths": [1, 2], "circuits_per_depth": 2},
 }
 
-ROUTINE_NAMES = [cls.name for cls in ROUTINE_CLASSES]
+#: Every routine that builds a schedule — which is every one but `coupler_anticrossing`.
+#: That one sweeps a DC bias, sets instrument state between acquisitions and runs its
+#: own loop, so there is no single schedule for this file to compile. It is covered in
+#: the loop suite, where a simulated rack can actually hold a current.
+ROUTINE_NAMES = [cls.name for cls in ROUTINE_CLASSES if not cls().measures_itself]
 
 
 @pytest.fixture(scope="module")

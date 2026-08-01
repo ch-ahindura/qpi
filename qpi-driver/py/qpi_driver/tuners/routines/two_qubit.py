@@ -24,6 +24,7 @@ from qpi_driver.tuners.base.routines import (
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
+    FitError,
     fit_chevron,
     fit_conditional_phase,
     fit_resonator_spectroscopy,
@@ -61,6 +62,178 @@ def parametric_edge(device: Any, edge: str) -> Any | None:
     if clocks is None or not hasattr(clocks, "cz"):
         return None
     return element
+
+
+class CouplerAnticrossing(CalibrationRoutine):
+    """Find where the coupler crosses a qubit, and park it a stated distance away.
+
+    The one routine in the graph that a single schedule cannot express. Everything
+    else sweeps *pulse* parameters, which a schedule holds; a coupler's parking bias
+    is a DC current held for as long as the fridge is cold, delivered out of band over
+    qcodes through an SPI rack or a cluster output. So this sets instrument state, runs
+    a schedule, reads it, and repeats — see `CalibrationRoutine.measure`, which exists
+    for this node and is overridden by no other.
+
+    **What it measures** is the coupler's flux arc, through the qubit. A parked coupler
+    repels every qubit it touches by ``g^2/(f_q - f_c)``, so sweeping the current walks
+    the coupler down and drags the qubit's frequency with it — gently far away, then
+    steeply, then the other way once the coupler has passed through. Locating that
+    crossing is what turns a bias current from a number in a file into a measurement.
+
+    **What it writes** is a parking current derived from the crossing by a stated rule,
+    rather than the crossing itself. A tunable coupler is parked *away* from its
+    qubits, where the residual coupling is small and the modulated CZ still reaches;
+    how far away is a choice about that trade, so it is a configurable fraction and
+    the crossing is reported alongside it. Calling the fraction a measurement would be
+    dressing up a decision.
+
+    It declines when there is no way to hold a current — see `applies_to`. Against a
+    real cluster the bias belongs to the executor, held across jobs rather than for the
+    length of one calibration, so a live rack here is a separate decision.
+    """
+
+    name = "coupler_anticrossing"
+    depends_on = ("rabi",)
+    targets = "edges"
+    updates = ("bias.parking_current",)
+
+    #: Where to park, as a fraction of the crossing current. Well below it: the push
+    #: at 60% of the crossing is a couple of megahertz where at 97% it is tens, and
+    #: the point of parking is to be somewhere the coupler is *not* doing anything
+    #: until a CZ tone asks it to.
+    PARKING_FRACTION = 0.6
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an edge that carries a bias to park."""
+        bias = getattr(device.get_edge(target), "bias", None)
+        return bias is not None and hasattr(bias, "parking_current")
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """There is no single schedule. See :meth:`measure`.
+
+        Present because the base class requires it, and raising because a caller that
+        reached it has taken the ordinary path for a routine that cannot use it — a
+        silent empty schedule would be a measurement of nothing.
+        """
+        raise RoutineError(
+            f"{self.name} sweeps a DC bias, which no single schedule holds — it is "
+            f"run through `measure` instead"
+        )
+
+    def analyse(
+        self, dataset: Any, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        """Likewise: the fitting happens inside :meth:`measure`, per bias point."""
+        raise RoutineError(
+            f"{self.name} analyses each bias point as it goes — see `measure`"
+        )
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+    ) -> dict[str, Any]:
+        if bias is None:
+            raise RoutineError(
+                f"{target} has no way to hold a parking current, so its coupler's "
+                f"crossing cannot be swept — the bias is delivered out of band and "
+                f"this routine needs to drive it"
+            )
+        from qpi_driver.executors.utils.coupler_bias import bias_settings
+
+        element = device.get_edge(target)
+        settings = bias_settings(element)
+        parent, _child = qubits_of(target)
+        currents = setpoints_of(config, "currents", linear_setpoints(0.0, 3.0e-3, 13))
+        span = float(config.get("span", 200e6))
+        points = int(config.get("points", 11))
+        base = float(read_path(device.get_element(parent), "clock_freqs.f01"))
+        frequencies = linear_setpoints(base - span / 2, base + span / 2, points)
+
+        original = float(read_path(element, "bias.parking_current"))
+        found: list[tuple[float, float]] = []
+        try:
+            for current in currents:
+                bias.apply(target, float(current), settings)
+                schedule = self._probe(parent, frequencies, config, backend)
+                try:
+                    fitted = fit_resonator_spectroscopy(
+                        frequencies, signal_of(backend.run(schedule))
+                    )
+                except FitError:
+                    # A bias that pushed the qubit clean out of the window is not a
+                    # failure of the sweep: it is the sweep working, and the crossing
+                    # is nearby. Skipped rather than fatal.
+                    continue
+                found.append((float(current), float(fitted["readout_frequency"])))
+        finally:
+            # Whatever happened, the coupler goes back where it was. Leaving a chip
+            # parked at the last current a sweep happened to try is the one outcome
+            # worse than not measuring: every later routine would run against it.
+            bias.apply(target, original, settings)
+
+        return self._locate(found, base, config)
+
+    def _probe(
+        self,
+        qubit: str,
+        frequencies: list[float],
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+    ) -> Any:
+        """A short qubit spectroscopy — enough to say where the line moved to."""
+        amplitude = float(config.get("drive_amp", 0.10))
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 512))
+        )
+        for index, frequency in enumerate(frequencies):
+            schedule.add(backend.Reset(qubit))
+            schedule.add(
+                backend.SetClockFrequency(clock=f"{qubit}.01", clock_freq_new=frequency)
+            )
+            schedule.add(backend.Rxy(theta=180, phi=0, qubit=qubit, amp180=amplitude))
+            schedule.add(
+                backend.Measure(
+                    qubit, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def _locate(
+        self, found: list[tuple[float, float]], base: float, config: RoutineConfig
+    ) -> dict[str, Any]:
+        """The crossing, from where the qubit moved fastest with current."""
+        if len(found) < 3:
+            raise RoutineError(
+                f"only {len(found)} bias points produced a fittable line, which is "
+                f"too few to locate a crossing — widen 'span' or narrow 'currents'"
+            )
+        currents = np.array([c for c, _f in found])
+        shifts = np.array([f - base for _c, f in found])
+        # The crossing is where the push runs away, so it is where the *step* between
+        # neighbouring bias points is largest. Not where the shift itself is largest:
+        # past the crossing the sign flips and the magnitude comes back down, so the
+        # extreme value sits beside the crossing rather than on it.
+        steps = np.abs(np.diff(shifts))
+        index = int(np.argmax(steps))
+        crossing = float((currents[index] + currents[index + 1]) / 2.0)
+        fraction = float(config.get("parking_fraction", self.PARKING_FRACTION))
+        return {
+            "crossing_current": crossing,
+            "parking_current": crossing * fraction,
+            "max_shift": float(np.max(np.abs(shifts))),
+            "points": len(found),
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        write_path(
+            device.get_edge(target), "bias.parking_current", params["parking_current"]
+        )
 
 
 class CZSpectroscopy(CalibrationRoutine):

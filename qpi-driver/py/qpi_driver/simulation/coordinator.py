@@ -1096,9 +1096,8 @@ class SimulatedCoordinator:
             if qubit not in edge.split("_"):
                 continue
             shift += self._coupler.push_ghz(self.simulator.f01, current) * GHZ
-        if shift:
-            # The drift is cached by detuning, and this changes what a detuning means.
-            self._drift_cache.clear()
+        # No cache to invalidate: `_Register.signature` keys the drift on the
+        # detunings, and a moved qubit frequency *is* a different detuning.
         return base + shift
 
     def _drift(self, register: _Register):

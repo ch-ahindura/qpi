@@ -95,6 +95,17 @@ class Tuner(ABC):
     def device(self) -> Any:
         """The in-memory ``QuantumDevice`` being calibrated."""
 
+    @property
+    def bias(self) -> Any:
+        """Something that can park a coupler at a DC current, or ``None``.
+
+        Only `coupler_anticrossing` asks for it, and only because the bias is not a
+        pulse: it is held over qcodes for as long as the fridge is cold, so a routine
+        sweeping it has to set instrument state between acquisitions. A tuner with no
+        rack to talk to returns ``None`` and that routine declines.
+        """
+        return None
+
     def routines(self) -> list[CalibrationRoutine]:
         """The routines this tuner can run. Every tuner runs the same set."""
         return all_routines()
@@ -103,7 +114,7 @@ class Tuner(ABC):
         """Walk the whole enabled DAG, then persist what it calibrated."""
         config.validate_against(routine_names())
         config.validate_targets()
-        dag = CalibrationDAG(self.routines(), config)
+        dag = CalibrationDAG(self.routines(), config, bias=self.bias)
         report = dag.run(self.device, self.backend, config, mode="full")
         self._persist(report)
         return report
@@ -131,7 +142,7 @@ class Tuner(ABC):
         config.validate_against(routine_names())
         config.validate_targets()
         narrowed = self._narrow_to(qubits, config)
-        dag = CalibrationDAG(self.routines(), narrowed)
+        dag = CalibrationDAG(self.routines(), narrowed, bias=self.bias)
         order, notes = dag.diagnose(
             list(RECALIBRATION_SEEDS), self.device, self.backend, narrowed
         )
@@ -166,7 +177,7 @@ class Tuner(ABC):
         config.validate_targets()
         routines = self.routines()
         benchmarks = [r.name for r in routines if r.is_benchmark]
-        dag = CalibrationDAG(routines, config)
+        dag = CalibrationDAG(routines, config, bias=self.bias)
         order = [name for name in dag.execution_order() if name in benchmarks]
         return dag.run(
             self.device, self.backend, config, mode="fidelity_check", only=order

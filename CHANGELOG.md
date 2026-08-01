@@ -214,6 +214,29 @@ spectator; what that leaves out is the off-resonant `0-1` excitation, so a stron
 pulse leaks more here than on a chip. Recovers 4.9304 GHz against a true 4.9312, and
 reports the anharmonicity — −283.7 MHz against −282.9 — which nothing else measures.
 
+**`coupler_anticrossing` measures the coupler's parking current** (RFC 0005 §12). It
+sets a DC bias, runs a spectroscopy, reads the qubit back, and repeats — walking the
+coupler down through the qubit and locating the crossing from where the qubit moves
+fastest. The current it writes is a stated fraction of that crossing, reported
+alongside it: a coupler is parked *away* from its qubits, and how far is a choice about
+residual coupling against CZ reach rather than a measurement.
+
+**It is the node that broke the routine interface, deliberately.** A coupler's bias is
+not a pulse — it is held over qcodes for as long as the fridge is cold, through an SPI
+rack or a cluster output, and *neither can be scheduled*: the QCM path sets an output
+offset over qcodes too. So a routine sweeping it has to set instrument state between
+acquisitions.
+
+RFC §4 said the routine interface stays unchanged; §11 said this one case should be
+handled explicitly in the routine. `CalibrationRoutine.measure` resolves that toward
+§11: one routine takes over its own acquisition loop rather than every node gaining a
+second sweep axis. Exactly one routine overrides it.
+
+It puts the coupler back when it finishes. A sweep that left the chip at whatever
+current it tried last would corrupt everything after it — which is not hypothetical: a
+first version of the test wrote into a shared fixture and left the coupler at 1.9 mA,
+breaking the CZ tests that read it next.
+
 **The coupler is a mode with a frequency, not just a drive** (RFC 0005 §12). A
 `TunableCoupler` sits above both qubits at its flux sweet spot and tunes down
 quadratically with parking current, coupled to each qubit strongly enough to push it.

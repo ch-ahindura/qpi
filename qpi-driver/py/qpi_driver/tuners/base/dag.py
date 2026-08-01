@@ -38,10 +38,18 @@ class CalibrationDAG:
     """The enabled routines, ordered by their dependencies."""
 
     def __init__(
-        self, routines: list[CalibrationRoutine], config: CalibrationConfig
+        self,
+        routines: list[CalibrationRoutine],
+        config: CalibrationConfig,
+        bias: Any = None,
     ) -> None:
         self.routines = {r.name: r for r in routines}
         self.config = config
+        #: Something that can park a coupler at a DC current, or ``None``. Handed to a
+        #: routine that measures itself — see `CalibrationRoutine.measure`. The graph
+        #: does not otherwise know the bias exists: it is not a pulse, and every other
+        #: node's sweep is.
+        self.bias = bias
 
     def execution_order(self) -> list[str]:
         """Enabled routine names in dependency order (Kahn's algorithm).
@@ -319,6 +327,31 @@ class CalibrationDAG:
         """Run one routine over one target, recording the outcome. True if it worked."""
         started = time.monotonic()
         try:
+            if routine.measures_itself:
+                # A routine that has to set DC state between acquisitions runs its own
+                # loop — see `CalibrationRoutine.measure`. One node needs this and the
+                # rest must not pay for it.
+                params = routine.measure(
+                    target, device, routine_config, backend, self.bias
+                )
+                elapsed = time.monotonic() - started
+                if elapsed > config.routine_timeout_s:
+                    raise RoutineError(
+                        f"exceeded routine_timeout_s ({config.routine_timeout_s}s) "
+                        f"after {elapsed:.1f}s"
+                    )
+                routine.apply(device, target, params)
+                report.add_routine(
+                    RoutineResult(
+                        routine_name=routine.name,
+                        target=target,
+                        parameters=params,
+                        timestamp=utc_timestamp(),
+                        duration_s=time.monotonic() - started,
+                    )
+                )
+                return True
+
             schedule = routine.build_schedule(target, device, routine_config, backend)
             dataset = backend.run(schedule)
             elapsed = time.monotonic() - started

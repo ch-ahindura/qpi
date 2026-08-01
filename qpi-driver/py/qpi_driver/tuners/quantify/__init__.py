@@ -167,6 +167,25 @@ class QuantifyTuner(Tuner):
     def device(self) -> Any:
         return self._device
 
+    @property
+    def bias(self):
+        """A simulated rack when the cluster is simulated, and nothing otherwise.
+
+        `coupler_anticrossing` is the only routine that asks. Against a real cluster
+        the bias belongs to the *executor* — it is held for as long as the fridge is
+        cold, not for the length of one calibration — so wiring a live rack in here is
+        a separate decision from making the sweep possible at all, and that routine
+        declines rather than guessing.
+        """
+        from qpi_driver.simulation import SimulatedBias
+
+        coordinator = self._instrument_coordinator
+        if type(coordinator).__name__ != "SimulatedCoordinator":
+            return None
+        if getattr(self, "_bias", None) is None:
+            self._bias = SimulatedBias(coordinator)
+        return self._bias
+
     def close(self) -> None:
         """Detach the coordinator's components, then release every instrument.
 

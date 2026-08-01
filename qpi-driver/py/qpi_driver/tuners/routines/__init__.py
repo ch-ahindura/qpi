@@ -50,6 +50,7 @@ from qpi_driver.tuners.routines.spectroscopy import (
 )
 from qpi_driver.tuners.routines.two_qubit import (
     ConditionalPhase,
+    CouplerAnticrossing,
     CZChevron,
     CZSpectroscopy,
 )
@@ -82,6 +83,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     FineAmplitude,
     RandomizedBenchmarking,
     FluxSpectroscopy,
+    CouplerAnticrossing,
     CZSpectroscopy,
     CZChevron,
     ConditionalPhase,

@@ -714,10 +714,42 @@ after the machinery.
      amplitude; fatal for a parametric one, which is nothing without its frequency.
      The parametric CZ had therefore never worked in simulation, and nothing said so
      because nothing drove it.
-   - A coupler frequency in the simulator, the two arcs, `coupler_anticrossing` →
-     `bias.parking_current`, `cz_parametrization`: **not started.** The coupler is not
-     modelled as an element with a frequency of its own — `SIDEBAND_GAP_GHZ` says so —
-     and that model is the prerequisite for the rest.
+   - **A coupler frequency in the simulator: done.** `TunableCoupler` sits above both
+     qubits at its flux sweet spot, tunes down quadratically with parking current, and
+     pushes every qubit it touches by ``g^2/(f_q - f_c)``. The push is what makes the
+     bias measurable: it had been carried, validated and applied since RFC 0004 with
+     nothing in the simulator responding to it, so a routine could have written any
+     current at all and no measurement would have contradicted it. Measured from zero
+     bias rather than from nothing, which is what leaves every existing fixture alone.
+   - `coupler_anticrossing` → `bias.parking_current`: **done**, and it is the node
+     that finally broke the routine interface — deliberately, and on the terms §11
+     asked for.
+
+     A coupler's bias is not a pulse. It is a DC current held for as long as the fridge
+     is cold, delivered out of band over qcodes through an SPI rack or a cluster
+     output, and **neither mechanism can be scheduled** — the QCM path sets an output
+     offset over qcodes too, so "put it in the schedule" is not available even for the
+     coupler wired inside the cluster. A routine sweeping it must set instrument state,
+     run a schedule, read it, and repeat.
+
+     §4 said the routine interface stays unchanged; §11 said this one case should be
+     "handled explicitly in the routine". Those were in tension and the tension is
+     resolved toward §11: `CalibrationRoutine.measure` lets *one* routine take over its
+     own acquisition loop, rather than giving every node a second sweep axis it does
+     not need. Exactly one routine overrides it, tier 2 skips those routines because
+     there is no single schedule to compile, and the loop suite covers it where a
+     simulated rack can hold a current.
+
+     It writes a parking current derived from the crossing by a stated fraction rather
+     than the crossing itself, and says so: a coupler is parked *away* from its qubits
+     and how far is a choice about residual coupling against CZ reach, not a
+     measurement. Calling the fraction measured would be dressing up a decision.
+
+     It also puts the coupler back. A sweep that left the chip at whatever current it
+     tried last would corrupt every routine after it — which the test asserts, because
+     a first version of that test left the shared fixture parked at 1.9 mA and broke
+     the CZ tests downstream.
+   - `cz_parametrization`: **not started.**
 
 Phases 1–2 are worth doing regardless of how far the rest gets. Phase 4 is the one
 whose absence is currently a wrong answer rather than a missing feature.

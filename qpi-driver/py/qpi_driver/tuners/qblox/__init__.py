@@ -162,6 +162,20 @@ class QbloxTuner(Tuner):
     def device(self) -> Any:
         return self._device
 
+    @property
+    def bias(self):
+        """A simulated rack when the cluster is simulated. See the quantify twin."""
+        from qpi_driver.simulation import SimulatedBias
+
+        # Through the agent: `SimulatedAgent` is what holds the coordinator here,
+        # where the quantify tuner holds it directly.
+        coordinator = getattr(self._agent, "_coordinator", None)
+        if coordinator is None:
+            return None
+        if getattr(self, "_bias", None) is None:
+            self._bias = SimulatedBias(coordinator)
+        return self._bias
+
     def close(self) -> None:
         try:
             self._agent.close()

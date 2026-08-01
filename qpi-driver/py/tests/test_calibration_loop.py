@@ -323,6 +323,84 @@ def two_qubit_device(
     return device, simulator, scheduler
 
 
+def test_the_coupler_crossing_is_found_and_a_parking_current_written(
+    two_qubit_device, tmp_path
+):
+    """The one routine a single schedule cannot express, end to end.
+
+    `coupler_anticrossing` sets a DC current, runs a spectroscopy, reads the qubit
+    back, and repeats — a loop no schedule holds, which is why it overrides `measure`.
+    What this asserts is that the loop closes: the crossing it finds is where the
+    simulated coupler actually crosses the qubit, and the current it writes is the
+    stated fraction of it.
+
+    It also asserts the coupler is put *back*. A sweep that left the chip parked at
+    whatever current it tried last would corrupt every routine after it, and that is
+    the one failure worse than not measuring at all.
+    """
+    from qpi_driver.simulation.coupled import TunableCoupler
+
+    shared, simulator, scheduler = two_qubit_device
+    # Its own copy of the device, because this routine *writes* a parking current and
+    # `two_qubit_device` is module-scoped. Writing into it left the coupler parked at
+    # 1.9 mA for every test after this one, which pushes both qubits and breaks the CZ
+    # — a fixture mutated by one test and read by the next.
+    device = tmp_path / "quantify.device.yml"
+    device.write_bytes(shared.read_bytes())
+    coupler = TunableCoupler()
+    expected = np.sqrt(
+        (coupler.frequency_ghz - simulator.f01) / coupler.curvature_ghz_per_a2
+    )
+
+    close_instruments(scheduler)
+    tuner = tuner_for(
+        scheduler,
+        name=f"anticross_{scheduler}",
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_simulated=True,
+        simulator=simulator,
+    )
+    report = tuner.calibrate(
+        CalibrationConfig(
+            target_qubits=["q1", "q2"],
+            target_edges=["q1_q2"],
+            routines={
+                name: RoutineConfig(
+                    enabled=name == "coupler_anticrossing",
+                    params={"points": 9, "span": 300e6},
+                )
+                for name in routine_names()
+            },
+        )
+    )
+    parked = tuner.bias.applied.get("q1_q2")
+    tuner.close()
+    close_instruments(scheduler)
+
+    assert report.status == "success", report.errors
+    measured = {
+        result.target: result.parameters
+        for result in report.routine_results
+        if result.routine_name == "coupler_anticrossing"
+    }
+    assert measured, "coupler_anticrossing reported nothing"
+    params = measured["q1_q2"]
+
+    # Within one step of the current sweep, which is the resolution it had.
+    assert params["crossing_current"] == pytest.approx(expected, abs=0.3e-3), (
+        f"the crossing was placed at {params['crossing_current'] * 1e3:.3f} mA "
+        f"against {expected * 1e3:.3f} mA in the model"
+    )
+    assert params["parking_current"] == pytest.approx(params["crossing_current"] * 0.6)
+    written = float(
+        yaml.safe_load(device.read_text())["q1_q2"]["bias"]["parking_current"]
+    )
+    assert written == pytest.approx(params["parking_current"])
+    # And the coupler was returned to where it started, not left mid-sweep.
+    assert parked == pytest.approx(0.0)
+
+
 def test_a_mistuned_parametric_coupler_is_found_and_corrected(two_qubit_device):
     """`cz_spectroscopy` moves the CZ drive onto the transition it means to bridge.
 

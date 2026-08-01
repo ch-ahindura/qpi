@@ -23,6 +23,7 @@ without a lab.
 group. They are imported lazily so a base install still imports this package.
 """
 
+from qpi_driver.simulation.bias import SimulatedBias
 from qpi_driver.simulation.coordinator import (
     DEFAULT_DRIVE_STRENGTH,
     SimulatedCoordinator,
@@ -34,6 +35,7 @@ from qpi_driver.simulation.transmon import GHZ, NS, TransmonSimulator
 __all__ = [
     "TransmonSimulator",
     "ReadoutResonator",
+    "SimulatedBias",
     "SimulatedCoordinator",
     "SimulationError",
     "DEFAULT_DRIVE_STRENGTH",

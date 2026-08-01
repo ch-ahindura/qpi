@@ -136,6 +136,42 @@ class CalibrationRoutine(ABC):
         """
         raise RoutineError(f"{self.name} has no check analysis")
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: Any,
+        backend: Any,
+        bias: Any = None,
+    ) -> dict[str, Any]:
+        """Run the whole measurement, for a routine one schedule cannot express.
+
+        The ordinary path is `build_schedule` then `analyse`: one schedule, one
+        acquisition, one fit. That covers every node in the graph but one, because
+        every sweep in them is a sweep of *pulse* parameters and a schedule can hold
+        those.
+
+        A coupler's parking bias is not a pulse. It is a DC current held for as long
+        as the fridge is cold, delivered out of band over qcodes — through an SPI rack
+        or a cluster output, but either way not by the sequencer. So a routine that
+        sweeps it has to set instrument state, run a schedule, read it, and repeat,
+        which is a loop no single schedule contains.
+
+        Overriding this takes that loop into the routine rather than giving every node
+        a second sweep axis it does not need — which is what RFC 0005 §11 argues for,
+        against the reference pipelines' `external_samplespace`. The DAG calls this
+        instead of the standard path, and *bias* is whatever can park a coupler, or
+        ``None`` when nothing can.
+
+        Returns the same fitted parameters `analyse` would.
+        """
+        raise NotImplementedError
+
+    @property
+    def measures_itself(self) -> bool:
+        """Whether this routine overrides :meth:`measure`."""
+        return type(self).measure is not CalibrationRoutine.measure
+
     def applies_to(self, device: Any, target: str) -> bool:
         """Whether this routine has anything to measure on *target*.
 
