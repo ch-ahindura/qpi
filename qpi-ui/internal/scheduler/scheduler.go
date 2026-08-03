@@ -92,11 +92,14 @@ func recordToQuantumJob(record *core.Record) *db.QuantumJob {
 }
 
 // FetchNextCalibration returns the oldest pending calibration queued for
-// driverID, or nil when there is none or one is already running (RFC 0004 §6.8).
+// driverID, or nil when there is none or one is already running on its QPU
+// (RFC 0004 §6.8).
 //
-// One at a time, deliberately: one tuner is one worker on one chip, so a second
-// request delivered now would only queue inside the driver, out of the server's
-// sight. It waits here instead.
+// One at a time, deliberately: one chip cannot be calibrated twice at once. The
+// wait is scoped to the QPU rather than the driver because nothing stops two
+// tuners being registered against one QPU, and each gets its own dispatcher — so
+// serializing per driver would let both sweep the same qubits and both write the
+// device YAML, leaving it a mix of two runs.
 func FetchNextCalibration(app core.App, driverID string) *db.CalibrationRequest {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {
@@ -104,11 +107,16 @@ func FetchNextCalibration(app core.App, driverID string) *db.CalibrationRequest 
 		return nil
 	}
 
+	driver, err := app.FindRecordById(cfg.CollectionDrivers, driverID)
+	if err != nil {
+		return nil
+	}
+
 	running, _ := app.FindRecordsByFilter(
 		cfg.CollectionCalibrationRequests,
-		"status = 'running' && driver = {:driver}",
+		"status = 'running' && driver.qpu = {:qpu}",
 		"+created", 1, 0,
-		dbx.Params{"driver": driverID},
+		dbx.Params{"qpu": driver.GetString("qpu")},
 	)
 	if len(running) > 0 {
 		return nil

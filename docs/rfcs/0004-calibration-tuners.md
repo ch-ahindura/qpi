@@ -497,13 +497,24 @@ POST /api/op/calibrate/dispatch    (admin-only — see §10)
 }
 ```
 
-A driver already busy with a calibration should not be handed a second one: one
-tuner is one worker on one chip, so a second run delivered now would only queue
-inside the driver, where the server can no longer see it. Two `full` runs back to
-back are an ordinary thing to ask for, though — the endpoint takes both as
-`pending`, and `FetchNextCalibration` releases the second when the first reports.
+One calibration at a time, and the unit is **the chip, not the driver**. A second
+run delivered to a busy tuner would only queue inside the driver, where the server
+can no longer see it; and nothing stops two tuners being registered against one
+QPU, each with its own dispatcher, so a per-driver wait would let both sweep the
+same qubits and both write the device YAML — atomic per write (§10) and a mix of
+two runs afterwards. `FetchNextCalibration` therefore withholds a request while
+any request is `running` on that driver's QPU, which it reads by traversing the
+relation (`driver.qpu`) rather than denormalising it onto the request.
+
+Two `full` runs back to back are an ordinary thing to ask for, though: the
+endpoint takes both as `pending` and the second goes out when the first reports.
 The dispatch carries the request ID and the report echoes it back, so which report
 answers which request never depended on there being one in flight.
+
+This covers dispatched calibrations only. A tuner started with
+`drift_check_interval` schedules its own `fidelity_check` on its internal queue
+without asking the server, and its busy flag is a `threading.Event` in one
+process — so two drift-monitoring tuners on one QPU still collide. §11.
 
 #### Receiving a result
 
@@ -1053,6 +1064,14 @@ excluded:
 
 Not implemented, and not deliberate:
 
+- **A self-scheduled drift check ignores every other tuner.** Dispatched
+  calibrations serialize on the QPU (§6.8), but `drift_check_interval` puts a
+  `fidelity_check` on the tuner's own queue without asking the server, guarded by
+  a `threading.Event` that means nothing to a second process. Two drift-monitoring
+  tuners on one QPU therefore still calibrate it at once. The server cannot fix
+  this alone — it never hears about the run until the report — so it wants either a
+  lease the tuner asks for before starting, or a rule at registration that one QPU
+  gets one tuner. Until then: enable drift monitoring on one tuner per chip.
 - **A calibration neither reaches a running driver nor holds back its jobs.** Two
   halves of one hole. The executor loads the device config in its constructor and
   `execute()` never re-reads it, so a QPU driver started before a calibration runs

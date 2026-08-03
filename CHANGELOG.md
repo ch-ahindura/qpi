@@ -688,6 +688,12 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-ui`: two tuners registered against one QPU could calibrate it at the same
+  time. The calibration queue serialized per driver, and each driver has its own
+  dispatcher, so both DAGs swept the same qubits and both wrote the device YAML.
+  `FetchNextCalibration` now withholds a request while any is running on that
+  driver's QPU. A tuner's own `drift_check_interval` still bypasses this — it never
+  asks the server (RFC 0004 §11).
 - `qpi-driver`: the `quantify` and `qblox` extras declared `scipy>=1.11` and
   `lmfit>=1.3`. `scipy` is a core dependency and nothing imports `lmfit`, so both
   are gone.

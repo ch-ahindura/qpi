@@ -7,8 +7,10 @@ import (
 	"testing"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 
 	"qpi/internal/db"
+	"qpi/internal/drivers"
 	"qpi/internal/scheduler"
 )
 
@@ -185,6 +187,83 @@ func TestFetchNextCalibration_WaitsWhileOneIsRunning(t *testing.T) {
 
 	if got := scheduler.FetchNextCalibration(app, driverRec.Id); got != nil {
 		t.Errorf("expected nothing while a calibration is running, got %s", got.ID)
+	}
+}
+
+// TestFetchNextCalibration_WaitsWhileAnotherTunerHasTheChip proves two tuners on
+// one QPU cannot calibrate it at once. Nothing stops both being registered, and
+// each has its own dispatcher, so serializing per driver would let both DAGs
+// sweep the same qubits and both write the device YAML.
+func TestFetchNextCalibration_WaitsWhileAnotherTunerHasTheChip(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	other := core.NewRecord(getCollectionByName(t, app, cfg.CollectionDrivers))
+	other.Set("name", "tuner-2")
+	other.Set("qpu", qpuRec.Id)
+	other.Set("kind", string(drivers.QuantifyTuner))
+	other.Set("language", string(drivers.Python))
+	other.Set("token", db.HashToken("drv-tok-2"))
+	other.Set("status", "online")
+	other.Set("enabled", true)
+	if err := app.Save(other); err != nil {
+		t.Fatalf("failed to create the second tuner: %v", err)
+	}
+
+	if err := saveToDb(app, &db.CalibrationRequest{
+		Driver: other.Id, Mode: "full", Status: "running",
+	}); err != nil {
+		t.Fatalf("seed running request: %v", err)
+	}
+	if err := saveToDb(app, &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "full", Status: "pending",
+	}); err != nil {
+		t.Fatalf("seed pending request: %v", err)
+	}
+
+	if got := scheduler.FetchNextCalibration(app, driverRec.Id); got != nil {
+		t.Errorf("expected nothing while another tuner has the chip, got %s", got.ID)
+	}
+}
+
+// TestFetchNextCalibration_IgnoresAnotherQPUsTuner proves the wait is scoped to
+// one chip rather than stalling every tuner in the rack.
+func TestFetchNextCalibration_IgnoresAnotherQPUsTuner(t *testing.T) {
+	app, cfg, driverRec, _ := seedDriverForEvents(t)
+
+	otherQPU := core.NewRecord(getCollectionByName(t, app, cfg.CollectionQPUs))
+	otherQPU.Set("name", "qpu_02")
+	otherQPU.Set("access_token", db.HashToken("tok2"))
+	otherQPU.Set("status", "online")
+	otherQPU.Set("enabled", true)
+	if err := app.Save(otherQPU); err != nil {
+		t.Fatalf("failed to create the second qpu: %v", err)
+	}
+
+	other := core.NewRecord(getCollectionByName(t, app, cfg.CollectionDrivers))
+	other.Set("name", "tuner-elsewhere")
+	other.Set("qpu", otherQPU.Id)
+	other.Set("kind", string(drivers.QuantifyTuner))
+	other.Set("language", string(drivers.Python))
+	other.Set("token", db.HashToken("drv-tok-3"))
+	other.Set("status", "online")
+	other.Set("enabled", true)
+	if err := app.Save(other); err != nil {
+		t.Fatalf("failed to create the second tuner: %v", err)
+	}
+
+	if err := saveToDb(app, &db.CalibrationRequest{
+		Driver: other.Id, Mode: "full", Status: "running",
+	}); err != nil {
+		t.Fatalf("seed running request: %v", err)
+	}
+	if err := saveToDb(app, &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "full", Status: "pending",
+	}); err != nil {
+		t.Fatalf("seed pending request: %v", err)
+	}
+
+	if got := scheduler.FetchNextCalibration(app, driverRec.Id); got == nil {
+		t.Error("expected the pending calibration; another QPU's tuner is irrelevant")
 	}
 }
 
