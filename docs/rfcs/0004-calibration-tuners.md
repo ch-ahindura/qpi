@@ -511,10 +511,13 @@ endpoint takes both as `pending` and the second goes out when the first reports.
 The dispatch carries the request ID and the report echoes it back, so which report
 answers which request never depended on there being one in flight.
 
-This covers dispatched calibrations only. A tuner started with
-`drift_check_interval` schedules its own `fidelity_check` on its internal queue
-without asking the server, and its busy flag is a `threading.Event` in one
-process — so two drift-monitoring tuners on one QPU still collide. §11.
+Serializing the queue is not the whole answer, because a tuner also calibrates on
+its own clock: `drift_check_interval` puts a `fidelity_check` on the tuner's
+internal queue without asking the server, guarded by a `threading.Event` that
+means nothing to a second process. So the second tuner is refused earlier —
+`/api/op/drivers/connect` returns 409 while another driver of the same operation
+is connected to that QPU (§10). Registering one is still allowed: a standby, or a
+replacement prepared before the running one is retired.
 
 #### Receiving a result
 
@@ -814,8 +817,13 @@ A tuner registers as its own driver, separate from the QPU driver on the same
 node, exactly as a cryostat monitor does (RFC 0001 §4). The two share the device
 YAML through the filesystem and nothing else — which is the whole of the
 write-back contract, and the reason §10 treats that file as the trust boundary.
-It is also why a calibration does not reach a QPU driver that is already running:
-that driver read the YAML once, in its constructor (§11).
+
+The QPU driver re-reads that file between jobs when it changes, so a calibration
+reaches a driver that is already running without a restart — and so does a set of
+parameters measured or restored by hand and dropped in place. It is applied onto
+the live device rather than rebuilt around a new one, which is what keeps the
+compiler, the instrument coordinator and the cluster connection intact. A new
+*element* is structural, not calibration, and still needs a restart.
 
 ## 9. Verification plan
 
@@ -860,9 +868,10 @@ executor. The driver-start leg is skipped for that entry, there being no
 - Compare RB fidelities before and after calibration
 - Run periodic monitoring overnight — verify drift detection triggers recalibration
 - Verify `quantify.device.yml` is correctly updated after calibration
-- Restart the `process` driver, then verify it picks up the updated parameters.
-  Without the restart it will not — the executor loads the device config in its
-  constructor and `execute()` never re-reads it (§11)
+- Verify the `process` driver picks up the updated parameters on its next job,
+  with no restart, and again after a device config written by hand
+- Verify a second tuner is refused at `/api/op/drivers/connect` while the first is
+  connected, and accepted once it is not
 - Dispatch a calibration while the tuner is **offline**, then start it — the
   request must run rather than have been dropped (§6.8)
 - Stop the driver mid-DAG and confirm it exits without leaving the cluster in a
@@ -900,6 +909,21 @@ listener (`docs/driver/operations.md`) and nothing bounds the HTTP surface, so
 admin-only is the whole of the control. An unauthenticated or user-level trigger
 would be a denial-of-service with a plausible cover story — and a quiet one,
 since nothing holds back jobs to that QPU while the calibration runs (§11).
+
+**One driver per role per QPU, enforced at connect.** Two QPU drivers would hand
+the same hardware two schedules; two tuners would sweep the same qubits and each
+write the device YAML, leaving it internally valid and a mix of two calibrations.
+`/api/op/drivers/connect` returns 409 while another driver of the same operation
+is connected to that QPU — by *operation*, not kind, because a `quantify_tuner`
+and a `qblox_tuner` calibrate the same chip. Registration is not restricted: a
+standby record harms nothing until it connects.
+
+A driver counts as connected only when its socket is attached **and** this server
+is dispatching to it. Either alone would wedge a QPU that no driver is on — a
+crash leaves `status` at `online`, and a server restart leaves rows claiming a
+connection this process never made. A `custom` driver is exempt: its operation is
+whatever its author wrote, so the server has no grounds to call two of them the
+same role.
 
 **Reports are not secrets, but they are inventory.** A `CalibrationResult`
 describes the chip in more detail than anything else QPI stores — per-qubit
@@ -1064,26 +1088,18 @@ excluded:
 
 Not implemented, and not deliberate:
 
-- **A self-scheduled drift check ignores every other tuner.** Dispatched
-  calibrations serialize on the QPU (§6.8), but `drift_check_interval` puts a
-  `fidelity_check` on the tuner's own queue without asking the server, guarded by
-  a `threading.Event` that means nothing to a second process. Two drift-monitoring
-  tuners on one QPU therefore still calibrate it at once. The server cannot fix
-  this alone — it never hears about the run until the report — so it wants either a
-  lease the tuner asks for before starting, or a rule at registration that one QPU
-  gets one tuner. Until then: enable drift monitoring on one tuner per chip.
-- **A calibration neither reaches a running driver nor holds back its jobs.** Two
-  halves of one hole. The executor loads the device config in its constructor and
-  `execute()` never re-reads it, so a QPU driver started before a calibration runs
-  every later job on the old parameters until it is restarted; and `FetchNextJob`
-  filters on `qpu_target` and status only, so jobs keep going out to that QPU
-  throughout — first against a chip mid-calibration, then against a file the
-  driver has not read. The queue makes both fixable without a second outbound
-  path: a `qpu` field on `calibration_requests` lets `FetchNextJob` return nothing
-  while one is `running` there, and the driver can re-read the device YAML when
-  its mtime changes, which needs nothing from the server at all given §8 puts the
-  two processes on one node. Until then the operator's lever is
-  `POST /api/op/drivers/toggle`, and the §9 manual check says restart.
+- **Jobs are not held back while a calibration runs.** `FetchNextJob` filters on
+  `qpu_target` and status only, so jobs keep going out to a QPU whose chip is
+  mid-calibration. The queue makes it fixable without a second outbound path: a
+  `qpu` field on `calibration_requests` would let `FetchNextJob` return nothing
+  while one is `running` there. Until then the operator's lever is
+  `POST /api/op/drivers/toggle`.
+
+  The other half of this — a calibration not reaching the QPU driver that needs
+  it — is now closed: the executor re-reads its device config between jobs when
+  the file changes, so a calibration on the same node, or a set of parameters
+  restored by hand, takes effect without a restart. Two tuners can no longer
+  calibrate one chip at once either (§6.8, §10).
 
 Not implemented, deliberately:
 

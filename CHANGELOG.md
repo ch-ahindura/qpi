@@ -688,6 +688,17 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-driver`: a QPU driver read `quantify.device.yml` once, in its constructor, so
+  a calibration on the same node changed nothing until someone restarted it. The
+  executor now re-reads the file between jobs when it changes, applying the
+  parameters onto the live device — which also means a calibration done by hand
+  takes effect by dropping the file in place. A new element is structural and still
+  needs a restart.
+- `qpi-ui`: `/api/op/drivers/connect` now returns 409 while another driver of the
+  same operation is connected to that QPU. Two QPU drivers would hand the same
+  hardware two schedules; two tuners would each write the device YAML. Scoped by
+  operation rather than kind, so a `quantify_tuner` blocks a `qblox_tuner`.
+  Registering a standby is still allowed.
 - `qpi-ui`: two tuners registered against one QPU could calibrate it at the same
   time. The calibration queue serialized per driver, and each driver has its own
   dispatcher, so both DAGs swept the same qubits and both wrote the device YAML.

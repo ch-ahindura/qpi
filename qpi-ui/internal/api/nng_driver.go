@@ -68,6 +68,17 @@ func StartDriverDistribution(app core.App, cfg *config.AppConfig, driverID, qpuI
 	}
 }
 
+// isDispatching reports whether this server currently holds goroutines for
+// driverID. Only handleDriverConnect adds to activeDrivers, so an entry means a
+// driver connected during this process's lifetime — a server restart leaves the
+// map empty rather than inheriting a stale claim from the database.
+func isDispatching(driverID string) bool {
+	activeDriversMu.Lock()
+	defer activeDriversMu.Unlock()
+	_, running := activeDrivers[driverID]
+	return running
+}
+
 // StopDriverDistribution cancels the goroutines for a specific driver.
 func StopDriverDistribution(driverID string) {
 	activeDriversMu.Lock()

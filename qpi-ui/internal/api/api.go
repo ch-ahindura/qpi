@@ -646,6 +646,48 @@ func handleDriverCreate(re *core.RequestEvent) error {
 	return re.JSON(http.StatusCreated, resp)
 }
 
+// connectedPeer returns another driver already connected to the same QPU for the
+// same operation, with the operation they share, or "" for neither.
+//
+// One chip takes one driver of each role. Two QPU drivers would hand the same
+// hardware two schedules, and two tuners would sweep the same qubits and each
+// write the device YAML (RFC 0004 §6.8). Registering a second is allowed — a
+// standby, or a replacement prepared before the running one is retired — but
+// connecting it while the first is live is not.
+//
+// A driver counts as connected only when its socket is attached *and* this server
+// is dispatching to it, so neither a stale `online` left by a crash nor a restart
+// of the server can wedge a QPU no driver is actually on.
+func connectedPeer(app core.App, cfg *config.AppConfig, driver *db.Driver) (string, drivers.Operation) {
+	operation := drivers.Default.OperationOf(drivers.Kind(driver.Kind))
+	if operation == "" {
+		// A custom driver's operation is whatever its author wrote, so the server
+		// has no grounds to say two of them are the same role.
+		return "", ""
+	}
+
+	peers, err := app.FindRecordsByFilter(
+		cfg.CollectionDrivers,
+		"qpu = {:qpu} && status = 'online' && enabled = true && id != {:self}",
+		"+created", 0, 0,
+		dbx.Params{"qpu": driver.QPU, "self": driver.ID},
+	)
+	if err != nil {
+		return "", ""
+	}
+
+	for _, peer := range peers {
+		if drivers.Default.OperationOf(drivers.Kind(peer.GetString("kind"))) != operation {
+			continue
+		}
+		if !isDispatching(peer.Id) {
+			continue
+		}
+		return peer.GetString("name"), operation
+	}
+	return "", ""
+}
+
 // handleDriverConnect connects a driver process, allocating dynamic in/out
 // NNG ports the same way handleQPUConnect does for QPUs (RFC 0001 §8).
 // POST /api/op/drivers/connect
@@ -671,6 +713,11 @@ func handleDriverConnect(re *core.RequestEvent) error {
 
 	if !driver.Enabled {
 		return re.Error(http.StatusForbidden, "driver is currently disabled by administrator", nil)
+	}
+
+	if peer, operation := connectedPeer(re.App, cfg, &driver); peer != "" {
+		return re.Error(http.StatusConflict, fmt.Sprintf(
+			"%q is already connected as this QPU's %s driver; one per QPU", peer, operation), nil)
 	}
 
 	// The driver does not get to rename itself. Name is a display label an admin

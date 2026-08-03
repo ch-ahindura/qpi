@@ -183,6 +183,17 @@ func (r *Registry) Kinds() []Kind {
 	return kinds
 }
 
+// OperationOf returns what a kind does, or "" for Custom and anything unknown —
+// neither of which can be held to one-per-QPU, a custom driver's operation being
+// whatever its author wrote.
+func (r *Registry) OperationOf(kind Kind) Operation {
+	spec, ok := r.specs[kind]
+	if !ok {
+		return ""
+	}
+	return spec.Operation
+}
+
 // Events returns the fixed event set an official kind participates in, or nil
 // for Custom (whose events are chosen at registration instead).
 func (r *Registry) Events(kind Kind) []string {
