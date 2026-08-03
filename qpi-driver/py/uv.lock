@@ -1715,31 +1715,23 @@ cli = [
     { name = "typer" },
 ]
 qblox = [
-    { name = "lmfit" },
     { name = "qblox-instruments" },
     { name = "qblox-scheduler" },
-    { name = "scipy" },
 ]
 qblox-tuner = [
-    { name = "lmfit" },
     { name = "qblox-instruments" },
     { name = "qblox-scheduler" },
-    { name = "scipy" },
 ]
 qiskit-aer = [
     { name = "qiskit-aer" },
 ]
 quantify = [
-    { name = "lmfit" },
     { name = "qblox-instruments" },
     { name = "quantify-scheduler" },
-    { name = "scipy" },
 ]
 quantify-tuner = [
-    { name = "lmfit" },
     { name = "qblox-instruments" },
     { name = "quantify-scheduler" },
-    { name = "scipy" },
 ]
 
 [package.dev-dependencies]
@@ -1755,8 +1747,6 @@ sim = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lmfit", marker = "extra == 'qblox'", specifier = ">=1.3" },
-    { name = "lmfit", marker = "extra == 'quantify'", specifier = ">=1.3" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "pynng", specifier = ">=0.8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
@@ -1772,8 +1762,6 @@ requires-dist = [
     { name = "quantify-scheduler", marker = "extra == 'quantify'" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "scipy", specifier = ">=1.10.0" },
-    { name = "scipy", marker = "extra == 'qblox'", specifier = ">=1.11" },
-    { name = "scipy", marker = "extra == 'quantify'", specifier = ">=1.11" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.9.0" },
     { name = "xarray", specifier = ">=2024.1.0" },
 ]

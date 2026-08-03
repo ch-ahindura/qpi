@@ -32,14 +32,10 @@ qiskit_aer = ["qpi-driver[aer]"]
 quantify = [
     "quantify-scheduler",
     "qblox-instruments<1.3.0",
-    "scipy>=1.11",
-    "lmfit>=1.3"
 ]
 qblox = [
     "qblox-scheduler",
     "qblox-instruments<1.3.0",
-    "scipy>=1.11",
-    "lmfit>=1.3"
 ]
 quantify_tuner = ["qpi-driver[quantify]"]
 qblox_tuner = ["qpi-driver[qblox]"]

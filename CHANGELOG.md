@@ -688,6 +688,9 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-driver`: the `quantify` and `qblox` extras declared `scipy>=1.11` and
+  `lmfit>=1.3`. `scipy` is a core dependency and nothing imports `lmfit`, so both
+  are gone.
 - `qpi-driver`: `allxy` and `fit_chevron` assumed which direction the readout's
   magnitude moves when a qubit is excited. Nothing guarantees it: whether `|z|` rises or
   falls depends on which side of the resonator's line the readout sits, and
