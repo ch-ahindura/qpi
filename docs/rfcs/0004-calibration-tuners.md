@@ -497,11 +497,13 @@ POST /api/op/calibrate/dispatch    (admin-only — see §10)
 }
 ```
 
-A driver already busy with a calibration should not be handed a second one: the
-worker is single-threaded, so a second run delivered mid-DAG would report against
-a request nobody could match it to. The constraint is on delivery, not queuing —
-the endpoint accepts the request as `pending` and `FetchNextCalibration` holds it
-back while that driver has one `running`, releasing it when the first reports.
+A driver already busy with a calibration should not be handed a second one: one
+tuner is one worker on one chip, so a second run delivered now would only queue
+inside the driver, where the server can no longer see it. Two `full` runs back to
+back are an ordinary thing to ask for, though — the endpoint takes both as
+`pending`, and `FetchNextCalibration` releases the second when the first reports.
+The dispatch carries the request ID and the report echoes it back, so which report
+answers which request never depended on there being one in flight.
 
 #### Receiving a result
 

@@ -94,9 +94,9 @@ func recordToQuantumJob(record *core.Record) *db.QuantumJob {
 // FetchNextCalibration returns the oldest pending calibration queued for
 // driverID, or nil when there is none or one is already running (RFC 0004 §6.8).
 //
-// One at a time, deliberately: the tuner's worker is single-threaded and a full
-// DAG walk is hours, so a second request queued behind the first would produce a
-// report nobody could connect to a request. It waits instead.
+// One at a time, deliberately: one tuner is one worker on one chip, so a second
+// request delivered now would only queue inside the driver, out of the server's
+// sight. It waits here instead.
 func FetchNextCalibration(app core.App, driverID string) *db.CalibrationRequest {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {

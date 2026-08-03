@@ -171,11 +171,7 @@ func TestFetchNextCalibration_ReturnsTheOldestPending(t *testing.T) {
 }
 
 // TestFetchNextCalibration_WaitsWhileOneIsRunning proves a second calibration is
-// not offered while the first is in flight.
-//
-// The tuner's worker is single-threaded and a full DAG walk is hours, so a
-// request dispatched behind another would produce a report nobody could connect
-// to a request (RFC 0004 §6.8).
+// not offered while the first is in flight — queued, not refused (RFC 0004 §6.8).
 func TestFetchNextCalibration_WaitsWhileOneIsRunning(t *testing.T) {
 	app, _, driverRec, _ := seedDriverForEvents(t)
 
