@@ -625,6 +625,20 @@ func handleDriverCreate(re *core.RequestEvent) error {
 		Enabled:  enabled,
 	}
 
+	// FIXME: On a pre-existing server, this seems to fail with
+	// {
+	//     "data": {
+	//         "kind": {
+	//             "code": "validation_invalid_value",
+	//             "message": "Invalid value quantify_tuner.",
+	//             "params": {
+	//                 "value": "quantify_tuner"
+	//             }
+	//         }
+	//     },
+	//     "message": "Failed to create driver.",
+	//     "status": 500
+	// }
 	if err := saveToDb(re.App, &driver); err != nil {
 		return re.Error(http.StatusInternalServerError, "failed to create driver", err)
 	}

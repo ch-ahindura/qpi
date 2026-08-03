@@ -498,6 +498,7 @@ POST /api/op/calibrate/dispatch    (admin-only — see §10)
 ```
 
 A driver already busy with a calibration should not be handed a second one: the
+<!-- FIXME: I guess given this constraint, we cannot schedule a calibration run through the API-->
 worker is single-threaded and a queued `full` run behind a `full` run is almost
 never what the operator meant. The dispatcher skips a driver with a request
 already in `running`.
@@ -548,7 +549,7 @@ blank row for a calibration that really ran; a test asserts the shape in both
 languages.
 
 A report also closes out the queued request it answers, which is what lets the
-dispatcher offer the next one.
+dispatcher offer the next one for that given driver.
 
 #### Dashboard (v1 — minimal)
 
@@ -584,6 +585,7 @@ Add `scipy>=1.11` and `lmfit>=1.3` to the existing `quantify` and `qblox` extras
 in `pyproject.toml` — the fitting code is imported by both tuners, and neither
 tuner is usable without its scheduler anyway.
 
+<!--FIXME: Maybe for slimmer dependencies, we can keep the `quantify` and `qblox` extras as they were and instead have `quantify_tuner` and `qblox_tuner` extend them, adding in `scipy>=1.11` and `lmfit>=1.3`-->
 Add alias extras `quantify_tuner = ["qpi-driver[quantify]"]` and
 `qblox_tuner = ["qpi-driver[qblox]"]`, following the existing
 `qiskit_aer = ["qpi-driver[aer]"]` precedent, so the extra an operator installs
@@ -763,7 +765,7 @@ testable without a lab: the tuner is resolved by name, class *or instance*
 (RFC 0003 §7) means the whole event path can be asserted with no server and no
 hardware.
 
-There is deliberately **no** dedicated calibration target. The tier-1 files run
+There is deliberately **no** dedicated calibration Makefile target. The tier-1 files run
 under `test-py-base`, the tier-2 file runs under the two existing scheduler
 targets, and a sixth target would mean a sixth environment that installs a
 scheduler in order to run tests that do not need one. §9 lists the targets that
@@ -793,7 +795,9 @@ qpi-driver start --operation calibrate --device quantify_tuner \
 ```
 
 A tuner registers as its own driver, separate from the QPU driver on the same
-node, exactly as a cryostat monitor does (RFC 0001 §4). The two share the
+node, exactly as a cryostat monitor does (RFC 0001 §4). 
+<!-- FIXME: How then can the QPU-driver reload its device params? Maybe the tuner driver on completion of calibration can add a special job on all driver's job queues to cause them to refresh their params (probably even passing them calibration results directly via QPI UI)? -->
+The two share the
 device YAML through the filesystem and nothing else — which is the whole of the
 write-back contract, and the reason §10 treats that file as the trust boundary.
 
@@ -818,17 +822,22 @@ make test-e2e-dashboard  # The Calibration and Jobs tabs against a simulated chi
 `test-py-loop` is the one that covers most of what this RFC claims, and it is the
 slowest for the same reason: it calibrates a simulated chip through the shipped
 tuner and then runs circuits against the file that calibration wrote, under both
-schedulers. A green run of it is the only evidence that a fitted number survives the
+schedulers. 
+<!-- FIXME: What is 'number' and 'double' in this case?-->
+A green run of it is the only evidence that a fitted number survives the
 fit, the write-back, the YAML, the loader and the compiler with its meaning intact.
 Nothing in it is a double except the instrument.
 
-The two SDK targets are in the list because the closed-set assertions there
+The two SDK Makefile targets are in the list because the closed-set assertions there
 (`TestOperationsAreAClosedPair` and its TypeScript counterpart) fail the moment
 `calibrate` is added, and a green run of those is the cheapest proof the
 operation landed in all three SDKs rather than just the one that needed it.
 
 CI runs all of the above. `test-py-sim` and `test-py-loop` need both schedulers and
 the `sim` group, which is why the matrix carries a `sim` entry that names no
+<!-- FIXME: You seem to be referring to something that is no longer existent probably because you are talking about something that happened while you were implementing this very RFC. 
+Because when you mention 'qblox tuner' being a stub yet it was non-existent before this RFC, you are documenting something that maybe was meant to be feedback to the prompter and not
+to other contributors who have never seen it. Please understand the difference when documenting.-->
 executor — without it neither target would ever run there, which is how the qblox
 tuner stayed a stub.
 
@@ -839,6 +848,7 @@ tuner stayed a stub.
 - Compare RB fidelities before and after calibration
 - Run periodic monitoring overnight — verify drift detection triggers recalibration
 - Verify `quantify.device.yml` is correctly updated after calibration
+<!--FIXME: How can a 'process' driver running in a different process refresh the quantum device config loaded in its memory -->
 - Verify `process` driver picks up updated parameters for subsequent jobs
 - Dispatch a calibration while the tuner is **offline**, then start it — the
   request must run rather than have been dropped (§6.8)
@@ -868,9 +878,11 @@ Three consequences:
   revertible without a second calibration run, and the operator needs to be able
   to answer "what changed" from the node itself.
 
+<!-- FIXME: How does the QPI-UI stop jobs from being dispatched while a calibration is running on the given QPU? Maybe if it already has this logic in place, it can be extended to make the remote driver reload its device config in memory from the new device parameters that are sent to QPI-UI after calibration-->
 **The dispatch endpoint is privileged.** `POST /api/op/calibrate/dispatch` takes
 a QPU out of service for hours and rewrites the parameters every subsequent job
 runs against. It is admin-only, as the `/api/op/*` routes around it are
+<!-- FIXME: Is it really rate-limited?-->
 (`handleQPUToggle`, `handleDriverToggle`), and it is rate-limited per driver like
 the other driver-facing paths (`docs/driver/operations.md`). An unauthenticated
 or user-level trigger would be a denial-of-service with a plausible cover story.
