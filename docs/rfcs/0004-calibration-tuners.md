@@ -583,10 +583,12 @@ vestigial, and removed rather than quietly repurposed as this feature's hook.
 
 ### 6.9 Dependencies
 
-The tuners add no dependency. The fitting is three `scipy.optimize.curve_fit`
+The tuners add no dependency, so the `quantify` and `qblox` extras carry their
+scheduler and instruments only. The fitting is three `scipy.optimize.curve_fit`
 calls and `scipy` is a core dependency already; `lmfit` is imported nowhere here,
-and `quantify-core` pulls it in regardless. So the `quantify` and `qblox` extras
-carry their scheduler and instruments only, and there is no slimmer split to make.
+and could not be dropped from an install even if it were — `quantify-core` is in
+both schedulers' dependency chains and requires it. Nothing about the extras can
+make either install smaller.
 
 The `*_tuner` extras are therefore plain aliases —
 `quantify_tuner = ["qpi-driver[quantify]"]` and
