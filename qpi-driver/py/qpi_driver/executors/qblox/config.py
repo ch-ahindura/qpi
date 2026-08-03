@@ -126,6 +126,47 @@ def load_quantum_device(name: str, config: Path | dict) -> QuantumDevice:
     return quantum_device
 
 
+def apply_device_config(device: QuantumDevice, config: Path | dict) -> list[str]:
+    """Write *config*'s parameters onto a device that is already built.
+
+    Reloading a calibration in place rather than rebuilding: the device object
+    stays the same one, so the `HardwareAgent` holding it need not be rebuilt —
+    which would mean re-establishing the cluster connection — and `quantum_device`
+    is a read-only property, so there is no way to hand it a new one.
+
+    Only parameters are applied. A config naming an element the device does not
+    have is structural, which calibration never writes (RFC 0004 §10), and the
+    names are returned rather than raised so the caller can log and carry on with
+    what it did apply.
+    """
+    if isinstance(config, Path):
+        with open(config, "r") as file:
+            config = yaml.safe_load(file)
+    else:
+        config = copy.deepcopy(config)
+
+    unknown: list[str] = []
+    for name, data in (config or {}).items():
+        component = _component_by_name(device, name)
+        if component is None:
+            unknown.append(name)
+            continue
+        parameters = {
+            key: value for key, value in (data or {}).items() if key != "element_type"
+        }
+        _apply_parameters(component, parameters)
+    return unknown
+
+
+def _component_by_name(device: QuantumDevice, name: str) -> Any:
+    for accessor in (device.get_element, device.get_edge):
+        try:
+            return accessor(name)
+        except Exception:  # noqa: BLE001 - not this kind of component
+            continue
+    return None
+
+
 def _to_num(value: Any) -> Any:
     """Convert a string value to float or int if it represents a number."""
     if isinstance(value, str):

@@ -22,11 +22,13 @@ from qpi_driver.compat.quantify import (
 from qpi_driver.executors import JobPayload
 from qpi_driver.executors.base import Executor
 from qpi_driver.executors.quantify.config import (
+    apply_device_config,
     load_instrument_coordinator,
     load_quantify_hardware_config,
     load_quantum_device,
 )
 from qpi_driver.executors.quantify.conv import to_quantify_gates
+from qpi_driver.reload import ConfigFile
 from qpi_driver.executors.utils.batch import (
     combine_circuit_datasets,
     iter_circuit_datasets,
@@ -104,6 +106,11 @@ class QuantifyExecutor(Executor):
         self._acquisition_timeout = acquisition_timeout
         hardware_config = load_quantify_hardware_config(quantify_hardware_config)
         self._hardware_config = hardware_config
+        self._watched_device_config = (
+            ConfigFile(quantify_device_config)
+            if isinstance(quantify_device_config, Path)
+            else None
+        )
         self._device = load_quantum_device(name=name, config=quantify_device_config)
         if is_simulated:
             from qpi_driver.executors.utils.coupler_bias import (
@@ -126,6 +133,65 @@ class QuantifyExecutor(Executor):
         self._compiler = SerialCompiler(
             name=f"{name}_compiler", quantum_device=self._device
         )
+
+    def _reload_device_config(self) -> None:
+        """Apply the device config file, which has changed on disk, to the device.
+
+        A calibration on this node rewrites that file (RFC 0004 §8), and so does
+        anyone restoring parameters by hand. Neither can reach into this process,
+        so the file is the whole channel.
+
+        A file that will not parse leaves the device as it was and costs the next
+        job its new parameters, not the driver its device. The tuner's own writes
+        are atomic, so only a hand-dropped file can be seen part-written.
+        """
+        path = self._watched_device_config.path
+        try:
+            unknown = apply_device_config(self._device, path)
+        except Exception:
+            log.exception("could not reload %s; keeping the current parameters", path)
+            return
+
+        if unknown:
+            log.warning(
+                "%s names %s, which this device does not have; a new element needs a "
+                "restart",
+                path,
+                ", ".join(unknown),
+            )
+        log.info("reloaded device parameters from %s", path)
+
+        if self._is_simulated:
+            from qpi_driver.executors.utils.coupler_bias import (
+                declared_parking_currents,
+                declared_sideband_gaps,
+            )
+
+            self._instrument_coordinator.sideband_gaps = declared_sideband_gaps(
+                self._device
+            )
+            self._instrument_coordinator.parking_currents = declared_parking_currents(
+                self._device
+            )
+
+        # The device object is the same one, so the compiler and the hardware
+        # config still point at it. The bias does not follow: it is a current
+        # sitting in a rack, and only re-applying it moves the coupler.
+        self._reapply_coupler_bias()
+
+    def _reapply_coupler_bias(self) -> None:
+        """Hold the couplers at the reloaded currents, on the rack already open.
+
+        Resolving a second source would open a second connection to the same
+        rack, or clash on its qcodes name.
+        """
+        from qpi_driver.executors.utils.coupler_bias import apply_coupler_bias
+
+        try:
+            self._parked = apply_coupler_bias(self._device, self._bias_source)
+        except Exception:
+            log.exception("could not park the couplers; two-qubit gates will be wrong")
+            self._parked = {}
 
     @property
     def hardware_config(self) -> QbloxHardwareCompilationConfig:
@@ -154,6 +220,12 @@ class QuantifyExecutor(Executor):
         Returns:
             xr.Dataset: Raw acquisition dataset.
         """
+        # Between jobs, never during one: a reload part-way through a compilation
+        # would be worse than a stale parameter.
+        if self._watched_device_config and self._watched_device_config.changed():
+            self._reload_device_config()
+            self._watched_device_config.accept()
+
         acq_protocol, acq_kwargs, acq_overrides = self._resolve_acq_protocol(payload)
         sub_datasets: list[xr.Dataset] = []
 
