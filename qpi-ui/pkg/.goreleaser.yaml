@@ -33,9 +33,9 @@ archives:
     name_template: "qpi-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: binary
+        formats: [binary]
       - goos: darwin
-        format: binary
+        formats: [binary]
     files:
       - src: README.md
       - src: LICENSE
@@ -63,8 +63,12 @@ nfpms:
       - apk # Alpine Linux (Note: Alpine uses OpenRC, not systemd, by default)
 
     contents:
-      # Map the example config file to the live config destination
-      - src: qpi-ui/qpi.config.example.yml
+      # Map the example config file to the live config destination. Aliased into
+      # every override below: an override's `contents` replaces this list rather
+      # than adding to it, so a format that declares one and omits this ships no
+      # config for the operator to edit — and `qpi.service` names it.
+      - &config-file
+        src: qpi-ui/qpi.config.example.yml
         dst: /etc/qpi.config.yml
         type: config # Protects the file from being overwritten blindly during package updates
 
@@ -73,16 +77,19 @@ nfpms:
         dependencies:
           - systemd
         contents:
+          - *config-file
           - src: qpi-ui/pkg/qpi.service
             dst: /lib/systemd/system/qpi.service
       rpm:
         dependencies:
           - systemd
         contents:
+          - *config-file
           - src: qpi-ui/pkg/qpi.service
             dst: /usr/lib/systemd/system/qpi.service
       apk:
         contents:
+          - *config-file
           - src: qpi-ui/pkg/qpi.initd
             dst: /etc/init.d/qpi
             file_info:
