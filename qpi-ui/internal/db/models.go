@@ -192,11 +192,14 @@ func (q *QPU) RefreshFromRecord(record *core.Record) error {
 // Driver represents a registered driver record in the database — an external
 // process that exchanges typed events with QPI-UI (RFC 0001 §7). Every driver
 // belongs to exactly one QPU; a QPU may have many drivers.
+//
+// `kind` must allow every kind in `drivers.Default` plus `custom`, and
+// `language` every one of `drivers.Languages`; the schema tests pin both.
 type Driver struct {
 	ID         string   `json:"id" db:"id"`
 	Name       string   `json:"name" db:"name" required:"true"`
 	QPU        string   `json:"qpu" db:"qpu" type:"relation" required:"true" maxSelect:"1" collection:"qpus"`
-	Kind       string   `json:"kind" db:"kind" type:"select" required:"true" maxSelect:"1" values:"mock,qiskit_aer,quantify,qblox,presto,bluefors_gen1,custom"`
+	Kind       string   `json:"kind" db:"kind" type:"select" required:"true" maxSelect:"1" values:"mock,qiskit_aer,quantify,qblox,presto,bluefors_gen1,quantify_tuner,qblox_tuner,custom"`
 	Language   string   `json:"language" db:"language" type:"select" required:"true" maxSelect:"1" values:"python,typescript,go"`
 	Events     []string `json:"events" db:"events" type:"json"`
 	Token      string   `json:"token" db:"token" required:"true" hidden:"true"`

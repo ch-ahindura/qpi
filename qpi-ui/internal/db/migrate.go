@@ -395,6 +395,26 @@ func hasIndex(col *core.Collection, name string) bool {
 	return false
 }
 
+// widenSelect allows any declared value the select does not allow yet. Adding
+// only: a value a model has dropped may still be on a stored record.
+func widenSelect(col *core.Collection, name string, declared []string) {
+	field, ok := col.Fields.GetByName(name).(*core.SelectField)
+	if !ok {
+		return
+	}
+
+	allowed := make(map[string]bool, len(field.Values))
+	for _, v := range field.Values {
+		allowed[v] = true
+	}
+	for _, v := range declared {
+		if !allowed[v] {
+			field.Values = append(field.Values, v)
+			log.Printf("[QPI] %s.%s now allows %q", col.Name, name, v)
+		}
+	}
+}
+
 // initCollection initializes a collection given a model
 func initCollection(app core.App, name string, model interface{}) (*core.Collection, error) {
 	cfg, err := config.GetConfigFromApp(app)
@@ -422,115 +442,122 @@ func initCollection(app core.App, name string, model interface{}) (*core.Collect
 			continue
 		}
 
-		if !existingFields[fieldName] {
-			fieldType := field.Tag.Get("type")
-			if fieldType == "" {
-				fieldType = field.Type.String()
-			}
+		fieldType := field.Tag.Get("type")
+		if fieldType == "" {
+			fieldType = field.Type.String()
+		}
 
-			switch fieldType {
-			case "text", stringTypeStr:
-				col.Fields.Add(&core.TextField{
-					Name:                fieldName,
-					System:              field.Tag.Get("system") == "true",
-					Hidden:              field.Tag.Get("hidden") == "true",
-					Presentable:         field.Tag.Get("presentable") == "true",
-					Help:                field.Tag.Get("help"),
-					Min:                 tryParseInt(field.Tag.Get("min"), 0),
-					Max:                 tryParseInt(field.Tag.Get("max"), 0),
-					Pattern:             field.Tag.Get("pattern"),
-					AutogeneratePattern: field.Tag.Get("autogeneratePattern"),
-					Required:            field.Tag.Get("required") == "true",
-					// PrimaryKey:          field.Tag.Get("primaryKey") == "true",
-				})
-				if field.Tag.Get("primaryKey") == "true" {
-					col.Id = fieldName
-				}
-			case "number", intTypeStr, int64TypeStr, int32TypeStr, uintTypeStr, uint64TypeStr, uint32TypeStr, float64TypeStr, float32TypeStr:
-				col.Fields.Add(&core.NumberField{
-					Name:        fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					Min:         tryParseFloat64Ptr(field.Tag.Get("min"), nil),
-					Max:         tryParseFloat64Ptr(field.Tag.Get("max"), nil),
-					OnlyInt:     field.Tag.Get("onlyInt") == "true",
-					Required:    field.Tag.Get("required") == "true",
-				})
-			case "bool", boolTypeStr:
-				col.Fields.Add(&core.BoolField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					Required:    field.Tag.Get("required") == "true",
-				})
-			case "date":
-				col.Fields.Add(&core.DateField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					Min:         tryParseDateTime(field.Tag.Get("min"), types.DateTime{}),
-					Max:         tryParseDateTime(field.Tag.Get("max"), types.DateTime{}),
-					Required:    field.Tag.Get("required") == "true",
-				})
-			case "autodate":
-				col.Fields.Add(&core.AutodateField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					OnCreate:    field.Tag.Get("onCreate") == "true",
-					OnUpdate:    field.Tag.Get("onUpdate") == "true",
-				})
-			case "json":
-				col.Fields.Add(&core.JSONField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					MaxSize:     tryParseInt64(field.Tag.Get("maxSize"), 0),
-					Required:    field.Tag.Get("required") == "true",
-				})
-			case "relation":
-				col.Fields.Add(&core.RelationField{Name: fieldName,
-					System:        field.Tag.Get("system") == "true",
-					Hidden:        field.Tag.Get("hidden") == "true",
-					Presentable:   field.Tag.Get("presentable") == "true",
-					Help:          field.Tag.Get("help"),
-					Required:      field.Tag.Get("required") == "true",
-					CollectionId:  tryGetCollectionId(app, cfg, field.Tag.Get("collection")),
-					MaxSelect:     tryParseInt(field.Tag.Get("maxSelect"), 0),
-					MinSelect:     tryParseInt(field.Tag.Get("minSelect"), 0),
-					CascadeDelete: field.Tag.Get("cascadeDelete") == "true",
-				})
-			case "file":
-				col.Fields.Add(&core.FileField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					Required:    field.Tag.Get("required") == "true",
-					MaxSelect:   tryParseInt(field.Tag.Get("maxSelect"), 0),
-					MaxSize:     tryParseInt64(field.Tag.Get("maxSize"), 0),
-					Protected:   field.Tag.Get("protected") == "true",
-					MimeTypes:   tryParseStrSlice(field.Tag.Get("mimeTypes")),
-					Thumbs:      tryParseStrSlice(field.Tag.Get("thumbs")),
-				})
-			case "select":
-				col.Fields.Add(&core.SelectField{Name: fieldName,
-					System:      field.Tag.Get("system") == "true",
-					Hidden:      field.Tag.Get("hidden") == "true",
-					Presentable: field.Tag.Get("presentable") == "true",
-					Help:        field.Tag.Get("help"),
-					Required:    field.Tag.Get("required") == "true",
-					MaxSelect:   tryParseInt(field.Tag.Get("maxSelect"), 0),
-					Values:      tryParseStrSlice(field.Tag.Get("values")),
-				})
-			default:
-				return nil, fmt.Errorf("unknown field type: %s\n", fieldType)
+		// Nothing else here revisits a field already in the database, so a select
+		// created by an earlier release would reject a value added since, forever.
+		if existingFields[fieldName] {
+			if fieldType == "select" {
+				widenSelect(col, fieldName, tryParseStrSlice(field.Tag.Get("values")))
 			}
+			continue
+		}
+
+		switch fieldType {
+		case "text", stringTypeStr:
+			col.Fields.Add(&core.TextField{
+				Name:                fieldName,
+				System:              field.Tag.Get("system") == "true",
+				Hidden:              field.Tag.Get("hidden") == "true",
+				Presentable:         field.Tag.Get("presentable") == "true",
+				Help:                field.Tag.Get("help"),
+				Min:                 tryParseInt(field.Tag.Get("min"), 0),
+				Max:                 tryParseInt(field.Tag.Get("max"), 0),
+				Pattern:             field.Tag.Get("pattern"),
+				AutogeneratePattern: field.Tag.Get("autogeneratePattern"),
+				Required:            field.Tag.Get("required") == "true",
+				// PrimaryKey:          field.Tag.Get("primaryKey") == "true",
+			})
+			if field.Tag.Get("primaryKey") == "true" {
+				col.Id = fieldName
+			}
+		case "number", intTypeStr, int64TypeStr, int32TypeStr, uintTypeStr, uint64TypeStr, uint32TypeStr, float64TypeStr, float32TypeStr:
+			col.Fields.Add(&core.NumberField{
+				Name:        fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				Min:         tryParseFloat64Ptr(field.Tag.Get("min"), nil),
+				Max:         tryParseFloat64Ptr(field.Tag.Get("max"), nil),
+				OnlyInt:     field.Tag.Get("onlyInt") == "true",
+				Required:    field.Tag.Get("required") == "true",
+			})
+		case "bool", boolTypeStr:
+			col.Fields.Add(&core.BoolField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				Required:    field.Tag.Get("required") == "true",
+			})
+		case "date":
+			col.Fields.Add(&core.DateField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				Min:         tryParseDateTime(field.Tag.Get("min"), types.DateTime{}),
+				Max:         tryParseDateTime(field.Tag.Get("max"), types.DateTime{}),
+				Required:    field.Tag.Get("required") == "true",
+			})
+		case "autodate":
+			col.Fields.Add(&core.AutodateField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				OnCreate:    field.Tag.Get("onCreate") == "true",
+				OnUpdate:    field.Tag.Get("onUpdate") == "true",
+			})
+		case "json":
+			col.Fields.Add(&core.JSONField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				MaxSize:     tryParseInt64(field.Tag.Get("maxSize"), 0),
+				Required:    field.Tag.Get("required") == "true",
+			})
+		case "relation":
+			col.Fields.Add(&core.RelationField{Name: fieldName,
+				System:        field.Tag.Get("system") == "true",
+				Hidden:        field.Tag.Get("hidden") == "true",
+				Presentable:   field.Tag.Get("presentable") == "true",
+				Help:          field.Tag.Get("help"),
+				Required:      field.Tag.Get("required") == "true",
+				CollectionId:  tryGetCollectionId(app, cfg, field.Tag.Get("collection")),
+				MaxSelect:     tryParseInt(field.Tag.Get("maxSelect"), 0),
+				MinSelect:     tryParseInt(field.Tag.Get("minSelect"), 0),
+				CascadeDelete: field.Tag.Get("cascadeDelete") == "true",
+			})
+		case "file":
+			col.Fields.Add(&core.FileField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				Required:    field.Tag.Get("required") == "true",
+				MaxSelect:   tryParseInt(field.Tag.Get("maxSelect"), 0),
+				MaxSize:     tryParseInt64(field.Tag.Get("maxSize"), 0),
+				Protected:   field.Tag.Get("protected") == "true",
+				MimeTypes:   tryParseStrSlice(field.Tag.Get("mimeTypes")),
+				Thumbs:      tryParseStrSlice(field.Tag.Get("thumbs")),
+			})
+		case "select":
+			col.Fields.Add(&core.SelectField{Name: fieldName,
+				System:      field.Tag.Get("system") == "true",
+				Hidden:      field.Tag.Get("hidden") == "true",
+				Presentable: field.Tag.Get("presentable") == "true",
+				Help:        field.Tag.Get("help"),
+				Required:    field.Tag.Get("required") == "true",
+				MaxSelect:   tryParseInt(field.Tag.Get("maxSelect"), 0),
+				Values:      tryParseStrSlice(field.Tag.Get("values")),
+			})
+		default:
+			return nil, fmt.Errorf("unknown field type: %s\n", fieldType)
 		}
 	}
 

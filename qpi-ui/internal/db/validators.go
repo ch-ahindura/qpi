@@ -2,6 +2,9 @@ package db
 
 import (
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -41,4 +44,14 @@ func ValidateTimeSlot(app core.App, record *core.Record) error {
 	}
 
 	return nil
+}
+
+// ValidateSelect checks value against what a select column accepts, naming that
+// list when it does not fit. A column declaring no values accepts anything.
+func ValidateSelect(app core.App, collectionName string, fieldName string, value string) error {
+	allowed := AllowedValues(app, collectionName, fieldName)
+	if len(allowed) == 0 || slices.Contains(allowed, value) {
+		return nil
+	}
+	return fmt.Errorf("%s %q is not one of %s", fieldName, value, strings.Join(allowed, ", "))
 }

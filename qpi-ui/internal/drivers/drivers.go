@@ -15,7 +15,10 @@
 // rather than a new branch.
 package drivers
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // Language is an SDK language a driver can be written in (RFC 0001 §2).
 type Language string
@@ -192,12 +195,10 @@ func (r *Registry) Events(kind Kind) []string {
 	return events
 }
 
+// Languages is every SDK language, in the order the dashboard offers them.
+var Languages = []Language{Python, TypeScript, Go}
+
 // KnownLanguage reports whether language is one of the SDK languages.
 func KnownLanguage(language Language) bool {
-	switch language {
-	case Python, TypeScript, Go:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(Languages, language)
 }

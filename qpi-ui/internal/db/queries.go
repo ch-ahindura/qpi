@@ -161,3 +161,17 @@ func FindOneByFilter(app core.App, collectionName string, dest DbModel, filter s
 
 	return dest.RefreshFromRecord(record)
 }
+
+// AllowedValues returns what a select column accepts, read from the live schema.
+// An unknown collection, or a column that is not a select, returns nil.
+func AllowedValues(app core.App, collectionName string, fieldName string) []string {
+	col, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
+		return nil
+	}
+	field, ok := col.Fields.GetByName(fieldName).(*core.SelectField)
+	if !ok {
+		return nil
+	}
+	return field.Values
+}

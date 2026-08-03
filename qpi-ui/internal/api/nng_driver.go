@@ -473,6 +473,11 @@ func toStringSlice(value any) []string {
 // key it would parse without error and leave every field at its zero value,
 // saving a blank record for a real calibration.
 func handleCalibrationResult(ctx context.Context, app core.App, qpuID string, event *Event) error {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return fmt.Errorf("cannot read config: %w", err)
+	}
+
 	var result CalibrationResultPayload
 	if err := json.Unmarshal(event.Payload, &result); err != nil {
 		return fmt.Errorf("cannot parse CalibrationResult payload: %w", err)
@@ -482,6 +487,16 @@ func handleCalibrationResult(ctx context.Context, app core.App, qpuID string, ev
 	// front of whoever is trying to work out what the chip is doing.
 	if result.Mode == "" || result.Status == "" {
 		return fmt.Errorf("CalibrationResult payload has no mode or status")
+	}
+	// Caught here rather than at the insert, where a listener error is all that is
+	// left of the report.
+	for _, field := range []struct{ name, value string }{
+		{"mode", result.Mode},
+		{"status", result.Status},
+	} {
+		if err := db.ValidateSelect(app, cfg.CollectionCalibrationResults, field.name, field.value); err != nil {
+			return fmt.Errorf("CalibrationResult: %w", err)
+		}
 	}
 
 	driverID := driverIDFromContext(ctx)
@@ -504,7 +519,7 @@ func handleCalibrationResult(ctx context.Context, app core.App, qpuID string, ev
 
 	// Close out the queued request this answers, so the driver's dispatcher
 	// stops treating it as in flight and can offer the next one.
-	if cfg, err := config.GetConfigFromApp(app); err == nil && result.JobID != "" {
+	if result.JobID != "" {
 		status := "done"
 		if result.Status == "failed" {
 			status = "failed"

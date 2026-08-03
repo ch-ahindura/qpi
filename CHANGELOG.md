@@ -670,6 +670,19 @@ routines. They now decline, so such a chip calibrates everything it can and retu
 
 ### Fixed
 
+- `qpi-ui`: **no tuner could be registered at all.** The `kind` column never gained
+  `quantify_tuner` or `qblox_tuner`, so a registration passed every check the
+  endpoint makes and then failed on the insert with `Invalid value quantify_tuner`.
+- `qpi-ui`: the schema migration added missing fields but never revisited a field
+  already there, so a select kept the values it was created with forever. Declared
+  values are now added on every start, for every collection — added only, since
+  narrowing would leave a record of a retired kind unable to save.
+- `qpi-ui`: a calibration report's `mode` and `status` went from the driver's payload
+  into two select columns with only an emptiness check, and a rejected insert
+  surfaced as an error inside the listener goroutine — hours of calibration lost to
+  a log line. Both are checked against what the column accepts, and the dispatch
+  endpoint validates `mode` the same way instead of against its own copy of the
+  list.
 - `qpi-driver`: `allxy` and `fit_chevron` assumed which direction the readout's
   magnitude moves when a qubit is excited. Nothing guarantees it: whether `|z|` rises or
   falls depends on which side of the resonator's line the readout sits, and

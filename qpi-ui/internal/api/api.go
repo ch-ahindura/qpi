@@ -625,20 +625,6 @@ func handleDriverCreate(re *core.RequestEvent) error {
 		Enabled:  enabled,
 	}
 
-	// FIXME: On a pre-existing server, this seems to fail with
-	// {
-	//     "data": {
-	//         "kind": {
-	//             "code": "validation_invalid_value",
-	//             "message": "Invalid value quantify_tuner.",
-	//             "params": {
-	//                 "value": "quantify_tuner"
-	//             }
-	//         }
-	//     },
-	//     "message": "Failed to create driver.",
-	//     "status": 500
-	// }
 	if err := saveToDb(re.App, &driver); err != nil {
 		return re.Error(http.StatusInternalServerError, "failed to create driver", err)
 	}
@@ -805,9 +791,8 @@ func handleCalibrateDispatch(re *core.RequestEvent) error {
 	if req.Mode == "" {
 		req.Mode = "full"
 	}
-	if req.Mode != "full" && req.Mode != "partial" && req.Mode != "fidelity_check" {
-		return re.Error(http.StatusBadRequest,
-			"mode must be one of full, partial, fidelity_check", nil)
+	if err := db.ValidateSelect(re.App, cfg.CollectionCalibrationRequests, "mode", req.Mode); err != nil {
+		return re.Error(http.StatusBadRequest, err.Error(), nil)
 	}
 	// A partial run with no targets would widen to a full one on the driver,
 	// taking the QPU out for hours nobody asked for.

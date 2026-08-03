@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -183,6 +184,48 @@ func TestJoinKindsNamesWhatIsAvailable(t *testing.T) {
 	for _, want := range []string{`"mock"`, `"qblox"`, `"bluefors_gen1"`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("joinKinds(KindsIn(python)) = %q, want it to contain %s", got, want)
+		}
+	}
+}
+
+// TestDriverCreate_EveryCatalogKindSaves: handleDriverCreate gates on
+// `drivers.Default`, and only the insert gates on the `kind` column.
+func TestDriverCreate_EveryCatalogKindSaves(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	defer app.Cleanup()
+
+	config.SaveConfigOnApp(app, testConfig())
+	if err := db.EnsureSchema(app); err != nil {
+		t.Fatalf("failed to ensure schema: %v", err)
+	}
+
+	qpu := db.QPU{Name: "qpu_catalog", Status: "offline", Enabled: true}
+	if err := saveToDb(app, &qpu); err != nil {
+		t.Fatalf("failed to create qpu: %v", err)
+	}
+
+	for _, kind := range append(drivers.Default.Kinds(), drivers.Custom) {
+		for _, language := range []drivers.Language{drivers.Python, drivers.TypeScript, drivers.Go} {
+			if !drivers.Default.ShipsIn(kind, language) {
+				continue
+			}
+			name := fmt.Sprintf("driver_%s_%s", kind, language)
+			driver := db.Driver{
+				Name:     name,
+				QPU:      qpu.ID,
+				Kind:     string(kind),
+				Language: string(language),
+				Events:   drivers.Default.Events(kind),
+				Token:    db.HashToken(name),
+				Status:   "offline",
+				Enabled:  true,
+			}
+			if err := saveToDb(app, &driver); err != nil {
+				t.Errorf("kind=%s language=%s: %v", kind, language, err)
+			}
 		}
 	}
 }

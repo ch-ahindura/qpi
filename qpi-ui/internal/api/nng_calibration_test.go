@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/dbx"
@@ -83,6 +84,33 @@ func TestHandleCalibrationResult_RejectsABlankReport(t *testing.T) {
 	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
 	if err := handleCalibrationResult(ctx, app, qpuRec.Id, event); err == nil {
 		t.Fatal("expected a payload with no mode or status to be rejected")
+	}
+}
+
+// TestHandleCalibrationResult_RejectsAVocabularyTheColumnLacks: the payload fills
+// two select columns, and an insert failure in the listener is only an error.
+func TestHandleCalibrationResult_RejectsAVocabularyTheColumnLacks(t *testing.T) {
+	app, _, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationResult, CalibrationResultPayload{
+		Timestamp: "2026-07-30T12:00:00.000Z",
+		Mode:      "full",
+		Status:    "aborted",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	err = handleCalibrationResult(ctx, app, qpuRec.Id, event)
+	if err == nil {
+		t.Fatal("expected an unknown status to be rejected")
+	}
+	// Both, or it says no more than the insert would have.
+	for _, want := range []string{"aborted", "partial_failure"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
 	}
 }
 
