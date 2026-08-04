@@ -432,6 +432,89 @@ def test_the_worker_runs_queued_jobs_until_the_poison_pill(tmp_path):
     assert tuner.closed is True
 
 
+class _ConfigRecordingTuner(StubTuner):
+    """StubTuner discards the config it is handed; these tests are about it."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.configs: list = []
+
+    def calibrate(self, config):
+        self.configs.append(config)
+        return super().calibrate(config)
+
+
+def test_an_edited_calibration_config_takes_effect_on_the_next_dispatch(tmp_path):
+    config = tmp_path / "cal.yml"
+    config.write_text("target_qubits: [q0]\n")
+    tuner = _ConfigRecordingTuner()
+    results = RecordingQueue()
+
+    def rewrite_then_return(items):
+        """Edit the file between the first job being taken and the second."""
+        yielded = []
+        for item in items:
+            if len(yielded) == 1:
+                config.write_text("target_qubits: [q0, q1]\n")
+            yielded.append(item)
+            yield item
+
+    class _EditingQueue:
+        def __init__(self, items):
+            self._gen = rewrite_then_return(items)
+
+        def get(self):
+            return next(self._gen)
+
+    calibrate_worker(
+        job_queue=_EditingQueue(
+            [{"job_id": "a", "mode": "full"}, {"job_id": "b", "mode": "full"}, None]
+        ),
+        result_queue=results,
+        tuner=tuner,
+        calibration_config_path=config,
+    )
+
+    assert tuner.configs[0].target_qubits == ["q0"]
+    assert tuner.configs[1].target_qubits == ["q0", "q1"], (
+        "the second calibration should have used the edited config"
+    )
+
+
+def test_a_broken_edit_fails_that_calibration_and_leaves_the_worker_alive(tmp_path):
+    """Failing the job, not carrying on: this config decides which routines run."""
+    config = tmp_path / "cal.yml"
+    config.write_text("target_qubits: [q0]\n")
+    tuner = StubTuner()
+    results = RecordingQueue()
+
+    class _BreakingQueue:
+        def __init__(self, items):
+            self._items = list(items)
+            self._taken = 0
+
+        def get(self):
+            item = self._items.pop(0)
+            self._taken += 1
+            if self._taken == 1:
+                config.write_text("routines: [not, a, mapping]\n")
+            return item
+
+    calibrate_worker(
+        job_queue=_BreakingQueue(
+            [{"job_id": "a", "mode": "full"}, {"job_id": "b", "mode": "full"}, None]
+        ),
+        result_queue=results,
+        tuner=tuner,
+        calibration_config_path=config,
+    )
+
+    assert results.items[0]["job_id"] == "a"
+    assert "no longer loads" in results.items[0]["error"]
+    # The worker survived to take the next job and shut down cleanly.
+    assert tuner.closed is True
+
+
 # --- lifecycle ----------------------------------------------------------------
 
 

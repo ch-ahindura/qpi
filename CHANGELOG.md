@@ -688,6 +688,10 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-driver`: a tuner read `calibration.yml` once, before its worker loop, so
+  changing which routines run needed a restart. It is re-read on each dispatched
+  calibration. A file that no longer parses fails *that* calibration rather than
+  running the previous routine selection for hours, and leaves the worker alive.
 - `qpi-driver`: a QPU driver read `quantify.device.yml` once, in its constructor, so
   a calibration on the same node changed nothing until someone restarted it. The
   executor now re-reads the file between jobs when it changes, applying the

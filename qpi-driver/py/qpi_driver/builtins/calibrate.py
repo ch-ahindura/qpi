@@ -22,6 +22,7 @@ from typing import Any
 from qpi_driver.builtins.registry import DeviceSpec, Operation
 from qpi_driver.events import Event, EventType
 from qpi_driver.options import Options
+from qpi_driver.reload import ConfigFile
 from qpi_driver.sdk import DEFAULT_RECV_TIMEOUT_MS, QpiDriver
 from qpi_driver.tuners import Tuner
 
@@ -352,12 +353,19 @@ def calibrate_worker(
         tuner_instance.close()
         return
 
+    watched_config = ConfigFile(Path(calibration_config_path))
+
     while True:
         try:
             job = job_queue.get()
             if job is None:  # Poison pill
                 _worker_log.info("Worker process received shutdown signal")
                 break
+            if watched_config.changed():
+                reloaded = _reload_calibration_config(watched_config, job, result_queue)
+                if reloaded is None:
+                    continue
+                config = reloaded
             _execute_calibration(job, tuner_instance, config, result_queue)
         except KeyboardInterrupt:
             break
@@ -365,6 +373,43 @@ def calibrate_worker(
             _worker_log.exception("Worker loop exception")
 
     tuner_instance.close()
+
+
+def _reload_calibration_config(
+    watched: Any,
+    job: dict[str, Any],
+    result_queue: multiprocessing.Queue,
+) -> Any:
+    """Re-read the calibration config, or fail *job* and return None.
+
+    An edited file takes effect on the next dispatch rather than at the next
+    restart. A file that will not parse fails the calibration that would have used
+    it, unlike the executor's device config, which carries on with what it has: the
+    device config holds parameters a job can still run against, while this one
+    decides *which routines run*, and silently spending hours on the previous
+    selection is worse than saying so.
+    """
+    from qpi_driver.builtins.qpu import _sanitize_exception_msg
+    from qpi_driver.tuners.base.config import CalibrationConfig
+
+    try:
+        config = CalibrationConfig.from_yaml(watched.path)
+    except Exception as exc:
+        _worker_log.exception("Failed to reload calibration config")
+        result_queue.put(
+            {
+                "job_id": job.get("job_id", "unknown"),
+                "error": (
+                    f"calibration config {watched.path} changed and no longer loads: "
+                    f"{_sanitize_exception_msg(exc)}"
+                ),
+            }
+        )
+        return None
+
+    watched.accept()
+    _worker_log.info("reloaded calibration config from %s", watched.path)
+    return config
 
 
 def _execute_calibration(
