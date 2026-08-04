@@ -84,9 +84,8 @@ qpi-driver start --operation calibrate --device quantify_tuner \
     -o calibration_config=./calibration.yml -o is_simulated=true
 ```
 
-The `sim` extra is what supplies `scqubits` and `qutip`. Without it,
-`-o is_simulated=true` fails at startup saying so, rather than part-way through a
-routine.
+The `sim` extra supplies `scqubits` and `qutip`. Without it, `-o is_simulated=true`
+fails at startup saying so.
 
 The `process` driver takes the same option, and that is the point — point both
 at the same `quantify.device.yml` and the whole node runs with no instruments:
@@ -308,12 +307,11 @@ every subsequent job reads.
   `qpi_driver.tuners.utils.persistence.restore_backup`.
 - A fitted value outside the sweep that produced it is treated as a failed fit,
   not as a new parameter.
-- **The `process` driver beside it picks the new file up on its next job**, with no
-  restart and no signal from the server — the file is the whole channel between the
-  two. A restored `.prev`, or parameters worked out by hand, arrive the same way.
-- The tuner also re-reads the file at the start of each calibration, so a chip
-  something else has moved since it started is not calibrated from stale values and
-  then overwritten with them.
+- **The `process` driver beside it picks the new file up on its next job** — no
+  restart, no signal; the file is the whole channel. A restored `.prev`, or
+  parameters worked out by hand, arrive the same way.
+- The tuner re-reads it at the start of each calibration, so a chip something else
+  moved is not calibrated from stale values and then overwritten with them.
 
 ## Adding a tuner
 

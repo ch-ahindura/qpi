@@ -160,17 +160,15 @@ dashboard to show the driver online.
 409  "tuner-1" is already connected as this QPU's calibrate driver; one per QPU
 ```
 
-One driver per role per QPU: two `process` drivers would hand the same hardware two
-schedules, and two tuners would each write the device file. It is scoped by
-*operation*, so a `quantify_tuner` refuses a `qblox_tuner` — both calibrate the same
-chip. Registering a second is fine; only connecting it while the first is live is
-not, which is what makes a standby possible.
+One driver per role per QPU: two `process` drivers would hand one chip two schedules,
+two tuners would each write the device file. Scoped by *operation*, so a
+`quantify_tuner` refuses a `qblox_tuner`. Registering a second is fine — only
+connecting it while the first is live is not, which is what makes a standby possible.
 
 If nothing is actually connected and this still appears, the named driver is holding
-its lease: disable it (`POST /api/op/drivers/toggle` with `enabled: false`), which
-releases the ports and goroutines immediately. A driver whose process died releases
-on the socket detaching, and a restarted server starts with no leases at all and
-resets every driver to `offline`, so neither leaves a QPU wedged.
+its lease: disable it (`POST /api/op/drivers/toggle`, `enabled: false`) to release the
+ports and goroutines. A dead process releases on socket detach, and a restarted server
+starts with no leases and resets every driver to `offline`.
 
 ## Running a calibration on a production node
 
@@ -207,48 +205,39 @@ means the last run failed.
 
 ## Taking a QPU out of service
 
-Two levers, and they mean different things:
+Two levers, both settable from the QPU Registry tab:
 
-- **Switched off** (`POST /api/op/qpu/toggle`, `enabled: false`) — out of service.
-  No jobs, and no calibration either.
+- **Switched off** (`POST /api/op/qpu/toggle`, `enabled: false`) — out of service. No
+  jobs, no calibration.
 - **Maintenance** (`POST /api/op/qpu/maintenance`) — being worked on. No jobs, but a
-  calibration can still be dispatched, which is usually the point of putting it
-  there. Both are settable from the QPU Registry tab.
+  calibration can still be dispatched, which is usually the point.
 
-Either way a queued job **waits** rather than failing, and a new submission is
-refused with the reason. A QPU being calibrated stops taking jobs on its own, with no
-lever needed.
+Either way a queued job waits rather than failing, and a new submission is refused
+with the reason. A QPU being calibrated stops taking jobs on its own.
 
-Drivers of that QPU are told, so a tuner stops running its own drift checks while the
-chip is under maintenance. That is cooperative — the server's own gate is what
-actually holds jobs back — and it is re-asserted whenever the state changes, so
-reconnecting a driver or restarting the server does not put a QPU back into service.
+Drivers are told, so a tuner stops its own drift checks under maintenance. That part
+is cooperative; the server's gate is what actually holds jobs back.
 
 ## What takes effect without a restart
 
-The device config is re-read when it changes on disk: by the `process` driver
-before each job, and by a tuner at the start of each calibration. So a
-calibration, a restored `.prev`, or a set of parameters worked out by hand all
-reach a running driver by the file appearing where it reads — there is no signal
-to send and nothing to restart.
+The device config is re-read when it changes on disk — by the `process` driver before
+each job, by a tuner at the start of each calibration. So a calibration, a restored
+`.prev`, or parameters worked out by hand all reach a running driver by the file
+appearing where it reads. No signal to send, nothing to restart.
 
 Two things still need one:
 
 - **A new element.** Adding a qubit or an edge is structural, not calibration. The
-  driver logs which names it did not recognise and carries on with the rest.
-- **The hardware config.** It builds the instrument coordinator and the Cluster
-  behind it, so applying a new one means closing a live connection to the rack and
-  dialling it again — and a reconnect that fails would leave the driver with no
-  coordinator and no way back, the old one already gone. The device config has
-  somewhere to fall back to; this has none, and rewiring a rack is not a runtime
-  event. A driver logs `Restart it to pick the new one up` once when the file
-  changes, so a stale hardware config is at least not a silent one.
+  driver logs the names it did not recognise and carries on with the rest.
+- **The hardware config.** It builds the instrument coordinator and the Cluster, so
+  applying a new one means redialling the rack — and a failed reconnect leaves the
+  driver with no coordinator and no way back, the old one already closed. The device
+  config can fall back to memory; this cannot. A driver logs `Restart it to pick the
+  new one up` once per change, so at least it is not silent.
 
-A config that will not parse never replaces a working one. For the device config
-the driver keeps what it has and the job proceeds; for `calibration.yml` the
-dispatched calibration is failed instead, because that file decides *which
-routines run* and spending hours on the previous selection is worse than saying
-so.
+A config that will not parse never replaces a working one. The device config keeps
+what it has and the job proceeds; a bad `calibration.yml` fails the calibration
+instead, because that file decides *which routines run*.
 
 **Retention does not apply to calibration reports.** `calibration_results` is its
 own collection, not part of the `events` log, so `eventsRetention` leaves it

@@ -91,18 +91,17 @@ exist today are just the job flow, generalised:
 | `JobResult` | driver → UI | `{ job_id, status, results }` | Updates the job, deducts QPU-seconds; `status` = completed/failed. |
 | `QPUState` | UI → driver | `{ state }` | Tells the driver its QPU is `online`, under `maintenance` or `disabled`. |
 
-`QPUState` is re-asserted on change from the dispatcher loop, not pushed from the
-endpoint that changed it: the PUSH socket lives inside that goroutine, and a
-level-triggered send needs nobody to remember what was delivered. A driver that
-reconnects, or a server that restarts, is simply told the state again — which is why
-restarting cannot bring a QPU somebody switched off back into service.
+`QPUState` is re-asserted on change from the dispatcher loop rather than pushed by
+the endpoint that changed it — the PUSH socket lives in that goroutine, and a
+level-triggered send needs nobody to remember what was delivered. So a reconnecting
+driver or a restarted server is told again, which is why restarting cannot bring a
+switched-off QPU back into service.
 
-It carries the *state* rather than a stop/go instruction because the right response
-differs by operation: a monitor should keep reporting a fridge under maintenance,
-while a tuner should stop its own drift checks and still honour a calibration
-dispatched to it. It is also cooperative — a driver can ignore it — so the
-server-side gate stays the enforcement, and this only reaches what the gate cannot:
-work a driver schedules on its own clock.
+It carries the state rather than a stop/go instruction because the right response
+differs by operation: a monitor keeps reporting a fridge under maintenance, a tuner
+stops its own drift checks but still honours a dispatched calibration. It is
+cooperative — a driver can ignore it — so the server-side gate remains the
+enforcement; this only reaches work a driver schedules on its own clock.
 
 New event types are how the framework grows: a maintainer adding, say, a cryostat
 monitoring driver (which does not exist today) would introduce its own driver→UI
@@ -165,19 +164,16 @@ failed `JobDispatch` leaves the job `pending` to be re-dispatched; the driver is
 marked offline by the pipe hook. There is no app-level queue, and any driver→UI
 event is best-effort (dropped if nothing is there to persist it).
 
-**Three states, not two.** `enabled` is admin intent and persists; `status` is
-liveness observed from the pipe hook; and the server holds a *lease* per connected
-driver — two NNG ports, two goroutines, a listener socket — which is in memory only.
-Conflating the last two is how a QPU came to be wedged by a driver nothing was
-connected to, so:
+**Three states, not two.** `enabled` is admin intent; `status` is liveness observed
+from the pipe hook; and the server holds an in-memory *lease* per connected driver —
+two NNG ports, two goroutines, a listener socket. Conflating the last two wedged a
+QPU no driver was on, so:
 
-- The lease is released when the socket detaches, when the driver is disabled, when
-  its record is deleted, and when its listener fails to bind. No grace period: the
-  port pair is stored on the record and stays reserved there, so a reconnect rebinds
-  the same two.
-- Every driver's `status` is reset to `offline` at startup. `online` is an
-  observation made by the process that held the socket; a row that survives a crash
-  is describing a server that no longer exists.
+- The lease is released on socket detach, on disable, on delete, and when the
+  listener fails to bind. No grace period: the port pair stays reserved on the
+  record, so a reconnect rebinds the same two.
+- `status` resets to `offline` at startup — `online` is an observation by the process
+  that held the socket, so a row surviving a crash describes a server that is gone.
 
 ## 6. Envelope
 
@@ -236,12 +232,11 @@ types and the kind→snippet catalog it needs. No metadata endpoint is required.
    from the token.
 
    **One driver per role per QPU.** Connect returns 409 while another driver of the
-   same *operation* is connected to that QPU: two `process` drivers would hand the
-   same hardware two schedules, and two tuners would each write the device YAML
-   (RFC 0004 §10). By operation rather than kind, so a `quantify_tuner` refuses a
-   `qblox_tuner` — they calibrate the same chip. A `custom` driver is exempt, its
-   operation being whatever its author wrote. Registration is not restricted: a
-   standby record harms nothing until it connects.
+   same *operation* is connected: two `process` drivers would hand one chip two
+   schedules, two tuners would each write the device YAML (RFC 0004 §10). By
+   operation, not kind, so a `quantify_tuner` refuses a `qblox_tuner`. `custom` is
+   exempt, its operation being whatever its author wrote. Registration is
+   unrestricted — a standby harms nothing until it connects.
 2. **Dispatch (push, unchanged).** The scheduler picks a pending job for the QPU
    and QPI-UI sends `JobDispatch{ job }` to a driver of that QPU.
 3. **Result.** The driver runs the job and emits `JobResult{ job_id, status,

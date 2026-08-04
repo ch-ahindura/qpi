@@ -498,28 +498,24 @@ POST /api/op/calibrate/dispatch    (admin-only — see §10)
 ```
 
 One calibration at a time, and the unit is **the chip, not the driver**. A second
-run delivered to a busy tuner would only queue inside the driver, where the server
-can no longer see it; and nothing stops two tuners being registered against one
-QPU, each with its own dispatcher, so a per-driver wait would let both sweep the
-same qubits and both write the device YAML — atomic per write (§10) and a mix of
-two runs afterwards. `FetchNextCalibration` therefore withholds a request while
-any request is `running` on that driver's QPU, which it reads by traversing the
-relation (`driver.qpu`) rather than denormalising it onto the request.
+run delivered to a busy tuner would queue inside the driver where the server cannot
+see it; and nothing stops two tuners on one QPU, each with its own dispatcher, so a
+per-driver wait would let both sweep the same qubits and both write the device YAML
+— whole per write (§10), a mix of two runs afterwards. `FetchNextCalibration`
+withholds while any request is `running` on that driver's QPU.
 
-Two `full` runs back to back are an ordinary thing to ask for, though: the
-endpoint takes both as `pending` and the second goes out when the first reports.
-The dispatch carries the request ID and the report echoes it back, so which report
-answers which request never depended on there being one in flight.
+Two `full` runs back to back are ordinary, though: the endpoint takes both as
+`pending` and the second goes out when the first reports. The dispatch carries the
+request ID and the report echoes it, so attribution never depended on there being
+one in flight.
 
-Serializing the queue is not the whole answer, because a tuner also calibrates on
-its own clock: `drift_check_interval` puts a `fidelity_check` on the tuner's
-internal queue without asking the server, guarded by a `threading.Event` that
-means nothing to a second process. Two things close that. A second tuner is
-refused at `/api/op/drivers/connect` while one of the same operation is connected
-to that QPU (§10) — registering one is still allowed, for a standby or a
-replacement prepared before the running one is retired. And the `QPUState` event
-(RFC 0001 §4) tells a tuner when its QPU is under maintenance, which is when it
-stops scheduling its own checks while still honouring a dispatched calibration.
+The queue is not the whole answer: `drift_check_interval` puts a `fidelity_check`
+on the tuner's own internal queue without asking the server, guarded by a
+`threading.Event` that means nothing to a second process. Two things close that. A
+second tuner is refused at `/api/op/drivers/connect` while one of the same operation
+is connected (§10) — registering one stays allowed, for a standby. And the `QPUState`
+event (RFC 0001 §4) tells a tuner when its QPU is under maintenance, which is when it
+stops scheduling its own checks while still honouring a dispatched one.
 
 #### Receiving a result
 
@@ -821,24 +817,21 @@ YAML through the filesystem and nothing else — which is the whole of the
 write-back contract, and the reason §10 treats that file as the trust boundary.
 
 The QPU driver re-reads that file between jobs when it changes, and a tuner at the
-start of each DAG walk, so a calibration reaches a driver that is already running
-without a restart — and so does a set of parameters measured or restored by hand
-and dropped in place. It is applied onto the live device rather than rebuilt around
-a new one, which is what keeps the compiler, the instrument coordinator and the
-cluster connection intact. A new *element* is structural, not calibration, and
-still needs a restart.
+start of each DAG walk, so a calibration — or parameters restored by hand — reaches a
+running driver without a restart. Applied onto the live device rather than rebuilt
+around a new one, which keeps the compiler, the coordinator and the cluster
+connection intact. A new *element* is structural, not calibration, and still needs a
+restart.
 
 The tuner re-reads for a second reason: it *writes* this file, so one calibrating
-from what it read at startup would overwrite whatever had changed since. At DAG
-start rather than per routine — a device moving mid-walk leaves a fit and the
-parameters it was measured against disagreeing.
+from startup values would overwrite whatever changed since. At DAG start rather than
+per routine — a device moving mid-walk leaves a fit and the parameters it was
+measured against disagreeing.
 
-**The hardware config does not reload.** It builds the instrument coordinator and
-the Cluster behind it, so applying a new one means closing a live connection to the
-rack and dialling it again, and a reconnect that fails leaves the driver with no
-coordinator and no way back. The device config has a fallback — the values already
-in memory — and this has none. A driver warns once when the file changes and keeps
-running on what it started with.
+**The hardware config does not reload.** It builds the coordinator and the Cluster,
+so applying a new one means redialling the rack, and a failed reconnect leaves the
+driver with no coordinator and no way back. The device config falls back to memory;
+this has nothing. A driver warns once per change and keeps running.
 
 ## 9. Verification plan
 
@@ -915,30 +908,24 @@ Three consequences:
   revertible without a second calibration run, and the operator needs to be able
   to answer "what changed" from the node itself.
 
-**The dispatch endpoint is privileged.** `POST /api/op/calibrate/dispatch` puts
-the chip under a tuner for hours and rewrites the parameters every subsequent job
-runs against. It is admin-only, as the `/api/op/*` routes around it are
-(`handleQPUToggle`, `handleDriverToggle`). It is **not** rate-limited, and neither
-are they: `--event-rate-limit` bounds a driver's inbound events on its NNG
-listener (`docs/driver/operations.md`) and nothing bounds the HTTP surface, so
-admin-only is the whole of the control. An unauthenticated or user-level trigger
-would be a denial-of-service with a plausible cover story — and a quiet one,
-since nothing holds back jobs to that QPU while the calibration runs (§11).
+**The dispatch endpoint is privileged.** `POST /api/op/calibrate/dispatch` puts the
+chip under a tuner for hours and rewrites the parameters every later job runs
+against. It is admin-only, as the `/api/op/*` routes around it are. It is **not**
+rate-limited, and neither are they: `--event-rate-limit` bounds a driver's inbound
+NNG events, not the HTTP surface, so admin-only is the whole of the control. An
+unauthenticated trigger would be a denial-of-service with a plausible cover story.
 
-**One driver per role per QPU, enforced at connect.** Two QPU drivers would hand
-the same hardware two schedules; two tuners would sweep the same qubits and each
-write the device YAML, leaving it internally valid and a mix of two calibrations.
-`/api/op/drivers/connect` returns 409 while another driver of the same operation
-is connected to that QPU — by *operation*, not kind, because a `quantify_tuner`
-and a `qblox_tuner` calibrate the same chip. Registration is not restricted: a
-standby record harms nothing until it connects.
+**One driver per role per QPU, enforced at connect.** Two QPU drivers would hand one
+chip two schedules; two tuners would each write the device YAML, leaving it valid and
+a mix of two calibrations. `/api/op/drivers/connect` returns 409 while another driver
+of the same *operation* is connected — by operation, not kind, since a
+`quantify_tuner` and a `qblox_tuner` calibrate the same chip. `custom` is exempt, its
+operation being whatever its author wrote. Registration is unrestricted: a standby
+harms nothing until it connects.
 
-A driver counts as connected only when its socket is attached **and** this server
-is dispatching to it. Either alone would wedge a QPU that no driver is on — a
-crash leaves `status` at `online`, and a server restart leaves rows claiming a
-connection this process never made. A `custom` driver is exempt: its operation is
-whatever its author wrote, so the server has no grounds to call two of them the
-same role.
+Connected means socket attached **and** this server dispatching. Either alone would
+wedge a QPU no driver is on: a crash leaves `status` at `online`, and a restart
+leaves rows claiming a connection this process never made.
 
 **Reports are not secrets, but they are inventory.** A `CalibrationResult`
 describes the chip in more detail than anything else QPI stores — per-qubit
