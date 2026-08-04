@@ -1,25 +1,22 @@
 # RFC 0001 — Driver Framework
 
 - **Status:** Implemented
-- **Author:** Martin Ahindura 
+- **Author:** Martin Ahindura
 - **Created:** 2026-07-22
 - **Touches:** `qpi-ui` (Go/PocketBase), the driver SDKs (Python today), dashboard (React)
 - **Issue:** [#25](https://github.com/sopherapps/qpi/issues/25)
 
 ## 1. The idea
 
-QPI-UI is an extended PocketBase server holding the metadata for the whole app.
-Today it talks to exactly one kind of external process — `qpi-driver`, which runs
-quantum jobs. This RFC turns that one hard-wired relationship into a small
-framework built on **events**: a superuser registers a driver in the dashboard,
-gets a token and a code snippet, and writes a driver against an SDK that mirrors
-the events QPI-UI understands. `qpi-driver` is that SDK — the library you build
-drivers with; it also ships officially maintained drivers (e.g. the QPU one) as
-optional extras.
+QPI-UI is an extended PocketBase server holding the metadata for the whole app. It
+used to talk to exactly one kind of external process — `qpi-driver`, which runs
+quantum jobs. This RFC turns that hard-wired relationship into a framework built on
+**events**: a superuser registers a driver in the dashboard, gets a token and a code
+snippet, and writes a driver against an SDK mirroring the events QPI-UI understands.
 
-The author writes **one** thing — a driver. QPI-UI already ships the server (Go)
-and UI (React) halves and the handlers for every event; the SDK gives the author
-the matching client half to fill in.
+`qpi-driver` is that SDK, and also ships official drivers (the QPU one, say) as
+extras. QPI-UI already has the server and dashboard halves and a handler for every
+event; the author writes only the client half.
 
 ## 2. Vocabulary
 
@@ -30,8 +27,6 @@ the matching client half to fill in.
 | **Event type** | One of a fixed set defined in a QPI-UI version, each with a server-side handler and a payload shape. Maintainers add more over releases. |
 | **SDK** | The base library, one per language (`python`, `typescript`, `go`), that mirrors a version's event types. You build a driver by inheriting from it. Officially maintained drivers ship as optional extras on top of it (e.g. `qpi-driver[cli,qblox]`). |
 
-QPI-UI has a handler for each event it receives; the SDK lets a driver handle events it receives and emit
-events of its own.
 
 > **Superseded in part by [RFC 0003 — Driver Extensibility](./0003-driver-extensibility.md).**
 > The framework below stands unchanged — a driver still subclasses the SDK base,
@@ -54,21 +49,15 @@ flowchart LR
 
 1. **Register** (dashboard): give the driver a name, the **QPU** it belongs to,
    its **language** (dropdown), and its **kind** — one of the known official kinds
-   (`mock`, `qiskit_aer`, `quantify`, `qblox`, …) or `CUSTOM`. (This generalises
-   today's "Executor Type" dropdown.)
-2. **Get a token + snippets.** QPI-UI shows the one-time token once, plus
-   ready-to-use setup snippets resolved from the chosen **kind × language**. For an
-   official build (e.g. `python` + `qblox`) it offers the two choices the dashboard
-   gives today plus one more: a systemd service install, a manual CLI run, and a
-   plain install-and-run for those not using systemd — each prefilled with the
-   token, address, CA fingerprint and name, and the right extra
-   (`qpi-driver[cli,qblox]`). For a pair with no official build (e.g. `go` +
-   `qblox`) or any `CUSTOM`, it shows the base install plus a stub with the handlers
-   to fill in. The kind→extra mapping and which pairs have official builds are a
-   small static catalog the dashboard already holds (it ships with QPI-UI) —
-   formalising what `qpi-driver/install-systemd.sh` does today (e.g. `qblox` →
-   `qpi-driver[cli,qblox]`, `qiskit_aer` → `[cli,aer]`, else `[cli]`) and adding
-   the language dimension.
+   (`mock`, `qiskit_aer`, `quantify`, `qblox`, …) or `CUSTOM`.
+2. **Get a token + snippets.** The token is shown once. Alongside it, setup
+   snippets resolved from the chosen **kind × language**: for an official build, a
+   systemd install, a manual CLI run and a plain install-and-run, each prefilled
+   with the token, address, CA fingerprint, name and the right extra
+   (`qpi-driver[cli,qblox]`). For a pair with no official build (`go` + `qblox`,
+   say) or any `CUSTOM`, the base install plus a stub to fill in. The kind→extra
+   mapping and which pairs are official live in a static catalog shipping with
+   QPI-UI; a kind with no dedicated extra gets plain `[cli]`.
 3. **Write the driver.** Inherit from the SDK base class, implement handlers for
    the events QPI-UI may send, and call `emit(event)` for events you send up.
 4. **Run it.** The driver connects with its token over the existing TLS-secured
@@ -142,22 +131,19 @@ Grounding, so an implementer copies rather than invents:
 - **Driver runtime** — `driver.py`: handshake → CA download → PULL loop + worker
   subprocess + result PUSH. The `Executor` ABC is the per-event logic in miniature.
 
-What changes: the dispatch/result pair generalises from "jobs only" to "typed
-events," carried by one envelope (§6). Job dispatch **stays push** — the scheduler
-still decides and QPI-UI sends `JobDispatch`; nothing about the scheduler or
-online-detection changes. `qpi-driver` becomes the **Python SDK**, and a QPU
-becomes a driver that handles `JobDispatch` and emits `JobResult`. Everything is
-additive. *(The rollout was gated behind an `EnableDriverFramework` flag. The
-framework is unconditional now and the flag has been removed.)*
+What changes: the dispatch/result pair generalises from jobs to typed events,
+carried by one envelope (§6). Job dispatch **stays push** — the scheduler still
+decides and QPI-UI sends `JobDispatch`; nothing about the scheduler or
+online-detection changes. `qpi-driver` becomes the **Python SDK**, and a QPU becomes
+a driver that handles `JobDispatch` and emits `JobResult`. All additive. *(The
+rollout was gated behind an `EnableDriverFramework` flag, since removed.)*
 
 **Packaging.** `qpi-driver` grows the same per-language layout as `qpi-client`
-(`py`, `js`, `go`), each holding that language's base SDK. Today's executors stay
-put as optional **extras** that ship ready-to-run drivers — Python keeps
-`qpi-driver[cli,qblox]`, `qpi-driver[cli,quantify]`, `[cli,aer]`, and so on, run
-exactly as they are today. The extras are opt-in: to build a new driver you depend
-on the base package alone, inherit the abstraction, and run it with your token.
-The visible change is internal (qpi-driver and qpi-ui internals, plus the new
-collections); the install-and-run experience for the official drivers is unchanged.
+(`py`, `js`, `go`), each holding that language's base SDK. The executors stay put as
+opt-in **extras** shipping ready-to-run drivers — `qpi-driver[cli,qblox]`,
+`[cli,quantify]`, `[cli,aer]` — run exactly as before. To build a new driver you
+depend on the base package alone. Nothing changes for an operator installing an
+official one.
 
 **Buffering:** unchanged from today. The database is the only durable store — a
 failed `JobDispatch` leaves the job `pending` to be re-dispatched; the driver is
@@ -191,19 +177,18 @@ dataclass client-side).
 ```
 
 `driver` is informational on the way **up** and authoritative on the way **down**.
-QPI-UI parses an inbound envelope's `driver` and then ignores it, keying everything
-off the socket the event arrived on: an event's driver is the one whose NNG port
-delivered it, which is not something a driver gets to claim (`nng_driver.go`). On an
-outbound envelope the server fills the field with the driver's **ID**. The SDKs put
-their display label there — the one `drivers/connect` returned — so it is worth
-reading as a label in a log, not as an identifier.
+QPI-UI reads an inbound envelope's `driver` and then ignores it, keying off the
+socket the event arrived on — an event's driver is the one whose NNG port delivered
+it, which is not something a driver gets to claim (`nng_driver.go`). Outbound, the
+server fills in the driver's **ID**; the SDKs put their display label there — the one
+`drivers/connect` returned — so read it as a label in a log, not an identifier.
 
 ## 7. Data model
 
 `drivers` and `qpus` stay **separate** collections; a driver points at its QPU.
 
-- **`drivers`** (new — struct in `models.go` + `ensure…` in `migrate.go` behind
-  the flag; copy `QPU`) — `name` (req), `qpu` (relation → `qpus`, **required**),
+- **`drivers`** (new — struct in `models.go` + `ensure…` in `migrate.go`, copying
+  `QPU`) — `name` (req), `qpu` (relation → `qpus`, **required**),
   `kind` (select: official kinds like `qblox`/`quantify`/`mock`/`qiskit_aer`/… or
   `custom`), `language` (select: python/typescript/go), `events` (json: the event
   types it participates in — set from the catalog for official kinds, chosen for
@@ -214,10 +199,10 @@ reading as a label in a log, not as an identifier.
   booking; no new field needed (the link lives on `drivers.qpu`).
 - **`events`** (new — the single event log, for tracing what happened) — `source`
   (driver id, or `server`), `driver` (relation), `qpu` (relation), `type`,
-  `payload` (json), `ts` (indexed), `created`. Every event is
-  recorded here; retention pruning keeps it bounded (§11). Job outcomes still land
-  in `quantum_jobs` via the `JobResult` handler, as today — `events` is the trace,
-  not the source of truth.
+  `payload` (json), `ts` (indexed), `created`. Every event is recorded here;
+  retention pruning keeps it bounded (§12). Job outcomes still land in
+  `quantum_jobs` via the `JobResult` handler — `events` is the trace, not the source
+  of truth.
 
 Event **types** are not stored — they live in code: the Go server has a handler
 per type, and the dashboard (which ships from the same version) already knows the
@@ -270,16 +255,15 @@ and no per-event ownership check to get wrong.
 
 ## 11. Implementation plan
 
-The phased implementation plan — per-phase objectives, current status, remaining
-work, definition-of-done checklists, verification commands, and recommended
-cost-effective models — is maintained separately from this RFC.
+Complete — see the status at the top. The phased plan it was built from was kept
+outside the repository.
 
 ## 12. Notes
 
-Decided in this draft: no app-level buffering (match today, §5); a single `events`
-collection logs every event for tracing, bounded by retention (§7, §11); every
-driver belongs to exactly one QPU and a QPU may have many drivers (§2, §7); the
-`events` retention window is a `qpi.config.yml` setting (e.g. `eventsRetention:
-"720h"`) with env/flag overrides and a sensible default, following the same
-precedence as existing durations like `jobTimeout` — so operators tune it per
-deployment.
+The `events` retention window is a `qpi.config.yml` setting (`eventsRetention:
+"720h"`) with env and flag overrides, following the same precedence as other
+durations like `jobTimeout`, so operators tune it per deployment.
+
+The rest of what this draft settled is stated where it applies: no app-level
+buffering (§5), one `events` collection for tracing (§7), and one QPU per driver
+with many drivers per QPU (§2, §7).
