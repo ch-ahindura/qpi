@@ -31,7 +31,8 @@ from qpi_driver.tuners.base.routines import (
     RoutineError,
 )
 from qpi_driver.tuners.routines import all_routines, routine_names
-from qpi_driver.tuners.utils.persistence import save_device_config
+from qpi_driver.reload import ConfigFile
+from qpi_driver.tuners.utils.persistence import load_into_device, save_device_config
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +84,20 @@ class Tuner(ABC):
 
     def __init__(self, name: str, **kwargs: Any) -> None:
         self.name = name
-        self._device_config_path: Path | None = None
+        self._watched_device_config: ConfigFile | None = None
+        self._device_config_path = None
+
+    # A property so that setting the path arms the watcher with it. Every tuner
+    # assigns the path in its constructor; none of them should have to remember
+    # a second line to make the reload work.
+    @property
+    def _device_config_path(self) -> Path | None:
+        return self.__path
+
+    @_device_config_path.setter
+    def _device_config_path(self, path: Path | None) -> None:
+        self.__path = path
+        self._watched_device_config = ConfigFile(path) if path is not None else None
 
     @property
     @abstractmethod
@@ -112,6 +126,7 @@ class Tuner(ABC):
 
     def calibrate(self, config: CalibrationConfig) -> CalibrationReport:
         """Walk the whole enabled DAG, then persist what it calibrated."""
+        self._refresh_device_config()
         config.validate_against(routine_names())
         config.validate_targets()
         dag = CalibrationDAG(self.routines(), config, bias=self.bias)
@@ -139,6 +154,7 @@ class Tuner(ABC):
         check passes recalibrates nothing and says so, which is the cheapest
         possible outcome and was not previously reachable.
         """
+        self._refresh_device_config()
         config.validate_against(routine_names())
         config.validate_targets()
         narrowed = self._narrow_to(qubits, config)
@@ -173,6 +189,7 @@ class Tuner(ABC):
         payload shape it does for every other mode; :meth:`CalibrationReport.fidelities`
         is what reduces it to the per-target numbers a threshold is compared with.
         """
+        self._refresh_device_config()
         config.validate_against(routine_names())
         config.validate_targets()
         routines = self.routines()
@@ -213,6 +230,41 @@ class Tuner(ABC):
             monitoring=config.monitoring,
             routine_timeout_s=config.routine_timeout_s,
         )
+
+    def _refresh_device_config(self) -> None:
+        """Re-read the device config if it changed since this tuner last looked.
+
+        At the start of a DAG, never between routines: a routine reading a device
+        that moved underneath it mid-walk is worse than a stale parameter, because
+        the fit and the parameters it was measured against no longer agree.
+
+        Something else may have written the file — a hand edit, a restore of
+        yesterday's parameters — and this tuner would otherwise calibrate from what
+        it read at startup and then write that back over them.
+        """
+        if self._watched_device_config is None:
+            return
+        if not self._watched_device_config.changed():
+            return
+
+        path = self._watched_device_config.path
+        try:
+            unknown = load_into_device(self.device, path)
+        except Exception:
+            log.exception(
+                "could not reload %s; calibrating from what is in memory", path
+            )
+            return
+
+        self._watched_device_config.accept()
+        if unknown:
+            log.warning(
+                "%s names %s, which this device does not have; a new element needs a "
+                "restart",
+                path,
+                ", ".join(unknown),
+            )
+        log.info("reloaded device parameters from %s before calibrating", path)
 
     def _persist(self, report: CalibrationReport) -> None:
         """Write the calibrated device back, unless there is nothing to write.

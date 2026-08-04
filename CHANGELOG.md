@@ -688,6 +688,12 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-driver`: a tuner also re-reads its device config at the start of each DAG walk
+  — full, partial and drift check alike. Something else may have moved the chip since
+  it started (a hand edit, a restore), and it would otherwise calibrate from what it
+  read at startup and write that back over them. At DAG start, never between
+  routines: a device moving mid-walk desynchronises a fit from the parameters it was
+  measured against.
 - `qpi-driver`: a tuner read `calibration.yml` once, before its worker loop, so
   changing which routines run needed a restart. It is re-read on each dispatched
   calibration. A file that no longer parses fails *that* calibration rather than

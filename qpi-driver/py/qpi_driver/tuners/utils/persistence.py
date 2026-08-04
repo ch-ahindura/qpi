@@ -37,6 +37,7 @@ from qpi_driver.tuners.base.device import (
     element_names,
     parameters_of,
     submodules_of,
+    write,
 )
 
 log = logging.getLogger(__name__)
@@ -125,6 +126,55 @@ def _serialise_parameters(owner: Any) -> dict[str, Any]:
         ):
             values[name] = list(value)
     return values
+
+
+def load_into_device(device: Any, path: Path) -> list[str]:
+    """Apply the calibration at *path* onto a device already built — the inverse
+    of :func:`serialise_device`, and generic over both schedulers for the same
+    reason it is.
+
+    In place rather than rebuilt, so the compiler, the instrument coordinator and
+    qblox's hardware agent keep pointing at the same device object.
+
+    Returns the names *path* carries that the device does not have. Those are
+    structural — a new qubit is not a calibration — so they are reported rather
+    than raised, leaving the caller to log and proceed with what did apply.
+    """
+    with open(path, "r") as file:
+        config = yaml.safe_load(file) or {}
+
+    unknown: list[str] = []
+    for name, data in config.items():
+        component = _component_by_name(device, name)
+        if component is None:
+            unknown.append(name)
+            continue
+        _apply_serialised(component, data or {})
+    return unknown
+
+
+def _component_by_name(device: Any, name: str) -> Any:
+    if name in element_names(device):
+        return device.get_element(name)
+    if name in edge_names(device):
+        return device.get_edge(name)
+    return None
+
+
+def _apply_serialised(component: Any, data: dict[str, Any]) -> None:
+    """Write one component's parameters and submodules, skipping the structural."""
+    for key, value in data.items():
+        if key in _UNCALIBRATED:
+            continue
+        if isinstance(value, dict):
+            submodule = submodules_of(component).get(key)
+            if submodule is not None:
+                _apply_serialised(submodule, value)
+            continue
+        try:
+            write(component, key, value)
+        except Exception:  # noqa: BLE001 - a parameter the device will not take
+            log.debug("skipping %s: device would not accept it", key)
 
 
 def save_device_config(device: Any, path: Path, *, keep_backup: bool = True) -> None:

@@ -232,6 +232,70 @@ def test_a_failed_calibration_does_not_touch_the_device_config(quantify_tuner):
     assert quantify_tuner._device_config_path.read_text() == before
 
 
+def test_a_device_config_changed_under_a_tuner_is_applied_to_the_live_device(
+    quantify_tuner,
+):
+    """Another tuner, or a hand edit, may have moved the chip since startup.
+
+    Without this the tuner calibrates from what it read at startup and then writes
+    that back over whatever changed.
+    """
+    import yaml
+
+    from qpi_driver.tuners.base.device import read_path
+
+    path = quantify_tuner._device_config_path
+    config = yaml.safe_load(path.read_text())
+    config["q0"]["clock_freqs"]["f01"] = 5.111e9
+    path.write_text(yaml.safe_dump(config))
+
+    quantify_tuner._refresh_device_config()
+
+    element = quantify_tuner.device.get_element("q0")
+    assert read_path(element, "clock_freqs.f01") == 5.111e9
+
+
+def test_an_unreadable_device_config_leaves_a_tuner_calibrating_from_memory(
+    quantify_tuner,
+):
+    from qpi_driver.tuners.base.device import read_path
+
+    path = quantify_tuner._device_config_path
+    before = read_path(quantify_tuner.device.get_element("q0"), "clock_freqs.f01")
+    path.write_text("q0: {clock_freqs: {f01: [unclosed\n")
+
+    quantify_tuner._refresh_device_config()
+
+    element = quantify_tuner.device.get_element("q0")
+    assert read_path(element, "clock_freqs.f01") == before
+
+
+def test_every_dag_entry_point_refreshes_before_it_walks(quantify_tuner, monkeypatch):
+    """Raising from the refresh proves each entry point calls it, and calls it first.
+
+    All three are DAG walks over different subsets, so a refresh wired into only
+    one of them would leave a partial recalibration reading a stale device.
+    """
+    from qpi_driver.tuners.base.config import CalibrationConfig
+
+    class _Fired(Exception):
+        pass
+
+    def explode(self):
+        raise _Fired
+
+    monkeypatch.setattr(type(quantify_tuner), "_refresh_device_config", explode)
+    config = CalibrationConfig(target_qubits=["q0"])
+
+    for call in (
+        lambda: quantify_tuner.calibrate(config),
+        lambda: quantify_tuner.recalibrate(["q0"], config),
+        lambda: quantify_tuner.check_fidelity(config),
+    ):
+        with pytest.raises(_Fired):
+            call()
+
+
 def test_a_write_back_round_trips_through_the_real_loader(quantify_tuner):
     """What a tuner writes, the process driver beside it has to be able to read."""
     from qpi_driver.compat.quantify import Instrument
