@@ -61,6 +61,10 @@ func main() {
 			}
 
 			cfg.UpdateActiveTheme(theme)
+
+			if err := api.MarkEveryDriverOffline(e.App); err != nil {
+				return err
+			}
 			return nil
 		},
 	})
@@ -110,6 +114,19 @@ func main() {
 		Func: db.RegisterCollectionHooks(app, db.CollectionHookMap{
 			config.DefaultThemesCollection: db.OnThemeDelete,
 		}),
+	})
+
+	// A deleted driver's goroutines and listener would otherwise run forever
+	// against an id that no longer exists, holding a port pair no record claims
+	// any more: findFreePorts skips it, because its probe finds the zombie still
+	// bound, so the pair is simply lost from the range. Bound here rather than in
+	// db's hook map because releasing the lease lives in api, and db must not
+	// import it.
+	app.OnRecordAfterDeleteSuccess().Bind(&hook.Handler[*core.RecordEvent]{
+		Func: func(e *core.RecordEvent) error {
+			api.ReleaseLeaseIfDriver(e.App, e.Record)
+			return e.Next()
+		},
 	})
 
 	// For requests

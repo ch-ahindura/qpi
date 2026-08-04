@@ -68,6 +68,54 @@ func StartDriverDistribution(app core.App, cfg *config.AppConfig, driverID, qpuI
 	}
 }
 
+// MarkEveryDriverOffline resets every driver's status at startup.
+//
+// `online` is an observation made by the process that held the socket. A server
+// that has just started holds none, so any row still claiming a connection is
+// describing a server that no longer exists — and left alone it blocks the
+// one-per-role check on a QPU nothing is connected to.
+func MarkEveryDriverOffline(app core.App) error {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return err
+	}
+
+	records, err := app.FindRecordsByFilter(
+		cfg.CollectionDrivers, "status != 'offline'", "+created", 0, 0,
+	)
+	if err != nil {
+		// The collection does not exist with the driver framework off.
+		return nil
+	}
+
+	for _, record := range records {
+		record.Set("status", "offline")
+		if err := app.Save(record); err != nil {
+			log.Printf("[QPi] could not mark driver %s offline at startup: %v", record.Id, err)
+		}
+	}
+	if len(records) > 0 {
+		log.Printf("[QPi] marked %d driver(s) offline at startup", len(records))
+	}
+	return nil
+}
+
+// ReleaseLeaseIfDriver releases record's lease when record is a driver, and does
+// nothing otherwise. Bound to the delete hook: a driver's goroutines and listener
+// would otherwise outlive every trace of it.
+func ReleaseLeaseIfDriver(app core.App, record *core.Record) {
+	if record == nil {
+		return
+	}
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return
+	}
+	if cfg.GetCollectionName(record.Collection().Name) == config.DefaultDriversCollection {
+		StopDriverDistribution(record.Id)
+	}
+}
+
 // isDispatching reports whether this server currently holds goroutines for
 // driverID. Only handleDriverConnect adds to activeDrivers, so an entry means a
 // driver connected during this process's lifetime — a server restart leaves the
@@ -122,12 +170,21 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		case mangos.PipeEventDetached:
 			log.Printf("[DriverDispatcher %s] driver disconnected: %s", driverID, pipe.Address())
 			markDriverStatus(app, cfg, driverID, qpuID, "offline")
+			// Released now rather than after a grace period. The port pair lives
+			// on the driver's record and findFreePorts keeps it reserved there,
+			// so a reconnect rebinds the same two and nothing is gained by
+			// holding the goroutines open.
+			StopDriverDistribution(driverID)
 		}
 	})
 
 	addr := l.Address()
 	if err := l.Listen(); err != nil {
 		log.Printf("[DriverDispatcher %s] listen error on %s: %v", driverID, addr, err)
+		// The lease was taken before this goroutine ran, and connect has already
+		// answered 200. Without releasing it, StartDriverDistribution would treat
+		// this driver as served and never retry the bind.
+		StopDriverDistribution(driverID)
 		return
 	}
 	log.Printf("[DriverDispatcher %s] PUSH listening on %s", driverID, addr)

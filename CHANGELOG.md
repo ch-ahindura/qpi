@@ -694,6 +694,16 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   parameters onto the live device — which also means a calibration done by hand
   takes effect by dropping the file in place. A new element is structural and still
   needs a restart.
+- `qpi-ui`: a driver's goroutines, listener socket and NNG port pair were released
+  only when an admin disabled it. A disconnect left them running, a deleted record
+  left them running against an id that no longer existed, and a failed `Listen` left
+  the driver marked as served with nothing serving it. All four now release, and
+  releasing needs no grace period: the port pair stays on the record, where
+  `findFreePorts` keeps it reserved, so a reconnect rebinds the same two.
+- `qpi-ui`: every driver is marked `offline` at startup. `online` is an observation
+  made by the process holding the socket, so a row surviving a crash or restart was
+  claiming a connection to a server that no longer existed — and blocked the next
+  driver for that QPU.
 - `qpi-ui`: `/api/op/drivers/connect` now returns 409 while another driver of the
   same operation is connected to that QPU. Two QPU drivers would hand the same
   hardware two schedules; two tuners would each write the device YAML. Scoped by
