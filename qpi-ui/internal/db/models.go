@@ -755,9 +755,15 @@ type CalibrationResult struct {
 // one silently is the worst failure available. Queueing it here means it
 // survives a restart, can be requeued on a send error exactly as a job is, and
 // runs when the driver reconnects rather than being dropped.
+// CalibrationRequest is one queued calibration (RFC 0004 §6.8).
+//
+// `qpu` is the driver's QPU, copied here at create. It is what lets the job
+// scheduler ask "is this chip being calibrated" in one filter — the alternative,
+// traversing `driver.qpu`, is a join on the dispatcher's per-second poll.
 type CalibrationRequest struct {
 	ID           string `json:"id" db:"id"`
 	Driver       string `json:"driver" db:"driver" type:"relation" required:"true" maxSelect:"1" collection:"drivers"`
+	QPU          string `json:"qpu" db:"qpu" type:"relation" maxSelect:"1" collection:"qpus"`
 	Mode         string `json:"mode" db:"mode" type:"select" required:"true" maxSelect:"1" values:"full,partial,fidelity_check"`
 	TargetQubits any    `json:"target_qubits" db:"target_qubits" type:"json"`
 	TargetEdges  any    `json:"target_edges" db:"target_edges" type:"json"`
@@ -843,6 +849,7 @@ func (cr *CalibrationRequest) ToRecord(app core.App) (*core.Record, error) {
 		return nil, err
 	}
 	record.Set("driver", cr.Driver)
+	record.Set("qpu", cr.QPU)
 	record.Set("mode", cr.Mode)
 	record.Set("status", cr.Status)
 	record.Set("requested_by", cr.RequestedBy)
@@ -872,6 +879,7 @@ func (cr *CalibrationRequest) RefreshFromRecord(record *core.Record) error {
 	}
 	cr.ID = record.Id
 	cr.Driver = record.GetString("driver")
+	cr.QPU = record.GetString("qpu")
 	cr.Mode = record.GetString("mode")
 	cr.Status = record.GetString("status")
 	cr.RequestedBy = record.GetString("requested_by")

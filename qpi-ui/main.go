@@ -134,6 +134,7 @@ func main() {
 		Func: api.RegisterRequestHooks(app, api.RequestHookMap{
 			config.DefaultTimeSlotsCollection:       api.OnTimeSlotCreateRequest,
 			config.DefaultQPUTimeRequestsCollection: api.OnQPUTimeRequestCreateRequest,
+			config.DefaultQuantumJobsCollection:     api.OnQuantumJobCreateRequest,
 		}),
 	})
 

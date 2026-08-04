@@ -2,10 +2,12 @@ package api
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	"qpi/internal/config"
 	"qpi/internal/db"
+	"qpi/internal/scheduler"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -28,6 +30,27 @@ func RegisterRequestHooks(app core.App, hooks RequestHookMap) func(e *core.Recor
 }
 
 // OnTimeSlotCreateRequest occurs when a request is made to create a time slot.
+// OnQuantumJobCreateRequest refuses a job aimed at a QPU that is not taking any.
+//
+// Submission is refused as well as dispatch, and the two are not alternatives. A
+// job accepted against a switched-off QPU sits `pending` with no explanation for as
+// long as the QPU is off, and the user finds out by waiting; refusing here, naming
+// the reason, is the honest answer. Dispatch is still gated because submission-time
+// state says nothing about the state minutes later (RFC 0004 §6.8).
+//
+// A job already accepted is not failed retroactively — it waits — so a short
+// maintenance does not destroy a queue.
+func OnQuantumJobCreateRequest(e *core.RecordRequestEvent) error {
+	qpuID := e.Record.GetString("qpu_target")
+	if qpuID == "" {
+		return e.Next()
+	}
+	if reason := scheduler.QPUUnavailable(e.App, qpuID); reason != "" {
+		return e.Error(http.StatusConflict, reason, nil)
+	}
+	return e.Next()
+}
+
 func OnTimeSlotCreateRequest(e *core.RecordRequestEvent) error {
 	if e.HasSuperuserAuth() {
 		return e.Next()

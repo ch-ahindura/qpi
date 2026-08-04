@@ -25,6 +25,10 @@ func FetchNextJob(app core.App, qpuID string) *db.QuantumJob {
 		return nil
 	}
 
+	if reason := QPUUnavailable(app, qpuID); reason != "" {
+		return nil
+	}
+
 	now := lib.GetUtcNow()
 
 	// Is there an active time slot right now?
@@ -91,6 +95,60 @@ func recordToQuantumJob(record *core.Record) *db.QuantumJob {
 	return &job
 }
 
+// QPUUnavailable says why qpuID is not taking jobs, or "" when it is.
+//
+// Three reasons, and the message is the reason: a user told only that their job is
+// queued learns nothing, and an operator looking at an idle queue has to guess
+// between a switched-off QPU, one under maintenance, and a calibration in progress.
+//
+// Read by both the dispatcher and job submission. The dispatcher is the one that
+// must not be skipped: a job accepted while the QPU was online must not run once it
+// goes into maintenance, or once a calibration starts, a second later.
+func QPUUnavailable(app core.App, qpuID string) string {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return ""
+	}
+
+	qpu, err := app.FindRecordById(cfg.CollectionQPUs, qpuID)
+	if err != nil {
+		// No QPU to be unavailable. A job naming one that does not exist fails
+		// elsewhere, on its relation.
+		return ""
+	}
+	if !qpu.GetBool("enabled") {
+		return "this QPU is switched off"
+	}
+	if qpu.GetString("status") == "maintenance" {
+		return "this QPU is under maintenance"
+	}
+	if CalibrationRunningOn(app, qpuID) {
+		return "this QPU is being calibrated"
+	}
+	return ""
+}
+
+// CalibrationRunningOn reports whether a calibration is in flight on qpuID.
+//
+// Read from the request's own `qpu` rather than by traversing `driver.qpu`: this is
+// asked on every dispatcher tick, by both queues.
+func CalibrationRunningOn(app core.App, qpuID string) bool {
+	if qpuID == "" {
+		return false
+	}
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return false
+	}
+	running, _ := app.FindRecordsByFilter(
+		cfg.CollectionCalibrationRequests,
+		"status = 'running' && qpu = {:qpu}",
+		"+created", 1, 0,
+		dbx.Params{"qpu": qpuID},
+	)
+	return len(running) > 0
+}
+
 // FetchNextCalibration returns the oldest pending calibration queued for
 // driverID, or nil when there is none or one is already running on its QPU
 // (RFC 0004 §6.8).
@@ -112,13 +170,7 @@ func FetchNextCalibration(app core.App, driverID string) *db.CalibrationRequest 
 		return nil
 	}
 
-	running, _ := app.FindRecordsByFilter(
-		cfg.CollectionCalibrationRequests,
-		"status = 'running' && driver.qpu = {:qpu}",
-		"+created", 1, 0,
-		dbx.Params{"qpu": driver.GetString("qpu")},
-	)
-	if len(running) > 0 {
+	if CalibrationRunningOn(app, driver.GetString("qpu")) {
 		return nil
 	}
 

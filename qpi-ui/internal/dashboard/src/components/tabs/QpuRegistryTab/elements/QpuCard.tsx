@@ -9,10 +9,23 @@ interface Props {
   onDelete: (id: string) => Promise<void>;
 }
 
+// A QPU under maintenance is not offline: it is being worked on, and a
+// calibration can still be dispatched to it. Drawing both red hid the difference.
+const STATUS_PILL: Record<QPU["status"], string> = {
+  online: "bg-green-500/10 border-green-500/20 text-green-400",
+  maintenance: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+  offline: "bg-red-500/10 border-red-500/20 text-red-400",
+};
+
+const STATUS_DOT: Record<QPU["status"], string> = {
+  online: "bg-green-500",
+  maintenance: "bg-amber-500",
+  offline: "bg-red-500",
+};
+
 export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const isOnline = qpu.status === "online";
 
   const handleToggle = async () => {
     try {
@@ -56,13 +69,11 @@ export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
             </div>
             <span
               className={`px-2 py-0.5 border rounded-full text-[10px] uppercase font-semibold flex items-center gap-1 ${
-                isOnline
-                  ? "bg-green-500/10 border-green-500/20 text-green-400"
-                  : "bg-red-500/10 border-red-500/20 text-red-400"
+                STATUS_PILL[qpu.status] ?? STATUS_PILL.offline
               }`}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-green-500" : "bg-red-500"}`}
+                className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[qpu.status] ?? STATUS_DOT.offline}`}
               />
               {qpu.status}
             </span>
@@ -95,7 +106,7 @@ export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
 
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500 dark:text-zinc-400">
-                Driver Enable Control
+                Service
               </span>
               <button
                 onClick={handleToggle}
@@ -106,7 +117,7 @@ export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
                 }`}
               >
                 <Power className="w-3.5 h-3.5" />
-                {qpu.enabled ? "Online (Enabled)" : "Offline (Disabled)"}
+                {qpu.enabled ? "In service" : "Switched off"}
               </button>
             </div>
           </div>

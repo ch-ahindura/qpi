@@ -856,8 +856,17 @@ func handleCalibrateDispatch(re *core.RequestEvent) error {
 		return re.Error(http.StatusInternalServerError, "failed to look up driver", err)
 	}
 
+	// Maintenance is the state a chip is in *while* someone works on it, so a
+	// calibration is exactly what it should still accept. Switched off is not: that
+	// QPU is out of service, and a calibration would put it back on the air.
+	var qpu db.QPU
+	if err := db.FindOne(re.App, cfg.CollectionQPUs, driver.QPU, &qpu); err == nil && !qpu.Enabled {
+		return re.Error(http.StatusConflict, "this QPU is switched off", nil)
+	}
+
 	request := &db.CalibrationRequest{
 		Driver:       req.DriverID,
+		QPU:          driver.QPU,
 		Mode:         req.Mode,
 		TargetQubits: req.TargetQubits,
 		TargetEdges:  req.TargetEdges,

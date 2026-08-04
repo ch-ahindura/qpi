@@ -8,7 +8,10 @@ export interface User {
 export interface QPU {
   id: string;
   name: string;
-  status: "online" | "offline";
+  // The same three the server's select allows. `maintenance` was missing here
+  // while the column accepted it, so the dashboard could not render a state it
+  // was already able to receive.
+  status: "online" | "offline" | "maintenance";
   nng_command_port: number;
   nng_result_port: number;
   enabled: boolean;

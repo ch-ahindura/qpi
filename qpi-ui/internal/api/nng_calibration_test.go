@@ -175,11 +175,11 @@ func TestFetchNextCalibration_ReturnsTheOldestPending(t *testing.T) {
 // TestFetchNextCalibration_WaitsWhileOneIsRunning proves a second calibration is
 // not offered while the first is in flight — queued, not refused (RFC 0004 §6.8).
 func TestFetchNextCalibration_WaitsWhileOneIsRunning(t *testing.T) {
-	app, _, driverRec, _ := seedDriverForEvents(t)
+	app, _, driverRec, qpuRec := seedDriverForEvents(t)
 
 	for _, status := range []string{"running", "pending"} {
 		if err := saveToDb(app, &db.CalibrationRequest{
-			Driver: driverRec.Id, Mode: "full", Status: status,
+			Driver: driverRec.Id, QPU: qpuRec.Id, Mode: "full", Status: status,
 		}); err != nil {
 			t.Fatalf("seed request: %v", err)
 		}
@@ -210,12 +210,12 @@ func TestFetchNextCalibration_WaitsWhileAnotherTunerHasTheChip(t *testing.T) {
 	}
 
 	if err := saveToDb(app, &db.CalibrationRequest{
-		Driver: other.Id, Mode: "full", Status: "running",
+		Driver: other.Id, QPU: qpuRec.Id, Mode: "full", Status: "running",
 	}); err != nil {
 		t.Fatalf("seed running request: %v", err)
 	}
 	if err := saveToDb(app, &db.CalibrationRequest{
-		Driver: driverRec.Id, Mode: "full", Status: "pending",
+		Driver: driverRec.Id, QPU: qpuRec.Id, Mode: "full", Status: "pending",
 	}); err != nil {
 		t.Fatalf("seed pending request: %v", err)
 	}
@@ -252,12 +252,12 @@ func TestFetchNextCalibration_IgnoresAnotherQPUsTuner(t *testing.T) {
 	}
 
 	if err := saveToDb(app, &db.CalibrationRequest{
-		Driver: other.Id, Mode: "full", Status: "running",
+		Driver: other.Id, QPU: otherQPU.Id, Mode: "full", Status: "running",
 	}); err != nil {
 		t.Fatalf("seed running request: %v", err)
 	}
 	if err := saveToDb(app, &db.CalibrationRequest{
-		Driver: driverRec.Id, Mode: "full", Status: "pending",
+		Driver: driverRec.Id, QPU: driverRec.GetString("qpu"), Mode: "full", Status: "pending",
 	}); err != nil {
 		t.Fatalf("seed pending request: %v", err)
 	}

@@ -381,7 +381,46 @@ func ensureCalibrationRequestsCollection(app core.App, cfg *config.AppConfig) er
 			indexName, cfg.CollectionCalibrationRequests))
 	}
 
-	return app.Save(col)
+	// (qpu, status) is what the job scheduler asks on every tick.
+	qpuIndex := fmt.Sprintf("idx_%s_qpu_status", cfg.CollectionCalibrationRequests)
+	if !hasIndex(col, qpuIndex) {
+		col.Indexes = append(col.Indexes, fmt.Sprintf(
+			"CREATE INDEX `%s` ON `%s` (`qpu`, `status`)",
+			qpuIndex, cfg.CollectionCalibrationRequests))
+	}
+
+	if err := app.Save(col); err != nil {
+		return err
+	}
+	return backfillCalibrationRequestQPUs(app, cfg)
+}
+
+// backfillCalibrationRequestQPUs fills `qpu` on rows created before the field
+// existed, from the driver each names.
+//
+// A row left blank would be invisible to the per-QPU checks, so a calibration
+// already `running` across an upgrade would stop blocking jobs and stop blocking a
+// second calibration — the two things the field was added to do.
+func backfillCalibrationRequestQPUs(app core.App, cfg *config.AppConfig) error {
+	records, err := app.FindRecordsByFilter(
+		cfg.CollectionCalibrationRequests, "qpu = ''", "+created", 0, 0,
+	)
+	if err != nil || len(records) == 0 {
+		return nil
+	}
+
+	for _, record := range records {
+		driver, err := app.FindRecordById(cfg.CollectionDrivers, record.GetString("driver"))
+		if err != nil {
+			continue
+		}
+		record.Set("qpu", driver.GetString("qpu"))
+		if err := app.Save(record); err != nil {
+			log.Printf("[QPI] could not backfill qpu on calibration request %s: %v", record.Id, err)
+		}
+	}
+	log.Printf("[QPI] backfilled qpu on %d calibration request(s)", len(records))
+	return nil
 }
 
 // hasIndex reports whether the collection already declares an index with the
