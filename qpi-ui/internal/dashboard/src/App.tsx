@@ -44,7 +44,7 @@ export const App: React.FC = () => {
 
   // Data collections
   const [qpus, setQpus] = useState<QPU[]>([]);
-  // QPU id to the server's reason it is not taking jobs. Served rather than
+  // QPU name to the server's reason it is not taking jobs. Served rather than
   // derived here: three states produce it and one author is enough.
   const [qpuUnavailable, setQpuUnavailable] = useState<Record<string, string>>(
     {},
@@ -128,13 +128,14 @@ export const App: React.FC = () => {
     }
 
     try {
-      const rows = await pb.send<{ id: string; reason?: string }[]>(
-        "/api/op/qpus/availability",
-        { method: "GET" },
-      );
+      const rows = await pb.send<
+        { name: string; available: boolean; reason?: string }[]
+      >("/api/qpus/availability", { method: "GET" });
       setQpuUnavailable(
         Object.fromEntries(
-          (rows ?? []).map((row) => [row.id, row.reason ?? ""]),
+          (rows ?? [])
+            .filter((row) => !row.available)
+            .map((row) => [row.name, row.reason ?? ""]),
         ),
       );
     } catch (err) {

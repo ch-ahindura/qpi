@@ -75,7 +75,6 @@ func RegisterRoutes(e *core.ServeEvent, dashboardFS fs.FS) {
 	e.Router.POST("/api/op/qpus/create", handleQPUCreate)
 	e.Router.POST("/api/op/qpu/toggle", handleQPUToggle)
 	e.Router.POST("/api/op/qpu/maintenance", handleQPUMaintenance)
-	e.Router.GET("/api/op/qpus/availability", handleQPUAvailability)
 
 	// Driver routes
 	e.Router.POST("/api/op/drivers/create", handleDriverCreate)
@@ -92,6 +91,8 @@ func RegisterRoutes(e *core.ServeEvent, dashboardFS fs.FS) {
 	// QPU discovery routes (public — no auth required)
 	e.Router.GET("/api/qpus", handleQPUList)
 	e.Router.GET("/api/qpus/{name}", handleQPUGet)
+	e.Router.GET("/api/qpus/availability", handleQPUAvailabilityList)
+	e.Router.GET("/api/qpus/{name}/availability", handleQPUAvailability)
 
 	// API token CRUD routes (owner-only)
 	e.Router.POST("/api/tokens", handleTokenCreate)
@@ -605,30 +606,6 @@ func handleQPUMaintenance(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, resp)
 }
 
-// handleQPUAvailability handles GET /api/op/qpus/availability — why each QPU is not
-// taking jobs, for the QPUs that are not.
-//
-// Served rather than derived in the dashboard so the three reasons have one author.
-func handleQPUAvailability(re *core.RequestEvent) error {
-	cfg, err := config.GetConfigFromApp(re.App)
-	if err != nil {
-		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
-	}
-
-	records, err := re.App.FindRecordsByFilter(cfg.CollectionQPUs, "id != ''", "+created", 0, 0)
-	if err != nil {
-		return re.Error(http.StatusInternalServerError, "failed to list QPUs", err)
-	}
-
-	unavailable := make([]QPUAvailability, 0, len(records))
-	for _, record := range records {
-		if reason := scheduler.QPUUnavailable(re.App, record.Id); reason != "" {
-			unavailable = append(unavailable, QPUAvailability{ID: record.Id, Reason: reason})
-		}
-	}
-	return re.JSON(http.StatusOK, unavailable)
-}
-
 // handleDriverCreate creates a new driver record (admin-only), generating a
 // random token and returning it, plus the kind×language setup snippets, once
 // (RFC 0001 §3). The hashed token is stored. POST /api/op/drivers/create
@@ -971,6 +948,69 @@ func handleQPUList(re *core.RequestEvent) error {
 	}
 
 	return re.JSON(http.StatusOK, qpus)
+}
+
+// handleQPUAvailabilityList handles GET /api/qpus/availability — every QPU's
+// availability in one response.
+//
+// A caller rendering a list needs all of them, and asking per QPU is one request
+// per row. Derived on read rather than stored on the record: the answer is a
+// function of `enabled`, `status` and whether a calibration is running, so a copy
+// on the record would need updating from four places and would be wrong whenever
+// one of them was missed.
+func handleQPUAvailabilityList(re *core.RequestEvent) error {
+	cfg, err := config.GetConfigFromApp(re.App)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
+	}
+
+	sort, skip, limit := getPaginationParams(re, "+name")
+	var qpus []db.QPU
+	if err := db.FindMany(re.App, cfg.CollectionQPUs, &qpus, "", sort, limit, skip); err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to query QPUs", err)
+	}
+
+	rows := make([]QPUAvailability, 0, len(qpus))
+	for _, qpu := range qpus {
+		reason := scheduler.QPUUnavailable(re.App, qpu.ID)
+		rows = append(rows, QPUAvailability{
+			Name: qpu.Name, Available: reason == "", Reason: reason,
+		})
+	}
+	return re.JSON(http.StatusOK, rows)
+}
+
+// handleQPUAvailability handles GET /api/qpus/{name}/availability — whether this
+// QPU is taking jobs, and if not, why.
+//
+// Discovery rather than an operation, so it sits with the public QPU routes: a
+// client deciding where to send a job needs it, and it says nothing about the chip
+// that /api/qpus does not already say about its status. It is not under /api/op,
+// where every route is superuser-only.
+//
+// Served rather than derived by each caller so the three reasons have one author.
+func handleQPUAvailability(re *core.RequestEvent) error {
+	cfg, err := config.GetConfigFromApp(re.App)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
+	}
+
+	// By name, which is what the route says. The sibling GET /api/qpus/{name}
+	// passes its path value to FindOne, which resolves a record *id* — so it
+	// answers only for callers who pass an id. Not copied here.
+	var qpu db.QPU
+	err = db.FindOneByFilter(re.App, cfg.CollectionQPUs, &qpu, "name = {:name}",
+		dbx.Params{"name": re.Request.PathValue("name")})
+	if err != nil {
+		return re.Error(http.StatusNotFound, "QPU not found", err)
+	}
+
+	reason := scheduler.QPUUnavailable(re.App, qpu.ID)
+	return re.JSON(http.StatusOK, QPUAvailability{
+		Name:      qpu.Name,
+		Available: reason == "",
+		Reason:    reason,
+	})
 }
 
 // handleQPUGet handles GET /api/qpus/{name} — retrieves a single QPU by name.

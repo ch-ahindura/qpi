@@ -9,7 +9,7 @@ interface QpuRegistryTabProps {
   isAdmin: boolean;
   onToggleQpu: (id: string, enabled: boolean) => Promise<void>;
   onMaintenanceQpu: (id: string, underMaintenance: boolean) => Promise<void>;
-  /** QPU id to the server's reason it is not taking jobs. */
+  /** QPU name to the server's reason it is not taking jobs. */
   unavailable: Record<string, string>;
   onRegisterQpu: (name: string) => Promise<CreateQpuResponse>;
   onDeleteQpu: (id: string) => Promise<void>;
@@ -56,7 +56,7 @@ export const QpuRegistryTab: React.FC<QpuRegistryTabProps> = ({
             key={qpu.id}
             qpu={qpu}
             isAdmin={isAdmin}
-            unavailableReason={unavailable[qpu.id]}
+            unavailableReason={unavailable[qpu.name]}
             onToggle={onToggleQpu}
             onMaintenance={onMaintenanceQpu}
             onDelete={onDeleteQpu}

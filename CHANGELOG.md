@@ -12,6 +12,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-ui`: admins can put a QPU under maintenance from the dashboard. It then takes
   no jobs, but can still be calibrated.
 - `qpi-ui`: a QPU that is not taking jobs says why, on its card.
+  `GET /api/qpus/availability` and `/api/qpus/{name}/availability` serve the reason,
+  public alongside the other QPU discovery routes.
 - `QPUState` event, in all three SDKs: a driver is told when its QPU goes online,
   under maintenance or disabled. A tuner stops its own drift checks unless online.
 - `qpi-driver`: config files are re-read when they change on disk — the device config

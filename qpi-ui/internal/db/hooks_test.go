@@ -135,3 +135,39 @@ func TestOnThemeUpsert_DeactivatesPreviousActiveTheme(t *testing.T) {
 		t.Errorf("expected theme2 to remain active")
 	}
 }
+
+// TestConnectedQpuStatus_DerivesFromThePortPair proves what clearing maintenance
+// falls back to. Writing `online` there would claim a connection the QPU may not
+// have, which is why the endpoint asks this rather than guessing.
+func TestConnectedQpuStatus_DerivesFromThePortPair(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	defer app.Cleanup()
+
+	cfg := testConfig()
+	config.SaveConfigOnApp(app, cfg)
+	if err := EnsureSchema(app); err != nil {
+		t.Fatalf("failed to ensure schema: %v", err)
+	}
+
+	col, err := app.FindCollectionByNameOrId(cfg.CollectionQPUs)
+	if err != nil {
+		t.Fatalf("qpus collection not found: %v", err)
+	}
+	record := core.NewRecord(col)
+	record.Set("name", "qpu_1")
+	record.Set("status", "online")
+	record.Set("enabled", true)
+
+	if got := ConnectedQpuStatus(record); got != "offline" {
+		t.Errorf("with no ports allocated, expected offline, got %q", got)
+	}
+
+	record.Set("nng_command_port", 6201)
+	record.Set("nng_result_port", 6202)
+	if got := ConnectedQpuStatus(record); got != "online" {
+		t.Errorf("with a port pair, expected online, got %q", got)
+	}
+}

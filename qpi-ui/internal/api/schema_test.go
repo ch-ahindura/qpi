@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 
 	"qpi/internal/drivers"
@@ -17,6 +18,28 @@ func TestCatalogEventsAreKnownTypes(t *testing.T) {
 			if !isKnownEventType(EventType(event)) {
 				t.Errorf("catalog kind %q lists unknown event type %q", kind, event)
 			}
+		}
+	}
+}
+
+// TestCalibrateDispatchPayload_RoundTripsAsTheDriverReadsIt proves the wire
+// shape the Python driver parses.
+func TestCalibrateDispatchPayload_RoundTripsAsTheDriverReadsIt(t *testing.T) {
+	payload := CalibrateDispatchPayload{
+		JobID: "req-1", Mode: "partial", TargetQubits: []string{"q0", "q1"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"job_id", "mode", "target_qubits"} {
+		if _, ok := decoded[key]; !ok {
+			t.Errorf("expected %q in the dispatch payload, got %v", key, decoded)
 		}
 	}
 }

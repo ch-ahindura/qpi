@@ -417,12 +417,13 @@ func (qmr *QPUMaintenanceRequest) ToMap() map[string]any {
 
 // QPUAvailability is one QPU's answer to "is this taking jobs, and if not why".
 //
-// The reason is a sentence from the server rather than a flag the dashboard turns
+// The reason is a sentence from the server rather than a flag each caller turns
 // into one: three states produce it, and a second copy of that logic in TypeScript
 // is how `maintenance` came to exist in the schema and nowhere else.
 type QPUAvailability struct {
-	ID     string `json:"id"`
-	Reason string `json:"reason,omitempty"`
+	Name      string `json:"name"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 type QPUToggleRequest struct {
