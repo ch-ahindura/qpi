@@ -38,13 +38,16 @@ same across both modes.
 
 | Term | Meaning |
 | --- | --- |
-| **Theme** | A record in the `themes` collection containing all visual customisation data — both light and dark colour palettes, shared tokens, branding, and custom CSS/JS. A theme is a complete visual identity. |
-| **Active theme** | The one theme whose `is_active` flag is `true`. At most one theme is active at any time. |
-| **Design tokens** | A JSON object whose keys map to CSS custom properties the dashboard consumes. Colours are split into `light` and `dark` sub-objects; everything else (fonts, spacing, radius, shadows) is shared. |
-| **Default theme** | A Go constant (`DefaultThemeTokens`) in the server that defines the compiled-in defaults. This is the single source of truth — the frontend falls back to it when no theme is active, and it pre-populates the admin theme editor form. |
-| **Cached theme** | The active theme stored in PocketBase's in-memory app store, refreshed by collection hooks. Theme endpoints read from this cache — never from the database at request time — making them as fast as serving a static file. |
-| **Custom CSS** | An arbitrary CSS text block served as a virtual stylesheet by the server. Loaded after the base styles, so it can override anything. Shared across both modes (it can reference CSS custom properties that change per mode). |
-| **Custom JS** | An arbitrary JavaScript text block served as a virtual script. Loaded after the app bundle, giving access to the DOM and React root. Shared across both modes. |
+| **Theme** | A record in the `themes` collection holding one complete visual identity: both colour palettes, shared tokens, branding, and custom CSS/JS. |
+| **Active theme** | The theme whose `is_active` is `true`. At most one at a time. |
+| **Design tokens** | A JSON object whose keys map to CSS custom properties. Colours split into `light` and `dark`; everything else is shared. |
+| **Default theme** | `DefaultThemeTokens`, a Go constant — the single source of truth for defaults. The frontend falls back to it, and it pre-populates the admin form. |
+| **Cached theme** | The active theme held in PocketBase's in-memory app store and refreshed by collection hooks. Theme endpoints read it rather than the database (§3.2). |
+| **Custom CSS** | An admin-authored CSS block served as a virtual stylesheet, loaded after the base styles so it can override anything. |
+| **Custom JS** | An admin-authored script served as a virtual script, loaded after the app bundle. |
+
+Custom CSS and JS are shared across modes: they can reference `--qpi-*` properties,
+which change per mode on their own.
 
 ## 3. Data model
 
@@ -159,11 +162,11 @@ func GetActiveThemeFromApp(app core.App) *db.Theme {
 3. **Update hook (content change):** when the currently active theme's content
    changes (tokens, CSS, JS, branding, logo), refresh the cache with the
    updated record.
-4. **Delete hook:** if the deleted theme was the cached active theme, call `SaveActiveThemeOnApp(app, nil)` to revert to the default theme.
+4. **Delete hook (`OnRecordDelete`):** if the deleted theme was the cached active
+   theme, call `SaveActiveThemeOnApp(app, nil)` to revert to the default theme.
 
-**Result:** the theme API endpoints (`/api/theme/active`, `/api/theme/css`,
-etc.) read from the app store — a single in-memory pointer dereference, no
-database query. This makes them as fast as serving a static file.
+The theme endpoints therefore read one in-memory pointer rather than querying the
+database, which is what makes them as cheap as serving a static file.
 
 ### 3.3 `themes` collection schema
 
@@ -185,64 +188,25 @@ One new PocketBase collection: **`themes`**.
 
 ### 3.4 Design tokens structure
 
-The `tokens` JSON field contains **two colour palettes** (light and dark) plus
-shared design tokens. This ensures a theme is fully self-contained — both modes
-are defined together, keeping the visual identity uniform except for colour.
+The `tokens` JSON field mirrors `DefaultThemeTokens` (§3.1) — two colour palettes
+plus tokens shared between them, so a theme is fully self-contained:
 
 ```jsonc
 {
-  // Mode-specific colour palettes
   "colors": {
-    "light": {
-      "background": "#f9fafb",
-      "surface": "#ffffff",
-      "surface-dim": "#f3f4f6",
-      "surface-container": "#e5e7eb",
-      "primary": "#111827",
-      "secondary": "#6366f1",
-      "success": "#22c55e",
-      "warning": "#eab308",
-      "error": "#ef4444",
-      "border": "#e5e7eb"
-    },
-    "dark": {
-      "background": "#09090b",
-      "surface": "#18181b",
-      "surface-dim": "#131315",
-      "surface-container": "#201f22",
-      "primary": "#ffffff",
-      "secondary": "#6366f1",
-      "success": "#22c55e",
-      "warning": "#eab308",
-      "error": "#ef4444",
-      "border": "#27272a"
-    }
+    "light": { "background": "#f9fafb", "surface": "#ffffff", … },
+    "dark":  { "background": "#09090b", "surface": "#18181b", … }
   },
-  // Shared across both modes
-  "fonts": {
-    "sans": "Inter, sans-serif",
-    "mono": "JetBrains Mono, monospace",
-    "display": "Geist, sans-serif"
-  },
-  "spacing": {
-    "sidebar-width": "240px"
-  },
-  "radius": {
-    "sm": "0.25rem",
-    "md": "0.375rem",
-    "lg": "0.5rem",
-    "full": "9999px"
-  },
-  "shadows": {
-    "sm": "0 1px 2px rgba(0,0,0,0.05)",
-    "md": "0 4px 6px rgba(0,0,0,0.1)"
-  }
+  "fonts":   { "sans": …, "mono": …, "display": … },
+  "spacing": { "sidebar-width": "240px" },
+  "radius":  { "sm": …, "md": …, "lg": …, "full": … },
+  "shadows": { "sm": …, "md": … }
 }
 ```
 
-The frontend applies the shared tokens (fonts, spacing, radius, shadows) always,
-and swaps only the `colors.light` or `colors.dark` sub-object when the user
-toggles modes. Omitted keys inherit from `DefaultThemeTokens`.
+The keys and their default values are those in §3.1. The frontend always applies
+the shared tokens and swaps only `colors.light` or `colors.dark` on toggle. Omitted
+keys inherit from `DefaultThemeTokens`.
 
 ### 3.5 API rules
 
@@ -254,22 +218,11 @@ The `themes` collection is publicly readable so that the dashboard can style the
 The custom theme endpoints (§4.1) are also **public** (no auth), serving theme data
 like static file assets from the in-memory cache.
 
-### 3.6 `is_active` uniqueness enforcement and cache refresh
+### 3.6 `is_active` uniqueness
 
-A PocketBase `OnRecordCreate` / `OnRecordUpdate` hook enforces the invariant
-and keeps the in-memory cache in sync:
-
-1. When a theme is saved with `is_active = true`:
-   - Set `is_active = false` on any other active theme in the DB.
-   - Call `SaveActiveThemeOnApp(app, &theme)` to cache the new active theme.
-2. When a theme that was active is saved with `is_active = false`:
-   - Call `SaveActiveThemeOnApp(app, nil)` to revert the cache to the default theme.
-3. When the currently active theme's **content** changes (tokens, CSS, JS,
-   branding fields, logo, favicon — any field besides `is_active`):
-   - Refresh the cache with the updated record.
-
-An `OnRecordDelete` hook reverts the cache to the default theme if the deleted record was the active
-theme.
+At most one theme is active. `OnRecordCreate` / `OnRecordUpdate` enforce it: saving a
+theme with `is_active = true` clears the flag on any other. The cache follows the
+same hooks — see the lifecycle in §3.2.
 
 ## 4. API endpoints
 
@@ -341,18 +294,11 @@ sequenceDiagram
     Note over D: No re-fetch needed — both palettes already loaded
 ```
 
-1. On boot, the dashboard fetches `/api/theme/active` to get the active
-   theme (which contains both colour palettes). This is served from the
-   server's in-memory cache — as fast as a static file.
-2. Based on the current mode (from `localStorage`), it applies the matching
-   colour palette (`tokens.colors.light` or `tokens.colors.dark`) as CSS custom
-   properties on `:root`.
-3. It applies the shared tokens (fonts, spacing, etc.) regardless of mode.
-4. It sets the branding (site name, tagline, logo) from the active theme.
-5. It injects the custom CSS as a `<style id="qpi-theme-css">` element in
-   `<head>` and the custom JS as a `<script id="qpi-theme-js">` element.
-6. When the user toggles modes, the dashboard swaps only the colour palette
-   from the same already-fetched theme — **no re-fetch needed**.
+On boot the dashboard fetches `/api/theme/active`, applies the shared tokens and the
+palette matching the current mode (from `localStorage`) — `tokens.colors.light` or
+`tokens.colors.dark` — as CSS custom properties on `:root`, sets the branding, and injects the custom CSS and JS as
+`<style id="qpi-theme-css">` and `<script id="qpi-theme-js">` in `<head>`. Toggling
+modes swaps only the palette — both are already loaded, so nothing is re-fetched.
 
 ### 5.2 CSS custom property bridge
 
@@ -423,13 +369,8 @@ A new section in the existing **Admin Panel** tab lets superusers:
 
 ### 6.1 Access control
 
-All theme management (create, update, delete) is restricted to superusers at
-the PocketBase collection rule level (`CreateRule / UpdateRule / DeleteRule =
-nil`). Read access on the collection is public (`ListRule / ViewRule = ""`) so
-that the active theme can be fetched by the dashboard before the user logs in.
-
-The custom theme endpoints (§4.1) are public Go handlers that serve cached
-data like static files.
+Mutations are superuser-only, reads are public, per the collection rules in §3.5. The
+custom endpoints (§4.1) are public handlers serving cached data.
 
 ### 6.2 Custom CSS
 
@@ -489,66 +430,38 @@ Logo and favicon uploads are constrained by:
 
 ### After
 
-- A `themes` collection in PocketBase stores n themes, with at most one active.
-- Each theme is self-contained: both light and dark colour palettes, shared
-  tokens (fonts, spacing, etc.), branding, and custom CSS/JS.
-- A Go `DefaultThemeTokens` constant is the single source of truth for defaults.
-- The active theme is cached in PocketBase's in-memory app store — theme
-  endpoints serve it with zero DB queries, like static files.
-- The dashboard fetches the active theme on boot, applies design tokens as CSS
-  custom properties, and swaps only the colour palette on light/dark toggle.
-- Branding (site name, tagline, logo, favicon) is read from the active theme.
-- Custom CSS/JS is loaded from dedicated server endpoints (shared across modes).
-- The admin panel gains a theme management section with forms pre-populated from
-  the server's defaults.
-- **The dashboard still works identically with zero themes configured** — all
-  CSS custom properties have compiled-in defaults from `DefaultThemeTokens`, and
-  branding falls back to `DefaultThemeBranding`.
+§3–§6 describe the result. The guarantee worth stating separately: **the dashboard
+works identically with zero themes configured** — every CSS custom property has a
+compiled-in default from `DefaultThemeTokens`, and branding falls back to
+`DefaultThemeBranding`.
 
 ## 8. Decisions
 
-1. **Runtime CSS custom properties, not Tailwind recompilation.** Re-running
-   Tailwind at runtime would require a Node.js build step on the server. CSS
-   custom properties achieve the same visual result with zero build
-   infrastructure, at the cost of not supporting arbitrary Tailwind utilities in
-   token values (only the token values themselves are overridable). This is
-   acceptable — the `custom_css` field covers anything the tokens don't.
+Why each mechanism, rather than what it does (§3–§6 cover that):
 
-2. **Separate CSS/JS endpoints, not inline in JSON.** This lets the browser
-   cache them independently, enables `<link>` / `<script>` tag loading, and
-   keeps the JSON response for `/api/theme/active` small and fast.
+1. **Runtime CSS custom properties, not Tailwind recompilation.** Recompiling would
+   need a Node.js build step on the server. The cost is that only token *values* are
+   overridable, not arbitrary utilities — which `custom_css` covers.
 
-3. **Self-contained themes (both light + dark in one record).** A theme defines
-   the complete visual identity — both colour palettes, shared tokens, branding,
-   and custom code. This keeps themes uniform across modes and simplifies the
-   data model (no `category` field, simpler `is_active` hook).
+2. **Separate CSS/JS endpoints, not inline in JSON.** The browser caches them
+   independently, `<link>` and `<script>` work naturally, and `/api/theme/active`
+   stays small.
 
-4. **Single source of truth from Go server.** The `DefaultThemeTokens` constant
-   lives in the Go codebase. The frontend CSS defaults, the admin form
-   pre-population, and the fallback behaviour all derive from this one
-   definition. This prevents drift between backend and frontend defaults.
+3. **Both palettes in one record.** Keeps a theme's identity uniform across modes and
+   avoids a `category` field and a more complicated `is_active` hook.
 
-5. **In-memory cache via app store, not per-request DB queries.** The active
-   theme is loaded into `app.Store()` at bootstrap and kept in sync by
-   collection hooks. Theme endpoints read from this cache — a single pointer
-   dereference — making them as fast as serving static files. The DB is only
-   queried once at startup and on admin mutations.
+4. **Defaults defined in Go.** The frontend fallbacks, the admin form's initial values
+   and the no-active-theme behaviour all derive from `DefaultThemeTokens`, so backend
+   and frontend cannot drift.
 
-6. **All customization is admin-only.** Theme creation, editing, and deletion
-   are restricted to superusers at the PocketBase collection rule level. Read
-   access on the collection is public to allow the login modal to be themed
-   before authentication. The public `/api/theme/active` custom endpoint
-   serves the active theme efficiently from the in-memory cache.
+5. **Cache in the app store.** The database is read once at bootstrap and on admin
+   mutations, never per request.
 
-7. **Custom CSS/JS shared across modes.** Since the light/dark toggle only
-   changes colour custom properties, custom CSS/JS works identically in both
-   modes without needing per-mode variants. Custom CSS can reference
-   `--qpi-color-*` properties that automatically reflect the current mode.
+6. **Custom CSS/JS shared across modes.** The toggle only changes colour properties,
+   so custom code that references `--qpi-color-*` follows the mode for free.
 
-8. **Custom JS is opt-in.** The power it provides (arbitrary DOM/cookie access)
-   is commensurate with the trust level of a PocketBase superuser. No
-   sandboxing (iframe, Web Worker) is applied in v1.
+7. **Custom JS opt-in, unsandboxed.** The power it gives matches the trust already
+   placed in a superuser. No iframe or Web Worker in v1.
 
-9. **File-based logo/favicon via PocketBase file fields.** This reuses
-   PocketBase's existing file storage, thumbnailing, and CDN-friendly serving,
-   rather than inventing a custom upload flow.
+8. **Logo and favicon as PocketBase file fields.** Reuses its storage, thumbnailing
+   and serving rather than inventing an upload flow.
