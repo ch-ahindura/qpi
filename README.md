@@ -245,6 +245,8 @@ The server exposes both **custom HTTP routes** and **PocketBase collection endpo
 |---|---|---|---|
 | `POST` | `/api/op/qpus/create` | Superuser | Creates a new QPU record and returns the generated access token. |
 | `POST` | `/api/op/qpu/toggle` | Superuser | Enables or disables a QPU by name. |
+| `POST` | `/api/op/qpu/maintenance` | Superuser | Puts a QPU into or out of maintenance by id. |
+| `GET`  | `/api/op/qpus/availability` | Public | Lists the QPUs not taking jobs, each with the reason. |
 | `POST` | `/api/op/drivers/create` | Superuser | Registers a driver and returns its access token. |
 | `POST` | `/api/op/drivers/connect` | Access token | Connects a driver and returns its name, assigned NNG ports + JWT. |
 | `POST` | `/api/op/drivers/toggle` | Superuser | Enables or disables a driver by id. |
