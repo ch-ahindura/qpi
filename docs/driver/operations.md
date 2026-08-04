@@ -154,6 +154,24 @@ All four exit 1 before the driver connects to anything, so a `Restart=on-failure
 unit will loop on them — check `systemctl status` rather than waiting for the
 dashboard to show the driver online.
 
+## When connecting is refused
+
+```
+409  "tuner-1" is already connected as this QPU's calibrate driver; one per QPU
+```
+
+One driver per role per QPU: two `process` drivers would hand the same hardware two
+schedules, and two tuners would each write the device file. It is scoped by
+*operation*, so a `quantify_tuner` refuses a `qblox_tuner` — both calibrate the same
+chip. Registering a second is fine; only connecting it while the first is live is
+not, which is what makes a standby possible.
+
+If nothing is actually connected and this still appears, the named driver is holding
+its lease: disable it (`POST /api/op/drivers/toggle` with `enabled: false`), which
+releases the ports and goroutines immediately. A driver whose process died releases
+on the socket detaching, and a restarted server starts with no leases at all and
+resets every driver to `offline`, so neither leaves a QPU wedged.
+
 ## Running a calibration on a production node
 
 A `calibrate` driver differs operationally from the other two in one way that

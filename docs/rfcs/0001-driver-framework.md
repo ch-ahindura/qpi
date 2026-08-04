@@ -151,6 +151,20 @@ failed `JobDispatch` leaves the job `pending` to be re-dispatched; the driver is
 marked offline by the pipe hook. There is no app-level queue, and any driver→UI
 event is best-effort (dropped if nothing is there to persist it).
 
+**Three states, not two.** `enabled` is admin intent and persists; `status` is
+liveness observed from the pipe hook; and the server holds a *lease* per connected
+driver — two NNG ports, two goroutines, a listener socket — which is in memory only.
+Conflating the last two is how a QPU came to be wedged by a driver nothing was
+connected to, so:
+
+- The lease is released when the socket detaches, when the driver is disabled, when
+  its record is deleted, and when its listener fails to bind. No grace period: the
+  port pair is stored on the record and stays reserved there, so a reconnect rebinds
+  the same two.
+- Every driver's `status` is reset to `offline` at startup. `online` is an
+  observation made by the process that held the socket; a row that survives a crash
+  is describing a server that no longer exists.
+
 ## 6. Envelope
 
 One JSON shape on the wire (Go DTO beside `DispatchPayload` in `schema.go`; SDK
@@ -206,6 +220,14 @@ types and the kind→snippet catalog it needs. No metadata endpoint is required.
    fingerprint. Once the NNG pipe attaches, the pipe hook marks it online — exactly
    as today. There is no application-level handshake message: identity and QPU come
    from the token.
+
+   **One driver per role per QPU.** Connect returns 409 while another driver of the
+   same *operation* is connected to that QPU: two `process` drivers would hand the
+   same hardware two schedules, and two tuners would each write the device YAML
+   (RFC 0004 §10). By operation rather than kind, so a `quantify_tuner` refuses a
+   `qblox_tuner` — they calibrate the same chip. A `custom` driver is exempt, its
+   operation being whatever its author wrote. Registration is not restricted: a
+   standby record harms nothing until it connects.
 2. **Dispatch (push, unchanged).** The scheduler picks a pending job for the QPU
    and QPI-UI sends `JobDispatch{ job }` to a driver of that QPU.
 3. **Result.** The driver runs the job and emits `JobResult{ job_id, status,

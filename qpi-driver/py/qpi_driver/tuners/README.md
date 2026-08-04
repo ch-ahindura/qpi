@@ -36,8 +36,8 @@ filesystem and nothing else.
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `calibration_config` | `./calibration.yml` | Which routines run, over what, and how far. |
-| `quantify_device_config` | `./quantify.device.yml` | The device calibration file, read at start and written back. |
-| `quantify_hardware_config` | `./quantify.hardware.json` | Hardware connectivity. |
+| `quantify_device_config` | `./quantify.device.yml` | The device calibration file, re-read at the start of each calibration and written back. |
+| `quantify_hardware_config` | `./quantify.hardware.json` | Hardware connectivity. Changing it needs a restart; the tuner warns and keeps running on the one it started with. |
 | `is_dummy` | `false` | Run against the vendor's dummy cluster. Compiles and runs; every acquisition is `nan`, so every routine fails. |
 | `is_simulated` | `false` | Run against a simulated chip instead — see below. Both tuners. |
 | `spi_rack_address` | *(none)* | Serial address of the SPI rack holding the couplers' S4g current sources. Only `coupler_anticrossing` uses it, and only when the couplers say `bias.source: spi`; without it that node fails rather than sweeping a bias it cannot hold. |
@@ -302,6 +302,12 @@ every subsequent job reads.
   `qpi_driver.tuners.utils.persistence.restore_backup`.
 - A fitted value outside the sweep that produced it is treated as a failed fit,
   not as a new parameter.
+- **The `process` driver beside it picks the new file up on its next job**, with no
+  restart and no signal from the server — the file is the whole channel between the
+  two. A restored `.prev`, or parameters worked out by hand, arrive the same way.
+- The tuner also re-reads the file at the start of each calibration, so a chip
+  something else has moved since it started is not calibrated from stale values and
+  then overwritten with them.
 
 ## Adding a tuner
 
