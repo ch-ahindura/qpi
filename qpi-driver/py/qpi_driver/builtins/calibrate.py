@@ -127,10 +127,8 @@ class CalibrateDriver(QpiDriver):
     def _check_fidelity(self) -> None:
         """Queue a periodic drift check, unless something says not to.
 
-        This is the one path the server cannot gate: it runs on this driver's own
-        clock and never asks. So it is the state event that stops it — a chip under
-        maintenance is being worked on, and sweeping it while someone does that is
-        exactly what maintenance is for.
+        The one path no server-side gate reaches: it runs on this driver's clock and
+        never asks. So the state event is what stops it.
         """
         if self._qpu_state != "online":
             log.info("skipping drift check: the QPU is %s", self._qpu_state)
@@ -403,12 +401,9 @@ def _reload_calibration_config(
 ) -> Any:
     """Re-read the calibration config, or fail *job* and return None.
 
-    An edited file takes effect on the next dispatch rather than at the next
-    restart. A file that will not parse fails the calibration that would have used
-    it, unlike the executor's device config, which carries on with what it has: the
-    device config holds parameters a job can still run against, while this one
-    decides *which routines run*, and silently spending hours on the previous
-    selection is worse than saying so.
+    A file that will not parse fails the calibration rather than running the
+    previous config, unlike the device config which carries on: that one holds
+    parameters a job can still use, this one decides *which routines run*.
     """
     from qpi_driver.builtins.qpu import _sanitize_exception_msg
     from qpi_driver.tuners.base.config import CalibrationConfig
@@ -428,7 +423,7 @@ def _reload_calibration_config(
         )
         return None
 
-    watched.accept()
+    watched.mark_read()
     _worker_log.info("reloaded calibration config from %s", watched.path)
     return config
 

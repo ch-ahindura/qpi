@@ -45,7 +45,7 @@ func OnQuantumJobCreateRequest(e *core.RecordRequestEvent) error {
 	if qpuID == "" {
 		return e.Next()
 	}
-	if reason := scheduler.QPUUnavailable(e.App, qpuID); reason != "" {
+	if reason := scheduler.UnavailableReason(e.App, qpuID); reason != "" {
 		return e.Error(http.StatusConflict, reason, nil)
 	}
 	return e.Next()

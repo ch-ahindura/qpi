@@ -561,14 +561,12 @@ func handleQPUToggle(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, resp)
 }
 
-// handleQPUMaintenance handles POST /api/op/qpu/maintenance — puts a QPU under
-// maintenance or takes it back out (admin-only).
+// handleQPUMaintenance handles POST /api/op/qpu/maintenance (admin-only).
 //
-// Separate from the enabled toggle because they mean different things: switched off
-// is out of service, maintenance is being worked on, and a calibration may still be
-// dispatched to the latter (RFC 0004 §6.8). Clearing it derives the status the same
-// way re-enabling does — writing `online` would claim a connection that may not be
-// there.
+// Separate from the enabled toggle: switched off is out of service, maintenance is
+// being worked on, and a calibration may still be dispatched to the latter (RFC 0004
+// §6.8). Clearing it derives the status as re-enabling does — writing `online` would
+// claim a connection that may not be there.
 func handleQPUMaintenance(re *core.RequestEvent) error {
 	cfg, err := config.GetConfigFromApp(re.App)
 	if err != nil {
@@ -695,18 +693,15 @@ func handleDriverCreate(re *core.RequestEvent) error {
 	return re.JSON(http.StatusCreated, resp)
 }
 
-// connectedPeer returns another driver already connected to the same QPU for the
-// same operation, with the operation they share, or "" for neither.
+// connectedPeer returns another driver already connected to this QPU for the same
+// operation, and the operation they share.
 //
-// One chip takes one driver of each role. Two QPU drivers would hand the same
-// hardware two schedules, and two tuners would sweep the same qubits and each
-// write the device YAML (RFC 0004 §6.8). Registering a second is allowed — a
-// standby, or a replacement prepared before the running one is retired — but
-// connecting it while the first is live is not.
+// One chip takes one driver of each role: two QPU drivers would hand the same
+// hardware two schedules, two tuners would each write the device YAML (RFC 0004
+// §6.8). Registering a standby is fine; connecting it while the first is live is not.
 //
-// A driver counts as connected only when its socket is attached *and* this server
-// is dispatching to it, so neither a stale `online` left by a crash nor a restart
-// of the server can wedge a QPU no driver is actually on.
+// Connected means socket attached *and* this server dispatching, so neither a stale
+// `online` from a crash nor a restart can wedge a QPU no driver is on.
 func connectedPeer(app core.App, cfg *config.AppConfig, driver *db.Driver) (string, drivers.Operation) {
 	operation := drivers.Default.OperationOf(drivers.Kind(driver.Kind))
 	if operation == "" {
@@ -905,9 +900,8 @@ func handleCalibrateDispatch(re *core.RequestEvent) error {
 		return re.Error(http.StatusInternalServerError, "failed to look up driver", err)
 	}
 
-	// Maintenance is the state a chip is in *while* someone works on it, so a
-	// calibration is exactly what it should still accept. Switched off is not: that
-	// QPU is out of service, and a calibration would put it back on the air.
+	// Maintenance still accepts a calibration — that is what it is for. Switched
+	// off does not: the QPU is out of service.
 	var qpu db.QPU
 	if err := db.FindOne(re.App, cfg.CollectionQPUs, driver.QPU, &qpu); err == nil && !qpu.Enabled {
 		return re.Error(http.StatusConflict, "this QPU is switched off", nil)
@@ -950,14 +944,12 @@ func handleQPUList(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, qpus)
 }
 
-// handleQPUAvailabilityList handles GET /api/qpus/availability — every QPU's
-// availability in one response.
+// handleQPUAvailabilityList handles GET /api/qpus/availability — all of them in one
+// response, because asking per QPU is one request per row.
 //
-// A caller rendering a list needs all of them, and asking per QPU is one request
-// per row. Derived on read rather than stored on the record: the answer is a
-// function of `enabled`, `status` and whether a calibration is running, so a copy
-// on the record would need updating from four places and would be wrong whenever
-// one of them was missed.
+// Derived on read rather than stored: the answer is a function of `enabled`,
+// `status` and whether a calibration is running, so a stored copy would need
+// updating from four places.
 func handleQPUAvailabilityList(re *core.RequestEvent) error {
 	cfg, err := config.GetConfigFromApp(re.App)
 	if err != nil {
@@ -972,7 +964,7 @@ func handleQPUAvailabilityList(re *core.RequestEvent) error {
 
 	rows := make([]QPUAvailability, 0, len(qpus))
 	for _, qpu := range qpus {
-		reason := scheduler.QPUUnavailable(re.App, qpu.ID)
+		reason := scheduler.UnavailableReason(re.App, qpu.ID)
 		rows = append(rows, QPUAvailability{
 			Name: qpu.Name, Available: reason == "", Reason: reason,
 		})
@@ -980,15 +972,11 @@ func handleQPUAvailabilityList(re *core.RequestEvent) error {
 	return re.JSON(http.StatusOK, rows)
 }
 
-// handleQPUAvailability handles GET /api/qpus/{name}/availability — whether this
-// QPU is taking jobs, and if not, why.
+// handleQPUAvailability handles GET /api/qpus/{name}/availability.
 //
-// Discovery rather than an operation, so it sits with the public QPU routes: a
-// client deciding where to send a job needs it, and it says nothing about the chip
-// that /api/qpus does not already say about its status. It is not under /api/op,
-// where every route is superuser-only.
-//
-// Served rather than derived by each caller so the three reasons have one author.
+// Public discovery rather than an operation: a client deciding where to send a job
+// needs it, and it reveals no more than /api/qpus already does. Everything under
+// /api/op is superuser-only, which is why it does not live there.
 func handleQPUAvailability(re *core.RequestEvent) error {
 	cfg, err := config.GetConfigFromApp(re.App)
 	if err != nil {
@@ -996,8 +984,7 @@ func handleQPUAvailability(re *core.RequestEvent) error {
 	}
 
 	// By name, which is what the route says. The sibling GET /api/qpus/{name}
-	// passes its path value to FindOne, which resolves a record *id* — so it
-	// answers only for callers who pass an id. Not copied here.
+	// resolves a record id instead, so it answers only for callers passing an id.
 	var qpu db.QPU
 	err = db.FindOneByFilter(re.App, cfg.CollectionQPUs, &qpu, "name = {:name}",
 		dbx.Params{"name": re.Request.PathValue("name")})
@@ -1005,7 +992,7 @@ func handleQPUAvailability(re *core.RequestEvent) error {
 		return re.Error(http.StatusNotFound, "QPU not found", err)
 	}
 
-	reason := scheduler.QPUUnavailable(re.App, qpu.ID)
+	reason := scheduler.UnavailableReason(re.App, qpu.ID)
 	return re.JSON(http.StatusOK, QPUAvailability{
 		Name:      qpu.Name,
 		Available: reason == "",

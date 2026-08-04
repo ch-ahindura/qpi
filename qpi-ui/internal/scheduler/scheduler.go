@@ -25,7 +25,7 @@ func FetchNextJob(app core.App, qpuID string) *db.QuantumJob {
 		return nil
 	}
 
-	if reason := QPUUnavailable(app, qpuID); reason != "" {
+	if reason := UnavailableReason(app, qpuID); reason != "" {
 		return nil
 	}
 
@@ -95,16 +95,16 @@ func recordToQuantumJob(record *core.Record) *db.QuantumJob {
 	return &job
 }
 
-// QPUUnavailable says why qpuID is not taking jobs, or "" when it is.
-//
-// Three reasons, and the message is the reason: a user told only that their job is
-// queued learns nothing, and an operator looking at an idle queue has to guess
-// between a switched-off QPU, one under maintenance, and a calibration in progress.
-//
-// Read by both the dispatcher and job submission. The dispatcher is the one that
-// must not be skipped: a job accepted while the QPU was online must not run once it
-// goes into maintenance, or once a calibration starts, a second later.
-func QPUUnavailable(app core.App, qpuID string) string {
+// Service states a QPU can be in, as told to its drivers.
+const (
+	StateOnline      = "online"
+	StateMaintenance = "maintenance"
+	StateDisabled    = "disabled"
+)
+
+// UnavailableReason says why qpuID is not taking jobs, or "" when it is. Both the
+// dispatcher and job submission show it to whoever is waiting.
+func UnavailableReason(app core.App, qpuID string) string {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {
 		return ""
@@ -112,14 +112,13 @@ func QPUUnavailable(app core.App, qpuID string) string {
 
 	qpu, err := app.FindRecordById(cfg.CollectionQPUs, qpuID)
 	if err != nil {
-		// No QPU to be unavailable. A job naming one that does not exist fails
-		// elsewhere, on its relation.
+		// A job naming a QPU that does not exist fails on its relation, not here.
 		return ""
 	}
 	if !qpu.GetBool("enabled") {
 		return "this QPU is switched off"
 	}
-	if qpu.GetString("status") == "maintenance" {
+	if qpu.GetString("status") == StateMaintenance {
 		return "this QPU is under maintenance"
 	}
 	if CalibrationRunningOn(app, qpuID) {
@@ -128,28 +127,26 @@ func QPUUnavailable(app core.App, qpuID string) string {
 	return ""
 }
 
-// QPUServiceState is the state to tell a QPU's drivers it is in: "disabled",
-// "maintenance" or "online".
+// ServiceStateOf is what a QPU's drivers are told it is in.
 //
-// Narrower than QPUUnavailable on purpose. A calibration in progress stops *jobs*,
-// but it is not a service state and must not be broadcast: the tuner running it
-// would be telling itself to stop.
-func QPUServiceState(app core.App, qpuID string) string {
+// Narrower than UnavailableReason: a running calibration stops jobs but is not a
+// service state, or the tuner running it would be told to stop.
+func ServiceStateOf(app core.App, qpuID string) string {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {
-		return "online"
+		return StateOnline
 	}
 	qpu, err := app.FindRecordById(cfg.CollectionQPUs, qpuID)
 	if err != nil {
-		return "online"
+		return StateOnline
 	}
 	if !qpu.GetBool("enabled") {
-		return "disabled"
+		return StateDisabled
 	}
-	if qpu.GetString("status") == "maintenance" {
-		return "maintenance"
+	if qpu.GetString("status") == StateMaintenance {
+		return StateMaintenance
 	}
-	return "online"
+	return StateOnline
 }
 
 // CalibrationRunningOn reports whether a calibration is in flight on qpuID.

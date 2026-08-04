@@ -43,10 +43,9 @@ _RABI_GHZ_PER_UNIT = 1.0 / (2 * 0.2 * 20.0)
 def require_simulation_deps() -> None:
     """Raise unless the ``sim`` extra is installed.
 
-    Checked when a simulated chip is built, which is the last moment before a
-    caller commits to a run. Without it the first failure is a bare
-    ModuleNotFoundError from `eigenvalues` below — hours into a calibration, and
-    naming a package rather than the extra that provides it.
+    Checked when a simulated chip is built. Otherwise the first sign is a
+    ModuleNotFoundError from `eigenvalues` below, hours into a calibration and
+    naming a package rather than the extra providing it.
     """
     from importlib.util import find_spec
 

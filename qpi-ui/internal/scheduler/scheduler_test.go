@@ -180,21 +180,21 @@ func setQPU(t *testing.T, app core.App, cfg *config.AppConfig, qpuID string, upd
 	}
 }
 
-func TestQPUUnavailable_SaysWhyForEachReason(t *testing.T) {
+func TestUnavailableReason_SaysWhyForEachReason(t *testing.T) {
 	app, cfg, qpuID, driverID := seedChip(t)
 
-	if reason := QPUUnavailable(app, qpuID); reason != "" {
+	if reason := UnavailableReason(app, qpuID); reason != "" {
 		t.Fatalf("an online, enabled QPU with no calibration is available, got %q", reason)
 	}
 
 	setQPU(t, app, cfg, qpuID, map[string]any{"status": "maintenance"})
-	if reason := QPUUnavailable(app, qpuID); reason != "this QPU is under maintenance" {
+	if reason := UnavailableReason(app, qpuID); reason != "this QPU is under maintenance" {
 		t.Errorf("expected the maintenance reason, got %q", reason)
 	}
 
 	// Switched off outranks the rest: it is the reason nothing else matters.
 	setQPU(t, app, cfg, qpuID, map[string]any{"status": "online", "enabled": false})
-	if reason := QPUUnavailable(app, qpuID); reason != "this QPU is switched off" {
+	if reason := UnavailableReason(app, qpuID); reason != "this QPU is switched off" {
 		t.Errorf("expected the switched-off reason, got %q", reason)
 	}
 
@@ -202,38 +202,37 @@ func TestQPUUnavailable_SaysWhyForEachReason(t *testing.T) {
 	saveModel(t, app, &db.CalibrationRequest{
 		Driver: driverID, QPU: qpuID, Mode: "full", Status: "running",
 	})
-	if reason := QPUUnavailable(app, qpuID); reason != "this QPU is being calibrated" {
+	if reason := UnavailableReason(app, qpuID); reason != "this QPU is being calibrated" {
 		t.Errorf("expected the calibration reason, got %q", reason)
 	}
 }
 
 // An unknown QPU is not "unavailable": a job naming one fails on its relation, and
 // a reason here would gate every job whose target had been deleted.
-func TestQPUUnavailable_IsSilentForAnUnknownQPU(t *testing.T) {
+func TestUnavailableReason_IsSilentForAnUnknownQPU(t *testing.T) {
 	app, _, _, _ := seedChip(t)
 
-	if reason := QPUUnavailable(app, "no-such-qpu"); reason != "" {
+	if reason := UnavailableReason(app, "no-such-qpu"); reason != "" {
 		t.Errorf("expected no reason for an unknown QPU, got %q", reason)
 	}
 }
 
-// QPUServiceState is what drivers are told; QPUUnavailable is what stops jobs. A
-// running calibration belongs only to the second, or the tuner doing the
-// calibrating would be told to stop.
-func TestQPUServiceState_IsNarrowerThanUnavailable(t *testing.T) {
+// A running calibration stops jobs but is not a service state, or the tuner doing
+// the calibrating would be told to stop.
+func TestServiceStateOf_IsNarrowerThanUnavailableReason(t *testing.T) {
 	app, cfg, qpuID, driverID := seedChip(t)
 
-	if got := QPUServiceState(app, qpuID); got != "online" {
+	if got := ServiceStateOf(app, qpuID); got != "online" {
 		t.Errorf("expected online, got %q", got)
 	}
 
 	setQPU(t, app, cfg, qpuID, map[string]any{"status": "maintenance"})
-	if got := QPUServiceState(app, qpuID); got != "maintenance" {
+	if got := ServiceStateOf(app, qpuID); got != "maintenance" {
 		t.Errorf("expected maintenance, got %q", got)
 	}
 
 	setQPU(t, app, cfg, qpuID, map[string]any{"status": "online", "enabled": false})
-	if got := QPUServiceState(app, qpuID); got != "disabled" {
+	if got := ServiceStateOf(app, qpuID); got != "disabled" {
 		t.Errorf("expected disabled, got %q", got)
 	}
 
@@ -241,10 +240,10 @@ func TestQPUServiceState_IsNarrowerThanUnavailable(t *testing.T) {
 	saveModel(t, app, &db.CalibrationRequest{
 		Driver: driverID, QPU: qpuID, Mode: "full", Status: "running",
 	})
-	if got := QPUServiceState(app, qpuID); got != "online" {
+	if got := ServiceStateOf(app, qpuID); got != "online" {
 		t.Errorf("a calibration must not become a service state, got %q", got)
 	}
-	if reason := QPUUnavailable(app, qpuID); reason == "" {
+	if reason := UnavailableReason(app, qpuID); reason == "" {
 		t.Error("it should still stop jobs, though")
 	}
 }

@@ -70,9 +70,8 @@ func StartDriverDistribution(app core.App, cfg *config.AppConfig, driverID, qpuI
 
 // MarkEveryDriverOffline resets every driver's status at startup.
 //
-// `online` is an observation made by the process that held the socket. A server
-// that has just started holds none, so any row still claiming a connection is
-// describing a server that no longer exists — and left alone it blocks the
+// `online` is an observation made by the process that held the socket, so a row
+// surviving a crash describes a server that no longer exists — and blocks the
 // one-per-role check on a QPU nothing is connected to.
 func MarkEveryDriverOffline(app core.App) error {
 	cfg, err := config.GetConfigFromApp(app)
@@ -100,9 +99,8 @@ func MarkEveryDriverOffline(app core.App) error {
 	return nil
 }
 
-// ReleaseLeaseIfDriver releases record's lease when record is a driver, and does
-// nothing otherwise. Bound to the delete hook: a driver's goroutines and listener
-// would otherwise outlive every trace of it.
+// ReleaseLeaseIfDriver releases record's lease when record is a driver. Bound to
+// the delete hook, so goroutines and a listener do not outlive the record.
 func ReleaseLeaseIfDriver(app core.App, record *core.Record) {
 	if record == nil {
 		return
@@ -117,10 +115,8 @@ func ReleaseLeaseIfDriver(app core.App, record *core.Record) {
 }
 
 // sendQPUState tells one driver its QPU's state, reporting whether it went out.
-//
-// A failed send is left for the next tick to retry: the caller only records the
-// state as sent when this returns true, so the loop re-asserts rather than
-// believing a driver knows something it never received.
+// The caller records the state only on true, so a failed send is retried next tick
+// rather than assumed delivered.
 func sendQPUState(sock mangos.Socket, driverID, state string) bool {
 	event, err := NewEvent(driverID, EventQPUState, QPUStatePayload{State: state})
 	if err != nil {
@@ -140,10 +136,9 @@ func sendQPUState(sock mangos.Socket, driverID, state string) bool {
 	return true
 }
 
-// isDispatching reports whether this server currently holds goroutines for
-// driverID. Only handleDriverConnect adds to activeDrivers, so an entry means a
-// driver connected during this process's lifetime — a server restart leaves the
-// map empty rather than inheriting a stale claim from the database.
+// isDispatching reports whether this server holds goroutines for driverID. Only
+// handleDriverConnect adds to activeDrivers, so a restart starts empty rather than
+// inheriting a stale claim from the database.
 func isDispatching(driverID string) bool {
 	activeDriversMu.Lock()
 	defer activeDriversMu.Unlock()
@@ -194,10 +189,8 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		case mangos.PipeEventDetached:
 			log.Printf("[DriverDispatcher %s] driver disconnected: %s", driverID, pipe.Address())
 			markDriverStatus(app, cfg, driverID, qpuID, "offline")
-			// Released now rather than after a grace period. The port pair lives
-			// on the driver's record and findFreePorts keeps it reserved there,
-			// so a reconnect rebinds the same two and nothing is gained by
-			// holding the goroutines open.
+			// No grace period needed: the port pair stays reserved on the record,
+			// so a reconnect rebinds the same two.
 			StopDriverDistribution(driverID)
 		}
 	})
@@ -205,9 +198,8 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 	addr := l.Address()
 	if err := l.Listen(); err != nil {
 		log.Printf("[DriverDispatcher %s] listen error on %s: %v", driverID, addr, err)
-		// The lease was taken before this goroutine ran, and connect has already
-		// answered 200. Without releasing it, StartDriverDistribution would treat
-		// this driver as served and never retry the bind.
+		// Connect already answered 200. Without releasing, StartDriverDistribution
+		// treats this driver as served and never retries the bind.
 		StopDriverDistribution(driverID)
 		return
 	}
@@ -218,11 +210,10 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		sock.Close()
 	}()
 
-	// What this driver was last told its QPU's state is. Empty until the first
-	// pass, so a freshly started dispatcher asserts the current state once —
-	// which is also what a server restart does, and why restarting cannot wake
-	// a QPU somebody switched off.
-	lastState := ""
+	// Empty until the first pass, so a new dispatcher asserts the current state
+	// once. That is also what a restart does, which is why it cannot wake a QPU
+	// somebody switched off.
+	lastStateSent := ""
 
 	for {
 		select {
@@ -231,9 +222,9 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		default:
 		}
 
-		if state := scheduler.QPUServiceState(app, qpuID); state != lastState {
+		if state := scheduler.ServiceStateOf(app, qpuID); state != lastStateSent {
 			if sendQPUState(sock, driverID, state) {
-				lastState = state
+				lastStateSent = state
 			}
 		}
 

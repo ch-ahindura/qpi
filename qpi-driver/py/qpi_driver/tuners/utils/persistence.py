@@ -128,17 +128,15 @@ def _serialise_parameters(owner: Any) -> dict[str, Any]:
     return values
 
 
-def load_into_device(device: Any, path: Path) -> list[str]:
-    """Apply the calibration at *path* onto a device already built — the inverse
-    of :func:`serialise_device`, and generic over both schedulers for the same
-    reason it is.
+def apply_device_config(device: Any, path: Path) -> list[str]:
+    """Apply the calibration at *path* onto a device already built.
 
-    In place rather than rebuilt, so the compiler, the instrument coordinator and
-    qblox's hardware agent keep pointing at the same device object.
+    The inverse of :func:`serialise_device`, and generic over both schedulers for
+    the same reason. In place, so the compiler, the coordinator and qblox's agent
+    keep pointing at the same object.
 
-    Returns the names *path* carries that the device does not have. Those are
-    structural — a new qubit is not a calibration — so they are reported rather
-    than raised, leaving the caller to log and proceed with what did apply.
+    Returns the names *path* carries that the device does not have — structural, so
+    reported rather than raised.
     """
     with open(path, "r") as file:
         config = yaml.safe_load(file) or {}

@@ -11,9 +11,8 @@ __all__ = ["ConfigFile"]
 class ConfigFile:
     """A config file's path and the signature of the version last read.
 
-    The signature includes the inode because the atomic write these files are
-    given (``tuners/utils/persistence.py``) replaces rather than truncates, so a
-    rename within the same second and at the same size would otherwise look
+    The signature includes the inode: the atomic write these files get replaces
+    rather than truncates, so a same-second same-size rename would otherwise look
     unchanged.
     """
 
@@ -29,16 +28,14 @@ class ConfigFile:
         return (stat.st_mtime_ns, stat.st_size, stat.st_ino)
 
     def changed(self) -> bool:
-        """Whether the file differs from the version last accepted.
+        """Whether the file differs from the version last read.
 
-        A file that has gone away is not a change: the driver keeps running on
-        what it has rather than losing its parameters to a botched copy.
+        A vanished file is not a change: better to keep running on what we have than
+        to lose the parameters to a botched copy.
         """
         signature = self._read_signature()
-        if signature is None or signature == self._signature:
-            return False
-        return True
+        return signature is not None and signature != self._signature
 
-    def accept(self) -> None:
-        """Record the file as read, so `changed` reports False until it moves."""
+    def mark_read(self) -> None:
+        """Settle the signature, so `changed` is False until the file moves again."""
         self._signature = self._read_signature()

@@ -64,7 +64,7 @@ def test_a_missing_file_that_appears_has_changed(tmp_path: Path):
     assert watched.changed() is True
 
 
-def test_accept_settles_the_signature(tmp_path: Path):
+def test_mark_read_settles_the_signature(tmp_path: Path):
     path = tmp_path / "device.yml"
     _write(path, "q0: {a: 1}")
     watched = ConfigFile(path)
@@ -72,5 +72,5 @@ def test_accept_settles_the_signature(tmp_path: Path):
     _write(path, "q0: {a: 2}")
     assert watched.changed() is True
 
-    watched.accept()
+    watched.mark_read()
     assert watched.changed() is False

@@ -32,7 +32,7 @@ from qpi_driver.tuners.base.routines import (
 )
 from qpi_driver.tuners.routines import all_routines, routine_names
 from qpi_driver.reload import ConfigFile
-from qpi_driver.tuners.utils.persistence import load_into_device, save_device_config
+from qpi_driver.tuners.utils.persistence import apply_device_config, save_device_config
 
 log = logging.getLogger(__name__)
 
@@ -234,13 +234,12 @@ class Tuner(ABC):
     def _refresh_device_config(self) -> None:
         """Re-read the device config if it changed since this tuner last looked.
 
-        At the start of a DAG, never between routines: a routine reading a device
-        that moved underneath it mid-walk is worse than a stale parameter, because
-        the fit and the parameters it was measured against no longer agree.
+        Something else may have moved the chip — a hand edit, a restored backup —
+        and this tuner would otherwise calibrate from startup values and write them
+        back over it.
 
-        Something else may have written the file — a hand edit, a restore of
-        yesterday's parameters — and this tuner would otherwise calibrate from what
-        it read at startup and then write that back over them.
+        At DAG start, never between routines: a device moving mid-walk leaves a fit
+        and the parameters it was measured against disagreeing.
         """
         if self._watched_device_config is None:
             return
@@ -249,14 +248,14 @@ class Tuner(ABC):
 
         path = self._watched_device_config.path
         try:
-            unknown = load_into_device(self.device, path)
+            unknown = apply_device_config(self.device, path)
         except Exception:
             log.exception(
                 "could not reload %s; calibrating from what is in memory", path
             )
             return
 
-        self._watched_device_config.accept()
+        self._watched_device_config.mark_read()
         if unknown:
             log.warning(
                 "%s names %s, which this device does not have; a new element needs a "

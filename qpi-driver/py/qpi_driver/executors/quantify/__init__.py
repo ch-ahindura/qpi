@@ -201,7 +201,7 @@ class QuantifyExecutor(Executor):
             return
         if not self._watched_hardware_config.changed():
             return
-        self._watched_hardware_config.accept()
+        self._watched_hardware_config.mark_read()
         log.warning(
             "%s has changed; this driver is still running on the hardware config it "
             "started with. Restart it to pick the new one up.",
@@ -253,7 +253,7 @@ class QuantifyExecutor(Executor):
         # would be worse than a stale parameter.
         if self._watched_device_config and self._watched_device_config.changed():
             self._reload_device_config()
-            self._watched_device_config.accept()
+            self._watched_device_config.mark_read()
         self._warn_if_hardware_config_moved()
 
         acq_protocol, acq_kwargs, acq_overrides = self._resolve_acq_protocol(payload)
