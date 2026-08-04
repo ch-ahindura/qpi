@@ -48,7 +48,7 @@ Extends RFC 0004 §2.
 | **Diagnose** | The recursion that decides how far *up* the graph to re-calibrate when a check fails (Kelly et al.). |
 | **Coarse pass** | Readout calibration possible with no qubit control: find the resonators, pick a working power. |
 | **State-resolved pass** | Readout calibration that needs a π pulse: the resonance per qubit state, the optimal drive point between them, and the discriminator. |
-| **EF subspace** | The `|1⟩`–`|2⟩` transition and its own amplitude, frequency and DRAG parameters. Needed for leakage-aware three-state readout. |
+| **EF subspace** | The `\|1⟩`–`\|2⟩` transition and its own amplitude, frequency and DRAG parameters. Needed for leakage-aware three-state readout. |
 
 ## 3. Background: the reference pipelines
 

@@ -201,6 +201,72 @@ def run(
     return executor.process_result(dataset, "loop-job")["counts"]
 
 
+def counts_from(executor, qasm: str, shots: int = 400) -> dict:
+    """Counts from an executor that already exists, rather than a fresh one."""
+    dataset = executor.execute(
+        JobPayload(circuits=[CircuitPayload(circuit=qasm)], shots=shots)
+    )
+    return executor.process_result(dataset, "loop-job")["counts"]
+
+
+# --- the calibration reaching a driver that is already running ------------------
+
+
+def test_a_calibration_reaches_a_running_executor_without_a_restart(
+    calibrated_device, tmp_path
+):
+    """One executor, built before the calibration and used after it.
+
+    Every other test here builds a fresh executor over the calibrated file, which
+    is the restart this removes: constructing one is how the parameters got in.
+    So this one is constructed over an *uncalibrated* config, plays a circuit, and
+    only then does the file underneath it change.
+
+    The tuner is not alive alongside it. Under quantify a device element is a
+    qcodes instrument whose name is global, so one process cannot hold two devices
+    called `q0` — which is why RFC 0004 §8 runs the tuner and the QPU driver as
+    separate processes sharing the file. What a real tuner wrote is what lands on
+    the file here; producing it is `calibrated_device`'s job.
+
+    It is also the hand-calibration case: nothing here is a tuner talking to a
+    driver, only a file appearing where the driver reads.
+    """
+    calibrated, simulator, scheduler = calibrated_device
+    device = tmp_path / "quantify.device.yml"
+    shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+    close_instruments(scheduler)
+    executor = resolve_executor(
+        scheduler,
+        is_simulated=True,
+        simulator=simulator,
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+    )
+    try:
+        stale = counts_from(executor, circuit("x q[0];\n"))
+        # The fixture is 214 MHz off resonance with the wrong pi amplitude, so the
+        # X gate cannot land. Without this the assertion below proves nothing: a
+        # chip that was already calibrated would pass it whether or not the reload
+        # ever happened.
+        assert stale["1"] / sum(stale.values()) < 0.5
+
+        device.write_bytes(calibrated.read_bytes())
+
+        landed = counts_from(executor, circuit("x q[0];\n"))
+        assert landed["1"] / sum(landed.values()) > 0.9
+
+        # And the parameters themselves, not just the outcome — a count is one
+        # number and several things move it.
+        written = yaml.safe_load(calibrated.read_text())["q0"]
+        element = executor._device.get_element("q0")
+        assert read_path(element, "clock_freqs.f01") == written["clock_freqs"]["f01"]
+        assert read_path(element, "rxy.amp180") == written["rxy"]["amp180"]
+    finally:
+        executor.close()
+        close_instruments(scheduler)
+
+
 # --- what the calibration found ------------------------------------------------
 
 

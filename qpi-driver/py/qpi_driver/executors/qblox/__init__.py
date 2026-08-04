@@ -92,6 +92,11 @@ class QbloxExecutor(Executor):
         self._is_simulated = is_simulated
         self._acquisition_timeout = acquisition_timeout
         self._hardware_config = load_quantify_hardware_config(quantify_hardware_config)
+        self._watched_hardware_config = (
+            ConfigFile(quantify_hardware_config)
+            if isinstance(quantify_hardware_config, Path)
+            else None
+        )
         self._watched_device_config = (
             ConfigFile(quantify_device_config)
             if isinstance(quantify_device_config, Path)
@@ -168,6 +173,30 @@ class QbloxExecutor(Executor):
         # re-applying it moves the coupler.
         self._reapply_coupler_bias()
 
+    def _warn_if_hardware_config_moved(self) -> None:
+        """Say so when the hardware config changes, and keep running on the old one.
+
+        Deliberately not reloaded. It builds the instrument coordinator and the
+        Cluster behind it, so applying a new one means closing a live connection to
+        the rack and dialling it again — and a reconnect that fails leaves this
+        driver with no coordinator and no way back, the old one being already gone.
+        The device config has somewhere to fall back to; this does not.
+
+        A restart is the honest answer: rewiring a rack is not a runtime event.
+        Warned once per change so a stale hardware config is at least not a silent
+        one.
+        """
+        if not self._watched_hardware_config:
+            return
+        if not self._watched_hardware_config.changed():
+            return
+        self._watched_hardware_config.accept()
+        log.warning(
+            "%s has changed; this driver is still running on the hardware config it "
+            "started with. Restart it to pick the new one up.",
+            self._watched_hardware_config.path,
+        )
+
     def _reapply_coupler_bias(self) -> None:
         """Hold the couplers at the reloaded currents, on the rack already open.
 
@@ -206,6 +235,7 @@ class QbloxExecutor(Executor):
         if self._watched_device_config and self._watched_device_config.changed():
             self._reload_device_config()
             self._watched_device_config.accept()
+        self._warn_if_hardware_config_moved()
 
         acq_protocol, acq_kwargs, acq_overrides = self._resolve_acq_protocol(payload)
         sub_datasets: list[xr.Dataset] = []

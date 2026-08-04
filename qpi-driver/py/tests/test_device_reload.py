@@ -41,7 +41,7 @@ def scheduler(request) -> str:
     return request.param
 
 
-def _executor(scheduler: str, device_path, data_dir):
+def _executor(scheduler: str, device_path, data_dir, hardware=None):
     if scheduler == "quantify":
         from qpi_driver.executors.quantify import QuantifyExecutor as Executor
     else:
@@ -49,7 +49,7 @@ def _executor(scheduler: str, device_path, data_dir):
 
     return Executor(
         name=f"reload_{scheduler}",
-        quantify_hardware_config=_HARDWARE,
+        quantify_hardware_config=hardware if hardware is not None else _HARDWARE,
         quantify_device_config=device_path,
         is_dummy=True,
         data_dir=data_dir,
@@ -134,5 +134,34 @@ def test_an_untouched_config_is_not_reapplied(scheduler, device_file, tmp_path):
         _run(executor)
 
         assert _f01(executor) == pytest.approx(4.9e9)
+    finally:
+        executor.close()
+
+
+def test_a_changed_hardware_config_warns_rather_than_reconnecting(
+    scheduler, device_file, tmp_path, caplog
+):
+    """It builds the Cluster, so applying a new one means redialling the rack.
+
+    A reconnect that fails would leave the driver with no coordinator and no way
+    back, the old one already closed — the device config has a fallback, this has
+    none. So it warns and keeps running, and a restart is the answer.
+    """
+    import json
+
+    hardware = tmp_path / "quantify.hardware.json"
+    hardware.write_text(json.dumps(_HARDWARE))
+
+    executor = _executor(scheduler, device_file, tmp_path, hardware=hardware)
+    try:
+        before = executor.hardware_config
+        _run(executor)
+
+        hardware.write_text(json.dumps(_HARDWARE) + "\n")
+        with caplog.at_level("WARNING"):
+            _run(executor)
+
+        assert "Restart it" in caplog.text
+        assert executor.hardware_config is before, "it must not have been reloaded"
     finally:
         executor.close()

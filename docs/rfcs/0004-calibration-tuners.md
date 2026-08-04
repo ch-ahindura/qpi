@@ -818,12 +818,25 @@ node, exactly as a cryostat monitor does (RFC 0001 §4). The two share the devic
 YAML through the filesystem and nothing else — which is the whole of the
 write-back contract, and the reason §10 treats that file as the trust boundary.
 
-The QPU driver re-reads that file between jobs when it changes, so a calibration
-reaches a driver that is already running without a restart — and so does a set of
-parameters measured or restored by hand and dropped in place. It is applied onto
-the live device rather than rebuilt around a new one, which is what keeps the
-compiler, the instrument coordinator and the cluster connection intact. A new
-*element* is structural, not calibration, and still needs a restart.
+The QPU driver re-reads that file between jobs when it changes, and a tuner at the
+start of each DAG walk, so a calibration reaches a driver that is already running
+without a restart — and so does a set of parameters measured or restored by hand
+and dropped in place. It is applied onto the live device rather than rebuilt around
+a new one, which is what keeps the compiler, the instrument coordinator and the
+cluster connection intact. A new *element* is structural, not calibration, and
+still needs a restart.
+
+The tuner re-reads for a second reason: it *writes* this file, so one calibrating
+from what it read at startup would overwrite whatever had changed since. At DAG
+start rather than per routine — a device moving mid-walk leaves a fit and the
+parameters it was measured against disagreeing.
+
+**The hardware config does not reload.** It builds the instrument coordinator and
+the Cluster behind it, so applying a new one means closing a live connection to the
+rack and dialling it again, and a reconnect that fails leaves the driver with no
+coordinator and no way back. The device config has a fallback — the values already
+in memory — and this has none. A driver warns once when the file changes and keeps
+running on what it started with.
 
 ## 9. Verification plan
 

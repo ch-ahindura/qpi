@@ -688,6 +688,11 @@ routines. They now decline, so such a chip calibrates everything it can and retu
   format declares its own `contents` for its service unit, and nFPM replaces the
   shared list rather than adding to it. The server tolerates the missing file and
   runs on defaults, so an install worked — it just left nothing to configure.
+- `qpi-driver`: a driver warns once when its **hardware** config changes on disk and
+  keeps running on the one it started with. That file builds the instrument
+  coordinator and the Cluster behind it, so applying a new one means redialling the
+  rack, and a failed reconnect would leave the driver with no coordinator and no way
+  back. A restart is the answer; a silent staleness was not.
 - `qpi-driver`: a tuner also re-reads its device config at the start of each DAG walk
   — full, partial and drift check alike. Something else may have moved the chip since
   it started (a hand edit, a restore), and it would otherwise calibrate from what it
