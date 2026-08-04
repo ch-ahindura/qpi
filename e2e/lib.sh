@@ -131,8 +131,7 @@ install_py_client() {
 # PocketBase lifecycle
 # ---------------------------------------------------------------------------
 start_pocketbase() {
-    # Extra flags forwarded verbatim to `qpi serve`, e.g. --enable-driver-framework
-    # for suites exercising the driver framework (RFC 0001).
+    # Any arguments are forwarded verbatim to `qpi serve`.
     local extra_serve_flags=("$@")
 
     # Kill any existing process on port 8090 to prevent connecting to stale servers

@@ -5,10 +5,10 @@ This module exposes :class:`QPIBackend` (a Qiskit ``BackendV2``) and
 drop-in Qiskit execution target::
 
     from qiskit.circuit import QuantumCircuit
-    from qpi_client import QPIClient, QPIBackend
+    from qpi_client import QPIClient
 
     client = QPIClient("http://localhost:8090", api_token="tok")
-    backend = QPIBackend(client, num_qubits=5)
+    backend = client.get_backend("mock")
 
     qc = QuantumCircuit(2, 2)
     qc.h(0)

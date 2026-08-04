@@ -24,8 +24,10 @@ driver is described:
 
 - An **operation** is what a driver *does*, and it is a contract with the server:
   `process` runs jobs pushed to it and returns results (a QPU); `monitor` reports
-  readings upward on its own schedule (a cryostat, say). QPI-UI must have a handler
-  for each, so there are exactly these two.
+  readings upward on its own schedule (a cryostat, say); `calibrate` executes
+  calibration routines to track parameter drift (a tuner). QPI-UI must have a handler
+  for each, so there are exactly these three. This SDK ships a device for `monitor`
+  only.
 - A **device** is the particular backend implementing an operation —
   `bluefors_gen1` is a `monitor` device. Anyone can add one; that is what "Adding a
   device of your own" below is about.

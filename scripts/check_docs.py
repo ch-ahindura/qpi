@@ -121,6 +121,11 @@ def documents() -> list[Path]:
         *ROOT.glob("qpi-driver/*/README.md"),
         *ROOT.glob("qpi-driver/py/examples/*/README.md"),
         *ROOT.glob("qpi-client/*/README.md"),
+        # Named individually because the symlink under docs/ that publishes each of
+        # these is skipped below: a glob that reaches only the symlink checks nothing.
+        # The dashboard README sat unchecked long enough to still be the Vite scaffold.
+        ROOT / "qpi-driver/py/qpi_driver/tuners/README.md",
+        ROOT / "qpi-ui/internal/dashboard/README.md",
     ]
     seen: dict[Path, Path] = {}
     for path in candidates:

@@ -148,8 +148,8 @@ events," carried by one envelope (§6). Job dispatch **stays push** — the sche
 still decides and QPI-UI sends `JobDispatch`; nothing about the scheduler or
 online-detection changes. `qpi-driver` becomes the **Python SDK**, and a QPU
 becomes a driver that handles `JobDispatch` and emits `JobResult`. Everything is
-additive and behind an `EnableDriverFramework` flag; with the flag off the server behaves
-exactly as now.
+additive. *(The rollout was gated behind an `EnableDriverFramework` flag. The
+framework is unconditional now and the flag has been removed.)*
 
 **Packaging.** `qpi-driver` grows the same per-language layout as `qpi-client`
 (`py`, `js`, `go`), each holding that language's base SDK. Today's executors stay

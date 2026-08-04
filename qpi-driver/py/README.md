@@ -10,10 +10,11 @@ its SHA-256 matches the `--ca-fingerprint` the operator was handed out of band.
 > **Upgrading from a pre-RFC-0003 release?** The CLI grammar and some SDK APIs
 > changed, and every removal is listed with its replacement in the
 > [change log](https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md).
-> **What this SDK ships:** five QPU backends — `mock`, `presto`, `qiskit_aer`,
-> `quantify`, `qblox` — and one cryostat monitor, `bluefors_gen1`. It is the only SDK
-> of the three that can run a QPU at all, and the only one where a device can be added
-> without recompiling or rebundling.
+> **What this SDK ships:** five QPU backends — `mock`, `presto` (a stub),
+> `qiskit_aer`, `quantify`, `qblox` — one cryostat monitor, `bluefors_gen1`, and two calibration
+> tuners, `quantify_tuner` and `qblox_tuner`. It is the only SDK of the three that can
+> run a QPU or a tuner at all, and the only one where a device can be added without
+> recompiling or rebundling.
 
 Two words appear throughout, and the difference between them is the whole of how a
 driver is described:
@@ -550,15 +551,15 @@ or take down the receive loop. Results come back over a queue and are emitted by
 ## CLI Reference
 
 A driver is run with one verb, `start`: `--operation` says what it does — `process`
-(a QPU) or `monitor` (e.g. a cryostat) — and `--device` which backend within it. The
-options below are the same for every device; a device's own settings are passed as
-repeatable `-o key=value`.
+(a QPU), `monitor` (e.g. a cryostat) or `calibrate` (a tuner) — and `--device` which
+backend within it. The options below are the same for every device; a device's own
+settings are passed as repeatable `-o key=value`.
 
 ```
-qpi-driver start --operation process|monitor [OPTIONS]
+qpi-driver start --operation process|monitor|calibrate [OPTIONS]
 
 Universal options:
-      --operation TEXT    What the driver does: process | monitor [env: QPI_OPERATION]
+      --operation TEXT    What the driver does: process | monitor | calibrate [env: QPI_OPERATION]
   -a, --qpi-addr TEXT     QPI server URL [env: QPI_ADDR]
   -t, --token TEXT        Access token identifying the driver [env: QPI_ACCESS_TOKEN]
   -d, --device TEXT       Backend within the operation, e.g. mock, qblox, bluefors_gen1 [env: QPI_DEVICE]

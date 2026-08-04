@@ -186,7 +186,7 @@ graph TD
     User[Client] -->|Submit Job| PB
     
     %% Handshake & Connection
-    MainProc -->|HTTP POST /api/op/qpus/connect| PB
+    MainProc -->|HTTP POST /api/op/drivers/connect| PB
     PB -->|Assigned Ports & JWT| MainProc
     
     %% Multiprocessing Communication
@@ -244,8 +244,10 @@ The server exposes both **custom HTTP routes** and **PocketBase collection endpo
 | Method | Route | Auth | Description |
 |---|---|---|---|
 | `POST` | `/api/op/qpus/create` | Superuser | Creates a new QPU record and returns the generated access token. |
-| `POST` | `/api/op/qpus/connect` | Access token | Connects a QPU driver and returns assigned NNG ports + JWT. |
 | `POST` | `/api/op/qpu/toggle` | Superuser | Enables or disables a QPU by name. |
+| `POST` | `/api/op/drivers/create` | Superuser | Registers a driver and returns its access token. |
+| `POST` | `/api/op/drivers/connect` | Access token | Connects a driver and returns its name, assigned NNG ports + JWT. |
+| `POST` | `/api/op/drivers/toggle` | Superuser | Enables or disables a driver by id. |
 | `GET`  | `/api/op/version` | Superuser | Retrieves the application's current version. |
 | `POST` | `/api/jobs` | Authenticated | Submits a new quantum job. |
 | `GET`  | `/api/jobs` | Authenticated | Lists jobs for the authenticated user. |
@@ -259,7 +261,6 @@ The server exposes both **custom HTTP routes** and **PocketBase collection endpo
 | `GET`  | `/api/tokens/{id}` | Authenticated | Retrieves a specific API token. |
 | `PATCH`| `/api/tokens/{id}` | Authenticated | Updates an API token (name/expiry). |
 | `DELETE`| `/api/tokens/{id}` | Authenticated | Deletes an API token. |
-| `PATCH`| `/api/admin/users/{id}` | Superuser | Updates `qpu_seconds` or `api_tokens` on any user. |
 | `POST` | `/api/notifications/{id}/dismiss` | Authenticated | Dismisses a notification for the current user. |
 
 ### PocketBase Collections

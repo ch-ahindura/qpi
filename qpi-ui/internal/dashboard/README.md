@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# QPI dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React single-page app served at `/` by the QPI server. Built with Vite, React 19,
+TypeScript and Tailwind; it talks to the server as a PocketBase client
+(`src/lib/pb.ts`), so there is no bespoke API layer here.
 
-Currently, two official plugins are available:
+`npm run build` writes `dist/`, which `qpi-ui/main.go` embeds with
+`//go:embed all:internal/dashboard/dist`. The build is therefore a prerequisite of
+the Go build, not an optional step — `make build-dashboard` runs it, and `make build`
+depends on it. A stale or missing `dist/` is served as-is.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Working on it
 
-## React Compiler
+| Command | Does |
+|---|---|
+| `npm run dev` | Vite dev server with HMR. Points at `http://localhost:8090` for the API, so run `qpi serve` alongside it. |
+| `npm run build` | Type-check (`tsc -b`) then bundle to `dist/`. |
+| `npm run lint` | ESLint. |
+| `npm run format` | Prettier over `src/`, `index.html` and the root configs. |
+| `npm run cypress:run` | Cypress specs against `http://127.0.0.1:8090`, which must already be serving. |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Prefer `make test-e2e-dashboard` over `cypress:run` — it brings up a seeded server
+first. `SPEC=<glob>` narrows it to one spec.
 
-## Expanding the ESLint configuration
+## Layout
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- `src/App.tsx` — auth, the data loads, and the tab switch. Tabs are selected by URL
+  hash (`#overview`, `#qpus`, `#drivers`, `#monitoring`, `#calibration`, `#jobs`,
+  `#bookings`, `#settings`, `#admin`); an unrecognised hash is ignored rather than
+  routed. `#drivers`, `#monitoring`, `#calibration` and `#admin` render only for a
+  superuser.
+- `src/components/tabs/<Name>Tab/` — one directory per tab, `index.tsx` plus its own
+  `elements/`.
+- `src/lib/ThemeContext.tsx` — applies the active theme's design tokens as CSS
+  variables and injects its custom CSS/JS (RFC 0002; see [theming](../../../docs/theming.md)).
+  Wraps `App` in `src/main.tsx`.
+- `src/types.ts` — the shared record and payload types.
+- `cypress/e2e/` — specs grouped by the tab they exercise.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Admin identity is `collectionName === "_superusers"` on the PocketBase auth store;
+there is no separate role field.

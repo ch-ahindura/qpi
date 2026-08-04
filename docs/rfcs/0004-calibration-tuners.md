@@ -1,7 +1,7 @@
 # RFC 0004 — Calibration Tuners
 
-- **Status:** Implemented — except the hardware tier of §7 and the manual half of
-  §9, which need a chip. RFC 0005 completes the graph this one framed.
+- **Status:** Implemented — except §9's manual verification, which needs a chip.
+  RFC 0005 completes the graph this one framed.
 - **Author:** Martin Ahindura
 - **Created:** 2026-07-30
 - **Depends on:** RFC 0001 (driver framework, events), RFC 0003 (operations and devices)
@@ -65,11 +65,11 @@ general multi-qubit characterisation framework the fidelity formula comes from
 
 Recent advances in automated calibration:
 
-- **Millisecond-Scale Calibration** ([arXiv:2602.11912](https://arxiv.org/abs/2602.11912)): On-FPGA
-  calibration loops achieving 74,000 recalibrations over 6 hours with >99.9%
-  single-qubit fidelity. *(Preprint, unverified at time of writing — confirm the
-  identifier and the quoted figures before this RFC leaves Draft. Nothing in the
-  design below depends on it; it is cited as motivation only.)*
+- **Millisecond-Scale Calibration and Benchmarking of Superconducting Qubits**
+  ([arXiv:2602.11912](https://arxiv.org/abs/2602.11912)): a closed-loop on-FPGA
+  recalibration protocol, reporting more than 74,000 consecutive recalibrations over
+  6 hours of continuous operation. *(Preprint. Nothing in the design below depends on
+  it; it is cited as motivation only.)*
 - **CMA-ES Optimization** ([arXiv:2509.08555](https://arxiv.org/abs/2509.08555)): CMA-ES outperforms
   Nelder-Mead for high-dimensional pulse optimization.
 - **End-to-End Framework** ([arXiv:2501.17825](https://arxiv.org/abs/2501.17825)): Theoretical framework
@@ -756,8 +756,8 @@ What neither covers is hardware (§9).
 
 ### Test files
 
-`make test-py` (Makefile:123) runs one target per extra — `base`, `cli`, `aer`,
-`quantify`, `qblox`, `sim` — each in its own environment, so *which* environment
+`make test-py` runs one target per extra — `base`, `cli`, `aer`, `quantify`,
+`qblox`, `sim`, `loop` — each in its own environment, so *which* environment
 a test can run in is a property of the test, not a detail. Tier 1 imports
 nothing vendor-specific and belongs in the base environment. Tier 2 exists to
 compile a schedule, so it belongs with the extra that ships the compiler. Tier 3
@@ -867,7 +867,7 @@ YAML, the loader and the compiler. The instrument is the only simulated thing in
 that path; the tuner, the file and the executor are the shipped ones.
 
 The two SDK Makefile targets are in the list because the closed-set assertions there
-(`TestOperationsAreAClosedPair` and its TypeScript counterpart) fail the moment
+(`TestOperationsAreAClosedSet` and its TypeScript counterpart) fail the moment
 `calibrate` is added, and a green run of those is the cheapest proof the
 operation landed in all three SDKs rather than just the one that needed it.
 

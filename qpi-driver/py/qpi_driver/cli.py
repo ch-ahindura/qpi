@@ -45,7 +45,8 @@ if typer.IS_TYPER_INSTALLED:
         typer.Option(
             "--operation",
             envvar="QPI_OPERATION",
-            help="What this driver does: run jobs pushed to it, or report upward.",
+            help="What this driver does: run jobs pushed to it, report upward, "
+            "or calibrate a chip.",
         ),
     ]
     DeviceOpt = Annotated[

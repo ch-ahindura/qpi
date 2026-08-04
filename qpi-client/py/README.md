@@ -62,10 +62,11 @@ print(result.get_counts())
 
 ```python
 from qiskit.circuit import QuantumCircuit
-from qpi_client import QPIClient, QPIBackend
+from qpi_client import QPIClient
 
 client = QPIClient("http://localhost:8090", api_token="my-token")
-backend = QPIBackend(client, num_qubits=5)
+# The name is the QPU's; its qubit count is read from the server.
+backend = client.get_backend("mock")
 
 qc = QuantumCircuit(2, 2)
 qc.h(0)

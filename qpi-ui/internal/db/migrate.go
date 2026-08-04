@@ -281,8 +281,7 @@ func ensureDriversCollection(app core.App, cfg *config.AppConfig) error {
 
 // ensureEventsCollection creates the collection storing the `events` trace
 // log — every driver→UI event a handler chooses to persist, e.g. a cryostat
-// monitor's readings (RFC 0001 §7, Phase 3). Only reached when
-// EnableDriverFramework is on.
+// monitor's readings (RFC 0001 §7, Phase 3).
 func ensureEventsCollection(app core.App, cfg *config.AppConfig) error {
 	col, err := initCollection(app, cfg.CollectionEvents, &Event{})
 	if err != nil {
