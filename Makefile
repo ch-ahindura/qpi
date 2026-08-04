@@ -1,6 +1,6 @@
 .PHONY: test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
 
-VERSION ?= 0.3.0
+VERSION ?= 0.3.1
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
 
 # Scratch locations for the documentation checks. Under bin/, which is already

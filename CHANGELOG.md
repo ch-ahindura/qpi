@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-04
+
 ### Added
 
 - `qpi-driver`: a `sim` extra, so `-o is_simulated=true` no longer needs `scqubits`
@@ -42,6 +44,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-ui`: the deb, rpm and apk packages ship `/etc/qpi.config.yml`.
 - `qpi-driver`: the `quantify` and `qblox` extras no longer declare `scipy` (already
   a core dependency) or `lmfit` (imported nowhere).
+
+### Changed
+
+- `docs`: Removed redundancies in documentation
 
 ## [0.3.0] - 2026-08-01
 
