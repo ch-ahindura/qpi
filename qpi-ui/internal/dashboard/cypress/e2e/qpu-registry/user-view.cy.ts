@@ -19,10 +19,14 @@ describe("QPU Registry — Regular User View", () => {
     cy.contains("button", "Register QPU").should("not.exist");
   });
 
-  it("does NOT show the Driver Enable Control toggle", () => {
-    cy.contains("span", "Driver Enable Control").should("not.exist");
-    cy.contains("button", "Online (Enabled)").should("not.exist");
-    cy.contains("button", "Offline (Disabled)").should("not.exist");
+  it("does NOT show the Service toggle", () => {
+    cy.contains("span", "Service").should("not.exist");
+    cy.contains("button", "In service").should("not.exist");
+    cy.contains("button", "Switched off").should("not.exist");
+  });
+
+  it("does NOT show the maintenance toggle", () => {
+    cy.get('[data-testid="qpu-maintenance-toggle"]').should("not.exist");
   });
 
   it("shows QPU cards with status and executor info", () => {

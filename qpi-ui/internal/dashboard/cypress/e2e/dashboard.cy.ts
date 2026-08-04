@@ -107,23 +107,23 @@ describe("QPI Dashboard — End-to-End User Journeys", () => {
     cy.contains("h3", qpuName).should("be.visible");
 
     // Toggle QPU state on QPU Registry
-    cy.contains("span", "Driver Enable Control").should("be.visible");
+    cy.contains("span", "Service").should("be.visible");
     
     // The newly created QPU defaults to enabled: true in the API
     cy.contains(".bg-white", qpuName)
-      .contains("button", "Online (Enabled)")
+      .contains("button", "In service")
       .click();
-    // Verify it becomes Offline (Disabled)
+    // Verify it becomes switched off
     cy.contains(".bg-white", qpuName)
-      .contains("button", "Offline (Disabled)")
+      .contains("button", "Switched off")
       .should("be.visible");
     
     // Toggle it back online
     cy.contains(".bg-white", qpuName)
-      .contains("button", "Offline (Disabled)")
+      .contains("button", "Switched off")
       .click();
     cy.contains(".bg-white", qpuName)
-      .contains("button", "Online (Enabled)")
+      .contains("button", "In service")
       .should("be.visible");
 
     // Compose and post broadcast announcement on Admin Panel

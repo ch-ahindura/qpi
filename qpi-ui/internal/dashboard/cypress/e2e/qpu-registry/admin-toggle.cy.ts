@@ -16,13 +16,13 @@ describe("QPU Registry — Admin: Toggle QPU", () => {
     cy.contains("h1", "QPU Registry").should("be.visible");
   });
 
-  it("shows the Driver Enable Control toggle on QPU cards", () => {
-    cy.contains("span", "Driver Enable Control").should("be.visible");
+  it("shows the Service toggle on QPU cards", () => {
+    cy.contains("span", "Service").should("be.visible");
   });
 
   it("toggles a QPU from Online to Offline and back", () => {
-    // Find a QPU that is currently Online (Enabled)
-    cy.contains("button", "Online (Enabled)")
+    // Find a QPU that is currently in service
+    cy.contains("button", "In service")
       .should("be.visible")
       .first()
       .as("toggleBtn");
@@ -30,8 +30,8 @@ describe("QPU Registry — Admin: Toggle QPU", () => {
     // Click to toggle Offline
     cy.get("@toggleBtn").click();
 
-    // Verify it becomes Offline (Disabled)
-    cy.contains("button", "Offline (Disabled)")
+    // Verify it becomes switched off
+    cy.contains("button", "Switched off")
       .should("be.visible")
       .first()
       .as("toggleBtnOffline");
@@ -39,22 +39,22 @@ describe("QPU Registry — Admin: Toggle QPU", () => {
     // Click to toggle back Online
     cy.get("@toggleBtnOffline").click();
 
-    // Verify it becomes Online (Enabled) again
-    cy.contains("button", "Online (Enabled)").should("be.visible");
+    // Verify it is back in service
+    cy.contains("button", "In service").should("be.visible");
   });
 
   it("shows the correct styling for enabled vs disabled states", () => {
     // Enabled state: green styling
-    cy.contains("button", "Online (Enabled)")
+    cy.contains("button", "In service")
       .first()
       .should("have.class", "text-green-400")
       .and("have.class", "border-green-500/20");
 
     // Toggle to disabled
-    cy.contains("button", "Online (Enabled)").first().click();
+    cy.contains("button", "In service").first().click();
 
     // Disabled state: red styling
-    cy.contains("button", "Offline (Disabled)")
+    cy.contains("button", "Switched off")
       .first()
       .should("have.class", "text-red-400")
       .and("have.class", "border-red-500/20");
