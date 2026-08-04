@@ -1,8 +1,10 @@
 package api
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 
 	"qpi/internal/config"
@@ -158,4 +160,57 @@ func TestQPUUnavailable_IsSilentForAnUnknownQPU(t *testing.T) {
 	if reason := scheduler.QPUUnavailable(app, "no-such-qpu"); reason != "" {
 		t.Errorf("expected no reason for an unknown QPU, got %q", reason)
 	}
+}
+
+func TestConnectedQpuStatus_DerivesFromThePortPair(t *testing.T) {
+	app, cfg, qpu, _ := seedForGate(t)
+
+	record, err := app.FindRecordById(cfg.CollectionQPUs, qpu.ID)
+	if err != nil {
+		t.Fatalf("find qpu: %v", err)
+	}
+
+	// Clearing maintenance must not claim a connection the QPU does not have.
+	if got := db.ConnectedQpuStatus(record); got != "offline" {
+		t.Errorf("with no ports allocated, expected offline, got %q", got)
+	}
+
+	record.Set("nng_command_port", 6201)
+	record.Set("nng_result_port", 6202)
+	if got := db.ConnectedQpuStatus(record); got != "online" {
+		t.Errorf("with a port pair, expected online, got %q", got)
+	}
+}
+
+// TestQPUAvailabilityAPI_ReportsOnlyTheUnavailable proves the reason reaches the
+// dashboard from the server, rather than being rebuilt from `status` in TypeScript.
+func TestQPUAvailabilityAPI_ReportsOnlyTheUnavailable(t *testing.T) {
+	var qpuID string
+
+	scenario := tests.ApiScenario{
+		Name:   "GET /api/op/qpus/availability names the reason",
+		Method: http.MethodGet,
+		URL:    "/api/op/qpus/availability",
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			cfg := testConfig()
+			config.SaveConfigOnApp(app, cfg)
+			_ = db.EnsureSchema(app)
+
+			taking := &db.QPU{Name: "qpu_open", Status: "online", Enabled: true}
+			_ = saveToDb(app, taking)
+			closed := &db.QPU{Name: "qpu_shut", Status: "maintenance", Enabled: true}
+			_ = saveToDb(app, closed)
+			qpuID = closed.ID
+
+			RegisterRoutes(e, testFS())
+		},
+		ExpectedStatus:  http.StatusOK,
+		ExpectedContent: []string{`"reason":"this QPU is under maintenance"`},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			if qpuID == "" {
+				t.Fatal("expected the maintenance QPU to have been created")
+			}
+		},
+	}
+	scenario.Test(t)
 }

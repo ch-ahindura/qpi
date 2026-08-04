@@ -21,6 +21,7 @@ import (
 	"qpi/internal/config"
 	"qpi/internal/db"
 	"qpi/internal/drivers"
+	"qpi/internal/scheduler"
 )
 
 var (
@@ -73,6 +74,8 @@ func RegisterRoutes(e *core.ServeEvent, dashboardFS fs.FS) {
 	e.Router.GET("/api/op/version", handleOpVersion)
 	e.Router.POST("/api/op/qpus/create", handleQPUCreate)
 	e.Router.POST("/api/op/qpu/toggle", handleQPUToggle)
+	e.Router.POST("/api/op/qpu/maintenance", handleQPUMaintenance)
+	e.Router.GET("/api/op/qpus/availability", handleQPUAvailability)
 
 	// Driver routes
 	e.Router.POST("/api/op/drivers/create", handleDriverCreate)
@@ -555,6 +558,75 @@ func handleQPUToggle(re *core.RequestEvent) error {
 	var resp QPUToggleResponse
 	_ = resp.RefreshFromDbModel(&qpu)
 	return re.JSON(http.StatusOK, resp)
+}
+
+// handleQPUMaintenance handles POST /api/op/qpu/maintenance — puts a QPU under
+// maintenance or takes it back out (admin-only).
+//
+// Separate from the enabled toggle because they mean different things: switched off
+// is out of service, maintenance is being worked on, and a calibration may still be
+// dispatched to the latter (RFC 0004 §6.8). Clearing it derives the status the same
+// way re-enabling does — writing `online` would claim a connection that may not be
+// there.
+func handleQPUMaintenance(re *core.RequestEvent) error {
+	cfg, err := config.GetConfigFromApp(re.App)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
+	}
+
+	if !re.HasSuperuserAuth() {
+		return re.Error(http.StatusForbidden, "admin access required", nil)
+	}
+
+	var req QPUMaintenanceRequest
+	if err := parseBody(cfg, re, &req); err != nil {
+		return err
+	}
+
+	record, err := re.App.FindRecordById(cfg.CollectionQPUs, req.ID)
+	if err != nil {
+		return re.Error(http.StatusNotFound, "QPU not found", err)
+	}
+
+	status := db.ConnectedQpuStatus(record)
+	if req.UnderMaintenance {
+		status = "maintenance"
+	}
+
+	var qpu db.QPU
+	err = db.FindAndUpdateOne(re.App, cfg.CollectionQPUs, req.ID, &qpu,
+		map[string]any{"status": status})
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to update QPU status", err)
+	}
+
+	var resp QPUToggleResponse
+	_ = resp.RefreshFromDbModel(&qpu)
+	return re.JSON(http.StatusOK, resp)
+}
+
+// handleQPUAvailability handles GET /api/op/qpus/availability — why each QPU is not
+// taking jobs, for the QPUs that are not.
+//
+// Served rather than derived in the dashboard so the three reasons have one author.
+func handleQPUAvailability(re *core.RequestEvent) error {
+	cfg, err := config.GetConfigFromApp(re.App)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to retrieve configuration", err)
+	}
+
+	records, err := re.App.FindRecordsByFilter(cfg.CollectionQPUs, "id != ''", "+created", 0, 0)
+	if err != nil {
+		return re.Error(http.StatusInternalServerError, "failed to list QPUs", err)
+	}
+
+	unavailable := make([]QPUAvailability, 0, len(records))
+	for _, record := range records {
+		if reason := scheduler.QPUUnavailable(re.App, record.Id); reason != "" {
+			unavailable = append(unavailable, QPUAvailability{ID: record.Id, Reason: reason})
+		}
+	}
+	return re.JSON(http.StatusOK, unavailable)
 }
 
 // handleDriverCreate creates a new driver record (admin-only), generating a

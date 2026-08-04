@@ -44,6 +44,11 @@ export const App: React.FC = () => {
 
   // Data collections
   const [qpus, setQpus] = useState<QPU[]>([]);
+  // QPU id to the server's reason it is not taking jobs. Served rather than
+  // derived here: three states produce it and one author is enough.
+  const [qpuUnavailable, setQpuUnavailable] = useState<Record<string, string>>(
+    {},
+  );
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [calibrations, setCalibrations] = useState<CalibrationResult[]>([]);
@@ -120,6 +125,20 @@ export const App: React.FC = () => {
       setQpus(records as unknown as QPU[]);
     } catch (err) {
       console.error("Failed to load QPUs:", err);
+    }
+
+    try {
+      const rows = await pb.send<{ id: string; reason?: string }[]>(
+        "/api/op/qpus/availability",
+        { method: "GET" },
+      );
+      setQpuUnavailable(
+        Object.fromEntries(
+          (rows ?? []).map((row) => [row.id, row.reason ?? ""]),
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to load QPU availability:", err);
     }
   }, []);
 
@@ -484,6 +503,18 @@ export const App: React.FC = () => {
     loadQpus();
   };
 
+  const handleMaintenanceQpu = async (
+    id: string,
+    underMaintenance: boolean,
+  ) => {
+    await pb.send("/api/op/qpu/maintenance", {
+      method: "POST",
+      body: JSON.stringify({ id: id, under_maintenance: underMaintenance }),
+      headers: { "Content-Type": "application/json" },
+    });
+    loadQpus();
+  };
+
   const handleDeleteQpu = async (id: string) => {
     try {
       await pb.collection("qpus").delete(id);
@@ -629,6 +660,8 @@ export const App: React.FC = () => {
             qpus={qpus}
             isAdmin={isAdmin}
             onToggleQpu={handleToggleQpu}
+            onMaintenanceQpu={handleMaintenanceQpu}
+            unavailable={qpuUnavailable}
             onRegisterQpu={handleCreateQpu}
             onDeleteQpu={handleDeleteQpu}
           />

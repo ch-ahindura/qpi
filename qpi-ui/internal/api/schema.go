@@ -382,6 +382,33 @@ func (dr *DismissRequest) ToMap() map[string]any {
 }
 
 // QPUToggleRequest represents the JSON payload for POST /api/op/qpu/toggle.
+// QPUMaintenanceRequest is the body of POST /api/op/qpu/maintenance.
+type QPUMaintenanceRequest struct {
+	ID               string `json:"id" validate:"required"`
+	UnderMaintenance bool   `json:"under_maintenance"`
+}
+
+func (qmr *QPUMaintenanceRequest) SetDefaults() {
+}
+
+// ToMap converts the DTO to a map of field values
+func (qmr *QPUMaintenanceRequest) ToMap() map[string]any {
+	return map[string]any{
+		"id":                qmr.ID,
+		"under_maintenance": qmr.UnderMaintenance,
+	}
+}
+
+// QPUAvailability is one QPU's answer to "is this taking jobs, and if not why".
+//
+// The reason is a sentence from the server rather than a flag the dashboard turns
+// into one: three states produce it, and a second copy of that logic in TypeScript
+// is how `maintenance` came to exist in the schema and nowhere else.
+type QPUAvailability struct {
+	ID     string `json:"id"`
+	Reason string `json:"reason,omitempty"`
+}
+
 type QPUToggleRequest struct {
 	ID      string `json:"id" validate:"required"`
 	Enabled bool   `json:"enabled"`

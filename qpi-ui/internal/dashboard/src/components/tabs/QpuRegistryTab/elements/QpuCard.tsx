@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Cpu, Power, Trash2, AlertTriangle } from "lucide-react";
+import { Cpu, Power, Trash2, AlertTriangle, Wrench } from "lucide-react";
 import type { QPU } from "@/types";
 
 interface Props {
   qpu: QPU;
   isAdmin: boolean;
+  /** Why this QPU is not taking jobs, as the server phrased it. */
+  unavailableReason?: string;
   onToggle: (id: string, enabled: boolean) => Promise<void>;
+  onMaintenance: (id: string, underMaintenance: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -23,9 +26,25 @@ const STATUS_DOT: Record<QPU["status"], string> = {
   offline: "bg-red-500",
 };
 
-export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
+export function QpuCard({
+  qpu,
+  isAdmin,
+  unavailableReason,
+  onToggle,
+  onMaintenance,
+  onDelete,
+}: Props) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleMaintenance = async () => {
+    try {
+      await onMaintenance(qpu.id, qpu.status !== "maintenance");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed";
+      alert(`Could not change maintenance: ${message}`);
+    }
+  };
 
   const handleToggle = async () => {
     try {
@@ -79,6 +98,15 @@ export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
             </span>
           </div>
 
+          {unavailableReason && (
+            <p
+              data-testid="qpu-unavailable-reason"
+              className="text-xs text-amber-600 dark:text-amber-400 mt-2"
+            >
+              Not taking jobs — {unavailableReason}.
+            </p>
+          )}
+
           <div className="grid grid-cols-1 gap-4 py-4 my-2 border-t border-b border-gray-200 dark:border-zinc-800/50 text-xs">
             <div>
               <span className="text-gray-400 dark:text-zinc-500 block uppercase tracking-wider text-[10px] mb-1">
@@ -118,6 +146,18 @@ export function QpuCard({ qpu, isAdmin, onToggle, onDelete }: Props) {
               >
                 <Power className="w-3.5 h-3.5" />
                 {qpu.enabled ? "In service" : "Switched off"}
+              </button>
+              <button
+                onClick={handleMaintenance}
+                data-testid="qpu-maintenance-toggle"
+                className={`px-4 py-1.5 rounded text-xs font-semibold flex items-center gap-2 border transition-all focus:outline-none ${
+                  qpu.status === "maintenance"
+                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20"
+                    : "bg-gray-500/10 border-gray-500/20 text-gray-500 dark:text-zinc-400 hover:bg-gray-500/20"
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                {qpu.status === "maintenance" ? "Under maintenance" : "Maintenance"}
               </button>
             </div>
           </div>

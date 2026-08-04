@@ -65,15 +65,25 @@ func OnQpuUpdate(e *core.RecordEvent) error {
 		if !newEnabled {
 			e.Record.Set("status", "offline")
 		} else {
-			// check if it is connected on ports on this server
-			cmdPort := e.Record.GetInt("nng_command_port")
-			resPort := e.Record.GetInt("nng_result_port")
-			if cmdPort > 0 && resPort > 0 {
-				e.Record.Set("status", "online")
-			}
+			e.Record.Set("status", ConnectedQpuStatus(e.Record))
 		}
 	}
 	return e.Next()
+}
+
+// ConnectedQpuStatus is what a QPU's status should be when nothing is overriding
+// it: online if it holds a port pair on this server, offline otherwise.
+//
+// Shared with the maintenance endpoint, which needs the same answer when clearing
+// maintenance — writing `online` there instead would claim a connection that may
+// not exist.
+func ConnectedQpuStatus(record *core.Record) string {
+	cmdPort := record.GetInt("nng_command_port")
+	resPort := record.GetInt("nng_result_port")
+	if cmdPort > 0 && resPort > 0 {
+		return "online"
+	}
+	return "offline"
 }
 
 // OnDriverCreate runs on driver creation, hashing its token the same way
