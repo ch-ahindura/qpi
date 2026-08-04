@@ -183,11 +183,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   is still below the crossover (RFC 0005 §13).
 - `qpi-driver`: `readout_fidelity` is now its own benchmark node, so it participates
   in drift monitoring (RFC 0005 §13).
-- `qpi-driver`: The calibration graph now runs on real hardware, not just the
-  simulator (RFC 0005 §12b) — both tuners resolve a real coupler bias source (SPI
+- `qpi-driver`: The calibration graph is now wired to run on real hardware, not just
+  the simulator (RFC 0005 §12b) — both tuners resolve a real coupler bias source (SPI
   rack or cluster output) via `resolve_bias_source`, with a new
   `-o spi_rack_address`; routines needing `CalibratedTransmon` submodules now decline
-  gracefully on `BasicTransmonElement` instead of raising.
+  gracefully on `BasicTransmonElement` instead of raising. Not yet verified against a
+  physical chip.
 
 ### Fixed
 
