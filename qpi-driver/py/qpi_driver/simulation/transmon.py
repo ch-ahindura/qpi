@@ -40,6 +40,25 @@ _SOLVER_OPTIONS = {"nsteps": 200_000}
 _RABI_GHZ_PER_UNIT = 1.0 / (2 * 0.2 * 20.0)
 
 
+def require_simulation_deps() -> None:
+    """Raise unless the ``sim`` extra is installed.
+
+    Checked when a simulated chip is built, which is the last moment before a
+    caller commits to a run. Without it the first failure is a bare
+    ModuleNotFoundError from `eigenvalues` below — hours into a calibration, and
+    naming a package rather than the extra that provides it.
+    """
+    from importlib.util import find_spec
+
+    missing = [name for name in ("scqubits", "qutip") if find_spec(name) is None]
+    if missing:
+        raise ImportError(
+            f"the simulated chip needs {', '.join(missing)}. Install the sim extra: "
+            "pip install 'qpi-driver[sim]' — or drop -o is_simulated=true to run "
+            "against the instruments this device was configured for."
+        )
+
+
 @dataclass
 class TransmonSimulator:
     """One transmon, its spectrum from scqubits and its dynamics from qutip.

@@ -9,17 +9,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver`: a `sim` extra, so `-o is_simulated=true` no longer needs `scqubits`
+  and `qutip` installed by hand: `pip install 'qpi-driver[cli,quantify_tuner,sim]'`.
 - `qpi-ui`: admins can put a QPU under maintenance from the dashboard. It then takes
   no jobs, but can still be calibrated.
-- `qpi-ui`: a QPU that is not taking jobs says why, on its card.
-  `GET /api/qpus/availability` and `/api/qpus/{name}/availability` serve the reason,
-  public alongside the other QPU discovery routes.
+- `qpi-ui`: a QPU that is not taking jobs says why, on its card. `GET
+  /api/qpus/availability` and `/api/qpus/{name}/availability` serve the reason.
 - `QPUState` event, in all three SDKs: a driver is told when its QPU goes online,
   under maintenance or disabled. A tuner stops its own drift checks unless online.
-- `qpi-driver`: config files are re-read when they change on disk — the device config
-  between jobs, `calibration.yml` per calibration — so a calibration, or a file
-  restored by hand, takes effect without a restart. A new element and the hardware
-  config still need one.
+- `qpi-driver`: config files are re-read when they change on disk, so a calibration
+  takes effect without a restart. A new element and the hardware config still need one.
 
 ### Fixed
 
@@ -39,8 +38,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   offline at startup.
 - `qpi-ui`: a QPU under maintenance is no longer drawn as offline.
 - `qpi-ui`: the setup snippets for a tuner, and for the quantify and qblox QPU
-  drivers, now pre-fill the config paths those drivers cannot start without. The
-  manual command puts one `-o` per line.
+  drivers, now pre-fill the config paths those drivers cannot start without.
 - `qpi-ui`: the deb, rpm and apk packages ship `/etc/qpi.config.yml`.
 - `qpi-driver`: the `quantify` and `qblox` extras no longer declare `scipy` (already
   a core dependency) or `lmfit` (imported nowhere).

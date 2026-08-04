@@ -78,16 +78,22 @@ routines fit real physics and the calibration written back is a calibration of
 *something*.
 
 ```bash
-pip install 'qpi-driver[cli,quantify_tuner]' scqubits qutip
+pip install 'qpi-driver[cli,quantify_tuner,sim]'
 
 qpi-driver start --operation calibrate --device quantify_tuner \
     -o calibration_config=./calibration.yml -o is_simulated=true
 ```
 
+The `sim` extra is what supplies `scqubits` and `qutip`. Without it,
+`-o is_simulated=true` fails at startup saying so, rather than part-way through a
+routine.
+
 The `process` driver takes the same option, and that is the point — point both
 at the same `quantify.device.yml` and the whole node runs with no instruments:
 
 ```bash
+pip install 'qpi-driver[cli,quantify,sim]'
+
 qpi-driver start --operation process --device quantify -o is_simulated=true
 ```
 

@@ -183,7 +183,7 @@ test-py-qblox:
 # simulator. Needs no scheduler: it supplies the acquisition itself.
 test-py-sim:
 	@echo "Running Python calibration tests against the physics simulator..."
-	$(UV) sync --project qpi-driver/py --group sim --dev
+	$(UV) sync --project qpi-driver/py --extra sim --dev
 	$(RESIGN_Q1ASM)
 	$(UV) run --no-sync --project qpi-driver/py pytest -v \
 		qpi-driver/py/tests/test_physics_simulation.py \
@@ -198,7 +198,7 @@ test-py-loop:
 	@echo "Running the calibrate/process loop against the simulated chip..."
 	# Both schedulers: the loop is parametrised over them, and syncing only one
 	# silently skips half the tests — which is how qblox stayed a stub.
-	$(UV) sync --project qpi-driver/py --extra quantify --extra qblox --group sim --dev
+	$(UV) sync --project qpi-driver/py --extra quantify --extra qblox --extra sim --dev
 	$(RESIGN_Q1ASM)
 	# --no-sync, because `uv run` otherwise re-syncs to the project's *default*
 	# dependency set and prunes the `sim` group the line above just installed. Then

@@ -1733,16 +1733,16 @@ quantify-tuner = [
     { name = "qblox-instruments" },
     { name = "quantify-scheduler" },
 ]
+sim = [
+    { name = "qutip" },
+    { name = "scqubits" },
+]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
-]
-sim = [
-    { name = "qutip" },
-    { name = "scqubits" },
 ]
 
 [package.metadata]
@@ -1760,22 +1760,20 @@ requires-dist = [
     { name = "qpi-driver", extras = ["qblox"], marker = "extra == 'qblox-tuner'" },
     { name = "qpi-driver", extras = ["quantify"], marker = "extra == 'quantify-tuner'" },
     { name = "quantify-scheduler", marker = "extra == 'quantify'" },
+    { name = "qutip", marker = "extra == 'sim'", specifier = ">=5.0" },
     { name = "requests", specifier = ">=2.31.0" },
     { name = "scipy", specifier = ">=1.10.0" },
+    { name = "scqubits", marker = "extra == 'sim'", specifier = ">=4.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.9.0" },
     { name = "xarray", specifier = ">=2024.1.0" },
 ]
-provides-extras = ["cli", "aer", "qiskit-aer", "quantify", "qblox", "quantify-tuner", "qblox-tuner", "bluefors-gen1", "mock", "presto"]
+provides-extras = ["cli", "aer", "qiskit-aer", "quantify", "qblox", "quantify-tuner", "qblox-tuner", "bluefors-gen1", "mock", "presto", "sim"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.3.0" },
-]
-sim = [
-    { name = "qutip", specifier = ">=5.0" },
-    { name = "scqubits", specifier = ">=4.0" },
 ]
 
 [[package]]

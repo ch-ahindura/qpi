@@ -63,7 +63,12 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
-from qpi_driver.simulation.transmon import GHZ, NS, TransmonSimulator
+from qpi_driver.simulation.transmon import (
+    GHZ,
+    NS,
+    TransmonSimulator,
+    require_simulation_deps,
+)
 
 log = logging.getLogger(__name__)
 
@@ -299,6 +304,7 @@ class SimulatedCoordinator:
         sideband_gaps: dict[str, float] | None = None,
         parking_currents: dict[str, float] | None = None,
     ) -> None:
+        require_simulation_deps()
         self.simulator = simulator or TransmonSimulator()
         #: Edge name to the ``|11>-|02>`` gap its CZ drive is meant to bridge,
         #: in Hz, as that edge's own config declares it. An edge that has not

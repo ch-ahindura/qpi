@@ -19,8 +19,11 @@ compiles jobs against that same file — so a calibration that is wrong shows up
 as circuits that give the wrong answer, which is the only way to find out
 without a lab.
 
-`scqubits` and `qutip` are needed at run time, from the ``sim`` dependency
-group. They are imported lazily so a base install still imports this package.
+`scqubits` and `qutip` are needed at run time, from the ``sim`` extra. They are
+imported lazily so a base install still imports this package — and
+:func:`require_simulation_deps` checks for them when a simulated chip is built, so
+a missing extra is a startup error naming what to install rather than a
+`ModuleNotFoundError` from inside a fit.
 """
 
 from qpi_driver.simulation.bias import SimulatedBias
@@ -30,10 +33,16 @@ from qpi_driver.simulation.coordinator import (
     SimulationError,
 )
 from qpi_driver.simulation.resonator import ReadoutResonator
-from qpi_driver.simulation.transmon import GHZ, NS, TransmonSimulator
+from qpi_driver.simulation.transmon import (
+    GHZ,
+    NS,
+    TransmonSimulator,
+    require_simulation_deps,
+)
 
 __all__ = [
     "TransmonSimulator",
+    "require_simulation_deps",
     "ReadoutResonator",
     "SimulatedBias",
     "SimulatedCoordinator",

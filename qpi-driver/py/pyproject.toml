@@ -42,20 +42,16 @@ qblox_tuner = ["qpi-driver[qblox]"]
 bluefors_gen1 = []
 mock = []
 presto = []
+sim = [
+    "scqubits>=4.0",
+    "qutip>=5.0",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=7.1.0",
     "ruff>=0.3.0",
-]
-# Tier 3 of the calibration testing strategy (RFC 0004 §7): physically realistic
-# acquisition data, so a routine is tested against physics rather than against
-# the analytic form its own fit assumes. Test-only, and a group rather than an
-# extra because nothing shipped to a user needs it.
-sim = [
-    "scqubits>=4.0",
-    "qutip>=5.0",
 ]
 
 [project.urls]

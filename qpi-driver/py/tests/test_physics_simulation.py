@@ -742,3 +742,24 @@ def test_a_parked_coupler_moves_the_qubit_the_simulator_reports(simulator):
     # q1 is on the edge, so it moves; q0 is not, so it does not.
     assert parked._qubit_frequency_hz("q1") != pytest.approx(simulator.f01 * GHZ)
     assert parked._qubit_frequency_hz("q0") == pytest.approx(simulator.f01 * GHZ)
+
+
+def test_a_missing_sim_extra_says_what_to_install(monkeypatch):
+    """Otherwise the first sign is a ModuleNotFoundError from inside a fit."""
+    import importlib.util
+
+    from qpi_driver.simulation import require_simulation_deps
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: None if name == "scqubits" else real(name, *a, **k),
+    )
+
+    with pytest.raises(ImportError) as excinfo:
+        require_simulation_deps()
+
+    message = str(excinfo.value)
+    assert "scqubits" in message
+    assert "qpi-driver[sim]" in message, "it has to name the extra, not the package"
