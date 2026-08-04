@@ -86,7 +86,7 @@ class QuantifyExecutor(Executor):
                 `qpi_driver.simulation.SimulatedCoordinator` instead — a
                 transmon model driven by the schedule's own pulses, so counts
                 reflect both the circuit and the device calibration. Needs the
-                `sim` dependency group. Mutually exclusive with `is_dummy`.
+                `sim` extra. Mutually exclusive with `is_dummy`.
             data_dir: Directory to where data is temporarily stored.
             acquisition_timeout: Timeout in seconds to wait for acquisition.
             **kwargs: Arbitrary keyword arguments passed to the base class.

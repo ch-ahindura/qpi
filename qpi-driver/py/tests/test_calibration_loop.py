@@ -28,8 +28,8 @@ import numpy as np
 import pytest
 import yaml
 
-pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
-pytest.importorskip("qutip", reason="needs the [sim] dependency group")
+pytest.importorskip("scqubits", reason="needs the [sim] extra")
+pytest.importorskip("qutip", reason="needs the [sim] extra")
 
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED  # noqa: E402
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED  # noqa: E402

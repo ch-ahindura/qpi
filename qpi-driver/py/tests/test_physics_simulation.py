@@ -12,10 +12,10 @@ That makes them the first tests where a routine can be wrong in a way the other
 tiers cannot see: a schedule that does not produce the physics its fit assumes
 still compiles, and still fits its own synthetic data.
 
-Needs the `sim` dependency group and nothing else — no scheduler extra. The
+Needs the `sim` extra and nothing else — no scheduler extra. The
 routines, the fits and the DAG are numpy and scipy; the schedulers are needed to
 *run* a schedule, and here the simulator supplies the acquisition instead. That
-is why `make test-py-sim` syncs `--group sim` alone:
+is why `make test-py-sim` syncs `--extra sim` alone:
 
     make test-py-sim
 """
@@ -27,8 +27,8 @@ from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.fitting import FitError, fit_rb_decay
 from qpi_driver.tuners.routines import all_routines
 
-pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
-qutip = pytest.importorskip("qutip", reason="needs the [sim] dependency group")
+pytest.importorskip("scqubits", reason="needs the [sim] extra")
+qutip = pytest.importorskip("qutip", reason="needs the [sim] extra")
 
 from tests.fixtures.simulation import (  # noqa: E402
     GHZ,

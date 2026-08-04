@@ -66,7 +66,7 @@ qpi-driver = "qpi_driver.cli:app"
 
 [tool.pytest.ini_options]
 markers = [
-    "scqubits: needs the [sim] dependency group — physics-backed acquisition data (RFC 0004 §7, tier 3)",
+    "scqubits: needs the [sim] extra — physics-backed acquisition data (RFC 0004 §7, tier 3)",
 ]
 
 [tool.setuptools.packages.find]

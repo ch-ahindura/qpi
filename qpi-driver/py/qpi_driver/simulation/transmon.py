@@ -12,7 +12,7 @@ everything between "compiles" and "works on a chip", which is otherwise a gap
 nothing covers.
 
 `scqubits` and `qutip` are imported inside the methods that need them. They live
-in the ``sim`` dependency group, and a base install must still be able to import
+in the ``sim`` extra, and a base install must still be able to import
 this package.
 """
 

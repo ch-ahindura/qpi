@@ -116,7 +116,7 @@ class QuantifyTuner(Tuner):
                 :class:`~qpi_driver.simulation.SimulatedCoordinator` instead —
                 the compiled schedule is played through a transmon model, so
                 routines fit real physics and the calibration written back is a
-                calibration of *something*. Needs the ``sim`` dependency group.
+                calibration of *something*. Needs the ``sim`` extra.
                 Mutually exclusive with *is_dummy*.
         """
         super().__init__(name, **kwargs)

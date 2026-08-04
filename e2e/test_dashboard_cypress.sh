@@ -26,7 +26,7 @@ echo "[e2e] Compiling static assets..."
 # executor. A mock returns a fixed answer and a dummy cluster returns nan, so
 # neither can show a measurement level behaving differently from the others —
 # which is exactly where the dashboard's job results have gone wrong before.
-# `QPI_E2E_SIMULATED` also pulls in the `sim` dependency group and swaps the
+# `QPI_E2E_SIMULATED` also pulls in the `sim` extra and swaps the
 # miscalibrated fixture for one matching the simulated chip.
 export QPI_E2E_SIMULATED=1
 DRIVER_DEVICE="${DRIVER_DEVICE:-quantify}"

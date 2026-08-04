@@ -92,7 +92,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver`: Added a physics-based simulator tier for calibration tests (RFC 0004
   §7, tier 3) — acquisition data generated from a real transmon Hamiltonian
   (`scqubits`) and the Lindblad master equation (`qutip`) instead of each fit's own
-  analytic form. `make test-py-sim`; the `sim` dependency group is optional.
+  analytic form. `make test-py-sim`; the `sim` extra is optional.
 - `qpi-driver`: The tier-3 simulator now exercises a full calibration end to end
   through the tuner's own entry point — full run, partial run, drift check and its
   recalibration, and write-back.

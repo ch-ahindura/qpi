@@ -96,11 +96,10 @@ install_driver() {
         # mock and any other executor: cli only
     esac
 
-    # The simulated chip needs scqubits and qutip, which live in the `sim`
-    # dependency group rather than in any extra — a base install must still
-    # import the package without them.
+    # The simulated chip needs scqubits and qutip, which live in the `sim` extra —
+    # a base install must still import the package without them.
     if [ "${QPI_E2E_SIMULATED:-0}" = "1" ]; then
-        uv_extras="$uv_extras --group sim"
+        uv_extras="$uv_extras --extra sim"
         pip_extras="$pip_extras,sim"
     fi
 

@@ -15,7 +15,7 @@ follow-up job being a job the worker can actually run, a fitted frequency
 reaching the file the `process` driver reads — which is where the faults a unit
 test cannot see actually live.
 
-Needs the `sim` dependency group and no scheduler extra:
+Needs the `sim` extra and no scheduler extra:
 
     make test-py-sim
 """
@@ -30,8 +30,8 @@ from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.device import read_path
 from qpi_driver.tuners.routines import routine_names
 
-pytest.importorskip("scqubits", reason="needs the [sim] dependency group")
-pytest.importorskip("qutip", reason="needs the [sim] dependency group")
+pytest.importorskip("scqubits", reason="needs the [sim] extra")
+pytest.importorskip("qutip", reason="needs the [sim] extra")
 
 from tests.fixtures.simulation import GHZ, SimulatedTuner  # noqa: E402
 
