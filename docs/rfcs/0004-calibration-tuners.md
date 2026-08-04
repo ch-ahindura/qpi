@@ -91,7 +91,7 @@ Recorded here rather than in a separate ADR, per the RFC conventions.
 | Package location | New `tuners/` at same level as `executors/`, mirroring its structure |
 | Dispatch transport | A `calibration_requests` collection the existing driver dispatcher polls — **not** a direct socket write from an HTTP handler. §6.8 |
 | Result persistence | A `calibration_results` collection. This reverses an earlier decision here in favour of the events log; §6.8 records why. |
-| pyproject.toml | Alias extras `quantify_tuner`/`qblox_tuner` pointing at the scheduler extras, following the existing `qiskit_aer = ["qpi-driver[aer]"]` precedent; the fitting dependencies go into the `quantify` and `qblox` extras themselves. §6.9 |
+| pyproject.toml | Alias extras `quantify_tuner`/`qblox_tuner` pointing at the scheduler extras, following the existing `qiskit_aer = ["qpi-driver[aer]"]` precedent. The tuners add no dependency of their own. §6.9 |
 
 ### Why a new operation rather than a new device
 
@@ -759,7 +759,7 @@ nothing vendor-specific and belongs in the base environment. Tier 2 exists to
 compile a schedule, so it belongs with the extra that ships the compiler. Tier 3
 needs **no scheduler at all**: the routines, the fits and the DAG are numpy and
 scipy, and a scheduler is only needed to *run* a schedule — which is exactly
-what the simulator does instead. `test-py-sim` therefore syncs `--group sim`
+what the simulator does instead. `test-py-sim` therefore syncs `--extra sim`
 alone. The last column below is part of the design, not bookkeeping:
 
 | Test file | Tier | Runs under | Tests |
@@ -865,7 +865,7 @@ The two SDK Makefile targets are in the list because the closed-set assertions t
 operation landed in all three SDKs rather than just the one that needed it.
 
 CI runs all of the above. `test-py-sim` and `test-py-loop` need both schedulers and
-the `sim` group, which is why the matrix carries a `sim` entry that names no
+the `sim` extra, which is why the matrix carries a `sim` entry that names no
 executor. The driver-start leg is skipped for that entry, there being no
 `--device sim` to start (`.github/workflows/ci.yml`).
 
@@ -945,119 +945,68 @@ the docs. All of it under **both** schedulers, including `-o is_simulated=true`,
 which qblox refused until its `HardwareAgent` turned out to compile offline — a
 real agent keeps compilation and only execution is simulated.
 
-Faults found by testing a whole calibration end to end rather than routine by
-routine, all fixed. The first two came from driving `_execute_calibration`
-against the one-qubit simulator; the next three from putting the two-qubit
-routines in front of a coupled pair for the first time; the last group from
-running the same tests under qblox as well as quantify:
+Fourteen faults were found by testing a whole calibration end to end rather than
+routine by routine, all fixed. Most were fix-and-forget; what follows is only what
+outlives them — facts about the chips, the schedulers or the sweeps that the next
+routine author needs:
 
-- **The RB fit could not measure a good chip.** `fit_rb_decay` bounded the
-  model's amplitude to ±2, which suits a raw survival probability but not the
-  rescaled signal the `rb` routine hands it. A decay that has not reached its
-  asymptote by the deepest sequence has an amplitude far larger than the range
-  observed, so the bound was met by pulling the decay rate down instead — pinning
-  the reported fidelity near 0.98 for any chip better than about 3% error per
-  Clifford. Since the default drift threshold is 0.999, a healthy chip would have
-  recalibrated on every drift check, forever. Only `r` is bounded now.
-- **`recalibrate` did not narrow its routines.** `CalibrationDAG.partial_order`
-  was written and tested but never wired in, so a partial recalibration ran the
-  whole enabled graph over fewer targets — including the readout bring-up, which
-  is most of the cost a partial run exists to avoid.
-- **`fit_chevron` looked for the brightest pixel.** The CZ is where population
-  has left `|11⟩` for `|02⟩` and *returned*, so the control reads ≈1 there — but
-  it also reads ≈1 everywhere the flux pulse did nothing, and the maximum of
-  that surface is as likely to land on an off-resonant row as on the gate. It
-  now finds resonance by oscillation contrast and the duration by the round trip
-  along that row.
-- **A chevron sweep can step straight over the crossing.** The avoided crossing
-  is about 4.5 MHz wide and the default amplitude grid moves the control ~75 MHz
-  per step, so the surface comes back flat to within its noise — from which a
-  peak-finder still returns a confident answer that goes to the device as a CZ.
-  It now refuses below a minimum contrast, the same guard qubit spectroscopy
-  applies to a line narrower than its own step size.
-- **`fit_conditional_phase` measured the wrong angle, in the wrong units.** It
-  read the zero crossing of the two fringes' difference, which sits at
-  `φ₀ + φ_cz/2` — half the wanted angle, displaced by the control's dynamical
-  phase over the flux pulse. That phase runs to tens of turns and is exactly
-  what having two fringes is for. It now fits each fringe and subtracts. The
-  correction was also `np.pi - crossing` with the crossing in degrees, so a gate
-  needing 30° back was told to apply −26.86.
-
-- **The DRAG parameter is not the same quantity in the two schedulers.** Both
-  pulses put a scaled derivative of the Gaussian on the other quadrature, and they
-  scale it differently: quantify's `D_amp` multiplies `(t−µ)/σ`, so it is the
-  dimensionless *ratio* of derivative to Gaussian, validated to ±1; qblox's `beta`
-  multiplies `(t−µ)/σ²`, so it is in *seconds*, larger by one pulse sigma — 2.5 ns
-  for a 20 ns gate. The routine swept one constant range for both, so it was nine
-  orders of magnitude out for whichever it was not written for, and being out in
-  the large direction does not merely mis-fit: the derivative term exceeds full
-  scale and the schedule stops compiling. `SchedulerBackend.drag_span` gives each
-  backend its own default, and both now recover the same physical optimum — 0.113
-  as a ratio, 2.8e-10 s as a beta, agreeing to four figures.
-- **`drag` wrote to a parameter qblox does not have.** `apply` wrote
-  `rxy.motzoi` unconditionally; qblox's transmon calls it `rxy.beta`. Same shape
-  as `cz.phase_correction` below — a routine that measured its optimum correctly
-  and then had nowhere to put it. `drag_parameter_name` asks the element which it
-  has, as `phase_correction_names` already did for the edge.
-- **`fit_chevron` calibrated a swap and called it a CZ.** The round trip was
-  found by walking to the first trough and then to the first sample that stops
-  rising. That is the right description of the experiment and the wrong way to
-  measure it, because the trough is not smooth: the exchange beats against the
-  other transitions the flux pulse sits near, so the bottom of the round trip
-  carries a wiggle a few per cent of the full swing, and the walk stops at the top
-  of *that* — still deep in `|02⟩`. Measured: 55 ns for a round trip of 110, so
-  the calibrated gate was a complete population transfer, which is a perfectly
-  good gate and the wrong one. It is a level crossing now: the population has to
-  reach the far side of the swing before anything counts as a return. Found only
-  once the DAG ran far enough for `conditional_phase` to consume the answer, where
-  it surfaced as a flat fringe — `fit_conditional_phase`'s own guard refusing to
-  read an angle off a Ramsey that did not oscillate, two routines downstream of the
-  fault that caused it.
-- **The readout could be calibrated once and never again.** The hardware fixture
-  pinned each readout port's intermediate frequency and let the LO float, so three
-  qubits sharing one QRM\_RF agreed on an LO only because their configured readout
-  frequencies happened to. Move one by a single kilohertz and the module is asked
-  for two LOs at once, and *every later schedule* fails to compile — a long way
-  from the routine that caused it. A working chip's hardware config does the opposite, pinning
-  the LO and letting each qubit's IF differ, which is the arrangement that lets a
-  readout frequency be recalibrated at all. The fixture matches it now.
-- **`resonator_punchout` left the readout pointing where the resonator used to
-  be.** A readout frequency and a readout power are not two independent numbers:
-  the resonance moves *because* the power changed, which is the entire content of
-  the punchout experiment. So choosing a new power invalidated the frequency
-  `resonator_spectroscopy` had measured at the old one, and the DAG never revisited
-  it — half a linewidth off, a fifth of the readout contrast, for every routine
-  downstream. Punchout writes both now, and needed nothing extra measured to do it:
-  it already fits a resonator spectrum at every power in its range, so the row at
-  the power it selects *is* the corrected frequency. It was being discarded. The
-  alternative — re-running spectroscopy after punchout — is a second sweep for data
-  already in hand, and would have meant a routine appearing twice in the graph.
-- **Qubit spectroscopy at a 1% drive is a signal-to-noise of about five.** The
-  routine's default drive rotates by a tenth of a radian, moving the population by
-  half a per cent, and a Lorentzian fitted at that ratio lands anywhere: the same
-  sweep returned centres 14 MHz low, 12 MHz high and 62 MHz low depending on
-  nothing but the noise. The full-DAG test had been passing on that margin. Three
-  per cent puts it inside a megahertz and is still weak enough not to saturate the
-  line or reach the two-photon 0–2 transition 70 MHz above it.
-- **The qblox tuner had never completed a calibration.** Four faults, each alone
-  fatal: the write-back called `device.elements()`, which is a *dict* under
-  qblox and a method under quantify; edges were written with positional
-  constructor arguments and qblox's edges are pydantic models, which take none;
-  `element_type`, `name`, `edge_type` and both endpoints were written as if they
-  were calibration when they are structural, so the loader tried to assign to
-  fields that refuse it; and both loaders added elements in file order, so an
-  edge listed before either of its qubits failed.
-- **`conditional_phase` applied nothing, on either scheduler.** It wrote
-  `cz.phase_correction` — a name *neither* has, quantify naming them after the
-  qubits and qblox after the roles — behind a `hasattr` guard that was therefore
-  never true. Fixing the name exposed the larger gap: those two parameters
-  cancel each qubit's *single-qubit* phase, which is not the conditional phase
-  and not derivable from it, so the routine measures four fringes now rather
-  than two.
-- **The qblox tier-2 test never compiled anything.** It asserted a routine's
-  schedule was *built* while the quantify one compiled it, so a schedule that
-  would not compile under qblox passed. `HardwareAgent.compile` is called now,
-  and the first thing it caught was `drag`.
+- **The DRAG parameter is not the same quantity in the two schedulers.** quantify's
+  `D_amp` multiplies `(t−µ)/σ`, so it is the dimensionless *ratio* of derivative to
+  Gaussian, validated to ±1. qblox's `beta` multiplies `(t−µ)/σ²`, so it is in
+  *seconds*, larger by one pulse sigma — 2.5 ns for a 20 ns gate. One sweep range
+  cannot serve both: nine orders of magnitude out, the derivative term exceeds full
+  scale and the schedule stops compiling. `SchedulerBackend.drag_span` gives each its
+  own, and both recover the same optimum — 0.113 as a ratio, 2.8e-10 s as a beta.
+- **The readout LO must be pinned and the IFs left free**, not the reverse. Pin each
+  port's IF and let the LO float, and three qubits sharing a QRM\_RF agree on an LO
+  only while their readout frequencies happen to. Move one by a kilohertz and the
+  module is asked for two LOs, and *every later schedule* fails to compile — a long
+  way from the routine that caused it. The reverse arrangement is what lets a readout
+  frequency be recalibrated at all.
+- **A chevron sweep can step straight over the crossing.** The avoided crossing is
+  about 4.5 MHz wide and the default amplitude grid moves the control ~75 MHz per
+  step, so the surface comes back flat to within its noise — from which a peak-finder
+  still returns a confident answer that goes to the device as a CZ. Hence the minimum
+  contrast guard, the same one qubit spectroscopy applies to a line narrower than its
+  own step size.
+- **A CZ chevron's round trip must be found by level crossing, not by walking.** The
+  trough is not smooth: the exchange beats against the other transitions the flux
+  pulse sits near, so its bottom carries a wiggle a few per cent of the full swing,
+  and a walk that stops when the signal stops rising stops at the top of *that* —
+  still deep in `|02⟩`. That measured 55 ns for a round trip of 110, calibrating a
+  complete population transfer, which is a perfectly good gate and the wrong one.
+- **Readout frequency and readout power are one measurement, not two.** The resonance
+  moves *because* the power changed — that is the entire content of punchout — so
+  choosing a new power invalidates the frequency spectroscopy measured at the old one.
+  Punchout writes both, from the spectrum row at the power it selects; it was already
+  fitting it and discarding it.
+- **Qubit spectroscopy needs ~3% drive, not 1%.** At a tenth of a radian the
+  population moves half a per cent, and a Lorentzian fitted at that ratio lands
+  anywhere: the same sweep returned centres 14 MHz low, 12 MHz high and 62 MHz low on
+  noise alone. Three per cent is inside a megahertz and still weak enough not to
+  saturate the line or reach the two-photon 0–2 transition 70 MHz above it.
+- **The two schedulers name the same parameters differently**, and a `hasattr` guard
+  over a name neither has is silently false forever. quantify's DRAG parameter is
+  `rxy.motzoi`, qblox's is `rxy.beta`; the phase corrections are named after the
+  qubits under one and the roles under the other. `drag_parameter_name` and
+  `phase_correction_names` ask the element which it has.
+- **They differ in shape as well as naming.** `device.elements()` is a method under
+  quantify and a *dict* under qblox; qblox's edges are pydantic models, so they take
+  no positional constructor arguments. And `element_type`, `name`, `edge_type` and an
+  edge's two endpoints are structural, not calibration — write them back as
+  parameters and the loader tries to assign to fields that refuse it. Both loaders
+  also need elements before edges, or an edge listed first fails.
+- **Tier 2 must compile, not merely build.** A test that asserts a schedule was
+  *built* passes on a schedule that would never assemble; `HardwareAgent.compile` is
+  what catches it.
+- **The two phase-correction parameters are not the conditional phase.** They cancel
+  each qubit's *single-qubit* phase, which is not derivable from the conditional one,
+  so the routine measures four fringes rather than two.
+- **An RB amplitude bound suits a raw survival probability, not a rescaled signal.**
+  Bounding it to ±2 met the bound by pulling the decay rate down instead, pinning
+  reported fidelity near 0.98 for any chip better than ~3% error per Clifford — and
+  with a 0.999 drift threshold, a healthy chip would recalibrate forever. Only `r` is
+  bounded.
 
 Two of these were encoded as expectations rather than found by them. The tier-1
 test for `fit_conditional_phase` asserted
@@ -1112,10 +1061,10 @@ Not implemented, deliberately:
 
 ## 12. Implementation plan
 
-Maintained separately from this RFC, as with RFC 0001 §11 and RFC 0003 §12. The
-sequence that falls out of the above: the operation and event types across all
-three SDKs and the server first, since everything else fails to compile without
-them; then tier-1 Python internals (DAG, config, fitting, Clifford,
-persistence) which need no hardware and carry most of the risk; then the
-routines behind each scheduler; then the dispatch queue and the result handler;
-then the dashboard panel; then documentation.
+Complete, bar §9's manual verification. The sequence was: the operation and event
+types across all three SDKs and the server first, since everything else fails to
+compile without them; then tier-1 Python internals (DAG, config, fitting, Clifford,
+persistence), which need no hardware and carry most of the risk; then the routines
+behind each scheduler; then the dispatch queue and the result handler; then the
+dashboard panel; then documentation. The phased plan itself was kept outside the
+repository.
