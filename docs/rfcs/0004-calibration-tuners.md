@@ -190,7 +190,7 @@ sets are exactly what they are.
 |-------|--------|------|
 | `qpi-driver/py/qpi_driver/builtins/registry.py` | `CALIBRATE = "calibrate"` on `Operation` | `_DEVICES` is built per operation, so this alone opens the registry slot |
 | `qpi-driver/py/qpi_driver/events.py` | `CALIBRATE_DISPATCH`, `CALIBRATION_RESULT` on `EventType` | |
-| `qpi-driver/go/devices` | `Calibrate` const, `Operations()`/`OperationNames()` | `TestOperationsAreAClosedPair` in `devices_test.go` asserts a *pair*; it becomes a triple |
+| `qpi-driver/go/devices` | `Calibrate` const, `Operations()`/`OperationNames()` | `TestOperationsAreAClosedSet` in `devices_test.go` asserted a *pair*; it becomes a triple, and was renamed for it |
 | `qpi-driver/go/events.go` | `CalibrateDispatch`, `CalibrationResult` | |
 | `qpi-driver/js/src/devices.ts` | `Operation.Calibrate` and the `allOperations` array | same closed-set assertion as Go |
 | `qpi-driver/js/src/events.ts` | the two event types | |
