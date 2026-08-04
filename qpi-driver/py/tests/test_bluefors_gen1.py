@@ -137,6 +137,24 @@ def test_poll_emits_event_with_readings():
     }
 
 
+# A fridge under maintenance is exactly when its telemetry matters most, so the
+# state event must not quiet a monitor. A SLEEP/WAKE signal would have.
+def test_a_monitor_keeps_reporting_whatever_state_the_qpu_is_in():
+    from qpi_driver.events import Event, EventType
+
+    for state in ("online", "maintenance", "disabled"):
+        driver = _driver()
+        driver._out_sock = FakeSocket()
+        driver.handle_event(
+            Event(type=EventType.QPU_STATE, payload={"state": state}, driver="d")
+        )
+
+        with patch("requests.get", return_value=_bluefors_response("4.2")):
+            driver._poll()
+
+        assert len(driver._out_sock.sent) == 1, f"silenced while {state}"
+
+
 def test_poll_skips_emit_when_every_channel_fails():
     driver = _driver()
     driver._out_sock = FakeSocket()

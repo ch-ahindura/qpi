@@ -515,6 +515,81 @@ def test_a_broken_edit_fails_that_calibration_and_leaves_the_worker_alive(tmp_pa
     assert tuner.closed is True
 
 
+# --- the QPU's service state --------------------------------------------------
+
+
+def test_a_drift_check_is_skipped_unless_the_qpu_is_online():
+    """The one path no server-side gate can reach: it runs on the driver's clock."""
+    for state, expected in (("online", 1), ("maintenance", 0), ("disabled", 0)):
+        driver = _driver()
+        driver._job_queue = RecordingQueue()
+        driver.handle_event(
+            Event(type=EventType.QPU_STATE, payload={"state": state}, driver="d")
+        )
+
+        driver._check_fidelity()
+
+        assert len(driver._job_queue.items) == expected, (
+            f"state {state} should have queued {expected} drift check(s)"
+        )
+
+
+def test_a_dispatched_calibration_still_runs_under_maintenance():
+    """Maintenance is the state a chip is in while someone works on it."""
+    driver = _driver()
+    driver._job_queue = RecordingQueue()
+    driver.handle_event(
+        Event(type=EventType.QPU_STATE, payload={"state": "maintenance"}, driver="d")
+    )
+
+    driver.handle_event(
+        Event(
+            type=EventType.CALIBRATE_DISPATCH,
+            payload={"job_id": "j1", "mode": "full"},
+            driver="d",
+        )
+    )
+
+    assert driver._job_queue.items == [{"job_id": "j1", "mode": "full"}]
+
+
+def test_a_dispatched_calibration_is_refused_on_a_switched_off_qpu(monkeypatch):
+    driver = _driver()
+    driver._job_queue = RecordingQueue()
+    emitted: list[Event] = []
+    monkeypatch.setattr(driver, "emit", emitted.append)
+    driver.handle_event(
+        Event(type=EventType.QPU_STATE, payload={"state": "disabled"}, driver="d")
+    )
+
+    driver.handle_event(
+        Event(
+            type=EventType.CALIBRATE_DISPATCH,
+            payload={"job_id": "j1", "mode": "full"},
+            driver="d",
+        )
+    )
+
+    assert driver._job_queue.items == []
+    assert "switched off" in emitted[0].payload["error"]
+
+
+def test_a_driver_calibrates_before_it_is_ever_told_a_state():
+    """A server that predates the event says nothing; that is not "disabled"."""
+    driver = _driver()
+    driver._job_queue = RecordingQueue()
+
+    driver.handle_event(
+        Event(
+            type=EventType.CALIBRATE_DISPATCH,
+            payload={"job_id": "j1", "mode": "full"},
+            driver="d",
+        )
+    )
+
+    assert driver._job_queue.items == [{"job_id": "j1", "mode": "full"}]
+
+
 # --- lifecycle ----------------------------------------------------------------
 
 

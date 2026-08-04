@@ -116,6 +116,30 @@ func ReleaseLeaseIfDriver(app core.App, record *core.Record) {
 	}
 }
 
+// sendQPUState tells one driver its QPU's state, reporting whether it went out.
+//
+// A failed send is left for the next tick to retry: the caller only records the
+// state as sent when this returns true, so the loop re-asserts rather than
+// believing a driver knows something it never received.
+func sendQPUState(sock mangos.Socket, driverID, state string) bool {
+	event, err := NewEvent(driverID, EventQPUState, QPUStatePayload{State: state})
+	if err != nil {
+		log.Printf("[DriverDispatcher %s] cannot build QPU state event: %v", driverID, err)
+		return false
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[DriverDispatcher %s] cannot marshal QPU state event: %v", driverID, err)
+		return false
+	}
+	if err := sock.Send(payload); err != nil {
+		log.Printf("[DriverDispatcher %s] cannot send QPU state %q: %v", driverID, state, err)
+		return false
+	}
+	log.Printf("[DriverDispatcher %s] QPU is %s", driverID, state)
+	return true
+}
+
 // isDispatching reports whether this server currently holds goroutines for
 // driverID. Only handleDriverConnect adds to activeDrivers, so an entry means a
 // driver connected during this process's lifetime — a server restart leaves the
@@ -194,11 +218,23 @@ func runDriverDispatcher(ctx context.Context, app core.App, driverID, qpuID stri
 		sock.Close()
 	}()
 
+	// What this driver was last told its QPU's state is. Empty until the first
+	// pass, so a freshly started dispatcher asserts the current state once —
+	// which is also what a server restart does, and why restarting cannot wake
+	// a QPU somebody switched off.
+	lastState := ""
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		if state := scheduler.QPUServiceState(app, qpuID); state != lastState {
+			if sendQPUState(sock, driverID, state) {
+				lastState = state
+			}
 		}
 
 		// A calibration takes the QPU out of service for hours, so it is

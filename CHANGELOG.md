@@ -9,38 +9,36 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
-- `qpi-ui`: admins can put a QPU under maintenance, and take it back out, from the
-  dashboard. A QPU under maintenance takes no jobs but can still be calibrated.
+- `qpi-ui`: admins can put a QPU under maintenance from the dashboard. It then takes
+  no jobs, but can still be calibrated.
 - `qpi-ui`: a QPU that is not taking jobs says why, on its card.
-- `qpi-driver`: config files are re-read when they change on disk. The `process`
-  driver picks up `quantify.device.yml` between jobs, so a calibration — or a file
-  restored by hand — takes effect without a restart. A tuner re-reads
-  `calibration.yml` on each dispatched calibration and its device config at the start
-  of each run. A new element, and the hardware config, still need a restart.
+- `QPUState` event, in all three SDKs: a driver is told when its QPU goes online,
+  under maintenance or disabled. A tuner stops its own drift checks unless online.
+- `qpi-driver`: config files are re-read when they change on disk — the device config
+  between jobs, `calibration.yml` per calibration — so a calibration, or a file
+  restored by hand, takes effect without a restart. A new element and the hardware
+  config still need one.
 
 ### Fixed
 
 - `qpi-ui`: no tuner could be registered — the `kind` column never gained
   `quantify_tuner` or `qblox_tuner`.
 - `qpi-ui`: the schema migration never revisited a field it had already created, so a
-  select kept its original values forever. Declared values are now added on every
-  start, for every collection.
-- `qpi-ui`: a calibration report's `mode` and `status` are checked against the column
-  before insert, rather than failing inside the listener and losing the report.
-- `qpi-ui`: switching a QPU off, putting it under maintenance, or a calibration in
-  progress now stops jobs — refused at submission with the reason, and held back at
-  dispatch. A job already queued waits rather than failing.
-- `qpi-ui`: two tuners on one QPU could calibrate it at the same time. Calibration
-  serialises per QPU, and `/api/op/drivers/connect` returns 409 while another driver
-  of the same operation is connected. Registering a standby is still allowed.
-- `qpi-ui`: a driver's NNG ports and goroutines are released when it disconnects, when
-  its record is deleted, and when its listener fails to bind — previously only when an
-  admin disabled it. Every driver is marked `offline` at startup.
+  select kept its original values forever.
+- `qpi-ui`: a calibration report's `mode` and `status` are checked before insert,
+  rather than failing inside the listener and losing the report.
+- `qpi-ui`: switching a QPU off, maintenance, and a calibration in progress now stop
+  jobs — refused at submission with the reason, held back at dispatch. Queued jobs
+  wait rather than fail.
+- `qpi-ui`: two tuners on one QPU could calibrate it at once. Calibration serialises
+  per QPU, and connect returns 409 for a second driver of the same operation.
+- `qpi-ui`: a driver's ports and goroutines are released when it disconnects, is
+  deleted, or fails to bind — previously only when disabled. Drivers are marked
+  offline at startup.
 - `qpi-ui`: a QPU under maintenance is no longer drawn as offline.
-- `qpi-ui`: the deb, rpm and apk packages ship `/etc/qpi.config.yml`, which
-  `qpi.service` names.
-- `qpi-driver`: the `quantify` and `qblox` extras no longer declare `scipy` (already a
-  core dependency) or `lmfit` (imported nowhere).
+- `qpi-ui`: the deb, rpm and apk packages ship `/etc/qpi.config.yml`.
+- `qpi-driver`: the `quantify` and `qblox` extras no longer declare `scipy` (already
+  a core dependency) or `lmfit` (imported nowhere).
 
 ## [0.3.0] - 2026-08-01
 

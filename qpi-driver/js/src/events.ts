@@ -19,6 +19,7 @@ export enum EventType {
   CryostatReading = "CryostatReading",
   CalibrateDispatch = "CalibrateDispatch",
   CalibrationResult = "CalibrationResult",
+  QPUState = "QPUState",
 }
 
 /** The wire shape of an envelope, as sent over NNG. */

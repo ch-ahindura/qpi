@@ -214,3 +214,46 @@ func TestQPUAvailabilityAPI_ReportsOnlyTheUnavailable(t *testing.T) {
 	}
 	scenario.Test(t)
 }
+
+func TestQPUServiceState_IsNarrowerThanUnavailable(t *testing.T) {
+	app, _, qpu, tuner := seedForGate(t)
+
+	if got := scheduler.QPUServiceState(app, qpu.ID); got != "online" {
+		t.Errorf("expected online, got %q", got)
+	}
+
+	qpu.Status = "maintenance"
+	if err := saveToDb(app, qpu); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if got := scheduler.QPUServiceState(app, qpu.ID); got != "maintenance" {
+		t.Errorf("expected maintenance, got %q", got)
+	}
+
+	qpu.Status = "online"
+	qpu.Enabled = false
+	if err := saveToDb(app, qpu); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if got := scheduler.QPUServiceState(app, qpu.ID); got != "disabled" {
+		t.Errorf("expected disabled, got %q", got)
+	}
+
+	// A running calibration stops jobs but is not a service state: broadcasting it
+	// would tell the tuner doing the calibrating to stop.
+	qpu.Enabled = true
+	if err := saveToDb(app, qpu); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := saveToDb(app, &db.CalibrationRequest{
+		Driver: tuner.ID, QPU: qpu.ID, Mode: "full", Status: "running",
+	}); err != nil {
+		t.Fatalf("seed calibration: %v", err)
+	}
+	if got := scheduler.QPUServiceState(app, qpu.ID); got != "online" {
+		t.Errorf("a calibration must not become a service state, got %q", got)
+	}
+	if reason := scheduler.QPUUnavailable(app, qpu.ID); reason == "" {
+		t.Error("it should still stop jobs, though")
+	}
+}

@@ -89,6 +89,20 @@ exist today are just the job flow, generalised:
 | --- | --- | --- | --- |
 | `JobDispatch` | UI → driver | `{ job_id, circuits, … }` | Driver runs the job. (Push, scheduler-driven, as today.) |
 | `JobResult` | driver → UI | `{ job_id, status, results }` | Updates the job, deducts QPU-seconds; `status` = completed/failed. |
+| `QPUState` | UI → driver | `{ state }` | Tells the driver its QPU is `online`, under `maintenance` or `disabled`. |
+
+`QPUState` is re-asserted on change from the dispatcher loop, not pushed from the
+endpoint that changed it: the PUSH socket lives inside that goroutine, and a
+level-triggered send needs nobody to remember what was delivered. A driver that
+reconnects, or a server that restarts, is simply told the state again — which is why
+restarting cannot bring a QPU somebody switched off back into service.
+
+It carries the *state* rather than a stop/go instruction because the right response
+differs by operation: a monitor should keep reporting a fridge under maintenance,
+while a tuner should stop its own drift checks and still honour a calibration
+dispatched to it. It is also cooperative — a driver can ignore it — so the
+server-side gate stays the enforcement, and this only reaches what the gate cannot:
+work a driver schedules on its own clock.
 
 New event types are how the framework grows: a maintainer adding, say, a cryostat
 monitoring driver (which does not exist today) would introduce its own driver→UI

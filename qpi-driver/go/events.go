@@ -36,6 +36,9 @@ const (
 	CalibrateDispatch EventType = "CalibrateDispatch"
 	// CalibrationResult is emitted by a calibrate driver once a run finishes.
 	CalibrationResult EventType = "CalibrationResult"
+	// QPUState tells a driver its QPU's service state: online, maintenance or
+	// disabled. Re-asserted on change, so a driver that reconnects is told again.
+	QPUState EventType = "QPUState"
 )
 
 // Event is a single typed message exchanged with QPI-UI in either direction.

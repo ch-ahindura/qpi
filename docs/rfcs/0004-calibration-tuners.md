@@ -514,10 +514,12 @@ answers which request never depended on there being one in flight.
 Serializing the queue is not the whole answer, because a tuner also calibrates on
 its own clock: `drift_check_interval` puts a `fidelity_check` on the tuner's
 internal queue without asking the server, guarded by a `threading.Event` that
-means nothing to a second process. So the second tuner is refused earlier —
-`/api/op/drivers/connect` returns 409 while another driver of the same operation
-is connected to that QPU (§10). Registering one is still allowed: a standby, or a
-replacement prepared before the running one is retired.
+means nothing to a second process. Two things close that. A second tuner is
+refused at `/api/op/drivers/connect` while one of the same operation is connected
+to that QPU (§10) — registering one is still allowed, for a standby or a
+replacement prepared before the running one is retired. And the `QPUState` event
+(RFC 0001 §4) tells a tuner when its QPU is under maintenance, which is when it
+stops scheduling its own checks while still honouring a dispatched calibration.
 
 #### Receiving a result
 
@@ -1098,21 +1100,6 @@ excluded:
   instead of averaging to nothing.
 
 §7 describes both, and what each still does not model.
-
-Not implemented, and not deliberate:
-
-- **Jobs are not held back while a calibration runs.** `FetchNextJob` filters on
-  `qpu_target` and status only, so jobs keep going out to a QPU whose chip is
-  mid-calibration. The queue makes it fixable without a second outbound path: a
-  `qpu` field on `calibration_requests` would let `FetchNextJob` return nothing
-  while one is `running` there. Until then the operator's lever is
-  `POST /api/op/drivers/toggle`.
-
-  The other half of this — a calibration not reaching the QPU driver that needs
-  it — is now closed: the executor re-reads its device config between jobs when
-  the file changes, so a calibration on the same node, or a set of parameters
-  restored by hand, takes effect without a restart. Two tuners can no longer
-  calibrate one chip at once either (§6.8, §10).
 
 Not implemented, deliberately:
 

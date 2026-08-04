@@ -205,6 +205,25 @@ cp quantify.device.yml.prev quantify.device.yml
 A failed calibration writes nothing at all, so a `.prev` older than the last run
 means the last run failed.
 
+## Taking a QPU out of service
+
+Two levers, and they mean different things:
+
+- **Switched off** (`POST /api/op/qpu/toggle`, `enabled: false`) — out of service.
+  No jobs, and no calibration either.
+- **Maintenance** (`POST /api/op/qpu/maintenance`) — being worked on. No jobs, but a
+  calibration can still be dispatched, which is usually the point of putting it
+  there. Both are settable from the QPU Registry tab.
+
+Either way a queued job **waits** rather than failing, and a new submission is
+refused with the reason. A QPU being calibrated stops taking jobs on its own, with no
+lever needed.
+
+Drivers of that QPU are told, so a tuner stops running its own drift checks while the
+chip is under maintenance. That is cooperative — the server's own gate is what
+actually holds jobs back — and it is re-asserted whenever the state changes, so
+reconnecting a driver or restarting the server does not put a QPU back into service.
+
 ## What takes effect without a restart
 
 The device config is re-read when it changes on disk: by the `process` driver

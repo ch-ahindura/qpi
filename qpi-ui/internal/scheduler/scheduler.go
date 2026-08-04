@@ -128,6 +128,30 @@ func QPUUnavailable(app core.App, qpuID string) string {
 	return ""
 }
 
+// QPUServiceState is the state to tell a QPU's drivers it is in: "disabled",
+// "maintenance" or "online".
+//
+// Narrower than QPUUnavailable on purpose. A calibration in progress stops *jobs*,
+// but it is not a service state and must not be broadcast: the tuner running it
+// would be telling itself to stop.
+func QPUServiceState(app core.App, qpuID string) string {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return "online"
+	}
+	qpu, err := app.FindRecordById(cfg.CollectionQPUs, qpuID)
+	if err != nil {
+		return "online"
+	}
+	if !qpu.GetBool("enabled") {
+		return "disabled"
+	}
+	if qpu.GetString("status") == "maintenance" {
+		return "maintenance"
+	}
+	return "online"
+}
+
 // CalibrationRunningOn reports whether a calibration is in flight on qpuID.
 //
 // Read from the request's own `qpu` rather than by traversing `driver.qpu`: this is

@@ -24,6 +24,7 @@ class EventType(str, Enum):
     CRYOSTAT_READING = "CryostatReading"
     CALIBRATE_DISPATCH = "CalibrateDispatch"
     CALIBRATION_RESULT = "CalibrationResult"
+    QPU_STATE = "QPUState"
 
 
 @dataclass

@@ -28,6 +28,12 @@ const (
 	EventCalibrateDispatch EventType = "CalibrateDispatch"
 	// EventCalibrationResult is emitted by a calibration tuner with results.
 	EventCalibrationResult EventType = "CalibrationResult"
+
+	// EventQPUState tells a driver what service state its QPU is in. Re-asserted
+	// whenever it changes rather than pushed once, so a driver that reconnects, or
+	// a server that restarts, learns the current state and nothing has to
+	// remember what was sent (RFC 0004 §11).
+	EventQPUState EventType = "QPUState"
 )
 
 // AllEventTypes lists every event type QPI-UI knows about in this version.
@@ -382,6 +388,16 @@ func (dr *DismissRequest) ToMap() map[string]any {
 }
 
 // QPUToggleRequest represents the JSON payload for POST /api/op/qpu/toggle.
+// QPUStatePayload is the body of an EventQPUState event.
+//
+// The state, not an instruction: a monitor should keep reporting a fridge under
+// maintenance, while a tuner should stop its own drift checks and still honour a
+// dispatched calibration. A sleep/wake pair could not express both.
+type QPUStatePayload struct {
+	// State is one of "online", "maintenance" or "disabled".
+	State string `json:"state"`
+}
+
 // QPUMaintenanceRequest is the body of POST /api/op/qpu/maintenance.
 type QPUMaintenanceRequest struct {
 	ID               string `json:"id" validate:"required"`

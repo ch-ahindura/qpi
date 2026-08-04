@@ -80,6 +80,9 @@ class CalibrateDriver(QpiDriver):
         self._worker: multiprocessing.Process | None = None
         self._result_pump: threading.Thread | None = None
         self._busy = threading.Event()
+        #: What QPI-UI last said this QPU's state is. Assumed online until told
+        #: otherwise, so a driver whose server predates the event still calibrates.
+        self._qpu_state = "online"
 
         # Registered here, started by `run` after `_on_start` has made the queue
         # — the order QpiDriver.run guarantees and BlueforsGen1Driver relies on.
@@ -88,6 +91,11 @@ class CalibrateDriver(QpiDriver):
 
     def handle_event(self, event: Event) -> None:
         """Queue a dispatched calibration; ignore everything else."""
+        if event.type is EventType.QPU_STATE:
+            self._qpu_state = str(event.payload.get("state") or "online")
+            log.info("QPU is %s", self._qpu_state)
+            return
+
         if event.type is not EventType.CALIBRATE_DISPATCH:
             log.warning(
                 "dropping event %s: calibrate driver does not handle %s",
@@ -98,6 +106,10 @@ class CalibrateDriver(QpiDriver):
 
         payload = dict(event.payload)
         job_id = payload.get("job_id", "unknown")
+        if self._qpu_state == "disabled":
+            log.warning("rejecting calibration %s: the QPU is switched off", job_id)
+            self._emit_result(job_id, {"error": "this QPU is switched off"})
+            return
         if self._busy.is_set():
             # A calibration takes hours and the worker runs one at a time.
             # Queueing a second is not patience, it is a report nobody will
@@ -113,7 +125,16 @@ class CalibrateDriver(QpiDriver):
         self._job_queue.put(payload)
 
     def _check_fidelity(self) -> None:
-        """Queue a periodic drift check, unless a calibration is already running."""
+        """Queue a periodic drift check, unless something says not to.
+
+        This is the one path the server cannot gate: it runs on this driver's own
+        clock and never asks. So it is the state event that stops it — a chip under
+        maintenance is being worked on, and sweeping it while someone does that is
+        exactly what maintenance is for.
+        """
+        if self._qpu_state != "online":
+            log.info("skipping drift check: the QPU is %s", self._qpu_state)
+            return
         if self._busy.is_set():
             log.info("skipping drift check: a calibration is already running")
             return
