@@ -362,12 +362,12 @@ the candidate file back before it replaces anything, keeps the previous file as
 `.prev`, and treats a fit outside its own sweep as a failure rather than a
 parameter. Every node added here inherits that for free.
 
-## 12. Implementation plan
+## 12. How the graph was built
 
-Ordered so that each phase is independently mergeable and the risky physics comes
-after the machinery.
+In this order, so that each step was independently mergeable and the risky physics
+came after the machinery. §14 records where the result diverged from §6 and §7.
 
-1. ~~**Check / calibrate / diagnose.**~~ **Done.** `CheckOutcome` plus the optional
+1. **Check / calibrate / diagnose.** `CheckOutcome` plus the optional
    `build_check_schedule`/`analyse_check` pair on every routine;
    `CalibrationDAG.check` and `.diagnose`; `recalibrate` now asks rather than
    assumes. Checks implemented for `resonator_spectroscopy` — three points across
@@ -376,19 +376,18 @@ after the machinery.
    order in its own error and cannot be told apart from a gain change. Tier-1 tests
    for the recursion over a fabricated graph; a tier-2 test that every check
    schedule compiles.
-2. ~~**The cheap missing writers.**~~ **Done** — though not as planned; the third of them turned out not to be a node at all.
-   - `time_of_flight` → `measure.acq_delay`: **done.** Opens the window *with* the
-     readout pulse so the dead time lands inside a raw trace, and recovers 148 ns
-     against a true 148 on the simulated chip.
-   - `resonator_relaxation`: **done, as a characterisation.** It reports the
-     resonator linewidth — which nothing else measures — and deliberately does *not*
-     write `measure.integration_time`. The ring-up is a floor on that, not an
-     optimum: choosing the optimum trades signal-to-noise against relaxation during
-     the window, which needs phase 4's discrimination fidelity. Three time constants
-     would have cut the fixture's 1 µs window to 240 ns on a criterion that
-     never mentions noise.
-   - `spec.amplitude`: **done**, and not as the planned separate node. Two things
-     changed on contact with the problem.
+2. **The cheap missing writers**, of which the third turned out not to be a node.
+   - `time_of_flight` → `measure.acq_delay`. Opens the window *with* the readout
+     pulse so the dead time lands inside a raw trace, and recovers 148 ns against a
+     true 148 on the simulated chip.
+   - `resonator_relaxation` reports the resonator linewidth — which nothing else
+     measures — and deliberately does *not* write `measure.integration_time`. The
+     ring-up is a floor on that, not an optimum: the optimum trades signal-to-noise
+     against relaxation during the window, which needs phase 4's discrimination
+     fidelity. Three time constants would have cut the fixture's 1 µs window to
+     240 ns on a criterion that never mentions noise.
+   - `spec.amplitude`, and not as a separate node. Two things changed on contact
+     with the problem.
 
      The blocker went first. There was nowhere to put the value — the transmon
      element has `clock_freqs`, `measure`, `ports`, `pulse_compensation`, `reset` and
@@ -416,7 +415,7 @@ after the machinery.
      rejected against. Rows fitting a line narrower than the sweep's own step are
      dropped before selection, the same criterion `_require_resolved_line` applies to
      the winner.
-3. ~~**Dispersive readout in the simulator.**~~ **Done**, and extended later to
+3. **Dispersive readout in the simulator**, extended later to
    three levels — see the end of this entry. Each level pulls the
    resonance to `bare + chi(1-2n)`, so the levels return different *complex*
    responses and the IQ clouds are derived rather than placed — `GROUND_IQ` and
@@ -449,20 +448,20 @@ after the machinery.
    put the fitted centre 7.4 MHz out and fail its own test. At 10% the contrast is 26%
    and the fit lands within a megahertz. The routine was never right; it was being
    flattered.
-4. ~~**The state-resolved readout pass.**~~ **Done**, in three nodes rather than four and not the four that were planned.
-   - `readout_discrimination`: **done.** Prepares `|0⟩`/`|1⟩` single-shot, fits the
+4. **The state-resolved readout pass**, in three nodes rather than the four planned.
+   - `readout_discrimination`: Prepares `|0⟩`/`|1⟩` single-shot, fits the
      rotation as the direction between cloud centres and the threshold as the
      spread-weighted midpoint, and reports the assignment fidelity from the same
      shots — 0.994 on the simulated chip. **This is what makes `meas_level=2`
      calibrated.** `readout_fidelity` is folded in rather than being its own node:
      splitting them would measure the same two clouds twice.
-   - `resonator_spectroscopy_excited`: **done, as a characterisation.** Prepares
+   - `resonator_spectroscopy_excited`: Prepares
      ``|1>`` and sweeps the readout clock, reporting where that resonance sits and so
      the dispersive shift itself — the number the whole readout rests on, and one
      nothing else measures. It writes nothing, deliberately: the frequency that best
      separates the states is not derivable from the two resonances, since it depends
      on how the two Lorentzians overlap.
-   - `readout_operating_point`: **done**, as one node rather than the planned
+   - `readout_operating_point`: as one node rather than the planned
      `readout_frequency_two_state` and `readout_amplitude_two_state`, and only after
      both of those were written, run against the full DAG, and backed out. What
      follows is why, kept because the numbers are the argument.
@@ -538,12 +537,12 @@ after the machinery.
      `resonator_punchout` sweeps a far larger grid unaffected because it averages;
      this cannot, since the width of each cloud is the measurement.
 5. **The EF subspace.** Mostly done — the leakage measurement it exists for is in.
-   - `f12_spectroscopy` → `clock_freqs.f12`: **done.** The `.12` clock is driven in
+   - `f12_spectroscopy` → `clock_freqs.f12`: The `.12` clock is driven in
      the simulator now — its own rotating frame, detuning on `|2⟩`, `|0⟩` a spectator —
      and the routine recovers 4.9304 GHz against a true 4.9312, with an anharmonicity
      of −283.7 MHz against −282.9. It depends on `rabi`, because the transition starts
      from `|1⟩`.
-   - `rabi_12` → `r12.ef_amp180`: **done.** Prepares ``|1>``, sweeps a raw pulse on
+   - `rabi_12` → `r12.ef_amp180`: Prepares ``|1>``, sweeps a raw pulse on
      the ``.12`` clock, and fits the oscillation into ``|2>``. A raw pulse because
      neither scheduler has an EF gate — the device config's operations are built for
      `rxy` on ``.01`` — so the routine assembles clock, port and envelope itself.
@@ -585,7 +584,7 @@ after the machinery.
      nearest centre and reports the leakage. On the simulated chip the three states
      assign at better than 90% and the two readout points are measurably different,
      which is the premise for carrying both. See phase 3 for what the fix cost.
-   - `fine_amplitude_12` → `r12.ef_amp180`: **done.** A pi/2 pre-rotation then n EF pi
+   - `fine_amplitude_12` → `r12.ef_amp180`: A pi/2 pre-rotation then n EF pi
      pulses, so a per-pulse error grows linearly against a readout noise that does
      not — the residual `rabi_12` cannot see, because a single pi pulse is second
      order in its own error. It refines to under 0.05 rad per pulse on both qubits.
@@ -595,7 +594,7 @@ after the machinery.
      which at a 0-1 readout are all but on top of each other; at the three-state point
      they are 14 sigma apart in magnitude alone. The three-state point turns out to be
      what makes the whole EF chain measurable, not just the leakage number.
-   - `drag_12` → `r12.ef_motzoi`: **done**, and it finds a real interior optimum:
+   - `drag_12` → `r12.ef_motzoi`: it finds a real interior optimum:
      −0.043 against a swept span of 0.2, a fifth of the way out and nowhere near
      either edge. **Negative**, where the 0-1 optimum is positive, and that sign is
      the physics rather than a convention — DRAG cancels leakage into the
@@ -648,7 +647,7 @@ after the machinery.
        so `drag_12` now has a curve to fit instead of a flat line.
 
      `ramsey_12` and `drag_12` are both written on top of this.
-   - `ramsey_12` → `clock_freqs.f12`: **done**, and accurate to a couple of kilohertz.
+   - `ramsey_12` → `clock_freqs.f12`: accurate to a couple of kilohertz.
      It detunes the clock rather than phase-advancing the second pi/2, which is the
      opposite of what `ramsey` does one rung down and is not a preference: a
      `ShiftClockPhase` on the ``.12`` clock produced no fringe at all — the fitted
@@ -661,7 +660,7 @@ after the machinery.
      no better than the spectroscopy it exists to refine — where a properly placed
      point gives kilohertz. The grid is now five frequencies by two amplitudes, the
      axes chosen by which one the criterion actually varies on.
-   - ~~`ramsey_12`: **blocked by a frame mismatch, measured.**~~ **Unblocked, see above.** The EF pulses are applied
+   - `ramsey_12`, on the frame mismatch that blocked it (resolved above). The EF pulses are applied
      in `_drive_ef`'s own rotating frame, with the detuning carried on ``|2>``, but a
      free evolution between them runs under `_drift` — the *0-1* drive frame, where the
      ``|1>``-``|2>`` splitting is the whole anharmonicity. So the phase between two EF
@@ -684,7 +683,7 @@ after the machinery.
      exactly, including the executor's clock override, which is now a mechanism rather
      than a plan.
 6. **The coupler.**
-   - `cz_spectroscopy` → `clock_freqs.cz`: **done.** A parametric CZ modulates the
+   - `cz_spectroscopy` → `clock_freqs.cz`: A parametric CZ modulates the
      coupler and a sideband bridges ``|11>``-``|02>``; amplitude sets how fast the
      exchange runs, *frequency* sets whether it runs at all, so a drive off the
      transition is a gate that compiles, plays and does nothing. Nothing measured it.
@@ -725,7 +724,7 @@ after the machinery.
      nothing in the simulator responding to it, so a routine could have written any
      current at all and no measurement would have contradicted it. Measured from zero
      bias rather than from nothing, which is what leaves every existing fixture alone.
-   - `coupler_anticrossing` → `bias.parking_current`: **done**, and it is the node
+   - `coupler_anticrossing` → `bias.parking_current`: it is the node
      that finally broke the routine interface — deliberately, and on the terms §11
      asked for.
 
@@ -753,7 +752,7 @@ after the machinery.
      tried last would corrupt every routine after it — which the test asserts, because
      a first version of that test left the shared fixture parked at 1.9 mA and broke
      the CZ tests downstream.
-   - `cz_parametrization` → `cz.square_amp`, `cz.square_duration`: **done**, and it is
+   - `cz_parametrization` → `cz.square_amp`, `cz.square_duration`: it is
      `cz_chevron`'s counterpart rather than a variant of it. The two gates are resonant
      in different variables: a DC-flux CZ is brought onto the crossing by *amplitude*,
      so it needs a 2D chevron; a parametric one is brought there by *frequency*, which
@@ -768,12 +767,9 @@ after the machinery.
      exchange term carries the rate undivided, so the population oscillates at twice
      it. A chip calibrated in another convention differs by exactly that factor.
 
-6. ~~**The coupler.**~~ **Done.**
 
-Phases 1–2 are worth doing regardless of how far the rest gets. Phase 4 is the one
-whose absence is currently a wrong answer rather than a missing feature.
 
-## 12b. Running the graph on a chip
+### Running the graph on a chip
 
 The simulator is a test harness. What the graph has to do is calibrate hardware, and
 two things stood between it and that:
@@ -809,7 +805,7 @@ needs which submodule.
 
 ## 13. Open questions
 
-- ~~**Does `resonator_punchout` survive as a calibrate node at all?**~~ **Decided:
+- **Does `resonator_punchout` survive as a calibrate node at all?** **Decided:
   it becomes a check node.** It now has one, and the check is a different experiment
   rather than a cheaper sweep — necessarily, because the question is not "where is
   the resonance" but "is the power still below the crossover", and that is about how
@@ -822,7 +818,7 @@ needs which submodule.
   *discriminated* readout point — and deliberately not the calibration one. Making
   punchout check-only needs a producer for the calibration amplitude first, and there
   is not one. Recorded rather than forced.
-- ~~**Is `readout_fidelity` a node or a report field?**~~ **Decided: a node**, and a
+- **Is `readout_fidelity` a node or a report field?** **Decided: a node**, and a
   benchmark. The argument that lost was mine — that splitting it from
   `readout_discrimination` measures the same two clouds twice, which is true and is
   the cost. The argument that wins is that **only a node participates in drift
@@ -833,7 +829,7 @@ needs which submodule.
   should be invisible to monitoring. `readout_discrimination` still reports its own
   fidelity from the shots it already has, which says whether the line it just fitted
   is any good; the node is the standing measurement of whether it still is.
-- ~~**Where does the three-state discriminator live in the device file?**~~
+- **Where does the three-state discriminator live in the device file?**
   **Settled by `CalibratedTransmon`.** A custom element per scheduler, opted into by
   `element_type.path` like `FluxTunableCoupler`, carrying whatever submodules the
   graph needs — `spec` first, and `measure_2state_opt` / `measure_3state_opt` as
@@ -841,7 +837,7 @@ needs which submodule.
   every routine reads the path through a resolver (`spectroscopy_amplitude_path`,
   `drag_parameter_name`) so a config on `BasicTransmonElement` still calibrates as
   far as its own parameters allow, rather than failing to load.
-- ~~**Should the DAG refuse an edge whose qubits are not targeted?**~~ **Decided:
+- **Should the DAG refuse an edge whose qubits are not targeted?** **Decided:
   yes, at startup.** `CalibrationConfig.validate_targets` rejects it before anything
   runs. The wrong answer here is not an exception but a calibrated-*looking* gate: a
   chevron over an uncalibrated qubit still fits a curve and still writes an amplitude
@@ -920,10 +916,8 @@ and the second is meaningless before the first.
   leakage and writes nothing. Returning three outcomes from a measurement is an API
   question — `meas_level`, the counts schema, every client — and not a calibration
   one.
-- **`measure.integration_time`.** §5 lists it as unproduced and it still is.
-  `resonator_relaxation` measures the ring-up, which is a *floor* on the window rather
-  than an optimum; the optimum trades signal-to-noise against relaxation during it,
-  and nothing here measures noise.
+- **`measure.integration_time`.** §5 lists it as unproduced and it still is;
+  `resonator_relaxation` measures a floor on the window rather than an optimum (§12).
 - **Two of the simulator's chosen constants.** §7 predicted the coupler nodes would
   replace `G_MHZ`, `FLUX_CURVATURE_GHZ`, `SIDEBAND_GAP_GHZ`, `STARK_SHIFT_MHZ` and
   `STARK_ASYMMETRY` with measured numbers. `cz_parametrization` recovers the exchange
