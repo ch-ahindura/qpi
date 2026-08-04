@@ -29,10 +29,9 @@ do anything. Three ideas carry the whole design:
    the events it involves. The device — which backend implements that contract — is
    open-ended, and that is where extension happens.
 2. **A device is described by data, and built by a function that returns a driver.**
-   A `DeviceSpec` says what a device is called, what `-o` options it takes, and how
-   to build it. Nothing about a device is knowable only by running it — so
-   `--help` can list every option, and every device is unit-testable without a
-   server.
+   A `DeviceSpec` is a name, an operation and a builder. The builder returns the
+   driver rather than running it, so every device is unit-testable without a server.
+   What its `-o` keys mean is QPI-UI's to document, not the SDK's (§9).
 3. **One CLI verb.** `qpi-driver start --operation <op> --device <dev>`. Adding an
    operation stops meaning "add a subcommand", and adding a device stops meaning
    "edit the SDK".
@@ -124,8 +123,7 @@ the SDK filled in could only be a guess (§9).
 The transport flags are unchanged from RFC 0001: `--qpi-addr`/`-a`, `--token`/`-t`,
 `--device`/`-d`, `--ca-file`, `--ca-fingerprint`, `--option`/`-o`,
 `--recv-timeout-ms`, each with its existing environment variable and default.
-`--name`/`-n` is gone: a driver's display label belongs to the admin who registered
-it, and `drivers/connect` returns it rather than accepting one.
+`--name`/`-n` is gone (§11).
 
 One command says what a build can run:
 
@@ -272,10 +270,8 @@ option validation as the stock binary. Its `--device` accepts registered names
 only, which is not a lesser mechanism — in Go it is *the* mechanism.
 
 Where an SDK ships no device for an operation, `start --operation process` must say
-so plainly — that this SDK ships no `process` devices, and where to find one — not
-report an empty list of known devices. And no SDK has a default device: QPI-UI
-generates the command that launches a driver and it always names one, so a `--device`
-the SDK filled in could only be a guess.
+so plainly — that this SDK ships no `process` devices, and where to find one — rather
+than report an empty list of known devices. No SDK has a default device (§4).
 
 ## 9. Where truth lives
 
@@ -362,41 +358,29 @@ against RFC 0001 keeps it; only how it is launched and registered moves.
 
 ## 12. Implementation plan
 
-Maintained separately from this RFC, as with RFC 0001 §11: per-phase objectives,
-status, definition-of-done checklists and verification commands. The sequence is
-Python internals first (registry, schemas, extension routes), then the command
-grammar across all three SDKs together with the installers and snippet generators,
-then Go and TypeScript parity, then documentation, then coverage gates.
+Complete. The sequence was Python internals first (registry, extension routes), then
+the command grammar across all three SDKs together with the installers and snippet
+generators, then Go and TypeScript parity, then documentation, then coverage gates.
+The phased plan itself was kept outside the repository.
 
 ## 13. Decisions
 
 Recorded here rather than in a separate ADR, per the RFC conventions.
 
-1. **An operation is a closed enum; a device is open.** Operations require server
-   handlers, so they cannot be added unilaterally; devices are pure
-   implementation, so they can. This division is what makes a single extension
-   mechanism sufficient.
-2. **One CLI verb, `start`, with the operation as a value.** A new operation
-   should cost a table entry, not a subcommand in three languages. §4.
-3. **A device is a name, an operation and a builder, and the builder returns an
-   unstarted driver.** Testability and a single `run` in the SDK. §5, §7.
-4. **Three registration routes, one registry** — built-in, entry point, import
-   path — and no fourth mechanism for "custom drivers", because a custom driver is
-   a custom device. §6.
-5. **Import paths follow Pydantic's `ImportString`**, accepting `module:attr` and
-   `module.attr`; a device value is an import path when it contains `.` or `:`.
-   §6.
-6. **There is no option schema; reading an option is what declares it, and an option
-   nothing read is an error.** Silently ignoring a mistyped option is worse than
-   refusing to start — and the reads are already the only complete description of
-   what a device accepts. §5.
-7. **`--operation` gets no short form**, because `-o` is `--option` and `-O`
-   beside it is a hazard. §4.
-8. **QPI-UI holds the whole catalog; the driver publishes none.** One description
-   rather than two kept in step by a script. Reverses an earlier decision here; §9
-   records why. §9.
-9. **Break once, with a published migration table**, rather than carrying
-   deprecated aliases through a pre-1.0 project. §11.
+1. **An operation is a closed enum; a device is open.** §1, §2.
+2. **One CLI verb, `start`, with the operation as a value.** §4.
+3. **A device is a name, an operation and a builder; the builder returns an unstarted
+   driver.** §5, §7.
+4. **Three registration routes, one registry**, and no fourth mechanism for a "custom
+   driver" — a custom driver is a custom device. §6.
+5. **Import paths follow Pydantic's `ImportString`**, `module:attr` or `module.attr`;
+   a device value is an import path when it contains `.` or `:`. §6.
+6. **There is no option schema.** Reading an option declares it, and an option
+   nothing read is an error. §5.
+7. **`--operation` gets no short form**, because `-o` is `--option`. §4.
+8. **QPI-UI holds the whole catalog; the driver publishes none.** Reverses an earlier
+   decision taken here; §9 records why.
+9. **Break once, with a published migration table.** §11.
 
 **Rejected.** A dedicated flag naming a callable to run an operation: it answers
 the question `--device` already asks, and it puts an SDK-internal concept in the
