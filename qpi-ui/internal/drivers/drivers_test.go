@@ -91,8 +91,21 @@ func TestSnippetsExecutor(t *testing.T) {
 	if !strings.Contains(s.ManualCLI, "qpi-driver[cli,qblox]") {
 		t.Errorf("expected qblox extra, got %q", s.ManualCLI)
 	}
-	if strings.Contains(s.ManualCLI, "-o ") {
-		t.Errorf("expected a process driver to take no -o options, got %q", s.ManualCLI)
+	// This used to assert a process driver takes no `-o` options, which was only
+	// true of the snippet: the driver reads two config paths whose defaults are
+	// relative, so a pasted command that omitted them looked for them in whatever
+	// directory it happened to run in.
+	for _, key := range []string{"quantify_device_config", "quantify_hardware_config"} {
+		if !strings.Contains(s.ManualCLI, "-o "+key+"=") {
+			t.Errorf("expected -o %s in the manual CLI, got %q", key, s.ManualCLI)
+		}
+	}
+	// The rest of the shared process list stays out: they default sensibly, and
+	// nothing about a qblox chip is configured by them.
+	for _, key := range []string{"data_dir", "job_timeout", "is_dummy", "spi_rack_address"} {
+		if strings.Contains(s.ManualCLI, key) {
+			t.Errorf("expected %q to be catalog-only, got %q", key, s.ManualCLI)
+		}
 	}
 	if !strings.Contains(s.Systemd, "OPERATION=process DEVICE=qblox") {
 		t.Errorf("expected OPERATION/DEVICE in the systemd snippet, got %q", s.Systemd)
@@ -133,6 +146,70 @@ func TestSnippetsMonitor(t *testing.T) {
 	}
 	if !strings.Contains(s.Systemd, "OPERATION=monitor DEVICE=bluefors_gen1") {
 		t.Errorf("expected OPERATION/DEVICE in the systemd snippet, got %q", s.Systemd)
+	}
+}
+
+// TestSnippetsCalibrate proves a tuner's snippet carries the three configs it
+// cannot start without: which routines to run, the chip to write back to, and the
+// wiring. Their defaults are relative paths, so under systemd they resolve against
+// a working directory the operator never chose.
+func TestSnippetsCalibrate(t *testing.T) {
+	for _, kind := range []Kind{QuantifyTuner, QbloxTuner} {
+		s := Default.Snippets(kind, Python, Params{
+			Name: "tuner-1", Token: "tok", QpiAddr: "https://qpi", CaFingerprint: "ca",
+		})
+
+		for _, key := range []string{
+			"calibration_config", "quantify_device_config", "quantify_hardware_config",
+		} {
+			if !strings.Contains(s.ManualCLI, "-o "+key+"=") {
+				t.Errorf("%s: expected -o %s in the manual CLI, got %q", kind, key, s.ManualCLI)
+			}
+			if !strings.Contains(s.Systemd, key+"=") {
+				t.Errorf("%s: expected %s in DRIVER_OPTIONS, got %q", kind, key, s.Systemd)
+			}
+		}
+		if !strings.Contains(s.Systemd, "DRIVER_OPTIONS='") {
+			t.Errorf("%s: expected DRIVER_OPTIONS in the systemd snippet, got %q", kind, s.Systemd)
+		}
+		// Defaults that are actually defaults.
+		for _, key := range []string{"drift_check_interval", "fidelity_threshold", "is_dummy"} {
+			if strings.Contains(s.ManualCLI, key) {
+				t.Errorf("%s: expected %q to be catalog-only, got %q", kind, key, s.ManualCLI)
+			}
+		}
+	}
+}
+
+// A device that reads none of the quantify configs must not be told about them:
+// the option list is shared across every process kind, so marking one for the
+// snippet marks it for all of them unless it is done per kind.
+func TestSnippetsDoNotOfferConfigsAKindIgnores(t *testing.T) {
+	for _, kind := range []Kind{Mock, QiskitAer, Presto} {
+		s := Default.Snippets(kind, Python, Params{
+			Name: "q", Token: "tok", QpiAddr: "https://qpi", CaFingerprint: "ca",
+		})
+		if strings.Contains(s.ManualCLI, "-o ") || strings.Contains(s.Systemd, "DRIVER_OPTIONS") {
+			t.Errorf("%s reads no config paths; expected a clean snippet, got %q / %q",
+				kind, s.ManualCLI, s.Systemd)
+		}
+	}
+}
+
+// A rendered command must never end on a backslash: pasted into a shell, a dangling
+// continuation swallows the next line the operator types.
+func TestSnippetsNeverEndOnAContinuation(t *testing.T) {
+	for _, kind := range append(Default.Kinds(), Custom) {
+		s := Default.Snippets(kind, Python, Params{
+			Name: "q", Token: "tok", QpiAddr: "https://qpi", CaFingerprint: "ca",
+		})
+		for label, snippet := range map[string]string{
+			"systemd": s.Systemd, "manual": s.ManualCLI, "install": s.Install,
+		} {
+			if strings.HasSuffix(strings.TrimRight(snippet, "\n"), "\\") {
+				t.Errorf("%s %s snippet ends on a continuation: %q", kind, label, snippet)
+			}
+		}
 	}
 }
 

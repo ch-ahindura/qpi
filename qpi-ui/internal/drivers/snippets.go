@@ -123,10 +123,13 @@ func snippetOptions(opts []Option) []Option {
 
 // cliOptions renders a kind's config as trailing `-o key=value` CLI flags, or ""
 // when none of them belong in a snippet.
+// One per continuation line: a tuner has three, and on a single line the command
+// runs past any terminal a person is reading it in. The continuation is emitted
+// before each option, so the command never ends on a dangling backslash.
 func cliOptions(opts []Option) string {
 	var b strings.Builder
 	for _, opt := range snippetOptions(opts) {
-		fmt.Fprintf(&b, " %s %s=%s", optionFlag, opt.Key, opt.Example)
+		fmt.Fprintf(&b, " \\\n    %s %s=%s", optionFlag, opt.Key, opt.Example)
 	}
 	return b.String()
 }

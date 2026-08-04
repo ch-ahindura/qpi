@@ -36,6 +36,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   deleted, or fails to bind — previously only when disabled. Drivers are marked
   offline at startup.
 - `qpi-ui`: a QPU under maintenance is no longer drawn as offline.
+- `qpi-ui`: the setup snippets for a tuner, and for the quantify and qblox QPU
+  drivers, now pre-fill the config paths those drivers cannot start without. The
+  manual command puts one `-o` per line.
 - `qpi-ui`: the deb, rpm and apk packages ship `/etc/qpi.config.yml`.
 - `qpi-driver`: the `quantify` and `qblox` extras no longer declare `scipy` (already
   a core dependency) or `lmfit` (imported nowhere).

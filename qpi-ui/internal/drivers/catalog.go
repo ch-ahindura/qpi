@@ -73,19 +73,39 @@ func processOptions() []Option {
 	}
 }
 
+// filledInSnippet marks the named options as ones the rendered setup snippet
+// pre-fills, leaving the rest schema-only.
+//
+// Per kind rather than per option because the list is shared: every process device
+// accepts the quantify config paths (`qpu.py` passes them to whichever executor is
+// built), but only the two that read them should have them in a copy-pasted command.
+// A mock driver told where the quantify device config lives is a puzzle, not a help.
+func filledInSnippet(opts []Option, keys ...string) []Option {
+	filled := make([]Option, len(opts))
+	copy(filled, opts)
+	for i := range filled {
+		for _, key := range keys {
+			if filled[i].Key == key {
+				filled[i].InSnippet = true
+			}
+		}
+	}
+	return filled
+}
+
 // processSpec builds the spec for a QPU-shaped executor kind: it runs the job
 // flow and is launched with `qpi-driver start --operation process --device <kind>`.
 //
 // Python only: it is the one SDK with a process device, and the Go and TypeScript
 // CLIs say so rather than pretending (RFC 0003 §8). A QPU in another language is a
 // Custom driver.
-func processSpec(kind Kind, extra string) Spec {
+func processSpec(kind Kind, extra string, snippetKeys ...string) Spec {
 	return Spec{
 		Kind:      kind,
 		Operation: Process,
 		Extra:     extra,
 		Events:    []string{eventJobDispatch, eventJobResult},
-		Options:   processOptions(),
+		Options:   filledInSnippet(processOptions(), snippetKeys...),
 		Languages: []Language{Python},
 	}
 }
@@ -167,7 +187,12 @@ func calibrateSpec(kind Kind, extra string) Spec {
 		Operation: Calibrate,
 		Extra:     extra,
 		Events:    []string{eventCalibrateDispatch, eventCalibrationResult},
-		Options:   calibrateOptions(),
+		// A tuner cannot run without all three: which routines to run, the chip to
+		// write back to, and the wiring. Their defaults are relative paths, which
+		// under systemd resolve against a working directory the operator did not
+		// choose — so a snippet that omits them is a command that does not work.
+		Options: filledInSnippet(calibrateOptions(),
+			"calibration_config", "quantify_device_config", "quantify_hardware_config"),
 		Languages: []Language{Python},
 	}
 }
@@ -180,8 +205,10 @@ var Default = NewRegistry(
 	processSpec(Mock, ""),
 	processSpec(Presto, ""),
 	processSpec(QiskitAer, "qpi-driver[cli,aer]"),
-	processSpec(Quantify, "qpi-driver[cli,quantify]"),
-	processSpec(Qblox, "qpi-driver[cli,qblox]"),
+	processSpec(Quantify, "qpi-driver[cli,quantify]",
+		"quantify_device_config", "quantify_hardware_config"),
+	processSpec(Qblox, "qpi-driver[cli,qblox]",
+		"quantify_device_config", "quantify_hardware_config"),
 	calibrateSpec(QuantifyTuner, "qpi-driver[cli,quantify_tuner]"),
 	calibrateSpec(QbloxTuner, "qpi-driver[cli,qblox_tuner]"),
 	Spec{
