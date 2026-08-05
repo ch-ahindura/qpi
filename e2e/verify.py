@@ -42,6 +42,9 @@ ACCESS_TOKEN = "my-super-secret-token-12345"
 # level (drivers/toggle, drivers/connect) rather than on the QPU itself.
 DRIVER_FRAMEWORK = True
 
+# Channels every bluefors_gen1 monitor case polls, in the CLI/-o string form.
+_BLUEFORS_CHANNELS = "mapper.bf.tmc:K,mapper.bf.pmc:mbar"
+
 s = requests.Session()
 
 
@@ -131,11 +134,6 @@ def print_summary(jobs):
                 excerpt,
             )
         )
-
-
-# ---------------------------------------------------------------------------
-# New E2E tests for recently added features
-# ---------------------------------------------------------------------------
 
 
 def test_qpu_seconds_deduction():
@@ -1562,10 +1560,6 @@ def test_driver_snippet_connection():
 
     print("[verify]   ✓ Proxied connection successful")
     return True
-
-
-# Channels every bluefors_gen1 monitor case polls, in the CLI/-o string form.
-_BLUEFORS_CHANNELS = "mapper.bf.tmc:K,mapper.bf.pmc:mbar"
 
 
 def _monitor_flags(token, fingerprint, mock_port):
