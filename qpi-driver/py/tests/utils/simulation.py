@@ -151,9 +151,6 @@ def device_for(
     )
 
 
-# --- the scheduler seam ------------------------------------------------------
-
-
 class _Operation:
     """One operation as recorded on a schedule.
 
@@ -290,8 +287,6 @@ class SimulatedBackend(RecordingBackend):
             )
         values = np.asarray(acquire(self, schedule), dtype=float)
         return xr.Dataset({"y0": ("acq_index", values)})
-
-    # --- reading the sweep back off a schedule --------------------------------
 
     @staticmethod
     def _of_kind(schedule: _Schedule, kind: str) -> list[_Operation]:

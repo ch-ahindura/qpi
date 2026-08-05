@@ -131,70 +131,66 @@ def test_the_shipped_example_config_is_valid():
     assert config.target_qubits
 
 
-# --- targets ------------------------------------------------------------------
+class TestTargets:
+    """``target_qubits``/``target_edges`` validation."""
+
+    def test_an_edge_over_an_uncalibrated_qubit_is_refused(self):
+        """The wrong answer here is a calibrated-looking gate, not an exception.
+
+        A CZ is measured *through* its qubits: the chevron prepares ``|11>`` with a pi
+        pulse on each and reads one back. Over a qubit whose frequency and pi pulse are
+        whatever the file happened to say, it still fits a curve and still writes an
+        amplitude and a duration — and the gate does not work. Startup is the only cheap
+        moment to catch that.
+        """
+        config = CalibrationConfig(target_qubits=["q0", "q1"], target_edges=["q1_q2"])
+        with pytest.raises(ConfigError, match="q1_q2 needs q2"):
+            config.validate_targets()
+
+    def test_an_edge_whose_qubits_are_both_targeted_is_fine(self):
+        CalibrationConfig(
+            target_qubits=["q0", "q1", "q2"], target_edges=["q0_q1", "q1_q2"]
+        ).validate_targets()
+
+    def test_an_edge_that_is_not_a_pair_is_refused(self):
+        config = CalibrationConfig(target_qubits=["q0"], target_edges=["coupler"])
+        with pytest.raises(ConfigError, match="'<parent>_<child>' pair"):
+            config.validate_targets()
+
+    def test_no_edges_is_not_an_error(self):
+        """A single-qubit-only calibration is an ordinary thing to ask for."""
+        CalibrationConfig(target_qubits=["q0"]).validate_targets()
 
 
-def test_an_edge_over_an_uncalibrated_qubit_is_refused():
-    """The wrong answer here is a calibrated-looking gate, not an exception.
+class TestCouplerBiasOnHardwareThatMayNotHaveOne:
+    """A coupler's bias source, when the routine also has to run without one."""
 
-    A CZ is measured *through* its qubits: the chevron prepares ``|11>`` with a pi
-    pulse on each and reads one back. Over a qubit whose frequency and pi pulse are
-    whatever the file happened to say, it still fits a curve and still writes an
-    amplitude and a duration — and the gate does not work. Startup is the only cheap
-    moment to catch that.
-    """
-    config = CalibrationConfig(target_qubits=["q0", "q1"], target_edges=["q1_q2"])
-    with pytest.raises(ConfigError, match="q1_q2 needs q2"):
-        config.validate_targets()
+    def test_a_recorder_cannot_be_used_to_measure_a_parking_current(self):
+        """`RecordingBias` applies nothing, so sweeping against it measures nothing.
 
+        The dangerous shape, and the reason this is an error rather than a warning: every
+        bias point returns the same qubit frequency, the sweep is flat, and the fit reports
+        a crossing with complete confidence. That number then goes to the device. A routine
+        that measures the chip has to refuse a source that cannot touch it.
+        """
+        from qpi_driver.executors.utils.coupler_bias import RecordingBias
+        from qpi_driver.tuners.base.routines import RoutineError
+        from qpi_driver.tuners.routines import all_routines
 
-def test_an_edge_whose_qubits_are_both_targeted_is_fine():
-    CalibrationConfig(
-        target_qubits=["q0", "q1", "q2"], target_edges=["q0_q1", "q1_q2"]
-    ).validate_targets()
+        routine = next(r for r in all_routines() if r.name == "coupler_anticrossing")
+        with pytest.raises(RoutineError, match="hold a parking current"):
+            routine.measure("q0_q1", None, None, None, RecordingBias())
+        with pytest.raises(RoutineError, match="hold a parking current"):
+            routine.measure("q0_q1", None, None, None, None)
 
+    def test_the_sources_that_do_hold_a_current_say_so(self):
+        """The flag is what separates a rack from a notebook, and both are BiasSource."""
+        from qpi_driver.executors.utils.coupler_bias import (
+            QcmBias,
+            RecordingBias,
+            SpiRackBias,
+        )
 
-def test_an_edge_that_is_not_a_pair_is_refused():
-    config = CalibrationConfig(target_qubits=["q0"], target_edges=["coupler"])
-    with pytest.raises(ConfigError, match="'<parent>_<child>' pair"):
-        config.validate_targets()
-
-
-def test_no_edges_is_not_an_error():
-    """A single-qubit-only calibration is an ordinary thing to ask for."""
-    CalibrationConfig(target_qubits=["q0"]).validate_targets()
-
-
-# --- the coupler bias, on hardware that may not have one ------------------------
-
-
-def test_a_recorder_cannot_be_used_to_measure_a_parking_current():
-    """`RecordingBias` applies nothing, so sweeping against it measures nothing.
-
-    The dangerous shape, and the reason this is an error rather than a warning: every
-    bias point returns the same qubit frequency, the sweep is flat, and the fit reports
-    a crossing with complete confidence. That number then goes to the device. A routine
-    that measures the chip has to refuse a source that cannot touch it.
-    """
-    from qpi_driver.executors.utils.coupler_bias import RecordingBias
-    from qpi_driver.tuners.base.routines import RoutineError
-    from qpi_driver.tuners.routines import all_routines
-
-    routine = next(r for r in all_routines() if r.name == "coupler_anticrossing")
-    with pytest.raises(RoutineError, match="hold a parking current"):
-        routine.measure("q0_q1", None, None, None, RecordingBias())
-    with pytest.raises(RoutineError, match="hold a parking current"):
-        routine.measure("q0_q1", None, None, None, None)
-
-
-def test_the_sources_that_do_hold_a_current_say_so():
-    """The flag is what separates a rack from a notebook, and both are BiasSource."""
-    from qpi_driver.executors.utils.coupler_bias import (
-        QcmBias,
-        RecordingBias,
-        SpiRackBias,
-    )
-
-    assert RecordingBias.holds_current is False
-    assert QcmBias.holds_current is True
-    assert SpiRackBias.holds_current is True
+        assert RecordingBias.holds_current is False
+        assert QcmBias.holds_current is True
+        assert SpiRackBias.holds_current is True

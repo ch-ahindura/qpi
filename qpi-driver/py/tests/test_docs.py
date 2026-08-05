@@ -52,11 +52,8 @@ def _output(result) -> str:
     return text
 
 
-# ---------------------------------------------------------------------------
-# The four error transcripts in docs/driver/operations.md
-# ---------------------------------------------------------------------------
-
-# Each documented message, with the invocation that has to produce it. The message
+# The four error transcripts in docs/driver/operations.md, each documented message
+# with the invocation that has to produce it. The message
 # is not written here — it is read out of the document by its prefix, so the document
 # is the source and this is only the command that proves it.
 TRANSCRIPT_CASES = [
@@ -152,10 +149,7 @@ def test_the_documented_error_is_the_error_the_cli_prints(prefix, argv):
         )
 
 
-# ---------------------------------------------------------------------------
-# The CLI reference block in qpi-driver/py/README.md
-# ---------------------------------------------------------------------------
-
+# The CLI reference block in qpi-driver/py/README.md.
 FLAG_RE = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]+)")
 
 

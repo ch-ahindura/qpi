@@ -5,12 +5,8 @@ import xarray as xr
 from qpi_driver.executors import resolve_executor
 from qpi_driver.executors.base import CircuitPayload, JobPayload
 
-from .utils import (
-    GATE_CONVERSION_CASES,
-    assert_gate_conversion_matches_qiskit,
-    load_json_fixture,
-    load_yaml_fixture,
-)
+from .utils.circuits import GATE_CONVERSION_CASES, assert_gate_conversion_matches_qiskit
+from .utils.io import load_json_fixture, load_yaml_fixture
 
 _QUANTIFY_HARDWARE_CONFIG: dict = load_json_fixture("quantify.hardware.json")
 _QUANTIFY_DEVICE_CONFIG: dict = load_yaml_fixture("quantify.device.yml")

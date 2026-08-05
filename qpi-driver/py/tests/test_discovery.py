@@ -141,14 +141,12 @@ def test_import_object_keeps_filesystem_paths_out_of_the_message():
     readable by anyone who can read logs.
     """
     with pytest.raises(ValueError) as excinfo:
-        import_object("tests.fixtures.half_imported_device:Anything")
+        import_object("tests.utils.half_imported_device:Anything")
 
     message = str(excinfo.value)
     assert "ThisNameDoesNotExist" in message  # the useful half is kept
     assert ".py" not in message
-    assert "/" not in message.replace(
-        "tests.fixtures.half_imported_device:Anything", ""
-    )
+    assert "/" not in message.replace("tests.utils.half_imported_device:Anything", "")
 
 
 def test_import_object_reports_a_missing_attribute():

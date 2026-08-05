@@ -1,27 +1,37 @@
-import json
-from pathlib import Path
+"""Comparing a gate-conversion function's output against qiskit's own unitary."""
+
 from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
-import yaml
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator
 
-_FIXTURES_PATH = Path(__file__).parent / "fixtures"
-
-
-def load_json_fixture(fixture_relative_path: str) -> Any:
-    """Load a JSON fixture from the tests/fixtures directory."""
-    full_path = _FIXTURES_PATH / fixture_relative_path
-    with open(full_path, "r") as f:
-        return json.load(f)
-
-
-def load_yaml_fixture(fixture_relative_path: str) -> Any:
-    """Load a YAML fixture from the tests/fixtures directory."""
-    full_path = _FIXTURES_PATH / fixture_relative_path
-    with open(full_path, "r") as f:
-        return yaml.safe_load(f)
+# Every unitary gate branch handled by to_qblox_gates/to_quantify_gates, paired
+# with a function that applies it to a fresh circuit. Reset/Measure/Delay/Barrier
+# are excluded since they aren't fixed unitaries.
+GATE_CONVERSION_CASES: list[tuple[str, int, Callable[[QuantumCircuit], None]]] = [
+    ("x", 1, lambda qc: qc.x(0)),
+    ("y", 1, lambda qc: qc.y(0)),
+    ("z", 1, lambda qc: qc.z(0)),
+    ("h", 1, lambda qc: qc.h(0)),
+    ("s", 1, lambda qc: qc.s(0)),
+    ("sdg", 1, lambda qc: qc.sdg(0)),
+    ("t", 1, lambda qc: qc.t(0)),
+    ("tdg", 1, lambda qc: qc.tdg(0)),
+    ("sx", 1, lambda qc: qc.sx(0)),
+    ("sxdg", 1, lambda qc: qc.sxdg(0)),
+    ("rx", 1, lambda qc: qc.rx(0.37, 0)),
+    ("ry", 1, lambda qc: qc.ry(0.51, 0)),
+    ("rz", 1, lambda qc: qc.rz(0.63, 0)),
+    ("p", 1, lambda qc: qc.p(0.63, 0)),
+    ("u", 1, lambda qc: qc.u(0.3, 0.4, 0.5, 0)),
+    ("cx", 2, lambda qc: qc.cx(0, 1)),
+    ("cz", 2, lambda qc: qc.cz(0, 1)),
+    ("swap", 2, lambda qc: qc.swap(0, 1)),
+    ("crz", 2, lambda qc: qc.crz(0.63, 0, 1)),
+    ("cp", 2, lambda qc: qc.cp(0.63, 0, 1)),
+    ("ccx", 3, lambda qc: qc.ccx(0, 1, 2)),
+]
 
 
 def operations_to_unitary(
@@ -64,34 +74,6 @@ def qiskit_unitary(gate: Any) -> np.ndarray:
     least significant bit), so ``reverse_qargs()`` flips it to line up.
     """
     return Operator(gate).reverse_qargs().data
-
-
-# Every unitary gate branch handled by to_qblox_gates/to_quantify_gates, paired
-# with a function that applies it to a fresh circuit. Reset/Measure/Delay/Barrier
-# are excluded since they aren't fixed unitaries.
-GATE_CONVERSION_CASES: list[tuple[str, int, Callable[[QuantumCircuit], None]]] = [
-    ("x", 1, lambda qc: qc.x(0)),
-    ("y", 1, lambda qc: qc.y(0)),
-    ("z", 1, lambda qc: qc.z(0)),
-    ("h", 1, lambda qc: qc.h(0)),
-    ("s", 1, lambda qc: qc.s(0)),
-    ("sdg", 1, lambda qc: qc.sdg(0)),
-    ("t", 1, lambda qc: qc.t(0)),
-    ("tdg", 1, lambda qc: qc.tdg(0)),
-    ("sx", 1, lambda qc: qc.sx(0)),
-    ("sxdg", 1, lambda qc: qc.sxdg(0)),
-    ("rx", 1, lambda qc: qc.rx(0.37, 0)),
-    ("ry", 1, lambda qc: qc.ry(0.51, 0)),
-    ("rz", 1, lambda qc: qc.rz(0.63, 0)),
-    ("p", 1, lambda qc: qc.p(0.63, 0)),
-    ("u", 1, lambda qc: qc.u(0.3, 0.4, 0.5, 0)),
-    ("cx", 2, lambda qc: qc.cx(0, 1)),
-    ("cz", 2, lambda qc: qc.cz(0, 1)),
-    ("swap", 2, lambda qc: qc.swap(0, 1)),
-    ("crz", 2, lambda qc: qc.crz(0.63, 0, 1)),
-    ("cp", 2, lambda qc: qc.cp(0.63, 0, 1)),
-    ("ccx", 3, lambda qc: qc.ccx(0, 1, 2)),
-]
 
 
 def assert_gate_conversion_matches_qiskit(

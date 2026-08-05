@@ -12,7 +12,7 @@ import yaml
 
 from qpi_driver.executors.base import CircuitPayload, JobPayload
 
-from .utils import load_json_fixture, load_yaml_fixture
+from .utils.io import load_json_fixture, load_yaml_fixture
 
 _HARDWARE = load_json_fixture("quantify.hardware.json")
 _DEVICE = load_yaml_fixture("quantify.device.yml")
