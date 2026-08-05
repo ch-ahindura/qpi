@@ -34,10 +34,6 @@ from qiskit.transpiler import Target
 
 from qpi_client.client import QPIClient
 
-# ---------------------------------------------------------------------------
-# QPIJob
-# ---------------------------------------------------------------------------
-
 
 class QPIJob(JobV1):
     """A Qiskit-compatible job handle backed by the QPI REST API.
@@ -61,8 +57,6 @@ class QPIJob(JobV1):
     def id(self) -> str:
         """Server-assigned job ID."""
         return self.job_id()
-
-    # -- JobV1 interface -----------------------------------------------------
 
     def submit(self) -> None:
         """No-op — the job was already submitted by the backend."""
@@ -130,8 +124,6 @@ class QPIJob(JobV1):
     def cancel(self) -> None:
         """Request cancellation of this job on the server."""
         self._client.cancel_job(self.job_id())
-
-    # -- internal helpers ----------------------------------------------------
 
     def _build_result(self, data: dict[str, Any]) -> Result:
         """Construct a :class:`qiskit.result.Result` from the API response.
@@ -201,11 +193,6 @@ class QPIJob(JobV1):
         )
 
 
-# ---------------------------------------------------------------------------
-# QPIBackend
-# ---------------------------------------------------------------------------
-
-
 class QPIBackend(BackendV2):
     """A Qiskit ``BackendV2`` that submits circuits to the QPI server.
 
@@ -246,8 +233,6 @@ class QPIBackend(BackendV2):
                 f"QPU '{name}' has no valid num_qubits (got {qpu.get('num_qubits')!r})"
             ) from exp
 
-    # -- BackendV2 required properties ---------------------------------------
-
     @property
     def target(self) -> Target:
         """Return the transpiler :class:`Target` for this backend."""
@@ -261,8 +246,6 @@ class QPIBackend(BackendV2):
     @classmethod
     def _default_options(cls) -> Options:
         return Options(shots=1024, meas_level=2, meas_return="single")
-
-    # -- execution -----------------------------------------------------------
 
     def run(
         self,

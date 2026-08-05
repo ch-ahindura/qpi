@@ -32,8 +32,6 @@ class QPIClient:
         if api_token:
             self._session.headers["X-API-Token"] = api_token
 
-    # -- public API ----------------------------------------------------------
-
     def submit_job(
         self,
         circuits: list[dict[str, Any]],
@@ -122,8 +120,6 @@ class QPIClient:
         resp.raise_for_status()
         return resp.json()
 
-    # -- high-level helpers --------------------------------------------------
-
     def get_backend(self, name: str = "qpi") -> "QPIBackend":
         """Return a :class:`QPIBackend` handle for the named QPU.
 
@@ -150,8 +146,6 @@ class QPIClient:
 
         return QPIJob(backend=None, job_id=job_id, client=self)
 
-    # -- QPU discovery -------------------------------------------------------
-
     def list_qpus(self) -> list[dict[str, Any]]:
         """List all online QPUs.
 
@@ -174,8 +168,6 @@ class QPIClient:
         resp = self._session.get(f"{self.base_url}/api/qpus/{name}")
         resp.raise_for_status()
         return resp.json()
-
-    # -- QPU Registry & Toggles (admin-only) ---------------------------------
 
     def create_qpu(
         self,
@@ -259,8 +251,6 @@ class QPIClient:
         resp.raise_for_status()
         return resp.json()
 
-    # -- Notifications -------------------------------------------------------
-
     def list_notifications(self) -> list[dict[str, Any]]:
         """List notifications visible to the authenticated user.
 
@@ -290,8 +280,6 @@ class QPIClient:
         )
         resp.raise_for_status()
         return resp.json()
-
-    # -- Booking Slots (time_slots) ------------------------------------------
 
     def list_time_slots(self) -> list[dict[str, Any]]:
         """List all booking slots.
@@ -368,8 +356,6 @@ class QPIClient:
         )
         resp.raise_for_status()
 
-    # -- QPU Time Requests ---------------------------------------------------
-
     def list_time_requests(self) -> list[dict[str, Any]]:
         """List QPU time requests.
 
@@ -430,8 +416,6 @@ class QPIClient:
         resp.raise_for_status()
         return resp.json()
 
-    # -- Admin User Management -----------------------------------------------
-
     def list_users(self) -> list[dict[str, Any]]:
         """List all registered users (admin-only).
 
@@ -460,8 +444,6 @@ class QPIClient:
         resp.raise_for_status()
         return resp.json()
 
-    # -- Auth helpers --------------------------------------------------------
-
     def auth_with_password(self, identity: str, password: str) -> dict[str, Any]:
         """Authenticate as a regular user using email/password.
 
@@ -482,8 +464,6 @@ class QPIClient:
         if token:
             self._session.headers["Authorization"] = f"Bearer {token}"
         return data
-
-    # -- lifecycle -----------------------------------------------------------
 
     def close(self) -> None:
         """Close the underlying HTTP session."""
