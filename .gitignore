@@ -42,6 +42,11 @@ quantify.device.yaml
 **.nc
 **.pkl
 
+# Python bytecode. The SDKs ignore this in their own .gitignore; this catches the
+# rest of the tree, such as scripts/.
+__pycache__/
+*.py[cod]
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
