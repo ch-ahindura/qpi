@@ -119,8 +119,6 @@ class CalibrationDAG:
 
         return [name for name in self.execution_order() if name in affected]
 
-    # --- checking, and deciding what to recalibrate (RFC 0005 §8) --------------
-
     def check(
         self,
         name: str,

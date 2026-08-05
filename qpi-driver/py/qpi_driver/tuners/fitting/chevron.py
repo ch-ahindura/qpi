@@ -14,6 +14,13 @@ log = logging.getLogger(__name__)
 #: :func:`fit_chevron`.
 MIN_CHEVRON_CONTRAST = 0.15
 
+#: Fractions of a resonant row's full swing that count as having left ``|11⟩``
+#: and as having come back to it. Deliberately far apart: what lies between them
+#: is the exchange in flight, and anything that only wanders around inside the
+#: band has not completed either leg.
+_DEPARTED = 0.25
+_RETURNED = 0.75
+
 
 def fit_chevron(
     amplitudes: np.ndarray, durations: np.ndarray, signal: np.ndarray
@@ -111,14 +118,6 @@ def _refine_amplitude(contrasts: np.ndarray, amps: np.ndarray, row: int) -> floa
     if total <= 0:
         return float(amps[row])
     return float(np.sum(weights * amps[low:high]) / total)
-
-
-#: Fractions of a resonant row's full swing that count as having left ``|11⟩``
-#: and as having come back to it. Deliberately far apart: what lies between them
-#: is the exchange in flight, and anything that only wanders around inside the
-#: band has not completed either leg.
-_DEPARTED = 0.25
-_RETURNED = 0.75
 
 
 def _no_exchange_level(row: np.ndarray) -> float:

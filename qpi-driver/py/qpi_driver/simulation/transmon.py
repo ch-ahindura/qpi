@@ -143,8 +143,6 @@ class TransmonSimulator:
     def __post_init__(self) -> None:
         self._rng = np.random.default_rng(self.seed)
 
-    # --- the spectrum, from scqubits ------------------------------------------
-
     def eigenvalues(self, count: int | None = None) -> np.ndarray:
         """Transmon eigenenergies in GHz, by diagonalising the real Hamiltonian."""
         import scqubits
@@ -191,8 +189,6 @@ class TransmonSimulator:
             candidate = dataclasses.replace(candidate, EJ=candidate.EJ - step)
         return candidate
 
-    # --- the readout resonator -------------------------------------------------
-
     def resonator(
         self, qubit: str, configured_ghz: float | None = None
     ) -> "ReadoutResonator":
@@ -216,8 +212,6 @@ class TransmonSimulator:
     def readout_phase(self, qubit: str) -> float:
         """How far *qubit*'s chain rotates its IQ plane, in degrees."""
         return float(self.readout_phases_deg.get(qubit, self.readout_phase_deg))
-
-    # --- the dynamics, from qutip ---------------------------------------------
 
     def _operators(self):
         """Ladder, projector and collapse operators for a `levels`-level transmon."""
@@ -272,8 +266,6 @@ class TransmonSimulator:
         """
         scale = self.shot_noise / np.sqrt(max(averages, 1))
         return values + self._rng.normal(0.0, scale, len(values))
-
-    # --- acquisitions, in the units the routines expect ------------------------
 
     def rabi(self, amplitudes) -> np.ndarray:
         """Excited-state population after driving at each amplitude.

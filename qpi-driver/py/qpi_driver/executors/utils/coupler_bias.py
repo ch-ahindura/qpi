@@ -36,6 +36,17 @@ log = logging.getLogger(__name__)
 SPI = "spi"
 QCM = "qcm"
 
+#: The keys a bias submodule may carry, in either scheduler's spelling.
+BIAS_KEYS = (
+    "parking_current",
+    "source",
+    "spi_module",
+    "spi_output",
+    "qcm_module",
+    "qcm_output",
+    "line_resistance_ohm",
+)
+
 
 class BiasSource(Protocol):
     """Something that can hold a coupler at a DC current."""
@@ -179,18 +190,6 @@ def edge_names(device: Any) -> list[str]:
     if callable(edges):
         return list(edges())
     return list(edges)
-
-
-#: The keys a bias submodule may carry, in either scheduler's spelling.
-BIAS_KEYS = (
-    "parking_current",
-    "source",
-    "spi_module",
-    "spi_output",
-    "qcm_module",
-    "qcm_output",
-    "line_resistance_ohm",
-)
 
 
 def bias_settings(edge: Any) -> dict[str, Any]:

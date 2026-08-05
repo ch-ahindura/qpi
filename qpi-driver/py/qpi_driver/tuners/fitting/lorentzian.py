@@ -9,6 +9,11 @@ from .core import FitError, align, require_in_range, require_positive
 
 log = logging.getLogger(__name__)
 
+#: How much broader than the narrowest line a drive power may make it before it
+#: counts as power broadening. Generous: at 2x the linewidth the fitted centre is
+#: still sound, and the point is to exclude the powers where it is not.
+MAX_BROADENING = 2.0
+
 
 def lorentzian(
     f: np.ndarray | float,
@@ -98,12 +103,6 @@ def fit_qubit_spectroscopy(
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
     }
-
-
-#: How much broader than the narrowest line a drive power may make it before it
-#: counts as power broadening. Generous: at 2x the linewidth the fitted centre is
-#: still sound, and the point is to exclude the powers where it is not.
-MAX_BROADENING = 2.0
 
 
 def fit_spectroscopy_power(

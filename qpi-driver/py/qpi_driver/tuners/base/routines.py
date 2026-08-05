@@ -22,6 +22,11 @@ from qpi_driver.tuners.base.config import RoutineConfig
 
 log = logging.getLogger(__name__)
 
+#: The instrument plays pulses on a 1 ns grid and the compiler refuses anything
+#: else, so any *time* written to a device is only usable once it is a whole number
+#: of nanoseconds.
+GRID_NS = 1e-9
+
 
 class RoutineError(Exception):
     """A routine could not produce a usable result.
@@ -98,27 +103,23 @@ class CalibrationRoutine(ABC):
         calibrate overrides this and lists what it writes in :attr:`updates`.
         """
 
-    # --- the check form (RFC 0005 §8) -----------------------------------------
-    #
-    # A check answers "does this parameter still hold?" without re-deriving it.
-    # It is cheap because it is a *different, simpler* experiment, not because it
-    # is the calibration with fewer setpoints: checking a pi pulse means playing
-    # the calibrated one and reading the population, which a narrow Rabi sweep
-    # does not do more cheaply.
-    #
-    # The pair below mirrors `build_schedule`/`analyse` deliberately, so that the
-    # DAG runs both through the same seam and inherits its timeout and error
-    # recording. Returning `None` from the first means this routine has no check,
-    # which is the default and is what makes all of this additive.
-
     def build_check_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         """A short schedule testing whether this routine's parameters still hold.
 
-        ``None`` — the default — means this routine cannot be checked, so its
-        state is *unknown* rather than stale. That distinction is what stops
-        `diagnose` blaming a node it has no evidence against.
+        A check answers "does this parameter still hold?" without re-deriving it
+        (RFC 0005 §8). It is cheap because it is a *different, simpler* experiment,
+        not because it is the calibration with fewer setpoints: checking a pi pulse
+        means playing the calibrated one and reading the population, which a
+        narrow Rabi sweep does not do more cheaply.
+
+        This pair mirrors `build_schedule`/`analyse` deliberately, so that the DAG
+        runs both through the same seam and inherits its timeout and error
+        recording. ``None`` — the default — means this routine cannot be checked,
+        so its state is *unknown* rather than stale, which is what stops
+        `diagnose` blaming a node it has no evidence against, and is what makes
+        all of this additive.
         """
         return None
 
@@ -227,12 +228,6 @@ def linear_setpoints(start: float, stop: float, count: int) -> list[float]:
         return [start]
     step = (stop - start) / (count - 1)
     return [start + step * i for i in range(count)]
-
-
-#: The instrument plays pulses on a 1 ns grid and the compiler refuses anything
-#: else, so any *time* written to a device is only usable once it is a whole number
-#: of nanoseconds.
-GRID_NS = 1e-9
 
 
 def grid_duration(seconds: float) -> float:

@@ -216,8 +216,6 @@ class CoupledTransmons:
                 "excited state — levels must be at least 3"
             )
 
-    # --- the register ---------------------------------------------------------
-
     @property
     def levels(self) -> tuple[int, int]:
         return self.control.levels, self.target.levels
@@ -299,8 +297,6 @@ class CoupledTransmons:
                 + control_ladder * target_ladder.dag()
             )
         )
-
-    # --- the parametric coupler ----------------------------------------------
 
     def parametric_rate(self, amplitude: float) -> float:
         """``|11⟩``–``|02⟩`` exchange rate in GHz at a coupler drive *amplitude*."""
@@ -440,8 +436,6 @@ class CoupledTransmons:
         )
         return result.final_state
 
-    # --- populations ----------------------------------------------------------
-
     def _population(self, density, *, qubit_level: int, on_control: bool) -> float:
         """Probability that one qubit is in *qubit_level*, tracing out the other."""
         import qutip
@@ -464,8 +458,6 @@ class CoupledTransmons:
     def _measure(self, values: np.ndarray, averages: int = 1) -> np.ndarray:
         scale = self.shot_noise / np.sqrt(max(averages, 1))
         return values + self._rng.normal(0.0, scale, len(values))
-
-    # --- acquisitions, in the units the routines expect ------------------------
 
     def chevron(self, amplitudes, durations, averages: int = 1) -> np.ndarray:
         """Population left on the control after a flux pulse, over the grid.

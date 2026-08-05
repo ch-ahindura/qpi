@@ -45,8 +45,6 @@ class SimulatedAgent:
         self._agent = agent
         self._coordinator = coordinator
 
-    # --- the parts that are genuinely the agent's ----------------------------
-
     def compile(self, schedule: Any) -> Any:
         """The real compiler. An invalid schedule fails here exactly as on a node."""
         return self._agent.compile(schedule)
@@ -65,8 +63,6 @@ class SimulatedAgent:
 
     def set_output_data_dir(self, *args: Any, **kwargs: Any) -> Any:
         return self._agent.set_output_data_dir(*args, **kwargs)
-
-    # --- the part that is the chip's -----------------------------------------
 
     def run(self, schedule: Any, timeout: int = 10, **kwargs: Any) -> xr.Dataset:
         """Compile, then play through the simulator rather than a cluster.

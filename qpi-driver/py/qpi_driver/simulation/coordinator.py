@@ -63,6 +63,12 @@ from typing import Any
 import numpy as np
 import xarray as xr
 
+from qpi_driver.simulation._compiled_schedule import (
+    is_subschedule,
+    read_amplitude,
+    read_info_entries,
+    read_operations,
+)
 from qpi_driver.simulation.transmon import (
     GHZ,
     NS,
@@ -88,6 +94,25 @@ DEFAULT_DRIVE_STRENGTH = np.pi / (0.2 * 20e-9)
 #: separation — which `TransmonSimulator.readout_gain` sets — this is the
 #: single-shot readout fidelity a discriminator can reach.
 READOUT_NOISE = 0.25
+
+#: The most qubits allowed in one entangled register. Each one multiplies the
+#: Liouvillian's side by ``levels²``: three transmons is a 729×729 matrix to
+#: exponentiate per operation, which is slow but survivable, and four is not.
+MAX_ENTANGLED = 3
+
+#: Steps per nanosecond when integrating a shaped pulse. Chosen by convergence
+#: rather than by argument: the fitted DRAG optimum agrees to five significant
+#: figures with a run at eight times this resolution, and the drift term is
+#: exponentiated exactly at every step, so what the steps have to resolve is only
+#: how the envelope varies.
+_STEPS_PER_NS = 2
+_MIN_DRIVE_STEPS = 16
+_MAX_DRIVE_STEPS = 256
+
+#: Cached propagators are one per distinct pulse, and a two-qubit register's is a
+#: dense (levels^2)^2 matrix. Bounded so a long sweep cannot grow without limit;
+#: past the bound the physics is the same and only the speed suffers.
+_PROPAGATOR_CACHE_LIMIT = 512
 
 
 class SimulationError(RuntimeError):
@@ -132,12 +157,6 @@ class _Acquisition:
     #: opened late and the front of the signal was missed. What `time_of_flight`
     #: measures, and zero when ``acq_delay`` already matches the wiring.
     dead_time: float = 0.0
-
-
-#: The most qubits allowed in one entangled register. Each one multiplies the
-#: Liouvillian's side by ``levels²``: three transmons is a 729×729 matrix to
-#: exponentiate per operation, which is slow but survivable, and four is not.
-MAX_ENTANGLED = 3
 
 
 @dataclass
@@ -349,8 +368,6 @@ class SimulatedCoordinator:
         #: same few pulses thousands of times.
         self._propagator_cache: dict[Any, Any] = {}
 
-    # --- the InstrumentCoordinator surface ------------------------------------
-
     def prepare(self, compiled_schedule: Any) -> None:
         self._compiled = compiled_schedule
         self._acquisitions = []
@@ -376,8 +393,6 @@ class SimulatedCoordinator:
     def close(self) -> None:
         self._compiled = None
 
-    # --- walking the schedule --------------------------------------------------
-
     def _simulate(self, compiled: Any) -> list[_Acquisition]:
         """Play *compiled* through the transmons and collect what was measured."""
         self._repetitions = int(getattr(compiled, "repetitions", 1) or 1)
@@ -401,11 +416,11 @@ class SimulatedCoordinator:
         last_time: dict[str, float] = {}
 
         for time, operation, gate_qubits in self._flatten(compiled):
-            for pulse in _infos(operation, "pulse_info"):
+            for pulse in read_info_entries(operation, "pulse_info"):
                 self._apply_pulse(
                     pulse, time, registers, clocks, last_time, gate_qubits
                 )
-            for acquisition in _infos(operation, "acquisition_info"):
+            for acquisition in read_info_entries(operation, "acquisition_info"):
                 self._acquire(acquisition, registers, acquisitions, clocks, time)
 
         return acquisitions
@@ -432,17 +447,21 @@ class SimulatedCoordinator:
         *previous* one's readout settings.
         """
         found: list[tuple[float, Any, tuple[str, ...]]] = []
-        operations = _operations_of(schedule)
+        operations = read_operations(schedule)
         for schedulable in schedule.schedulables.values():
             operation = operations[schedulable["operation_id"]]
             start = offset + float(schedulable["abs_time"])
             inherited = _gate_qubits(operation) or gate_qubits
-            if _is_subschedule(operation):
+            if is_subschedule(operation):
                 found.extend(self._flatten(operation, start, inherited))
             else:
                 found.append((start, operation, inherited))
         return sorted(
-            found, key=lambda item: (item[0], bool(_infos(item[1], "acquisition_info")))
+            found,
+            key=lambda item: (
+                item[0],
+                bool(read_info_entries(item[1], "acquisition_info")),
+            ),
         )
 
     @staticmethod
@@ -454,8 +473,6 @@ class SimulatedCoordinator:
             except Exception:  # noqa: BLE001 - a clock without a frequency is not one
                 continue
         return frequencies
-
-    # --- the physics -----------------------------------------------------------
 
     def _apply_pulse(
         self,
@@ -510,7 +527,7 @@ class SimulatedCoordinator:
             # square tail — the same shape a flux pulse does — so the amplitude
             # is whichever of those was non-zero, and the zero that clears the
             # offset must not be mistaken for a readout at zero power.
-            amplitude = _amplitude_of(pulse)
+            amplitude = read_amplitude(pulse)
             if amplitude is None:
                 amplitude = pulse.get("offset_path_I")
             if amplitude is not None and abs(np.real(amplitude)) > 0:
@@ -529,7 +546,7 @@ class SimulatedCoordinator:
 
         qubit = _qubit_of(clock) or _qubit_of(port)
         if qubit is not None and clock.endswith(".12"):
-            amplitude = _amplitude_of(pulse)
+            amplitude = read_amplitude(pulse)
             register = registers.of(qubit)
             if amplitude is None or duration <= 0:
                 self._idle(register, duration)
@@ -566,7 +583,7 @@ class SimulatedCoordinator:
             qubit
         )
 
-        amplitude = _amplitude_of(pulse)
+        amplitude = read_amplitude(pulse)
         if amplitude is None or duration <= 0:
             self._idle(register, duration)
             return
@@ -631,7 +648,7 @@ class SimulatedCoordinator:
                 )
             return
 
-        amplitude = _amplitude_of(pulse)
+        amplitude = read_amplitude(pulse)
         if amplitude is None or duration <= 0:
             return
         self._run_flux(
@@ -1297,8 +1314,6 @@ class SimulatedCoordinator:
         self._sample_cache[id(register)] = outcomes
         return outcomes
 
-    # --- the acquisition dataset ------------------------------------------------
-
     def _to_dataset(self, acquisitions: list[_Acquisition]) -> xr.Dataset:
         """The shape a real cluster returns, which depends on the protocol asked for.
 
@@ -1507,75 +1522,6 @@ def _gate_qubits(operation: Any) -> tuple[str, ...]:
     # quantify-scheduler called the same field.
     qubits = gate.get("device_elements") or gate.get("qubits") or ()
     return tuple(str(qubit) for qubit in qubits)
-
-
-# --- reading either scheduler's compiled schedule ---------------------------
-#
-# quantify-scheduler and qblox-scheduler describe a compiled schedule almost
-# identically and not quite. The differences are small, undocumented, and would
-# otherwise be scattered through the walk below, so they are named here instead:
-#
-# - `pulse_info` and `acquisition_info` are a *list* of dicts under quantify and
-#   a single dict under qblox;
-# - a subschedule is a `Schedule` with `.operations` under quantify, and a
-#   `TimeableSchedule` carrying `operation_dict` inside `.data` under qblox —
-#   and qblox nests them several deep where quantify has one level;
-# - a drive pulse's amplitude is `G_amp` under quantify and `amplitude` under
-#   qblox, with `amp` used by both for square pulses.
-#
-# quantify-scheduler is being deprecated, so the qblox spelling is the one that
-# has to keep working; supporting both is what makes that transition a
-# non-event rather than a rewrite of the simulator.
-
-
-def _operations_of(schedule: Any) -> Any:
-    """The operation table of a compiled schedule, by either spelling."""
-    operations = getattr(schedule, "operations", None)
-    if operations is not None:
-        return operations
-    return schedule.data["operation_dict"]
-
-
-def _is_subschedule(operation: Any) -> bool:
-    """Whether an operation is itself a schedule to descend into."""
-    if getattr(operation, "schedulables", None) is not None:
-        return True
-    data = getattr(operation, "data", None)
-    return isinstance(data, dict) and "schedulables" in data
-
-
-def _infos(operation: Any, key: str) -> list[dict]:
-    """``pulse_info`` or ``acquisition_info`` as a list, whichever shape it is."""
-    data = getattr(operation, "data", None)
-    if not isinstance(data, dict):
-        return []
-    info = data.get(key)
-    if not info:
-        return []
-    return list(info) if isinstance(info, (list, tuple)) else [info]
-
-
-def _amplitude_of(pulse: dict) -> Any:
-    """A drive pulse's amplitude, by whichever key the scheduler used."""
-    for key in ("G_amp", "amplitude", "amp"):
-        if pulse.get(key) is not None:
-            return pulse[key]
-    return None
-
-
-#: Steps per nanosecond when integrating a shaped pulse. Chosen by convergence
-#: rather than by argument: the fitted DRAG optimum agrees to five significant
-#: figures with a run at eight times this resolution, and the drift term is
-#: exponentiated exactly at every step, so what the steps have to resolve is only
-#: how the envelope varies.
-_STEPS_PER_NS = 2
-_MIN_DRIVE_STEPS = 16
-_MAX_DRIVE_STEPS = 256
-
-#: Cached propagators are one per distinct pulse, and a two-qubit register's is a
-#: dense (levels^2)^2 matrix. Bounded so a long sweep cannot grow without limit;
-#: past the bound the physics is the same and only the speed suffers.
-_PROPAGATOR_CACHE_LIMIT = 512
 
 
 def _drive_steps(duration: float) -> int:
