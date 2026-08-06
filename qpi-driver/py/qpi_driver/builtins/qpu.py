@@ -168,7 +168,10 @@ def build_from_options(
     decides when, and whether, to connect (RFC 0003 §7).
     """
     executor_options: dict[str, Any] = {
-        "job_timeout": options.get_int("job_timeout", 10),
+        # Under the executors' own name for it. `-o job_timeout=` used to be read
+        # here and then dropped into `**kwargs`, so the advertised option did nothing
+        # and the wait stayed at the constructor default however it was set.
+        "acquisition_timeout": options.get_int("job_timeout", 10),
         "is_dummy": options.get_bool("is_dummy"),
         "is_simulated": options.get_bool("is_simulated"),
         # qblox-scheduler only; no other executor writes raw data either way.

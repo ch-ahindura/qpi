@@ -44,7 +44,8 @@ def test_build_from_options_reads_all_keys():
     assert isinstance(driver, QpuDriver)
     assert driver.executor == "mock"
     assert driver.data_dir == Path("./bin/data/run-1")
-    assert driver.executor_options["job_timeout"] == 42
+    # Under the name the executors read it by; `job_timeout` alone was dropped.
+    assert driver.executor_options["acquisition_timeout"] == 42
     assert driver.executor_options["is_dummy"] is True
     assert driver.executor_options["quantify_hardware_config"] == Path("./hw.json")
     assert driver.executor_options["quantify_device_config"] == Path("./dev.yml")
@@ -61,7 +62,7 @@ def test_build_from_options_defaults_every_key():
     driver = build_from_options(executor="mock", **_transport(), options=_options())
 
     assert driver.data_dir == Path("./bin/data")
-    assert driver.executor_options["job_timeout"] == 10
+    assert driver.executor_options["acquisition_timeout"] == 10
     assert driver.executor_options["is_dummy"] is False
     assert driver.executor_options["quantify_hardware_config"] == Path(
         "./quantify.hardware.json"

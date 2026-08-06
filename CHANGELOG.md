@@ -26,6 +26,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: a routine overriding `measure()` is handed `timeout_s` and must pass
+  it to each `backend.run` it makes, or its acquisitions keep the default ceiling rather
+  than the configured one. Only `coupler_anticrossing` overrides it in-tree.
 - `qpi-driver/py`: a `qblox` QPU no longer writes a dataset and a qcodes snapshot for
   every job, nor `qblox_tuner` for every routine. Nothing read them and nothing pruned
   them; `-o save_raw_data=true` asks for them back.
@@ -43,6 +46,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a `calibrate` driver writes under the data directory like a QPU does.
   `qblox_tuner` passed `bin/data` to its hardware agent whatever it was told, so a tuner
   installed as a service could not start: `/bin/data` is a `PermissionError`.
+- `qpi-driver/py`: `-o job_timeout=` reaches a QPU's acquisition wait. It was read and
+  then dropped, so a job was abandoned after the built-in 10s however the option was
+  set — and on real hardware that is a `TimeoutError` rather than a slow job.
 - `qpi-driver/py`: `routine_timeout_s` now bounds the wait on the instruments, which is
   what it was for. A tuner waited a hard-coded 60s instead, so a punchout on a real
   cluster failed as `Sequencer 0 did not stop in timeout period of 1 minutes`.
