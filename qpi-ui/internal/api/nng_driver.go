@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 	"go.nanomsg.org/mangos/v3"
@@ -38,6 +39,7 @@ var driverEventRegistry = func() *EventRegistry {
 	registry.Register(EventCryostatReading, handleCryostatReading)
 	registry.Register(EventCalibrationResult, handleCalibrationResult)
 	registry.Register(EventCalibrationProgress, handleCalibrationProgress)
+	registry.Register(EventCalibrationQueued, handleCalibrationQueued)
 	return registry
 }()
 
@@ -561,6 +563,75 @@ func toStringSlice(value any) []string {
 	return nil
 }
 
+// findCalibrationRequest resolves the job_id a tuner reports against to its queued
+// row, or nil when there is none.
+//
+// A dispatched calibration's job_id is the row's own id, because that is what the
+// dispatcher sent it. One the driver queued for itself has an id of the driver's
+// making — `drift_check`, or `<id>_recalibrate` — which cannot be a record id: those
+// are fifteen lowercase alphanumerics. So it is stored in `job_id` and found there.
+func findCalibrationRequest(app core.App, cfg *config.AppConfig, jobID string) *core.Record {
+	if record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, jobID); err == nil {
+		return record
+	}
+	record, err := app.FindFirstRecordByFilter(
+		cfg.CollectionCalibrationRequests, "job_id = {:jobID}", dbx.Params{"jobID": jobID},
+	)
+	if err != nil {
+		return nil
+	}
+	return record
+}
+
+// handleCalibrationQueued creates the row for a calibration nobody dispatched: a
+// driver's periodic drift check, or the recalibration it queues on finding drift
+// (RFC 0004 §6.5).
+//
+// Without it the tab shows a QPU busy for hours and no reason why, and the progress
+// those runs report has no row to land on. Created `running` rather than `pending`
+// because it is not queued here — the driver has already started it, and this is the
+// record of that, not a request.
+func handleCalibrationQueued(ctx context.Context, app core.App, qpuID string, event *Event) error {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return fmt.Errorf("cannot read config: %w", err)
+	}
+
+	var queued CalibrationQueuedPayload
+	if err := json.Unmarshal(event.Payload, &queued); err != nil {
+		return fmt.Errorf("cannot parse CalibrationQueued payload: %w", err)
+	}
+	if queued.JobID == "" || queued.Mode == "" {
+		return fmt.Errorf("CalibrationQueued payload has no job_id or no mode")
+	}
+	if err := db.ValidateSelect(app, cfg.CollectionCalibrationRequests, "mode", queued.Mode); err != nil {
+		return fmt.Errorf("CalibrationQueued: %w", err)
+	}
+
+	// A driver that reconnects mid-run, or one whose announcement is retried, must
+	// not leave two rows for the same calibration.
+	if existing := findCalibrationRequest(app, cfg, queued.JobID); existing != nil {
+		return nil
+	}
+
+	driverID := driverIDFromContext(ctx)
+	request := &db.CalibrationRequest{
+		Driver:       driverID,
+		QPU:          qpuID,
+		Mode:         queued.Mode,
+		TargetQubits: queued.TargetQubits,
+		Status:       "running",
+		JobID:        queued.JobID,
+		Trigger:      "drift",
+	}
+	if err := saveToDb(app, request); err != nil {
+		return fmt.Errorf("cannot save self-triggered calibration: %w", err)
+	}
+
+	log.Printf("[DriverListener %s] %s calibration %s queued by %s", driverID, queued.Mode, queued.JobID, queued.Reason)
+	return nil
+}
+
 // handleCalibrationProgress writes where a walk has got to onto the request it
 // belongs to, which the dashboard is already subscribed to (RFC 0004 §6.8).
 //
@@ -583,9 +654,12 @@ func handleCalibrationProgress(ctx context.Context, app core.App, qpuID string, 
 
 	// Silent on failure, a missing request included: progress is cosmetic, and the
 	// result event is the one that has to land.
-	var updated db.CalibrationRequest
-	data := map[string]any{"progress": progress.ToMap()}
-	_ = db.FindAndUpdateOne(app, cfg.CollectionCalibrationRequests, progress.JobID, &updated, data)
+	record := findCalibrationRequest(app, cfg, progress.JobID)
+	if record == nil {
+		return nil
+	}
+	record.Set("progress", progress.ToMap())
+	_ = app.Save(record)
 	return nil
 }
 

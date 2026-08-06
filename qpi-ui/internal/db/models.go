@@ -768,6 +768,14 @@ type CalibrationRequest struct {
 	TargetQubits any    `json:"target_qubits" db:"target_qubits" type:"json"`
 	TargetEdges  any    `json:"target_edges" db:"target_edges" type:"json"`
 	Status       string `json:"status" db:"status" type:"select" required:"true" maxSelect:"1" values:"pending,running,done,failed"`
+	// JobID is what the driver calls this calibration when it reports progress and
+	// results. For a dispatched one it is this row's own id, which is what the
+	// dispatcher sent; for one the driver queued itself it is an id of the driver's
+	// making — `drift_check`, or `<id>_recalibrate` — which cannot be a record id.
+	JobID string `json:"job_id,omitempty" db:"job_id" type:"text"`
+	// Trigger says who wanted this. Empty on rows created before the field, which
+	// were all dispatched.
+	Trigger string `json:"trigger,omitempty" db:"trigger" type:"select" maxSelect:"1" values:"dispatched,drift"`
 	// Progress is where the walk has got to, replaced on each CalibrationProgress
 	// event. On the request rather than in its own collection because it is a
 	// current position, not history: the report is the history.
@@ -856,6 +864,8 @@ func (cr *CalibrationRequest) ToRecord(app core.App) (*core.Record, error) {
 	record.Set("qpu", cr.QPU)
 	record.Set("mode", cr.Mode)
 	record.Set("status", cr.Status)
+	record.Set("job_id", cr.JobID)
+	record.Set("trigger", cr.Trigger)
 	record.Set("requested_by", cr.RequestedBy)
 	record.Set("created", cr.Created)
 
@@ -886,6 +896,8 @@ func (cr *CalibrationRequest) RefreshFromRecord(record *core.Record) error {
 	cr.QPU = record.GetString("qpu")
 	cr.Mode = record.GetString("mode")
 	cr.Status = record.GetString("status")
+	cr.JobID = record.GetString("job_id")
+	cr.Trigger = record.GetString("trigger")
 	cr.RequestedBy = record.GetString("requested_by")
 	cr.Created = record.GetString("created")
 

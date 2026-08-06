@@ -641,6 +641,114 @@ func TestHandleCalibrationProgress_WritesOntoTheRequest(t *testing.T) {
 	}
 }
 
+// TestHandleCalibrationQueued_CreatesTheRowNobodyDispatched proves a drift check
+// gets a request row of its own, running and attributed to drift (RFC 0004 §6.5).
+func TestHandleCalibrationQueued_CreatesTheRowNobodyDispatched(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check", Mode: "fidelity_check", Reason: "the drift timer",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationQueued(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationQueued: %v", err)
+	}
+
+	record := findCalibrationRequest(app, cfg, "drift_check")
+	if record == nil {
+		t.Fatal("expected a row for the drift check the driver queued itself")
+	}
+	// Running, not pending: the driver has already started it. Pending would have
+	// the dispatcher offer it a second time.
+	if status := record.GetString("status"); status != "running" {
+		t.Errorf("expected running, got %q", status)
+	}
+	if trigger := record.GetString("trigger"); trigger != "drift" {
+		t.Errorf("expected trigger drift, got %q — nobody should hunt for who started it", trigger)
+	}
+	if record.GetString("driver") != driverRec.Id || record.GetString("qpu") != qpuRec.Id {
+		t.Errorf("expected the row attributed to the driver and its QPU, got %q/%q",
+			record.GetString("driver"), record.GetString("qpu"))
+	}
+	// `drift_check` is not a legal record id — fifteen lowercase alphanumerics — so
+	// it has to live in a field of its own for progress to resolve against.
+	if record.Id == "drift_check" {
+		t.Error("expected the job id in job_id, not as the record id")
+	}
+}
+
+// TestHandleCalibrationQueued_IsIdempotent proves a re-announced calibration does
+// not leave two rows for one run, which a driver reconnecting mid-run would.
+func TestHandleCalibrationQueued_IsIdempotent(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check", Mode: "fidelity_check",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	for range 2 {
+		if err := handleCalibrationQueued(ctx, app, qpuRec.Id, event); err != nil {
+			t.Fatalf("handleCalibrationQueued: %v", err)
+		}
+	}
+
+	rows, err := app.FindRecordsByFilter(cfg.CollectionCalibrationRequests,
+		"job_id = 'drift_check'", "+created", 0, 0)
+	if err != nil {
+		t.Fatalf("find rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Errorf("expected 1 row for one calibration, got %d", len(rows))
+	}
+}
+
+// TestHandleCalibrationProgress_FindsASelfTriggeredRun proves progress reaches a row
+// whose job id is not its record id, which is every calibration a driver starts itself.
+func TestHandleCalibrationProgress_FindsASelfTriggeredRun(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "partial", Status: "running",
+		JobID: "drift_check_recalibrate", Trigger: "drift",
+	}
+	if err := saveToDb(app, request); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationProgress, CalibrationProgressPayload{
+		JobID: "drift_check_recalibrate", Mode: "partial", Step: 3, Total: 29,
+		Routine: "rabi", Target: "q0",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationProgress(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationProgress: %v", err)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, request.ID)
+	if err != nil {
+		t.Fatalf("reload request: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(record.GetString("progress")), &stored); err != nil {
+		t.Fatalf("progress is not stored as json: %v", err)
+	}
+	if stored["step"] != 3.0 || stored["routine"] != "rabi" {
+		t.Errorf("expected the update to reach the row, got %v", stored)
+	}
+}
+
 // TestHandleCalibrationProgress_IgnoresAnUnknownJob proves a driver's own drift
 // check, which answers to no queued row, is dropped rather than reported as an error.
 func TestHandleCalibrationProgress_IgnoresAnUnknownJob(t *testing.T) {

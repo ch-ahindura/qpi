@@ -9,6 +9,7 @@ const (
 	eventCalibrateDispatch   = "CalibrateDispatch"
 	eventCalibrationResult   = "CalibrationResult"
 	eventCalibrationProgress = "CalibrationProgress"
+	eventCalibrationQueued   = "CalibrationQueued"
 )
 
 // processOptions are the `-o` keys every process device reads. All of them have
@@ -211,7 +212,10 @@ func calibrateSpec(kind Kind, extra string) Spec {
 		Kind:      kind,
 		Operation: Calibrate,
 		Extra:     extra,
-		Events:    []string{eventCalibrateDispatch, eventCalibrationResult, eventCalibrationProgress},
+		Events: []string{
+			eventCalibrateDispatch, eventCalibrationResult,
+			eventCalibrationProgress, eventCalibrationQueued,
+		},
 		// A tuner cannot run without all three: which routines to run, the chip to
 		// write back to, and the wiring. Their defaults are relative paths, which
 		// under systemd resolve against a working directory the operator did not

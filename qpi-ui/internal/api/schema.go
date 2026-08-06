@@ -34,6 +34,11 @@ const (
 	// an update supersedes the last one, and keeping every step would be hundreds
 	// of rows per calibration to render one line (RFC 0004 §6.8).
 	EventCalibrationProgress EventType = "CalibrationProgress"
+	// EventCalibrationQueued is emitted by a tuner that has queued a calibration of
+	// its own — its periodic drift check, or the recalibration that check triggers.
+	// Neither was dispatched, so QPI-UI has no request row for it until this arrives
+	// (RFC 0004 §6.5).
+	EventCalibrationQueued EventType = "CalibrationQueued"
 
 	// EventQPUState tells a driver what service state its QPU is in. Re-asserted
 	// whenever it changes rather than pushed once, so a driver that reconnects, or
@@ -44,7 +49,7 @@ const (
 
 // AllEventTypes lists every event type QPI-UI knows about in this version.
 // Registration validates a custom driver's chosen events against this list.
-var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading, EventCalibrateDispatch, EventCalibrationResult, EventCalibrationProgress}
+var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading, EventCalibrateDispatch, EventCalibrationResult, EventCalibrationProgress, EventCalibrationQueued}
 
 // isKnownEventType reports whether eventType is one QPI-UI has a handler for.
 func isKnownEventType(eventType EventType) bool {
@@ -284,6 +289,18 @@ func (cpp *CalibrationProgressPayload) ToMap() map[string]any {
 		"failed":    cpp.Failed,
 		"elapsed_s": cpp.ElapsedS,
 	}
+}
+
+// CalibrationQueuedPayload is the payload of a CalibrationQueued event: what the
+// driver is about to run, under what id, and what set it off.
+type CalibrationQueuedPayload struct {
+	JobID        string   `json:"job_id"`
+	Mode         string   `json:"mode"`
+	TargetQubits []string `json:"target_qubits"`
+	Reason       string   `json:"reason"`
+}
+
+func (cqp *CalibrationQueuedPayload) SetDefaults() {
 }
 
 // CircuitPayload represents a single quantum circuit within a job submission.

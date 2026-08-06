@@ -1,6 +1,7 @@
 package drivers
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -396,9 +397,12 @@ func TestBothTunersAreRegisteredForCalibrate(t *testing.T) {
 		if !spec.ShipsIn(Python) || spec.ShipsIn(Go) || spec.ShipsIn(TypeScript) {
 			t.Errorf("expected %s to ship in Python only, got %v", kind, spec.Languages)
 		}
-		if len(spec.Events) != 3 || spec.Events[0] != eventCalibrateDispatch ||
-			spec.Events[1] != eventCalibrationResult || spec.Events[2] != eventCalibrationProgress {
-			t.Errorf("expected %s events [CalibrateDispatch, CalibrationResult, CalibrationProgress], got %v", kind, spec.Events)
+		want := []string{
+			eventCalibrateDispatch, eventCalibrationResult,
+			eventCalibrationProgress, eventCalibrationQueued,
+		}
+		if !slices.Equal(spec.Events, want) {
+			t.Errorf("expected %s events %v, got %v", kind, want, spec.Events)
 		}
 	}
 }
