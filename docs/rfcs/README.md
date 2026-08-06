@@ -13,6 +13,7 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0003](./0003-driver-extensibility.md) | Driver Extensibility | Implemented |
 | [0004](./0004-calibration-tuners.md) | Calibration Tuners | Implemented |
 | [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Implemented |
+| [0006](./0006-calibration-graph-in-the-dashboard.md) | The Calibration Graph in the Dashboard | Draft |
 
 Neither calibration RFC has been verified against physical hardware; both say so
 where it matters.
