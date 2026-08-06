@@ -66,20 +66,22 @@ require CA_FINGERPRINT "Enter CA Fingerprint: "
 # and the drivers/connect response hands it over.
 require SERVICE_NAME "Enter a name for this service (e.g. cryostat-1): "
 
-# A driver is run by its OPERATION (the --operation flag: process | monitor) on a
-# specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify, qblox,
-# presto); a monitor reports upward (bluefors_gen1). Both are launched the same
-# way: `qpi-driver start --operation <operation> --device <device> … -o key=value`.
-ask OPERATION "Enter Operation (process, monitor) [process]: "
+# A driver is run by its OPERATION (the --operation flag: process | monitor |
+# calibrate) on a specific DEVICE. A process runs jobs (mock, qiskit_aer, quantify,
+# qblox, presto); a monitor reports upward (bluefors_gen1); a calibrate tunes the
+# chip (quantify_tuner, qblox_tuner). All three are launched the same way:
+# `qpi-driver start --operation <operation> --device <device> … -o key=value`.
+ask OPERATION "Enter Operation (process, monitor, calibrate) [process]: "
 OPERATION=${OPERATION:-process}
-ask DEVICE "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1) [mock]: "
+ask DEVICE "Enter Device (mock, qiskit_aer, quantify, qblox, presto, bluefors_gen1, quantify_tuner, qblox_tuner) [mock]: "
 DEVICE=${DEVICE:-mock}
 
 # A driver's device settings (e.g. bluefors_gen1's base_url/channels, or a process
 # device's job_timeout) are passed as generic DRIVER_OPTIONS ("key=value;key=value"),
 # rendered as -o flags below. This applies to any operation — a process device reads
-# -o keys too, and only the ones this installer manages itself (the data dir and the
-# quantify configs) are filled in for it. Leave blank for a device that needs none.
+# -o keys too, and only the ones this installer manages itself (the config files
+# under the data directory) are filled in for it. Leave blank for a device that
+# needs none: a QPU and a tuner are both installable without setting this at all.
 ask DRIVER_OPTIONS "Enter $DEVICE options as key=value;key=value (e.g. base_url=http://localhost:49099;channels=mapper.bf.tmc:K), or leave blank: "
 
 # The version of qpi-driver to install.
@@ -89,8 +91,10 @@ QPI_DATA_DIR="${QPI_DATA_DIR:-"/var/qpi-driver/${SERVICE_NAME}"}"
 QPI_CA_FILE="${QPI_CA_FILE:-"${QPI_DATA_DIR}/qpi.ca.pem"}"
 QPI_QUANTIFY_DEVICE_CONFIG="${QPI_QUANTIFY_DEVICE_CONFIG:-"${QPI_DATA_DIR}/quantify.device.yml"}"
 QPI_QUANTIFY_HARDWARE_CONFIG="${QPI_QUANTIFY_HARDWARE_CONFIG:-"${QPI_DATA_DIR}/quantify.hardware.json"}"
+QPI_CALIBRATION_CONFIG="${QPI_CALIBRATION_CONFIG:-"${QPI_DATA_DIR}/calibration.yml"}"
 
-# Ensure data directory exists and is owned by the real user
+# Ensure data directory exists and is owned by the real user. Every path above is
+# under it, so an operator has one directory to fill rather than -o flags to get right.
 echo "Creating data directory at $QPI_DATA_DIR..."
 mkdir -p "$QPI_DATA_DIR"
 chown -R "$REAL_USER" "$QPI_DATA_DIR"
@@ -131,10 +135,12 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.qpi-driver.service"
 echo "Creating systemd service at $SERVICE_FILE..."
 
 # Every operation is launched the same way: `qpi-driver <operation> --device
-# <device> … -o key=value`. A process auto-fills the runtime options this
-# installer manages (data dir, and quantify configs for qblox/quantify); any
-# DRIVER_OPTIONS (how a monitor gets its base_url/channels) are appended after.
+# <device> … -o key=value`. The config paths this installer manages are filled in
+# for the devices that read them; any DRIVER_OPTIONS (how a monitor gets its
+# base_url/channels) are appended after. The data directory is not among them —
+# it reaches the driver as QPI_DATA_DIR in the unit's environment below.
 OPT_ARGS=""
+MANAGED_CONFIGS=()
 add_opt() {
     # `return 0` rather than `[ -n "$1" ] && …`, whose false test would make the
     # function itself return non-zero and take `set -e` with it: a DRIVER_OPTIONS
@@ -145,12 +151,23 @@ add_opt() {
         -o $1"
 }
 
-if [ "$OPERATION" = "process" ]; then
-    add_opt "data_dir=$QPI_DATA_DIR"
-    if [ "$DEVICE" = "qblox" ] || [ "$DEVICE" = "quantify" ]; then
-        add_opt "quantify_device_config=$QPI_QUANTIFY_DEVICE_CONFIG"
-        add_opt "quantify_hardware_config=$QPI_QUANTIFY_HARDWARE_CONFIG"
-    fi
+add_config_opt() { # add_config_opt KEY PATH — an -o the operator has to supply a file for
+    add_opt "$1=$2"
+    MANAGED_CONFIGS+=("$2")
+}
+
+# A tuner and the QPU beside it read the same two quantify files — that is how the
+# calibration a tuner writes reaches the jobs a QPU runs — so one case covers both
+# operations. Only a tuner takes a calibration config.
+case "$DEVICE" in
+    quantify | qblox | quantify_tuner | qblox_tuner)
+        add_config_opt quantify_device_config "$QPI_QUANTIFY_DEVICE_CONFIG"
+        add_config_opt quantify_hardware_config "$QPI_QUANTIFY_HARDWARE_CONFIG"
+        ;;
+esac
+
+if [ "$OPERATION" = "calibrate" ]; then
+    add_config_opt calibration_config "$QPI_CALIBRATION_CONFIG"
 fi
 
 IFS=';' read -ra _DRIVER_OPTS <<< "$DRIVER_OPTIONS"
@@ -174,6 +191,7 @@ Type=simple
 
 Environment="QPI_ACCESS_TOKEN=$QPI_TOKEN"
 Environment="QPI_CA_FILE=$QPI_CA_FILE"
+Environment="QPI_DATA_DIR=$QPI_DATA_DIR"
 # Standard Python output buffering disabled to ensure logs appear immediately in journalctl
 Environment=PYTHONUNBUFFERED=1
 
@@ -190,6 +208,15 @@ SyslogIdentifier=${SERVICE_NAME}.qpi-driver
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# A config file nobody has put there yet is the one failure this script can see
+# coming, and it is silent otherwise: the service starts and fails in its worker.
+for _config in "${MANAGED_CONFIGS[@]}"; do
+    if [ ! -f "$_config" ]; then
+        echo "Warning: $_config does not exist yet. Put it there, then run:"
+        echo "  sudo systemctl restart ${SERVICE_NAME}.qpi-driver.service"
+    fi
+done
 
 # 5. Enable and start the service
 echo "Reloading systemd daemon..."

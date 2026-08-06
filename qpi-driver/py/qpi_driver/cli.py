@@ -72,6 +72,17 @@ if typer.IS_TYPER_INSTALLED:
             resolve_path=True,
         ),
     ]
+    # Universal rather than each device's `-o data_dir`: a node has one answer for it.
+    # `-o data_dir=` still wins, for unit files written before this flag.
+    DataDirOpt = Annotated[
+        Path,
+        typer.Option(
+            "--data-dir",
+            envvar="QPI_DATA_DIR",
+            help="Directory this driver writes its data under, and where the "
+            "installer puts its config files.",
+        ),
+    ]
     OptionsOpt = Annotated[
         list[str] | None,
         typer.Option(
@@ -107,6 +118,7 @@ if typer.IS_TYPER_INSTALLED:
         token: TokenOpt = "",
         ca_file: CaFileOpt = Path("./bin/qpi.ca.pem"),
         ca_fingerprint: str = _ca_fingerprint_option(),
+        data_dir: DataDirOpt = Path("./bin/data"),
         options: OptionsOpt = None,
         recv_timeout_ms: RecvTimeoutOpt = DEFAULT_RECV_TIMEOUT_MS,
     ):
@@ -128,6 +140,7 @@ if typer.IS_TYPER_INSTALLED:
             token=token,
             ca_file=ca_file,
             ca_fingerprint=ca_fingerprint,
+            data_dir=data_dir,
             options=options,
             recv_timeout_ms=recv_timeout_ms,
         )
@@ -140,6 +153,7 @@ if typer.IS_TYPER_INSTALLED:
         token: str,
         ca_file: Path,
         ca_fingerprint: str,
+        data_dir: Path,
         options: list[str] | None,
         recv_timeout_ms: int,
     ) -> None:
@@ -186,6 +200,7 @@ if typer.IS_TYPER_INSTALLED:
                 token=token,
                 ca_fingerprint=ca_fingerprint,
                 ca_file_path=ca_file.as_posix(),
+                data_dir=data_dir,
                 recv_timeout_ms=recv_timeout_ms,
             )
         except ValueError as exc:

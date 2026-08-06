@@ -149,6 +149,29 @@ def test_the_operation_comes_from_the_environment_too():
     assert "unknown monitor device" in _output(result)
 
 
+def test_the_data_dir_comes_from_the_environment():
+    """QPI_DATA_DIR is how the systemd unit points a driver at its own directory."""
+    from pathlib import Path
+
+    from qpi_driver.builtins import Operation
+
+    patcher, recorder = _fake_device(Operation.MONITOR, name="fake")
+    with patcher:
+        result = runner.invoke(
+            app,
+            ["start", "--operation", "monitor", "--device", "fake"],
+            env={
+                "QPI_DATA_DIR": "/var/qpi-driver/cryostat-1",
+                "QPI_ACCESS_TOKEN": "t",
+                "QPI_CA_FINGERPRINT": "fp",
+                "TERM": "dumb",
+            },
+        )
+
+    assert result.exit_code == 0, _output(result)
+    assert recorder.build_calls[0]["data_dir"] == Path("/var/qpi-driver/cryostat-1")
+
+
 @pytest.mark.parametrize("operation", ["process", "monitor"])
 def test_the_old_subcommands_are_gone(operation):
     """`qpi-driver process` must fail, so nobody quietly reinstates it.
@@ -242,6 +265,7 @@ def test_cli_start_builds_then_runs():
             token="tok",
             ca_file=Path("./bin/qpi.ca.pem"),
             ca_fingerprint="fp",
+            data_dir=Path("./bin/data"),
             options=["ticks=3"],
             recv_timeout_ms=250,
         )
@@ -254,6 +278,7 @@ def test_cli_start_builds_then_runs():
         "token": "tok",
         "ca_fingerprint": "fp",
         "ca_file_path": "bin/qpi.ca.pem",
+        "data_dir": Path("./bin/data"),
         "recv_timeout_ms": 250,
     }
 
@@ -349,6 +374,7 @@ def test_cli_runs_a_device_named_by_import_path():
             token="tok",
             ca_file=Path("./bin/qpi.ca.pem"),
             ca_fingerprint="fp",
+            data_dir=Path("./bin/data"),
             options=["probe_count=4"],
             recv_timeout_ms=200,
         )

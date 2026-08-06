@@ -7,6 +7,26 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- `qpi-driver/py`: `--data-dir` (env `QPI_DATA_DIR`) is universal, rather than each
+  device's own `-o data_dir=`, which still overrides it. A device builder receives
+  `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.
+
+### Fixed
+
+- `qpi-driver/py`: a tuner installs with `install-systemd.sh` without editing
+  `DRIVER_OPTIONS`. `OPERATION=calibrate` fills in the quantify and calibration config
+  paths under `/var/qpi-driver/<service-name>`, the prompts offer `calibrate` and both
+  tuners, and a config file that is not there yet is warned about rather than left to
+  fail in the worker.
+- `qpi-driver/py`: a `calibrate` driver writes under the data directory like a QPU does.
+  `qblox_tuner` passed `bin/data` to its hardware agent whatever it was told, so a tuner
+  installed as a service could not start: `/bin/data` is a `PermissionError`.
+- `qpi-driver/py`: `quantify_tuner` sets quantify-core's data directory, so a hardware
+  config with `sequence_to_file: true`, a hardware-log download or a diagnostics report
+  no longer writes to `<cwd>/data` — `/data` for a service.
+
 ## [0.3.1] - 2026-08-04
 
 ### Added

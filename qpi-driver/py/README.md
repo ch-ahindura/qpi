@@ -117,6 +117,34 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/i
   bash
 ```
 
+A tuner is installed the same way — `OPERATION="calibrate"` and `DEVICE="quantify_tuner"`
+or `"qblox_tuner"` — and needs nothing else set:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh | sudo \
+  QPI_TOKEN="<the-tuner's-access-token>" \
+  QPI_ADDR="http://127.0.0.1:8090" \
+  CA_FINGERPRINT="<fingerprint>" \
+  SERVICE_NAME="rigetti-aspen-1-tuner" \
+  OPERATION="calibrate" \
+  DEVICE="quantify_tuner" \
+  bash
+```
+
+Everything a driver reads or writes lives in one directory, `/var/qpi-driver/<service-name>`,
+which the installer creates and hands over as `QPI_DATA_DIR`. The config files it points
+the driver at default to that directory too — `quantify.device.yml`,
+`quantify.hardware.json`, and for a tuner `calibration.yml` — so putting them there is
+the whole of the configuration, and `DRIVER_OPTIONS` stays empty. Override any of them
+with `QPI_DATA_DIR`, `QPI_QUANTIFY_DEVICE_CONFIG`, `QPI_QUANTIFY_HARDWARE_CONFIG` or
+`QPI_CALIBRATION_CONFIG`; `DRIVER_OPTIONS` is for a device's *own* settings, such as a
+cryostat monitor's `channels`.
+
+A tuner and the QPU beside it should be given the same `quantify.device.yml`: that file
+is how the calibration one writes reaches the jobs the other runs. Point both
+`SERVICE_NAME`s at one directory with `QPI_DATA_DIR`, or set
+`QPI_QUANTIFY_DEVICE_CONFIG` on each.
+
 #### Manual systemd Installation
 If you prefer to configure it manually, follow these steps:
 
@@ -145,13 +173,13 @@ If you prefer to configure it manually, follow these steps:
 
    Environment="QPI_ACCESS_TOKEN=<your-qpi-access-token>"
    Environment="QPI_CA_FILE=/var/qpi-driver/rigetti-aspen-1/qpi.ca.pem"
+   Environment="QPI_DATA_DIR=/var/qpi-driver/rigetti-aspen-1"
    Environment=PYTHONUNBUFFERED=1
 
    ExecStart=/home/<user>/.local/bin/qpi-driver start --operation process \
            --ca-fingerprint <your-fingerprint> \
            --qpi-addr <your-qpi-server-address> \
            --device "qblox" \
-           -o data_dir=/var/qpi-driver/rigetti-aspen-1 \
            -o quantify_device_config=/var/qpi-driver/rigetti-aspen-1/quantify.device.yml \
            -o quantify_hardware_config=/var/qpi-driver/rigetti-aspen-1/quantify.hardware.json
 
@@ -484,10 +512,14 @@ write the fitted parameters back to the device YAML the `process` driver reads.
 
 ```bash
 qpi-driver start --operation calibrate --device quantify_tuner \
+    --data-dir ./bin/data \
     -o calibration_config=./calibration.yml \
     -o quantify_device_config=./quantify.device.yml \
     -o quantify_hardware_config=./quantify.hardware.json
 ```
+
+Installed as a service, none of that is typed: the installer puts all three files under
+`/var/qpi-driver/<service-name>` and passes it as `QPI_DATA_DIR`.
 
 `calibration_config` is the only option a tuner cannot start without: it says which
 routines run and over what. A calibration with nothing to run would report success
@@ -566,9 +598,15 @@ Universal options:
   -o, --option KEY=VALUE  A setting of the chosen device, repeatable
   --ca-file PATH          Path to the CA root certificate [env: QPI_CA_FILE]
   --ca-fingerprint TEXT   Fingerprint pinning the CA root certificate [env: QPI_CA_FINGERPRINT]
+  --data-dir PATH         Directory the driver writes its data under [env: QPI_DATA_DIR]
   --recv-timeout-ms INT   How long the receive loop blocks per attempt, in ms [env: QPI_RECV_TIMEOUT_MS]
   --help                  Show this message and exit.
 ```
+
+`--data-dir` is universal rather than a device's `-o data_dir=` because a systemd
+install has one answer for it — `/var/qpi-driver/<service-name>` — and every device
+that writes anything wants it there. `-o data_dir=` still wins where a unit file sets
+it, so one written before the flag existed keeps working.
 
 There is no default device: QPI-UI generates the command that launches a driver, and
 that command always names one.

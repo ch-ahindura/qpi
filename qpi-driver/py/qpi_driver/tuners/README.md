@@ -49,6 +49,18 @@ All of them have working defaults except the calibration config, which must
 exist: a tuner with no config would have nothing to run, and a run that does
 nothing raises nothing, so it would report success.
 
+Where a tuner writes is `--data-dir` rather than an `-o`, because it is the same
+directory for every driver on the node; a systemd install sets it, and the config paths
+above, to `/var/qpi-driver/<service-name>`. It reaches each scheduler's own data-dir
+global — quantify-core's `set_datadir`, qblox-scheduler's `OutputDirectoryManager` —
+which otherwise default to `<cwd>/data` (`/data` for a service) and `~/qblox_data`.
+
+Size it for the backend, not the tuner: `qblox_tuner` saves a `dataset.hdf5` and an
+instrument snapshot for every schedule it runs, which is one per routine per target and
+13 per coupler edge. `quantify_tuner` writes nothing there unless asked — its
+acquisitions come back in memory — so a hardware config with `sequence_to_file: true`, a
+hardware-log download or a diagnostics report is all that lands.
+
 ### What the graph needs from a device file
 
 Every node runs against a stock `BasicTransmonElement` except the ones whose result

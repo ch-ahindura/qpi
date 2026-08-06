@@ -88,6 +88,36 @@ def test_data_dir_must_be_in_a_safe_location():
         )
 
 
+def test_the_universal_data_dir_is_what_a_qpu_writes_under():
+    driver = build_from_options(
+        executor="mock",
+        **_transport(),
+        data_dir=Path("/tmp/qpi-qpu"),
+        options=_options(),
+    )
+
+    assert driver.data_dir == Path("/tmp/qpi-qpu")
+
+
+def test_an_o_data_dir_overrides_the_universal_one():
+    """Unit files predate the flag, so the option they set has to keep winning."""
+    driver = build_from_options(
+        executor="mock",
+        **_transport(),
+        data_dir=Path("/tmp/qpi-qpu"),
+        options=_options(data_dir="/tmp/from-the-unit-file"),
+    )
+
+    assert driver.data_dir == Path("/tmp/from-the-unit-file")
+
+
+def test_an_unsafe_data_dir_is_named_by_the_spelling_that_set_it():
+    with pytest.raises(ValueError, match="bad value for --data-dir"):
+        build_from_options(
+            executor="mock", **_transport(), data_dir=Path("/var"), options=_options()
+        )
+
+
 def test_a_builtin_executor_does_not_take_an_option_it_never_reads():
     """A typo left unread is what the CLI reports; executors swallow **kwargs.
 

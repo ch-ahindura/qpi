@@ -350,6 +350,7 @@ func TestCalibrateOptionsMatchTheDriver(t *testing.T) {
 	// Exactly the keys read by build_from_options in
 	// qpi_driver/builtins/calibrate.py.
 	want := map[string]bool{
+		"data_dir":                 true,
 		"calibration_config":       true,
 		"quantify_hardware_config": true,
 		"quantify_device_config":   true,

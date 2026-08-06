@@ -123,6 +123,41 @@ class TestOptionsAndRegistration:
         assert driver.tuner_options["is_simulated"] is False
         assert driver.tuner_options["quantify_device_config"] == Path("./dev.yml")
 
+    def test_the_universal_data_dir_reaches_the_tuner(self):
+        driver = build_from_options(
+            tuner="quantify",
+            **_transport(),
+            data_dir=Path("/tmp/qpi-tuner"),
+            options=Options({}),
+        )
+
+        assert driver.tuner_options["data_dir"] == Path("/tmp/qpi-tuner")
+
+    def test_an_o_data_dir_still_overrides_the_flag(self):
+        """A unit file written before `--data-dir` existed keeps working."""
+        driver = build_from_options(
+            tuner="quantify",
+            **_transport(),
+            data_dir=Path("/tmp/qpi-tuner"),
+            options=Options({"data_dir": "/tmp/from-the-unit-file"}),
+        )
+
+        assert driver.tuner_options["data_dir"] == Path("/tmp/from-the-unit-file")
+
+    def test_an_unsafe_data_dir_is_refused_by_the_name_it_was_set_under(self):
+        with pytest.raises(ValueError, match="bad value for --data-dir"):
+            build_from_options(
+                tuner="quantify",
+                **_transport(),
+                data_dir=Path("/var"),
+                options=Options({}),
+            )
+
+        with pytest.raises(ValueError, match="bad value for -o data_dir"):
+            build_from_options(
+                tuner="quantify", **_transport(), options=Options({"data_dir": "/var"})
+            )
+
     def test_is_simulated_reaches_the_tuner(self):
         """``-o is_simulated=true`` is what runs a node with no hardware at all."""
         driver = build_from_options(

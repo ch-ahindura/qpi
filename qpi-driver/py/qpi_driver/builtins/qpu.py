@@ -148,6 +148,7 @@ def build_from_options(
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
+    data_dir: Path = Path("./bin/data"),
     pass_through: bool = False,
 ) -> QpuDriver:
     """Build an unstarted QPU driver over *executor* from its ``-o`` options.
@@ -155,6 +156,8 @@ def build_from_options(
     The options a QPU reads are the ones read here, and all of them have a working
     default, so a QPU needs no ``-o`` at all. ``data_dir`` is the driver's own;
     every other one is handed to the executor's constructor.
+
+    *data_dir* is the universal ``--data-dir``, which ``-o data_dir=`` overrides.
 
     *pass_through* additionally forwards options this function does not know, for
     an executor named by import path — whose constructor is the only thing that
@@ -179,7 +182,7 @@ def build_from_options(
         # whose couplers are biased from inside the cluster.
         "spi_rack_address": options.get_str("spi_rack_address"),
     }
-    data_dir = options.get_dir("data_dir", "./bin/data")
+    data_dir = options.get_dir("data_dir", data_dir, default_name="--data-dir")
     if pass_through:
         executor_options.update(options.remaining())
 

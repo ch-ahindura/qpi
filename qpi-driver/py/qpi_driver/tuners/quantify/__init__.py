@@ -26,6 +26,7 @@ from qpi_driver.compat.quantify import (
     SquarePulse,
     X,
     Y,
+    set_datadir,
 )
 from qpi_driver.executors.quantify.config import (
     load_instrument_coordinator,
@@ -105,6 +106,7 @@ class QuantifyTuner(Tuner):
         quantify_device_config: Path | dict = Path("quantify.device.yml"),
         is_dummy: bool = False,
         is_simulated: bool = False,
+        data_dir: Path = Path("bin/data"),
         **kwargs: Any,
     ) -> None:
         """
@@ -118,8 +120,13 @@ class QuantifyTuner(Tuner):
                 routines fit real physics and the calibration written back is a
                 calibration of *something*. Needs the ``sim`` extra.
                 Mutually exclusive with *is_dummy*.
+            data_dir: quantify-core's data directory. A calibration writes nothing
+                there — acquisitions come back in memory — but the paths that do
+                (``sequence_to_file``, hardware logs, diagnostics reports) would
+                otherwise land under ``<cwd>/data``, i.e. ``/data`` for a service.
         """
         super().__init__(name, **kwargs)
+        set_datadir(data_dir)
         #: Where the SPI rack lives, when the couplers are biased through one.
         #: `coupler_anticrossing` needs to drive it; every other node ignores it.
         self._spi_rack_address = kwargs.get("spi_rack_address")

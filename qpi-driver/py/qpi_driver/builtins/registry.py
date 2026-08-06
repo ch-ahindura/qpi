@@ -38,10 +38,12 @@ class Operation(str, Enum):
     CALIBRATE = "calibrate"
 
 
-# A device builder takes the ``-o`` options plus the universal transport arguments
-# and returns an *unstarted* driver; the caller decides when to start it by calling
-# :meth:`QpiDriver.run` (RFC 0003 §7). Returning rather than running is what lets a
-# device be built and asserted on in a test with no server.
+# A device builder takes the ``-o`` options plus the universal arguments — the
+# transport, and ``data_dir`` — and returns an *unstarted* driver; the caller decides
+# when to start it by calling :meth:`QpiDriver.run` (RFC 0003 §7). Returning rather
+# than running is what lets a device be built and asserted on in a test with no
+# server. All of them arrive by keyword, so a builder with no use for one still has
+# to accept it.
 DeviceBuilder = Callable[..., QpiDriver]
 
 

@@ -58,19 +58,25 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Go and TypeScript installers.
+# The rest of the installers, against a stub CLI.
 #
-# Their CLIs are fetched from artifacts that only exist once published
-# (`go install …@latest`, `npm install -g qpi-driver`), so a real install can't
-# run here yet. Instead we exercise each script's config handling and
-# unit-file/service generation with QPI_SKIP_INSTALL=1 and a stub `qpi-driver`
-# on PATH that just stays running.
+# The Go and TypeScript CLIs are fetched from artifacts that only exist once
+# published (`go install …@latest`, `npm install -g qpi-driver`), so a real
+# install can't run here yet. Instead we exercise each script's config handling
+# and unit-file/service generation with QPI_SKIP_INSTALL=1 and a stub
+# `qpi-driver` on PATH that just stays running. The Python tuner goes through the
+# same path for a different reason: `qpi-driver[cli,quantify_tuner]` pulls a
+# scheduler and a stack of scientific packages in, and what is under test is the
+# unit file, not pip.
 # ---------------------------------------------------------------------------
 echo "Installing a stub qpi-driver CLI in the container..."
 docker exec $CONTAINER_ID bash -c 'printf "#!/bin/sh\nexec sleep infinity\n" > /usr/local/bin/qpi-driver && chmod +x /usr/local/bin/qpi-driver'
 
 check_installer() {
-    local label="$1" script="$2" qpu="$3" operation="$4" device="$5"
+    # check_installer LABEL SCRIPT SERVICE OPERATION DEVICE DRIVER_OPTIONS EXPECTED…
+    local label="$1" qpu="$3" operation="$4" device="$5"
+    local script="$2" driver_options="$6"
+    shift 6
     echo "Running $label install-systemd.sh (QPI_SKIP_INSTALL=1)..."
     docker cp "$script" $CONTAINER_ID:/install-systemd.sh
     docker exec $CONTAINER_ID chmod +x /install-systemd.sh
@@ -82,13 +88,23 @@ check_installer() {
                 -e SERVICE_NAME="$qpu" \
                 -e OPERATION="$operation" \
                 -e DEVICE="$device" \
-                -e DRIVER_OPTIONS="base_url=http://mock;channels=mapper.bf.tmc:K" \
+                -e DRIVER_OPTIONS="$driver_options" \
                 $CONTAINER_ID bash -c "/install-systemd.sh"
 
-    if ! docker exec $CONTAINER_ID cat "/etc/systemd/system/$qpu.qpi-driver.service" | grep -q "QPI Driver Service"; then
+    local unit="/etc/systemd/system/$qpu.qpi-driver.service"
+    if ! docker exec $CONTAINER_ID cat "$unit" | grep -q "QPI Driver Service"; then
         echo "FAILED: $label systemd service file not found or incorrect."
         exit 1
     fi
+    # Each remaining argument is a line the unit file has to contain: what the
+    # installer is expected to have worked out on the operator's behalf.
+    for expected in "$@"; do
+        if ! docker exec $CONTAINER_ID grep -qF "$expected" "$unit"; then
+            echo "FAILED: $label unit file does not mention '$expected'."
+            docker exec $CONTAINER_ID cat "$unit" || true
+            exit 1
+        fi
+    done
     echo "SUCCESS: $label systemd service file generated!"
 
     docker exec $CONTAINER_ID systemctl daemon-reload
@@ -104,7 +120,19 @@ check_installer() {
     fi
 }
 
-check_installer "Go" "$PROJECT_ROOT/qpi-driver/go/install-systemd.sh" "go_cryostat" "monitor" "bluefors_gen1"
-check_installer "TypeScript" "$PROJECT_ROOT/qpi-driver/js/install-systemd.sh" "js_cryostat" "monitor" "bluefors_gen1"
+check_installer "Go" "$PROJECT_ROOT/qpi-driver/go/install-systemd.sh" "go_cryostat" "monitor" "bluefors_gen1" \
+    "base_url=http://mock;channels=mapper.bf.tmc:K"
+check_installer "TypeScript" "$PROJECT_ROOT/qpi-driver/js/install-systemd.sh" "js_cryostat" "monitor" "bluefors_gen1" \
+    "base_url=http://mock;channels=mapper.bf.tmc:K"
+
+# A tuner installs with no DRIVER_OPTIONS at all: the three files it cannot start
+# without, and the directory it writes under, are the installer's to fill in. Their
+# defaults in the driver are relative paths, which a service resolves against `/`.
+check_installer "Python tuner" "$PROJECT_ROOT/qpi-driver/py/install-systemd.sh" "py_tuner" "calibrate" "quantify_tuner" \
+    "" \
+    'Environment="QPI_DATA_DIR=/var/qpi-driver/py_tuner"' \
+    "-o quantify_device_config=/var/qpi-driver/py_tuner/quantify.device.yml" \
+    "-o quantify_hardware_config=/var/qpi-driver/py_tuner/quantify.hardware.json" \
+    "-o calibration_config=/var/qpi-driver/py_tuner/calibration.yml"
 
 echo "All install-systemd.sh variants (py, go, js) verified."

@@ -126,6 +126,12 @@ curl -LsSf https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/i
   bash
 ```
 
+`OPERATION="calibrate"` with `DEVICE="quantify_tuner"` (or `"qblox_tuner"`) installs a
+tuner the same way. Either way the installer creates `/var/qpi-driver/<SERVICE_NAME>`,
+passes it to the driver as `QPI_DATA_DIR`, and points every config file it manages —
+`quantify.device.yml`, `quantify.hardware.json`, `calibration.yml` — inside it, so
+putting them there is the whole of the configuration.
+
 #### Standalone CLI (macOS, Linux, Windows)
 Ensure Python 3.12 is installed, then install using `pip` or `uv`:
 ```bash
@@ -435,11 +441,14 @@ Universal options (shared by every operation):
 * `-d`, `--device`: Which backend to run within the operation, e.g. `mock`, `qblox`, `bluefors_gen1`, `quantify_tuner` (env: `QPI_DEVICE`).
 * `--ca-file`: Path to the downloaded root CA certificate of the server (env: `QPI_CA_FILE`, default: `./bin/qpi.ca.pem`).
 * `--ca-fingerprint`: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: `QPI_CA_FINGERPRINT`, required).
+* `--data-dir`: Directory the driver writes its data under (env: `QPI_DATA_DIR`, default: `./bin/data`). A systemd install points it at `/var/qpi-driver/<service-name>`; `-o data_dir=` overrides it where a unit file still sets one.
 * `-o`, `--option`: A setting of the chosen device as `key=value`, repeatable.
 
-`process` options (`-o`): `data_dir` (default `./bin/data`), `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`.
+`process` options (`-o`): `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`.
 
 `monitor` options (`-o`) for `bluefors_gen1`: `channels` (required, `path[:unit],…`), `base_url`, `api_key`, `poll_interval`, `timeout`.
+
+`calibrate` options (`-o`) for `quantify_tuner`/`qblox_tuner`: `calibration_config` (required in practice — a tuner with nothing to run measures nothing and reports success), `quantify_device_config`, `quantify_hardware_config`, `is_dummy`, `is_simulated`, `spi_rack_address`, `drift_check_interval`, `fidelity_threshold`, `fidelity_2q_threshold`.
 
 The dashboard is where these are documented and filled in — registering a driver
 generates the command that launches it, with its options in place — and it is the only

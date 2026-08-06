@@ -82,14 +82,23 @@ class Options:
         """The value of *key* as a path, or *default*. Not checked for safety."""
         return self._parsed(key, Path(default), Path)
 
-    def get_dir(self, key: str, default: Path | str) -> Path:
+    def get_dir(self, key: str, default: Path | str, *, default_name: str = "") -> Path:
         """The value of *key* as a directory a driver may write to, or *default*.
 
         The safe-location check of :func:`~qpi_driver.paths.as_safe_dir` applies to
         the given value and to *default* alike, so a device cannot default itself
         somewhere it may not write.
+
+        *default_name* is what to call *default* in that error, for a fallback the
+        operator set themselves — ``--data-dir``, rather than ``-o <key> (default)``.
         """
-        return self._parsed(key, None, as_safe_dir, fallback_raw=str(default))
+        return self._parsed(
+            key,
+            None,
+            as_safe_dir,
+            fallback_raw=str(default),
+            fallback_name=default_name,
+        )
 
     def remaining(self) -> dict[str, str]:
         """Every option not read yet, as typed, and marks them read.
@@ -112,21 +121,32 @@ class Options:
         """
         return tuple(sorted(set(self._values) - self._read))
 
-    def _parsed(self, key, default, parse, *, fallback_raw: str | None = None):
+    def _parsed(
+        self,
+        key,
+        default,
+        parse,
+        *,
+        fallback_raw: str | None = None,
+        fallback_name: str = "",
+    ):
         """Read *key* through *parse*, falling back to *default* or *fallback_raw*.
 
         A fallback given as a raw string goes through *parse* like any other value,
-        which is how a default directory is checked for safety too.
+        which is how a default directory is checked for safety too. An error names
+        whichever of the two the operator set: being told about an ``-o`` they never
+        wrote sends them looking in the wrong place.
         """
         self._read.add(key)
         raw = self._values.get(key)
+        label = f"-o {key}"
         if raw is None:
             if fallback_raw is None:
                 return default
             raw = fallback_raw
-            key = f"{key} (default)"
+            label = fallback_name or f"-o {key} (default)"
 
         try:
             return parse(raw)
         except ValueError as exc:
-            raise ValueError(f"bad value for -o {key}: {exc}") from exc
+            raise ValueError(f"bad value for {label}: {exc}") from exc

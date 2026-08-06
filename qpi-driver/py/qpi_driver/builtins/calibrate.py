@@ -236,15 +236,16 @@ def build_from_options(
     ca_fingerprint: str,
     ca_file_path: str,
     recv_timeout_ms: int,
+    data_dir: Path = Path("./bin/data"),
     pass_through: bool = False,
 ) -> CalibrateDriver:
     """Build an unstarted calibrate driver over *tuner* from its ``-o`` options.
 
     The options a tuner reads are the ones read here, and all have working
-    defaults, so a tuner needs no ``-o`` at all. The three shared with `process`
+    defaults, so a tuner needs no ``-o`` at all. The ones shared with `process`
     keep their names deliberately: a tuner and the QPU beside it read the same
-    two files, and an operator spelling one path two ways will eventually spell
-    it two values.
+    files and write under the same directory, and an operator spelling one path
+    two ways will eventually spell it two values.
     """
     tuner_options: dict[str, Any] = {
         "is_dummy": options.get_bool("is_dummy"),
@@ -255,6 +256,7 @@ def build_from_options(
         "quantify_device_config": options.get_path(
             "quantify_device_config", "./quantify.device.yml"
         ),
+        "data_dir": options.get_dir("data_dir", data_dir, default_name="--data-dir"),
         # Where the SPI rack is, for chips whose couplers are parked by one.
         # Empty is correct for a chip with no tunable couplers, and for one
         # whose couplers are biased from inside the cluster.

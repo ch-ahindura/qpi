@@ -20,12 +20,7 @@ const (
 // for every process device.
 func processOptions() []Option {
 	return []Option{
-		{
-			Key:     "data_dir",
-			Help:    "Directory the executor writes datasets and artefacts to.",
-			Default: "./bin/data",
-			Example: "./bin/data",
-		},
+		dataDirOption(),
 		{
 			Key:     "job_timeout",
 			Help:    "Seconds a single job may run before it is abandoned.",
@@ -110,8 +105,22 @@ func processSpec(kind Kind, extra string, snippetKeys ...string) Spec {
 	}
 }
 
+// dataDirOption is shared by process and calibrate: both write under it, and the
+// driver reads the same key for both. The SDK also takes it as `--data-dir` /
+// `QPI_DATA_DIR`, which is what install-systemd.sh sets — so it stays catalog-only
+// rather than being pre-filled into a snippet that already has an answer for it.
+func dataDirOption() Option {
+	return Option{
+		Key:     "data_dir",
+		Help:    "Directory the driver writes datasets and artefacts to. Also settable as --data-dir / QPI_DATA_DIR.",
+		Default: "./bin/data",
+		Example: "./bin/data",
+	}
+}
+
 func calibrateOptions() []Option {
 	return []Option{
+		dataDirOption(),
 		{
 			Key:     "calibration_config",
 			Help:    "Path to the calibration configuration YAML.",

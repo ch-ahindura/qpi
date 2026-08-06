@@ -23,6 +23,7 @@ qblox/quantify executors.
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -202,8 +203,11 @@ def build_from_options(
     ca_file_path: str,
     recv_timeout_ms: int,
     options: Options,
+    data_dir: Path = Path("./bin/data"),
 ) -> BlueforsGen1Driver:
     """Build an unstarted driver from its ``-o`` options.
+
+    *data_dir* is accepted and unused: a monitor writes nothing to disk.
 
     The options this monitor reads are the ones read here. Only ``channels`` is
     unknowable in advance — which channels a system exposes depends on how its
