@@ -25,6 +25,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   writes, what it depends on and feeds, and how the run went on each target — the fitted
   parameters, the duration, and the fit error that stopped it. The report listed the same
   numbers with no way to ask about one routine.
+- `qpi-driver/py`: a calibration report carries the sweep behind each fit — the
+  setpoints, the measured signal and the fitted curve over them — for the Rabi, Ramsey,
+  DRAG, fine-amplitude, T1, T2, RB and spectroscopy fits. Only the fitted numbers
+  crossed the wire before, so a suspicious parameter could not be checked against the
+  data it came from without reading the driver's own disk.
+- `qpi-ui`: the node card plots that sweep against its fit, with SI-prefixed ticks and a
+  log axis where the sweep is logarithmic. A routine whose fit does not report one yet
+  simply shows no chart.
 - `qpi-ui`: a calibration request stores the graph its driver is walking, and its
   `progress.nodes` map accumulates each routine's state — `running`, `done`, `partial`
   or `failed`, with the targets finished out of its total. `progress` only ever held

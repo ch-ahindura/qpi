@@ -13,6 +13,9 @@
     "format": "prettier --write 'src/**/*.{ts,tsx,css}' 'index.html' '*.ts' '*.js'"
   },
   "dependencies": {
+    "@visx/axis": "^4.0.0",
+    "@visx/scale": "^4.0.0",
+    "@visx/shape": "^4.0.0",
     "lucide-react": "^1.18.0",
     "pocketbase": "^0.27.0",
     "react": "^19.2.6",

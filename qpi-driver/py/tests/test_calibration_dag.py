@@ -5,6 +5,7 @@ handling and the refusal to report success having done nothing are all
 properties of the DAG, not of any scheduler.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -19,6 +20,11 @@ from qpi_driver.tuners.base.config import (
     RoutineConfig,
 )
 from qpi_driver.tuners.base.dag import CalibrationDAG, _human_duration
+from qpi_driver.tuners.base.report import (
+    MAX_FIT_PAYLOAD_BYTES,
+    CalibrationReport,
+    RoutineResult,
+)
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -738,6 +744,95 @@ class TestThePlan:
             "cz_chevron",
             "conditional_phase",
             "interleaved_rb",
+        }
+
+
+class TestTheFitOnAResult:
+    """Where a fit summary goes, and what the cap does with too many (RFC 0006 §7)."""
+
+    def test_it_lands_on_the_result_not_in_the_parameters(self):
+        """`parameters` is what gets written to a device; a sweep is not a parameter."""
+
+        class Fitting(StubRoutine):
+            def analyse(self, dataset, target, device, config):
+                return {"amp180": 0.2, "fit": {"x": [1.0], "measured": [2.0]}}
+
+        routine = Fitting("a")
+        config = _config()
+        report = CalibrationDAG([routine], config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+
+        result = report.routine_results[0]
+        assert result.fit == {"x": [1.0], "measured": [2.0]}
+        assert result.parameters == {"amp180": 0.2}
+        # And `apply` never sees it either, so it cannot reach the device file.
+        assert routine.applied == [("q0", {"amp180": 0.2})]
+
+    def test_a_benchmark_does_not_carry_it_into_raw_data_as_well(self):
+        class FittingBenchmark(StubRoutine):
+            def analyse(self, dataset, target, device, config):
+                return {"fidelity": 0.999, "depths": [1, 2], "fit": {"x": [1.0]}}
+
+        config = _config()
+        report = CalibrationDAG([FittingBenchmark("a", benchmark=True)], config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+
+        assert report.routine_results[0].fit == {"x": [1.0]}
+        assert "fit" not in report.benchmarks[0].raw_data
+
+    def test_a_routine_with_no_summary_simply_has_none(self):
+        config = _config()
+        report = CalibrationDAG([StubRoutine("a")], config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+        assert report.routine_results[0].fit is None
+        assert "fit" not in report.to_event_payload()["routine_results"][0]
+
+    def test_a_report_over_the_cap_still_saves_without_its_traces(self):
+        """A report that will not save is worse than a report with no chart in it."""
+        big = {"x": [float(i) for i in range(200)], "measured": [0.5] * 200}
+        report = CalibrationReport(
+            timestamp="t", duration_s=1.0, mode="full", backend="stub"
+        )
+        # Enough of them to clear the two-megabyte cap several times over.
+        for i in range(1000):
+            report.add_routine(
+                RoutineResult(
+                    routine_name=f"r{i}",
+                    target="q0",
+                    parameters={"value": 1.0},
+                    timestamp="t",
+                    duration_s=1.0,
+                    fit=dict(big),
+                )
+            )
+
+        payload = report.to_event_payload()
+
+        assert all(r["fit"] == {"dropped": True} for r in payload["routine_results"])
+        assert len(json.dumps(payload)) < MAX_FIT_PAYLOAD_BYTES
+        # The parameters are the record of what the chip was, and they are untouched.
+        assert payload["routine_results"][0]["parameters"] == {"value": 1.0}
+
+    def test_a_report_inside_the_cap_keeps_every_trace(self):
+        report = CalibrationReport(
+            timestamp="t", duration_s=1.0, mode="full", backend="stub"
+        )
+        report.add_routine(
+            RoutineResult(
+                routine_name="rabi",
+                target="q0",
+                parameters={},
+                timestamp="t",
+                duration_s=1.0,
+                fit={"x": [1.0, 2.0], "measured": [1.0, 0.5]},
+            )
+        )
+        assert report.to_event_payload()["routine_results"][0]["fit"] == {
+            "x": [1.0, 2.0],
+            "measured": [1.0, 0.5],
         }
 
 

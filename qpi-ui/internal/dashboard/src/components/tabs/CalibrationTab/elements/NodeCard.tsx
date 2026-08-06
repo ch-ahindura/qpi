@@ -6,6 +6,7 @@ import type {
   CalibrationPlanNode,
   CalibrationResult,
 } from "@/types";
+import { FitPlot } from "./FitPlot";
 import { formatParameter, formatSeconds } from "./format";
 import { dependentsOf, outcomesFor } from "./nodeDetail";
 
@@ -159,6 +160,9 @@ export const NodeCard: React.FC<NodeCardProps> = ({
                       : "parameters appear when the report lands"}
                   </p>
                 )}
+                {/* A routine whose `analyse` does not produce a summary yet simply
+                    has no chart — one is converted at a time (RFC 0006 §7). */}
+                {outcome.fit && <FitPlot fit={outcome.fit} />}
               </li>
             ))}
           </ul>

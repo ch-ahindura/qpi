@@ -6,8 +6,19 @@ counterpart. The two are asserted against each other by a test in each language;
 they are one contract written twice.
 """
 
+import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger(__name__)
+
+#: How much of a report's ``routine_results`` may be fit summaries before all of them
+#: are dropped (RFC 0006 §7). A full walk on five qubits is projected at ~150 kB, so
+#: this is more than an order of magnitude of headroom: it is not a budget to spend
+#: but a floor under which a report is guaranteed to save. A report that will not
+#: save is worse than a report with no chart in it.
+MAX_FIT_PAYLOAD_BYTES = 2_000_000
 
 
 @dataclass
@@ -19,15 +30,22 @@ class RoutineResult:
     parameters: dict[str, Any]
     timestamp: str
     duration_s: float
+    #: The sweep behind the fit (RFC 0006 §7). ``None`` for a routine whose
+    #: ``analyse`` does not produce one yet — one is converted at a time, and the
+    #: card simply shows no chart for the rest.
+    fit: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "routine_name": self.routine_name,
             "target": self.target,
             "parameters": self.parameters,
             "timestamp": self.timestamp,
             "duration_s": self.duration_s,
         }
+        if self.fit is not None:
+            payload["fit"] = self.fit
+        return payload
 
 
 @dataclass
@@ -117,7 +135,9 @@ class CalibrationReport:
             "mode": self.mode,
             "backend": self.backend,
             "status": self.status,
-            "routine_results": [r.to_dict() for r in self.routine_results],
+            "routine_results": _within_fit_cap(
+                [r.to_dict() for r in self.routine_results]
+            ),
             "benchmarks": [b.to_dict() for b in self.benchmarks],
             "errors": self.errors,
         }
@@ -128,3 +148,32 @@ class CalibrationReport:
             f"duration={self.duration_s:.1f}s, routines={len(self.routine_results)}, "
             f"benchmarks={len(self.benchmarks)}, errors={len(self.errors)})"
         )
+
+
+def _within_fit_cap(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """*results* with every fit summary replaced by a marker if they are too big.
+
+    All or none, rather than the largest few: which routines kept their traces would
+    otherwise depend on the order they were walked in, and a chart that appears for
+    q0 and not q2 reads as a failure on q2.
+
+    The marker is what lets the card say the traces were dropped rather than show an
+    empty chart, and is why nothing here needs a new field on the payload.
+    """
+    fitted = [r for r in results if r.get("fit") is not None]
+    if not fitted:
+        return results
+
+    size = sum(len(json.dumps(r["fit"])) for r in fitted)
+    if size <= MAX_FIT_PAYLOAD_BYTES:
+        return results
+
+    log.warning(
+        "dropping %d fit summaries from this report: %.1f MB, over the %.1f MB cap",
+        len(fitted),
+        size / 1e6,
+        MAX_FIT_PAYLOAD_BYTES / 1e6,
+    )
+    for result in fitted:
+        result["fit"] = {"dropped": True}
+    return results

@@ -449,6 +449,7 @@ class CalibrationDAG:
                         f"exceeded routine_timeout_s ({config.routine_timeout_s}s) "
                         f"after {elapsed:.1f}s"
                     )
+                fit = params.pop("fit", None)
                 routine.apply(device, target, params)
                 report.add_routine(
                     RoutineResult(
@@ -457,6 +458,7 @@ class CalibrationDAG:
                         parameters=params,
                         timestamp=utc_timestamp(),
                         duration_s=time.monotonic() - started,
+                        fit=fit,
                     )
                 )
                 return True
@@ -474,6 +476,11 @@ class CalibrationDAG:
                 )
 
             params = routine.analyse(dataset, target, device, routine_config)
+            # Lifted out before `apply` and before the benchmark's `raw_data` is
+            # built from what is left: the sweep behind the fit is a field of its
+            # own on the result, not a parameter and not something to write to a
+            # device (RFC 0006 §7).
+            fit = params.pop("fit", None)
             routine.apply(device, target, params)
 
             if routine.is_benchmark:
@@ -485,6 +492,7 @@ class CalibrationDAG:
                     parameters=params,
                     timestamp=utc_timestamp(),
                     duration_s=time.monotonic() - started,
+                    fit=fit,
                 )
             )
             return True

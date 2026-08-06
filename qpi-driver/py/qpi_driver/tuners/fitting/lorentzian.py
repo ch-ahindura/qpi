@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from scipy.optimize import curve_fit
 
-from .core import FitError, align, require_in_range, require_positive
+from .core import FitError, align, fit_summary, require_in_range, require_positive
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _fit_lorentzian(
     if best is None:
         raise FitError(f"could not fit {what}: neither a peak nor a dip converged")
 
-    residual, (amplitude, centre, width, _offset) = best
+    residual, (amplitude, centre, width, offset) = best
     centre = require_in_range(
         centre, float(np.min(x)), float(np.max(x)), what=f"{what} centre frequency"
     )
@@ -78,6 +78,13 @@ def _fit_lorentzian(
         # on it, which a bare height cannot do: height rises with power right
         # through the point where the line stops being a measurement of anything.
         "snr": abs(float(amplitude)) / max(float(np.sqrt(residual / x.size)), 1e-18),
+        "fit": fit_summary(
+            x,
+            y,
+            lorentzian(x, amplitude, centre, width, offset),
+            x_label="frequency (Hz)",
+            y_label="signal",
+        ),
     }
 
 
@@ -90,6 +97,7 @@ def fit_resonator_spectroscopy(
         "readout_frequency": fitted["frequency"],
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
+        "fit": fitted["fit"],
     }
 
 
@@ -102,6 +110,7 @@ def fit_qubit_spectroscopy(
         "clock_freq_01": fitted["frequency"],
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
+        "fit": fitted["fit"],
     }
 
 
@@ -189,6 +198,9 @@ def fit_spectroscopy_power(
         "linewidth": fit["linewidth"],
         "quality_factor": fit["quality_factor"],
         "snr": fit["snr"],
+        # The chosen row only. A summary per power would be a picture of the power
+        # sweep, and the answer came from one row of it.
+        "fit": fit["fit"],
     }
 
 

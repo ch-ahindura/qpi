@@ -229,6 +229,22 @@ export interface ThemeRecord {
   updated?: string;
 }
 
+/** The sweep behind a fit: what was measured, and the fitted curve on the same x
+ * (RFC 0006 §7). At most 200 points per trace, so a report stays bounded.
+ *
+ * `dropped` stands in for the traces when a report's summaries together came to more
+ * than the driver's cap, or when retention has stripped them from an older row — a
+ * report that will not save is worse than a report with no chart in it. */
+export interface FitSummary {
+  x?: number[];
+  measured?: number[];
+  fitted?: number[];
+  x_label?: string;
+  y_label?: string;
+  x_scale?: "linear" | "log";
+  dropped?: boolean;
+}
+
 /** One routine's outcome on one target, inside a calibration report. */
 export interface RoutineResult {
   routine_name: string;
@@ -236,6 +252,8 @@ export interface RoutineResult {
   parameters: Record<string, unknown>;
   timestamp: string;
   duration_s: number;
+  /** Absent for a routine whose `analyse` does not produce one yet. */
+  fit?: FitSummary;
 }
 
 /** A fidelity measurement. Benchmarks calibrate nothing; their number is what

@@ -213,12 +213,19 @@ func (cdp *CalibrateDispatchPayload) ToMap() map[string]any {
 }
 
 // RoutineResult represents the result of a single routine execution.
+//
+// Fit is the sweep behind the fit — the setpoints, what was measured, and the fitted
+// curve over the same setpoints (RFC 0006 §7). Absent for a routine whose `analyse`
+// does not produce one, and replaced by a `{"dropped": true}` marker when a report's
+// summaries together went over the driver's cap. The server stores it and reads
+// nothing out of it, so it stays a raw object rather than a struct.
 type RoutineResult struct {
-	RoutineName string         `json:"routine_name"`
-	Target      string         `json:"target"`
-	Parameters  map[string]any `json:"parameters"`
-	Timestamp   string         `json:"timestamp"`
-	DurationS   float64        `json:"duration_s"`
+	RoutineName string          `json:"routine_name"`
+	Target      string          `json:"target"`
+	Parameters  map[string]any  `json:"parameters"`
+	Timestamp   string          `json:"timestamp"`
+	DurationS   float64         `json:"duration_s"`
+	Fit         json.RawMessage `json:"fit,omitempty"`
 }
 
 // BenchmarkResult represents the result of a benchmark.

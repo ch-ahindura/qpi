@@ -31,6 +31,32 @@ export function formatParameter(key: string, value: unknown): string {
   return value.toFixed(6).replace(/\.?0+$/, "");
 }
 
+const SI = [
+  { limit: 1e9, suffix: "G", scale: 1e9 },
+  { limit: 1e6, suffix: "M", scale: 1e6 },
+  { limit: 1e3, suffix: "k", scale: 1e3 },
+  { limit: 1, suffix: "", scale: 1 },
+  { limit: 1e-3, suffix: "m", scale: 1e-3 },
+  { limit: 1e-6, suffix: "µ", scale: 1e-6 },
+  { limit: 1e-9, suffix: "n", scale: 1e-9 },
+];
+
+/** A number with an SI prefix, for an axis tick or a hover readout.
+ *
+ * A sweep axis is a frequency near 5e9 or a delay near 2e-8, and neither reads as a
+ * tick label: `5.02G` and `20n` do. */
+export function siPrefixed(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  if (value === 0) return "0";
+  const magnitude = Math.abs(value);
+  const unit = SI.find((u) => magnitude >= u.limit) ?? SI[SI.length - 1];
+  const scaled = value / unit.scale;
+  const digits = Math.abs(scaled) < 10 ? 2 : Math.abs(scaled) < 100 ? 1 : 0;
+  const text = scaled.toFixed(digits);
+  // Only past the decimal point: stripping unconditionally turns 500 into 5.
+  return `${digits ? text.replace(/\.?0+$/, "") : text}${unit.suffix}`;
+}
+
 /** `12.4s`, `3m12s` or `2h14m`, as the driver's own log renders a duration. */
 export function formatSeconds(seconds: number): string {
   if (seconds < 60) return `${seconds.toFixed(1)}s`;

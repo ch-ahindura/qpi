@@ -7,6 +7,12 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
+#: The most points a fit summary keeps per trace (RFC 0006 §7). Every sweep in
+#: ``calibration.example.yml`` is 41 points or fewer, so this is a ceiling rather
+#: than a loss today — it is here to stop a wide sweep on someone else's chip
+#: turning a report into something that will not save.
+MAX_FIT_POINTS = 200
+
 
 class FitError(Exception):
     """The data could not be fitted, or the fit is not physically usable."""
@@ -125,3 +131,50 @@ def estimate_frequency(x: np.ndarray, y: np.ndarray) -> float:
     peak = int(np.argmax(spectrum[1:]) + 1)
     guess = float(frequencies[peak])
     return guess if guess > 0 else 1.0 / span
+
+
+def fit_summary(
+    x: Any,
+    measured: Any,
+    fitted: Any,
+    *,
+    x_label: str = "",
+    y_label: str = "",
+    x_scale: str = "linear",
+) -> dict[str, Any]:
+    """The sweep behind a fit, for the dashboard to draw (RFC 0006 §7).
+
+    Two traces over one axis: what was measured, and the fitted curve evaluated on
+    the same setpoints. No residuals — those are a subtraction the client can do.
+
+    *x_scale* is ``"log"`` where the sweep is logarithmic, which is the difference
+    between a readable RB decay and a line hugging the axis.
+
+    Points where any of the three is not finite are dropped rather than sent: JSON
+    has no NaN, and a report carrying one fails to unmarshal on the other side
+    instead of showing a gap.
+    """
+    x = np.asarray(x, dtype=float).reshape(-1)
+    measured = np.asarray(measured, dtype=float).reshape(-1)
+    fitted = np.asarray(fitted, dtype=float).reshape(-1)
+
+    size = min(x.size, measured.size, fitted.size)
+    x, measured, fitted = x[:size], measured[:size], fitted[:size]
+    usable = np.isfinite(x) & np.isfinite(measured) & np.isfinite(fitted)
+    keep = _thinned(int(np.count_nonzero(usable)))
+
+    return {
+        "x": [float(v) for v in x[usable][keep]],
+        "measured": [float(v) for v in measured[usable][keep]],
+        "fitted": [float(v) for v in fitted[usable][keep]],
+        "x_label": x_label,
+        "y_label": y_label,
+        "x_scale": x_scale,
+    }
+
+
+def _thinned(count: int) -> np.ndarray:
+    """Indices keeping at most :data:`MAX_FIT_POINTS` of *count*, both ends included."""
+    if count <= MAX_FIT_POINTS:
+        return np.arange(count)
+    return np.unique(np.linspace(0, count - 1, MAX_FIT_POINTS).round().astype(int))

@@ -9,6 +9,7 @@ from .core import (
     FitError,
     align,
     estimate_frequency,
+    fit_summary,
     require_in_range,
     require_positive,
 )
@@ -72,7 +73,7 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
         FitError: if the fit fails, or ``amp180`` lands outside the swept range.
     """
     x, y = align(amplitudes, signal, what="Rabi")
-    amplitude, freq, _phase, _tau, _offset = _fit_decaying_cosine(
+    amplitude, freq, phase, tau, offset = _fit_decaying_cosine(
         x, y, what="Rabi oscillation", decays=False
     )
 
@@ -90,6 +91,13 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
         "amp180": amp180,
         "rabi_frequency": rabi_frequency,
         "contrast": abs(amplitude) * 2,
+        "fit": fit_summary(
+            x,
+            y,
+            decaying_cosine(x, amplitude, freq, phase, tau, offset),
+            x_label="pulse amplitude",
+            y_label="signal",
+        ),
     }
 
 
@@ -107,7 +115,7 @@ def fit_ramsey(
     Returns ``{'detuning', 't2_star', 'fringe_frequency'}``.
     """
     x, y = align(delays, signal, what="Ramsey")
-    _amplitude, freq, _phase, tau, _offset = _fit_decaying_cosine(
+    amplitude, freq, phase, tau, offset = _fit_decaying_cosine(
         x, y, what="Ramsey fringe", decays=True
     )
 
@@ -118,6 +126,13 @@ def fit_ramsey(
         "detuning": fringe - artificial_detuning,
         "t2_star": t2_star,
         "fringe_frequency": fringe,
+        "fit": fit_summary(
+            x,
+            y,
+            decaying_cosine(x, amplitude, freq, phase, tau, offset),
+            x_label="delay (s)",
+            y_label="signal",
+        ),
     }
 
 
@@ -139,7 +154,13 @@ def fit_drag(betas: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     require_in_range(
         motzoi, float(np.min(x)), float(np.max(x)), what="motzoi", tolerance=0.1
     )
-    return {"motzoi": motzoi, "slope": float(slope)}
+    return {
+        "motzoi": motzoi,
+        "slope": float(slope),
+        "fit": fit_summary(
+            x, y, slope * x + intercept, x_label="beta", y_label="signal"
+        ),
+    }
 
 
 def fit_fine_amplitude(
@@ -207,4 +228,14 @@ def fit_fine_amplitude(
         "amp180": require_positive(corrected, what="corrected amp180"),
         "amplitude_error": error_per_pulse / np.pi,
         "error_per_pulse": error_per_pulse,
+        # The demodulated signal rather than the raw one: the straight line through
+        # the origin is the thing being fitted, and the raw sweep alternates about
+        # the centre so a chart of it shows nothing.
+        "fit": fit_summary(
+            counts,
+            demodulated,
+            error_per_pulse * counts,
+            x_label="pi pulses",
+            y_label="demodulated",
+        ),
     }

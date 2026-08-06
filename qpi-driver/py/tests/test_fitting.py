@@ -6,6 +6,8 @@ failure behaviour, which matters just as much: a fit that returns zeros on
 failure gets written to the device as though it were a measurement.
 """
 
+import json
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -31,7 +33,13 @@ from qpi_driver.tuners.fitting import (
     lorentzian,
     signal_of,
 )
-from qpi_driver.tuners.fitting.core import align, require_in_range, require_positive
+from qpi_driver.tuners.fitting.core import (
+    MAX_FIT_POINTS,
+    align,
+    fit_summary,
+    require_in_range,
+    require_positive,
+)
 
 RNG = np.random.default_rng(20260730)
 
@@ -583,3 +591,52 @@ class TestTheSharedMachinery:
             require_positive(0.0, what="x")
         with pytest.raises(FitError, match="not physical"):
             require_positive(-1.0, what="x")
+
+
+class TestTheFitSummary:
+    """The sweep a fit ships for the dashboard to draw (RFC 0006 §7)."""
+
+    def test_it_carries_two_traces_over_one_axis(self):
+        summary = fit_summary(
+            [1.0, 2.0, 3.0], [1.0, 0.5, 0.25], [1.1, 0.55, 0.2], x_label="depth"
+        )
+        assert summary["x"] == [1.0, 2.0, 3.0]
+        assert summary["measured"] == [1.0, 0.5, 0.25]
+        assert summary["fitted"] == [1.1, 0.55, 0.2]
+        assert summary["x_label"] == "depth"
+        assert summary["x_scale"] == "linear"
+
+    def test_a_long_sweep_is_thinned_to_the_ceiling_keeping_both_ends(self):
+        x = np.linspace(0.0, 1.0, 5000)
+        summary = fit_summary(x, x, x)
+        assert len(summary["x"]) == MAX_FIT_POINTS
+        assert summary["x"][0] == 0.0
+        assert summary["x"][-1] == 1.0
+        assert len(summary["measured"]) == len(summary["fitted"]) == MAX_FIT_POINTS
+
+    def test_a_sweep_inside_the_ceiling_keeps_every_point(self):
+        summary = fit_summary(np.arange(41.0), np.arange(41.0), np.arange(41.0))
+        assert len(summary["x"]) == 41
+
+    def test_a_non_finite_point_is_dropped_rather_than_sent(self):
+        """JSON has no NaN, so one would fail to unmarshal instead of showing a gap."""
+        summary = fit_summary(
+            [1.0, 2.0, 3.0], [1.0, np.nan, 3.0], [1.0, 2.0, float("inf")]
+        )
+        assert summary["x"] == [1.0]
+        assert json.dumps(summary)
+
+    def test_the_traces_stay_the_same_length_when_one_is_short(self):
+        summary = fit_summary([1.0, 2.0, 3.0], [1.0, 2.0], [1.0, 2.0, 3.0])
+        assert len(summary["x"]) == len(summary["measured"]) == 2
+
+    def test_every_fit_that_produces_one_labels_its_axes(self):
+        """A tick with no unit is a number nobody can act on."""
+        x = np.linspace(0.0, 0.5, 41)
+        summary = fit_rabi(x, np.cos(2 * np.pi * 2.0 * x))["fit"]
+        assert summary["x_label"] and summary["y_label"]
+
+    def test_rb_asks_for_a_log_axis_because_its_depths_double(self):
+        depths = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0])
+        survival = 0.9 * np.power(0.99, depths) + 0.05
+        assert fit_rb_decay(depths, survival)["fit"]["x_scale"] == "log"

@@ -15,10 +15,12 @@ const WIDTH = 600;
 const HEIGHT = 160;
 const PADDING = 24;
 
-/** A minimal dependency-free SVG line chart for one channel's readings over
- * time. Kept intentionally simple — no charting library — since the
- * dashboard build has no reliable access to install one in every
- * environment it runs in. */
+/** A minimal SVG line chart for one channel's readings over time.
+ *
+ * Hand-rolled because one line with no ticks and no legend does not need more, not
+ * for the reason this comment used to give — that the build cannot reach a registry.
+ * `npm ci` already installs from one, so a package is a choice rather than a
+ * constraint (RFC 0006 §2). Where the job outgrows this, `FitPlot` uses visx. */
 export const ReadingsChart: React.FC<ReadingsChartProps> = ({
   channel,
   unit,

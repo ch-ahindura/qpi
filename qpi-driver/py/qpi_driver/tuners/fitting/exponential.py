@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from scipy.optimize import curve_fit
 
-from .core import FitError, align, require_in_range, require_positive
+from .core import FitError, align, fit_summary, require_in_range, require_positive
 
 log = logging.getLogger(__name__)
 
@@ -44,12 +44,22 @@ def _fit_coherence(
 ) -> dict[str, float]:
     """Shared body of :func:`fit_t1` and :func:`fit_t2` — same curve, different name."""
     x, y = align(delays, signal, what=what)
-    amplitude, tau, _offset = _fit_exponential(x, y, what=what)
+    amplitude, tau, offset = _fit_exponential(x, y, what=what)
 
     value = require_positive(abs(tau), what=what)
     # A time constant far beyond the window was never observed, only extrapolated.
     require_in_range(value, 0.0, float(np.max(x)) * 10, what=what)
-    return {key: value, "amplitude": float(amplitude)}
+    return {
+        key: value,
+        "amplitude": float(amplitude),
+        "fit": fit_summary(
+            x,
+            y,
+            exponential_decay(x, amplitude, tau, offset),
+            x_label="delay (s)",
+            y_label="signal",
+        ),
+    }
 
 
 def fit_t1(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
@@ -119,4 +129,13 @@ def fit_rb_decay(
         "fidelity": fidelity,
         "error_per_gate": error_per_gate,
         "decay_rate": decay,
+        # Log x: RB depths double, and linearly the decay hugs the axis.
+        "fit": fit_summary(
+            x,
+            y,
+            rb_model(x, *popt),
+            x_label="sequence length",
+            y_label="survival",
+            x_scale="log",
+        ),
     }

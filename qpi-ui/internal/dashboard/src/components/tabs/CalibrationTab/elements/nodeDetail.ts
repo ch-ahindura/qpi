@@ -2,6 +2,7 @@ import type {
   CalibrationPlan,
   CalibrationRequest,
   CalibrationResult,
+  FitSummary,
 } from "@/types";
 
 /** What one target of one routine produced, drawn from the report (RFC 0006 §6). */
@@ -14,6 +15,8 @@ export interface TargetOutcome {
   error?: string;
   fidelity?: number | null;
   errorPerGate?: number | null;
+  /** The sweep behind the fit, for the routines whose `analyse` reports one. */
+  fit?: FitSummary;
 }
 
 /** Everything the report says about *routine*, one row per target it walked.
@@ -41,6 +44,7 @@ export function outcomesFor(
       error: error?.slice(prefix.length).trim(),
       fidelity: benchmark?.fidelity,
       errorPerGate: benchmark?.error_per_gate,
+      fit: result?.fit,
     };
   });
 }
