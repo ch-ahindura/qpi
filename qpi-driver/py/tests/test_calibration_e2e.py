@@ -97,11 +97,16 @@ def write_calibration_config(
 
 
 def run_job(job: dict, tuner: SimulatedTuner, config: CalibrationConfig) -> dict:
-    """One calibration through the worker's own entry point."""
+    """One calibration through the worker's own entry point.
+
+    The queue also carries a progress update per routine and target; the outcome is
+    the one item that is not one, and there is still exactly one of those.
+    """
     queue = RecordingQueue()
     _execute_calibration(job, tuner, config, queue)
-    assert len(queue.items) == 1, queue.items
-    return queue.items[0]
+    outcomes = [item for item in queue.items if "progress" not in item]
+    assert len(outcomes) == 1, queue.items
+    return outcomes[0]
 
 
 class TestAFullCalibration:
@@ -134,6 +139,31 @@ class TestAFullCalibration:
         written = yaml.safe_load(device_path.read_text())
         assert written["q0"]["clock_freqs"]["f01"] == pytest.approx(true_f01, abs=2e5)
         assert written["q0"]["rxy"]["amp180"] == pytest.approx(0.2, rel=0.05)
+
+    def test_progress_reaches_the_queue_as_the_walk_proceeds(self, tmp_path):
+        """The worker wires a real tuner's walk to the queue the driver emits from.
+
+        Asserted here rather than against a stub because what could break is the
+        wiring — `_execute_calibration` setting `on_progress` on the tuner it was
+        handed, and the base `calibrate` passing it into the DAG.
+        """
+        tuner = SimulatedTuner()
+        config = write_calibration_config(tmp_path)
+
+        queue = RecordingQueue()
+        _execute_calibration({"mode": "full", "job_id": "job-1"}, tuner, config, queue)
+
+        reported = [item for item in queue.items if "progress" in item]
+        updates = [item["progress"] for item in reported]
+        assert [u["routine"] for u in updates] == [
+            r["routine_name"] for r in queue.items[-1]["report"]["routine_results"]
+        ]
+        assert all(item["job_id"] == "job-1" for item in reported)
+        assert all(u["mode"] == "full" and u["target"] == "q0" for u in updates)
+        # Monotonic, and ending on the last step of the walk.
+        assert [u["step"] for u in updates] == sorted(u["step"] for u in updates)
+        assert updates[-1]["step"] == updates[-1]["total"]
+        assert updates[-1]["succeeded"] == len(updates)
 
     def test_a_full_calibration_measures_coherence_it_does_not_tune(self, tmp_path):
         """T1 and T2 write nothing, so their value is only in the report."""

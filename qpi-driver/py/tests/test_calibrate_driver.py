@@ -331,6 +331,40 @@ class TestResultPump:
         assert payload["duration_s"] == 3.0
         assert "results" not in payload
 
+    def test_progress_is_emitted_without_ending_the_calibration(self, monkeypatch):
+        """The driver stays busy: progress means still running, not finished.
+
+        Treating it as an outcome would let a second calibration in behind one that
+        has hours to go.
+        """
+        driver = _driver()
+        driver._busy.set()
+        emitted = _pump_once(
+            driver,
+            {
+                "job_id": "j1",
+                "progress": {
+                    "mode": "full",
+                    "step": 7,
+                    "total": 33,
+                    "routine": "rabi",
+                    "target": "q2",
+                },
+            },
+            monkeypatch,
+        )
+
+        assert emitted[0].type is EventType.CALIBRATION_PROGRESS
+        assert emitted[0].payload == {
+            "job_id": "j1",
+            "mode": "full",
+            "step": 7,
+            "total": 33,
+            "routine": "rabi",
+            "target": "q2",
+        }
+        assert driver._busy.is_set()
+
     def test_a_worker_error_is_emitted_as_an_error(self, monkeypatch):
         driver = _driver()
         emitted = _pump_once(driver, {"job_id": "j1", "error": "boom"}, monkeypatch)

@@ -7,6 +7,7 @@ entirely from each routine's ``depends_on``; nothing else encodes the sequence.
 import logging
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,6 +21,11 @@ from qpi_driver.tuners.base.routines import (
 )
 
 log = logging.getLogger(__name__)
+
+#: Called once per routine-and-target as the walk proceeds, with the keys the
+#: ``CalibrationProgress`` event carries. Reporting is best-effort — see
+#: :meth:`CalibrationDAG.run` — so a sink may raise without ending a calibration.
+ProgressSink = Callable[[dict[str, Any]], None]
 
 
 def _worse_than(candidate: CheckOutcome, incumbent: CheckOutcome) -> bool:
@@ -261,6 +267,7 @@ class CalibrationDAG:
         config: CalibrationConfig,
         mode: str = "full",
         only: list[str] | None = None,
+        on_progress: ProgressSink | None = None,
     ) -> CalibrationReport:
         """Walk the graph, running each routine over each of its targets.
 
@@ -269,6 +276,11 @@ class CalibrationDAG:
         does end the walk is having nothing to run — an empty order, or a
         routine set with no targets — which is reported as ``failed`` rather
         than as a success that measured nothing.
+
+        *on_progress* is told where the walk has got to after each target, for the
+        dashboard to show during the hours before a report exists. A sink that
+        raises is logged and the walk carries on: nobody loses a calibration
+        because the thing watching it went away.
         """
         report = CalibrationReport(
             timestamp=utc_timestamp(), duration_s=0.0, mode=mode, backend=backend.name
@@ -323,6 +335,18 @@ class CalibrationDAG:
                     target,
                     "ok" if succeeded else "FAILED",
                     _human_duration(time.monotonic() - target_started),
+                )
+                _report_progress(
+                    on_progress,
+                    {
+                        "step": position,
+                        "total": len(order),
+                        "routine": routine_name,
+                        "target": target,
+                        "succeeded": len(report.routine_results),
+                        "failed": len(report.errors),
+                        "elapsed_s": round(time.monotonic() - started, 1),
+                    },
                 )
 
         if not ran_any:
@@ -417,6 +441,16 @@ class CalibrationDAG:
 def utc_timestamp() -> str:
     """Now, in the millisecond-precision UTC form the report payload uses."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _report_progress(sink: ProgressSink | None, update: dict[str, Any]) -> None:
+    """Tell *sink* where the walk is, if there is one, without letting it stop the walk."""
+    if sink is None:
+        return
+    try:
+        sink(update)
+    except Exception:  # noqa: BLE001 - a calibration outlives whoever is watching
+        log.warning("could not report progress", exc_info=True)
 
 
 def _human_duration(seconds: float) -> str:

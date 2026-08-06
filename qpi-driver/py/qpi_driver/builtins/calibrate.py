@@ -178,6 +178,12 @@ class CalibrateDriver(QpiDriver):
                 log.info("Result pump received shutdown signal")
                 return
 
+            # Before the clear below: progress says the calibration is still going,
+            # and treating it as an outcome would free the driver to accept another.
+            if "progress" in item:
+                self._emit_progress(item["job_id"], item["progress"])
+                continue
+
             self._busy.clear()
             job_id = item.get("job_id", "unknown")
             if "error" in item:
@@ -192,6 +198,20 @@ class CalibrateDriver(QpiDriver):
                 log.info("Drift detected; queuing recalibration of %s", follow_up)
                 self._busy.set()
                 self._job_queue.put(follow_up)
+
+    def _emit_progress(self, job_id: str, update: dict[str, Any]) -> None:
+        """Emit one CalibrationProgress, so the dashboard can show a walk in flight.
+
+        Flat beside ``job_id`` for the same reason the result is: QPI-UI unmarshals
+        the payload straight into its own struct.
+        """
+        self.emit(
+            Event(
+                type=EventType.CALIBRATION_PROGRESS,
+                driver=self.name,
+                payload={"job_id": job_id, **update},
+            )
+        )
 
     def _emit_result(self, job_id: str, report: dict[str, Any]) -> None:
         """Emit one CalibrationResult.
@@ -446,6 +466,9 @@ def _execute_calibration(
     target_qubits = job.get("target_qubits") or []
     _worker_log.info("Running calibration %s (mode=%s)", job_id, mode)
 
+    # Set per calibration, because the update has to name the job it belongs to.
+    tuner.on_progress = functools.partial(_queue_progress, result_queue, job_id, mode)
+
     try:
         if mode == "fidelity_check":
             report = tuner.check_fidelity(config)
@@ -483,6 +506,16 @@ def _execute_calibration(
     except Exception as exc:
         _worker_log.exception("Calibration %s failed", job_id)
         result_queue.put({"job_id": job_id, "error": _sanitize_exception_msg(exc)})
+
+
+def _queue_progress(
+    result_queue: multiprocessing.Queue,
+    job_id: str,
+    mode: str,
+    update: dict[str, Any],
+) -> None:
+    """Pass one progress update up to the main process, tagged with its job."""
+    result_queue.put({"job_id": job_id, "progress": {"mode": mode, **update}})
 
 
 def _drifted_targets(report: Any, job: dict[str, Any]) -> list[str]:

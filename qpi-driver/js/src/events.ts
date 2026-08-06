@@ -19,6 +19,7 @@ export enum EventType {
   CryostatReading = "CryostatReading",
   CalibrateDispatch = "CalibrateDispatch",
   CalibrationResult = "CalibrationResult",
+  CalibrationProgress = "CalibrationProgress",
   QPUState = "QPUState",
 }
 

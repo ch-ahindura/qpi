@@ -19,7 +19,7 @@ from qpi_driver.tuners.base.config import (
     MonitoringConfig,
     RoutineConfig,
 )
-from qpi_driver.tuners.base.dag import CalibrationDAG, utc_timestamp
+from qpi_driver.tuners.base.dag import CalibrationDAG, ProgressSink, utc_timestamp
 from qpi_driver.tuners.base.report import (
     BenchmarkResult,
     CalibrationReport,
@@ -86,6 +86,11 @@ class Tuner(ABC):
         self.name = name
         self._watched_device_config: ConfigFile | None = None
         self._device_config_path = None
+        #: Where to report progress, set per calibration by the worker that owns the
+        #: queue it reports through. An attribute rather than an argument to the
+        #: three entry points below, so a tuner that overrides one of them keeps
+        #: working and simply reports nothing.
+        self.on_progress: ProgressSink | None = None
 
     # A property so that setting the path arms the watcher with it. Every tuner
     # assigns the path in its constructor; none of them should have to remember
@@ -130,7 +135,9 @@ class Tuner(ABC):
         config.validate_against(routine_names())
         config.validate_targets()
         dag = CalibrationDAG(self.routines(), config, bias=self.bias)
-        report = dag.run(self.device, self.backend, config, mode="full")
+        report = dag.run(
+            self.device, self.backend, config, mode="full", on_progress=self.on_progress
+        )
         self._persist(report)
         return report
 
@@ -176,7 +183,12 @@ class Tuner(ABC):
             return report
 
         report = dag.run(
-            self.device, self.backend, narrowed, mode="partial", only=order
+            self.device,
+            self.backend,
+            narrowed,
+            mode="partial",
+            only=order,
+            on_progress=self.on_progress,
         )
         report.notes.extend(notes)
         self._persist(report)
@@ -197,7 +209,12 @@ class Tuner(ABC):
         dag = CalibrationDAG(routines, config, bias=self.bias)
         order = [name for name in dag.execution_order() if name in benchmarks]
         return dag.run(
-            self.device, self.backend, config, mode="fidelity_check", only=order
+            self.device,
+            self.backend,
+            config,
+            mode="fidelity_check",
+            only=order,
+            on_progress=self.on_progress,
         )
 
     def _narrow_to(

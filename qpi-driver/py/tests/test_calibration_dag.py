@@ -544,6 +544,52 @@ class TestProgressReporting:
         )
 
 
+class TestTheProgressSink:
+    """What a walk tells whoever is watching it, and what it does when they break."""
+
+    def test_every_target_reports_its_position_and_the_running_totals(self):
+        updates: list[dict] = []
+        routines = [StubRoutine("a"), FailingRoutine("b", depends_on=("a",))]
+        config = _config(target_qubits=["q0", "q1"])
+
+        CalibrationDAG(routines, config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        assert [(u["step"], u["routine"], u["target"]) for u in updates] == [
+            (1, "a", "q0"),
+            (1, "a", "q1"),
+            (2, "b", "q0"),
+            (2, "b", "q1"),
+        ]
+        assert all(u["total"] == 2 for u in updates)
+        # The counts are the report's own as it stands, so a watcher sees them climb.
+        assert [(u["succeeded"], u["failed"]) for u in updates] == [
+            (1, 0),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+        ]
+
+    def test_a_sink_that_raises_does_not_end_the_walk(self):
+        """A calibration outlives whoever is watching it."""
+
+        def explode(update):
+            raise RuntimeError("the dashboard went away")
+
+        report = CalibrationDAG([StubRoutine("a")], _config()).run(
+            device=None,
+            backend=FakeBackend(),
+            config=_config(),
+            on_progress=explode,
+        )
+
+        assert report.status == "success"
+
+
 class TestHumanDuration:
     def test_it_scales_from_seconds_to_hours(self):
         assert _human_duration(12.44) == "12.4s"

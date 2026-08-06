@@ -36,6 +36,9 @@ const (
 	CalibrateDispatch EventType = "CalibrateDispatch"
 	// CalibrationResult is emitted by a calibrate driver once a run finishes.
 	CalibrationResult EventType = "CalibrationResult"
+	// CalibrationProgress is emitted by a calibrate driver after each routine, so
+	// the dashboard can show where a walk that runs for hours has got to.
+	CalibrationProgress EventType = "CalibrationProgress"
 	// QPUState tells a driver its QPU's service state: online, maintenance or
 	// disabled. Re-asserted on change, so a driver that reconnects is told again.
 	QPUState EventType = "QPUState"
