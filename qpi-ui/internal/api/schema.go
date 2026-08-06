@@ -28,6 +28,12 @@ const (
 	EventCalibrateDispatch EventType = "CalibrateDispatch"
 	// EventCalibrationResult is emitted by a calibration tuner with results.
 	EventCalibrationResult EventType = "CalibrationResult"
+	// EventCalibrationProgress is emitted by a tuner after each routine and target,
+	// so the dashboard can say where a walk has got to during the hours before a
+	// result exists. Applied to the queued request rather than stored as history:
+	// an update supersedes the last one, and keeping every step would be hundreds
+	// of rows per calibration to render one line (RFC 0004 §6.8).
+	EventCalibrationProgress EventType = "CalibrationProgress"
 
 	// EventQPUState tells a driver what service state its QPU is in. Re-asserted
 	// whenever it changes rather than pushed once, so a driver that reconnects, or
@@ -38,7 +44,7 @@ const (
 
 // AllEventTypes lists every event type QPI-UI knows about in this version.
 // Registration validates a custom driver's chosen events against this list.
-var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading, EventCalibrateDispatch, EventCalibrationResult}
+var AllEventTypes = []EventType{EventJobDispatch, EventJobResult, EventCryostatReading, EventCalibrateDispatch, EventCalibrationResult, EventCalibrationProgress}
 
 // isKnownEventType reports whether eventType is one QPI-UI has a handler for.
 func isKnownEventType(eventType EventType) bool {
@@ -245,6 +251,38 @@ func (crp *CalibrationResultPayload) ToMap() map[string]any {
 		"benchmarks":      crp.Benchmarks,
 		"status":          crp.Status,
 		"errors":          crp.Errors,
+	}
+}
+
+// CalibrationProgressPayload is the payload of a CalibrationProgress event: one
+// routine, one target, and the walk's running totals.
+type CalibrationProgressPayload struct {
+	JobID     string  `json:"job_id"`
+	Mode      string  `json:"mode"`
+	Step      int     `json:"step"`
+	Total     int     `json:"total"`
+	Routine   string  `json:"routine"`
+	Target    string  `json:"target"`
+	Succeeded int     `json:"succeeded"`
+	Failed    int     `json:"failed"`
+	ElapsedS  float64 `json:"elapsed_s"`
+}
+
+func (cpp *CalibrationProgressPayload) SetDefaults() {
+}
+
+// ToMap is what the queued request's `progress` field stores. job_id is left out:
+// it names the record this is written to.
+func (cpp *CalibrationProgressPayload) ToMap() map[string]any {
+	return map[string]any{
+		"mode":      cpp.Mode,
+		"step":      cpp.Step,
+		"total":     cpp.Total,
+		"routine":   cpp.Routine,
+		"target":    cpp.Target,
+		"succeeded": cpp.Succeeded,
+		"failed":    cpp.Failed,
+		"elapsed_s": cpp.ElapsedS,
 	}
 }
 

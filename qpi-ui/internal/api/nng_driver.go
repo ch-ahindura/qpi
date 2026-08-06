@@ -37,6 +37,7 @@ var driverEventRegistry = func() *EventRegistry {
 	registry.Register(EventJobResult, handleDriverJobResult)
 	registry.Register(EventCryostatReading, handleCryostatReading)
 	registry.Register(EventCalibrationResult, handleCalibrationResult)
+	registry.Register(EventCalibrationProgress, handleCalibrationProgress)
 	return registry
 }()
 
@@ -557,6 +558,34 @@ func toStringSlice(value any) []string {
 			return out
 		}
 	}
+	return nil
+}
+
+// handleCalibrationProgress writes where a walk has got to onto the request it
+// belongs to, which the dashboard is already subscribed to (RFC 0004 §6.8).
+//
+// A missing request is not an error worth reporting: a driver's own drift check
+// runs on its clock and answers to no queued row, so it reports progress against
+// a job_id nothing here has. The alternative is a log line per routine saying so.
+func handleCalibrationProgress(ctx context.Context, app core.App, qpuID string, event *Event) error {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return fmt.Errorf("cannot read config: %w", err)
+	}
+
+	var progress CalibrationProgressPayload
+	if err := json.Unmarshal(event.Payload, &progress); err != nil {
+		return fmt.Errorf("cannot parse CalibrationProgress payload: %w", err)
+	}
+	if progress.JobID == "" || progress.Total == 0 {
+		return fmt.Errorf("CalibrationProgress payload names no job or no total")
+	}
+
+	// Silent on failure, a missing request included: progress is cosmetic, and the
+	// result event is the one that has to land.
+	var updated db.CalibrationRequest
+	data := map[string]any{"progress": progress.ToMap()}
+	_ = db.FindAndUpdateOne(app, cfg.CollectionCalibrationRequests, progress.JobID, &updated, data)
 	return nil
 }
 

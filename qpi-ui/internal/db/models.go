@@ -768,8 +768,12 @@ type CalibrationRequest struct {
 	TargetQubits any    `json:"target_qubits" db:"target_qubits" type:"json"`
 	TargetEdges  any    `json:"target_edges" db:"target_edges" type:"json"`
 	Status       string `json:"status" db:"status" type:"select" required:"true" maxSelect:"1" values:"pending,running,done,failed"`
-	RequestedBy  string `json:"requested_by,omitempty" db:"requested_by" type:"relation" maxSelect:"1" collection:"users"`
-	Created      string `json:"created" db:"created" type:"autodate" onCreate:"true"`
+	// Progress is where the walk has got to, replaced on each CalibrationProgress
+	// event. On the request rather than in its own collection because it is a
+	// current position, not history: the report is the history.
+	Progress    any    `json:"progress,omitempty" db:"progress" type:"json"`
+	RequestedBy string `json:"requested_by,omitempty" db:"requested_by" type:"relation" maxSelect:"1" collection:"users"`
+	Created     string `json:"created" db:"created" type:"autodate" onCreate:"true"`
 }
 
 // ToRecord converts this model into a pocketbase record

@@ -396,8 +396,9 @@ func TestBothTunersAreRegisteredForCalibrate(t *testing.T) {
 		if !spec.ShipsIn(Python) || spec.ShipsIn(Go) || spec.ShipsIn(TypeScript) {
 			t.Errorf("expected %s to ship in Python only, got %v", kind, spec.Languages)
 		}
-		if len(spec.Events) != 2 || spec.Events[0] != eventCalibrateDispatch || spec.Events[1] != eventCalibrationResult {
-			t.Errorf("expected %s events [CalibrateDispatch, CalibrationResult], got %v", kind, spec.Events)
+		if len(spec.Events) != 3 || spec.Events[0] != eventCalibrateDispatch ||
+			spec.Events[1] != eventCalibrationResult || spec.Events[2] != eventCalibrationProgress {
+			t.Errorf("expected %s events [CalibrateDispatch, CalibrationResult, CalibrationProgress], got %v", kind, spec.Events)
 		}
 	}
 }

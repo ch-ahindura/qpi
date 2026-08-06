@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -586,6 +587,93 @@ func TestHandleCalibrationResult_ClosesOutItsRequest(t *testing.T) {
 	}
 	if stored.Status != "done" {
 		t.Errorf("expected the request to be done, got %q", stored.Status)
+	}
+}
+
+// TestHandleCalibrationProgress_WritesOntoTheRequest proves a walk's position
+// reaches the row the dashboard is subscribed to, without touching its status: a
+// calibration reporting progress is still running (RFC 0004 §6.8).
+func TestHandleCalibrationProgress_WritesOntoTheRequest(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "full", Status: "running",
+	}
+	if err := saveToDb(app, request); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationProgress, CalibrationProgressPayload{
+		JobID: request.ID, Mode: "full", Step: 7, Total: 33,
+		Routine: "rabi", Target: "q2", Succeeded: 12, Failed: 1, ElapsedS: 812.4,
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationProgress(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationProgress: %v", err)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, request.ID)
+	if err != nil {
+		t.Fatalf("reload request: %v", err)
+	}
+	if status := record.GetString("status"); status != "running" {
+		t.Errorf("expected the request to still be running, got %q", status)
+	}
+
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(record.GetString("progress")), &stored); err != nil {
+		t.Fatalf("progress is not stored as json: %v", err)
+	}
+	for field, want := range map[string]any{
+		"step": 7.0, "total": 33.0, "routine": "rabi", "target": "q2",
+		"succeeded": 12.0, "failed": 1.0,
+	} {
+		if stored[field] != want {
+			t.Errorf("progress[%q] = %v, want %v", field, stored[field], want)
+		}
+	}
+	if _, ok := stored["job_id"]; ok {
+		t.Error("job_id names the record this was written to; storing it again is noise")
+	}
+}
+
+// TestHandleCalibrationProgress_IgnoresAnUnknownJob proves a driver's own drift
+// check, which answers to no queued row, is dropped rather than reported as an error.
+func TestHandleCalibrationProgress_IgnoresAnUnknownJob(t *testing.T) {
+	app, _, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationProgress, CalibrationProgressPayload{
+		JobID: "drift_check", Mode: "fidelity_check", Step: 1, Total: 2, Routine: "rb",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationProgress(ctx, app, qpuRec.Id, event); err != nil {
+		t.Errorf("a drift check has no request to update; that is not an error: %v", err)
+	}
+}
+
+// TestHandleCalibrationProgress_RejectsAPayloadWithNoTotal proves a progress
+// update that cannot be rendered as a position is refused.
+func TestHandleCalibrationProgress_RejectsAPayloadWithNoTotal(t *testing.T) {
+	app, _, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationProgress, map[string]any{
+		"job_id": "cal-1", "routine": "rabi",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationProgress(ctx, app, qpuRec.Id, event); err == nil {
+		t.Error("expected a payload with no total to be refused")
 	}
 }
 
