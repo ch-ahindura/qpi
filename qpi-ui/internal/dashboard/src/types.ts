@@ -280,6 +280,12 @@ export interface CalibrationRequest {
   /** Where the walk has got to, replaced on each CalibrationProgress event. Absent
    * until the first routine finishes, and on a request that predates the field. */
   progress?: CalibrationProgress;
+  /** What the driver calls this run. Its own id for a dispatched calibration; a name
+   * of the driver's making for one it started itself. */
+  job_id?: string;
+  /** Who wanted this. `"drift"` is the driver's own doing — a periodic check, or the
+   * recalibration it triggers. Empty on requests that predate the field. */
+  trigger?: "dispatched" | "drift";
   created: string;
   expand?: {
     driver?: Driver;

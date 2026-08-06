@@ -15,6 +15,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-ui`: the Calibration tab shows a walk in flight — `step 7 of 33 — rabi on q2`,
   the ok/failed counts and a bar. Fed by a new `CalibrationProgress` event, which
   lands on the queued request rather than being kept as history.
+- `qpi-ui`: a drift check and the recalibration it triggers get a request row of their
+  own, marked as the driver's doing. Nobody dispatched them, so the tab previously
+  showed a QPU busy for hours with no reason why.
 - `qpi-driver/py`: `--data-dir` (env `QPI_DATA_DIR`) is universal, rather than each
   device's own `-o data_dir=`, which still overrides it. A device builder receives
   `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.

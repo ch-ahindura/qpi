@@ -147,6 +147,11 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
                       {request.status === "running"
                         ? "in progress"
                         : "queued, waiting for the driver"}
+                      {/* Nobody dispatched a drift-triggered run, so say so: the
+                          alternative is an operator looking for who started it. */}
+                      {request.trigger === "drift"
+                        ? ", started by the driver's own drift monitoring"
+                        : ""}
                       . A full run can take hours.
                     </div>
                     {/* Only once a routine has finished: before that there is no
