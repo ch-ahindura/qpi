@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Activity, Play, Loader2 } from "lucide-react";
 import type { CalibrationRequest, CalibrationResult, Driver } from "@/types";
 import { TUNER_KINDS } from "@/types";
+import { CalibrationGraph } from "./elements/CalibrationGraph";
 import { FidelityGrid } from "./elements/FidelityGrid";
 import { ParameterTable } from "./elements/ParameterTable";
 import {
@@ -200,6 +201,26 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
               </div>
             </div>
           )}
+
+          {/* One per run that published a plan. A drift check sends none — it walks
+              four benchmarks with nothing between them, and the bar above says all
+              there is to say about it (RFC 0006 D6). */}
+          {inFlight
+            .filter((request) => request.plan?.nodes?.length)
+            .map((request) => (
+              <section key={`graph-${request.id}`}>
+                <h2 className="text-sm uppercase tracking-wider text-gray-500 dark:text-zinc-500 mb-3">
+                  {request.mode.replace("_", " ")} calibration graph
+                  <span className="ml-2 normal-case tracking-normal text-gray-400 dark:text-zinc-600">
+                    on {request.expand?.driver?.name ?? request.driver}
+                  </span>
+                </h2>
+                <CalibrationGraph
+                  plan={request.plan!}
+                  nodes={request.progress?.nodes}
+                />
+              </section>
+            ))}
 
           <section>
             <h2 className="text-sm uppercase tracking-wider text-gray-500 dark:text-zinc-500 mb-3">

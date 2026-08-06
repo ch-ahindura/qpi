@@ -267,6 +267,54 @@ export interface CalibrationResult {
   };
 }
 
+/** One routine in a calibration's plan (RFC 0006 §5.1). */
+export interface CalibrationPlanNode {
+  name: string;
+  depends_on: string[];
+  /** The targets this run walks it over, after the routine declined the ones whose
+   * result would have nowhere to go. Empty means it applies to nothing here. */
+  targets: string[];
+  kind: "qubits" | "edges";
+  /** Whether this run includes it at all. False for a routine disabled in
+   * `calibration.yml` or outside a partial's subset — sent anyway, because which
+   * part of the graph a partial is *not* touching is most of the value of drawing it. */
+  planned: boolean;
+  is_benchmark: boolean;
+  has_check: boolean;
+  /** Device-config paths this routine writes, e.g. `rxy.amp180`. Empty for the
+   * twelve routines that measure without tuning. */
+  updates: string[];
+}
+
+/** The graph a calibration walks, as its driver resolved it. Absent on a drift
+ * check, which walks four disconnected benchmarks (RFC 0006 D6), and on requests
+ * that predate the field.
+ *
+ * Rendered as sent and never re-derived from progress events, so a `calibration.yml`
+ * edited mid-run cannot make the drawing disagree with the walk (RFC 0006 D7). */
+export interface CalibrationPlan {
+  nodes: CalibrationPlanNode[];
+}
+
+/** What one routine looks like right now, accumulated across progress events
+ * (RFC 0006 §5.3). `done` counts the targets that have finished, `failed` how many
+ * of those failed. */
+export interface CalibrationNodeState {
+  state: "running" | "done" | "partial" | "failed";
+  done: number;
+  total: number;
+  failed: number;
+}
+
+/** How a node is drawn. The four a walk reports, plus the three that are properties
+ * of the plan rather than of anything that happened: a planned node nothing has
+ * reported on, one that applies to no target here, and one this run excludes. */
+export type CalibrationNodeStatus =
+  | CalibrationNodeState["state"]
+  | "pending"
+  | "skipped"
+  | "not_planned";
+
 /** A queued calibration waiting for, or being run by, its driver's dispatcher
  * (RFC 0004 §6.8). "running" is how the dashboard knows a calibration is in
  * flight — the run itself takes hours and reports back over NNG. */
@@ -280,6 +328,8 @@ export interface CalibrationRequest {
   /** Where the walk has got to, replaced on each CalibrationProgress event. Absent
    * until the first routine finishes, and on a request that predates the field. */
   progress?: CalibrationProgress;
+  /** The graph this run walks, published by its driver before the first routine. */
+  plan?: CalibrationPlan;
   /** What the driver calls this run. Its own id for a dispatched calibration; a name
    * of the driver's making for one it started itself. */
   job_id?: string;
@@ -306,4 +356,7 @@ export interface CalibrationProgress {
   succeeded: number;
   failed: number;
   elapsed_s: number;
+  /** Per routine, accumulated rather than replaced — this is what colours the graph.
+   * Absent on a run whose driver or server predates it. */
+  nodes?: Record<string, CalibrationNodeState>;
 }

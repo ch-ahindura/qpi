@@ -1,4 +1,4 @@
-.PHONY: test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
+.PHONY: test-dashboard test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
 
 VERSION ?= 0.3.1
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
@@ -52,7 +52,7 @@ serve-docs:
 # Test targets
 # ---------------------------------------------------------------------------
 
-test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-docs test-e2e
+test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-dashboard test-docs test-e2e
 
 # ---------------------------------------------------------------------------
 # Documentation, tested rather than proof-read.
@@ -207,6 +207,13 @@ test-py-loop:
 	# test-py-sim in one `make test`, which is the order `make test` uses.
 	$(UV) run --no-sync --project qpi-driver/py pytest \
 		qpi-driver/py/tests/test_calibration_loop.py -v
+
+# The dashboard's pure helpers — graph layering and the state derivation beside it.
+# Anything needing a DOM is a Cypress spec against the real server instead
+# (RFC 0006 §10), which is what test-e2e-dashboard runs.
+test-dashboard:
+	@echo "Running dashboard unit tests..."
+	(cd qpi-ui/internal/dashboard && CYPRESS_INSTALL_BINARY=0 npm ci && npm test)
 
 test-js-client:
 	@echo "Running JS client tests..."

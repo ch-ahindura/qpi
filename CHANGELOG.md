@@ -17,6 +17,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a calibration logs where it has got to — `[7/33] rabi q2 ok in 41.2s`
   per routine and target, each check's verdict as it is measured, and a closing summary.
   A full walk is hours that previously said nothing until it finished.
+- `qpi-ui`: the Calibration tab draws the graph a run is walking, coloured per routine
+  and showing each one's `3/5` tally. A bar said `step 7 of 33` and nothing about what
+  the run had reached, what a failure had stranded downstream of it, or which part of
+  the graph a partial run was leaving alone.
 - `qpi-ui`: a calibration request stores the graph its driver is walking, and its
   `progress.nodes` map accumulates each routine's state — `running`, `done`, `partial`
   or `failed`, with the targets finished out of its total. `progress` only ever held
@@ -33,6 +37,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.
 - `qpi-driver/py`: `-o save_raw_data=true` keeps each acquisition and an instrument
   snapshot under the data directory. Qblox backends only; nothing to switch on quantify.
+
+- `repo`: `make test-dashboard` runs the dashboard's pure helpers under vitest. Nothing
+  could unit-test a function in there before, so anything not worth a Cypress spec
+  against a live server went untested.
 
 ### Changed
 

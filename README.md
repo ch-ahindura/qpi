@@ -473,6 +473,9 @@ make test
 # Run only Python driver unit tests
 make test-py
 
+# Run the dashboard's pure-helper unit tests (no DOM, no server)
+make test-dashboard
+
 # Run dashboard Cypress E2E tests (PocketBase + Driver + Cypress)
 make test-e2e-dashboard
 
