@@ -253,7 +253,7 @@ if typer.IS_TYPER_INSTALLED:
         try:
             return importlib.metadata.version("qpi-driver")
         except importlib.metadata.PackageNotFoundError:
-            return "0.3.1"
+            return "0.4.0"
 
     def _banner():
         """Renders the banner at the top of the CLI"""

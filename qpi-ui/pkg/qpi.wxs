@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Name="QPI Server" Id="*" UpgradeCode="32AAA554-16F5-420B-B646-6A57FF07D1B0" Language="1033" Codepage="1252" Version="0.3.1" Manufacturer="SopherApps">
+  <Product Name="QPI Server" Id="*" UpgradeCode="32AAA554-16F5-420B-B646-6A57FF07D1B0" Language="1033" Codepage="1252" Version="0.4.0" Manufacturer="SopherApps">
     <Package InstallScope="perMachine" Id="*" Keywords="Installer" Description="QPI Server Installer" Compressed="yes" />
     <Media Id="1" Cabinet="qpi.cab" EmbedCab="yes" />
 
