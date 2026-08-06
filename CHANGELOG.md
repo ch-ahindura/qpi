@@ -10,34 +10,24 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Added
 
 - `qpi-driver/py`: a calibration publishes the graph it is about to walk on a second
-  `CalibrationQueued` — every routine, its dependencies, its resolved targets and
-  whether this run touches it. The shape existed only as `depends_on` on the driver's
-  own classes, so nothing downstream could draw more than a progress bar. A drift check
-  sends none: four disconnected benchmarks is not a picture.
+  `CalibrationQueued` — every routine, its dependencies, its resolved targets, and
+  whether this run touches it. A drift check sends none.
 - `qpi-driver/py`: a calibration logs where it has got to — `[7/33] rabi q2 ok in 41.2s`
   per routine and target, each check's verdict as it is measured, and a closing summary.
   A full walk is hours that previously said nothing until it finished.
 - `qpi-ui`: the Calibration tab draws the graph a run is walking, coloured per routine
-  and showing each one's `3/5` tally. A bar said `step 7 of 33` and nothing about what
-  the run had reached, what a failure had stranded downstream of it, or which part of
-  the graph a partial run was leaving alone.
-- `qpi-ui`: clicking a routine in the graph says what it measures, which device paths it
-  writes, what it depends on and feeds, and how the run went on each target — the fitted
-  parameters, the duration, and the fit error that stopped it. The report listed the same
-  numbers with no way to ask about one routine.
-- `qpi-driver/py`: a calibration report carries the sweep behind each fit — the
-  setpoints, the measured signal and the fitted curve over them — for the Rabi, Ramsey,
-  DRAG, fine-amplitude, T1, T2, RB and spectroscopy fits. Only the fitted numbers
-  crossed the wire before, so a suspicious parameter could not be checked against the
-  data it came from without reading the driver's own disk.
-- `qpi-ui`: the node card plots that sweep against its fit, with SI-prefixed ticks and a
-  log axis where the sweep is logarithmic. A routine whose fit does not report one yet
-  simply shows no chart.
-- `qpi-ui`: a calibration request stores the graph its driver is walking, and its
-  `progress.nodes` map accumulates each routine's state — `running`, `done`, `partial`
-  or `failed`, with the targets finished out of its total. `progress` only ever held
-  the latest position, so nothing downstream could say more than how far along a run
-  was.
+  with each one's `3/5` tally. Previously a bar and `step 7 of 33`.
+- `qpi-ui`: clicking a routine in the graph opens a card — what it writes, what it
+  depends on and feeds, and per target the fitted parameters, the duration and any fit
+  error. Both neighbour lists are clickable.
+- `qpi-driver/py`: a report carries the sweep behind each fit — setpoints, measured
+  signal and fitted curve — for the Rabi, Ramsey, DRAG, fine-amplitude, T1, T2, RB and
+  spectroscopy fits. At most 200 points a trace; only the fitted numbers crossed before.
+- `qpi-ui`: the node card plots that sweep against its fit, SI-prefixed ticks and a log
+  axis where the sweep is logarithmic. A routine reporting no sweep shows no chart.
+- `qpi-ui`: a calibration request stores its driver's plan, and `progress.nodes`
+  accumulates each routine's state — `running`, `done`, `partial` or `failed`, with the
+  targets finished out of its total. `progress` previously held only the latest position.
 - `qpi-ui`: the Calibration tab shows a walk in flight — `step 7 of 33 — rabi on q2`,
   the ok/failed counts and a bar. Fed by a new `CalibrationProgress` event, which
   lands on the queued request rather than being kept as history.
@@ -49,16 +39,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.
 - `qpi-driver/py`: `-o save_raw_data=true` keeps each acquisition and an instrument
   snapshot under the data directory. Qblox backends only; nothing to switch on quantify.
-
-- `qpi-ui`: the calibration collections are pruned. `--calibration-request-retention`
-  (720h) drops finished requests, never a running one; `--calibration-fit-retention`
-  (720h) strips a report's fit traces and benchmark raw data while leaving every fitted
-  number; `--calibration-result-retention` (0, off) can drop whole reports. Nothing in
-  the calibration path was pruned before, so a chip drift-checked every half hour grew
-  its request rows without limit.
+- `qpi-ui`: the calibration collections are pruned, where nothing in that path was
+  before. `--calibration-request-retention` (720h) drops finished requests but never a
+  running one, `--calibration-fit-retention` (720h) strips a report's fit traces and
+  benchmark raw data while keeping every fitted number, and
+  `--calibration-result-retention` (0, off) can drop whole reports.
 - `repo`: `make test-dashboard` runs the dashboard's pure helpers under vitest. Nothing
-  could unit-test a function in there before, so anything not worth a Cypress spec
-  against a live server went untested.
+  there could be unit-tested before without a live server.
 
 ### Changed
 
