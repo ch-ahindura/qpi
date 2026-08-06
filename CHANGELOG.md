@@ -17,6 +17,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a calibration logs where it has got to — `[7/33] rabi q2 ok in 41.2s`
   per routine and target, each check's verdict as it is measured, and a closing summary.
   A full walk is hours that previously said nothing until it finished.
+- `qpi-ui`: a calibration request stores the graph its driver is walking, and its
+  `progress.nodes` map accumulates each routine's state — `running`, `done`, `partial`
+  or `failed`, with the targets finished out of its total. `progress` only ever held
+  the latest position, so nothing downstream could say more than how far along a run
+  was.
 - `qpi-ui`: the Calibration tab shows a walk in flight — `step 7 of 33 — rabi on q2`,
   the ok/failed counts and a bar. Fed by a new `CalibrationProgress` event, which
   lands on the queued request rather than being kept as history.

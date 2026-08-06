@@ -591,6 +591,11 @@ func findCalibrationRequest(app core.App, cfg *config.AppConfig, jobID string) *
 // those runs report has no row to land on. Created `running` rather than `pending`
 // because it is not queued here — the driver has already started it, and this is the
 // record of that, not a request.
+//
+// It also lands the plan (RFC 0006 §5.1), which arrives on a second announcement
+// made from the walk itself. That is why a re-announcement is not simply ignored:
+// the second one is carrying the thing the first could not know. A dispatched
+// calibration makes no announcement of its own and gets its plan by the same route.
 func handleCalibrationQueued(ctx context.Context, app core.App, qpuID string, event *Event) error {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {
@@ -611,6 +616,17 @@ func handleCalibrationQueued(ctx context.Context, app core.App, qpuID string, ev
 	// A driver that reconnects mid-run, or one whose announcement is retried, must
 	// not leave two rows for the same calibration.
 	if existing := findCalibrationRequest(app, cfg, queued.JobID); existing != nil {
+		if queued.Plan == nil {
+			return nil
+		}
+		encoded, err := json.Marshal(queued.Plan)
+		if err != nil {
+			return fmt.Errorf("cannot marshal calibration plan: %w", err)
+		}
+		existing.Set("plan", encoded)
+		if err := app.Save(existing); err != nil {
+			return fmt.Errorf("cannot store calibration plan: %w", err)
+		}
 		return nil
 	}
 
@@ -624,6 +640,9 @@ func handleCalibrationQueued(ctx context.Context, app core.App, qpuID string, ev
 		JobID:        queued.JobID,
 		Trigger:      "drift",
 	}
+	if queued.Plan != nil {
+		request.Plan = queued.Plan
+	}
 	if err := saveToDb(app, request); err != nil {
 		return fmt.Errorf("cannot save self-triggered calibration: %w", err)
 	}
@@ -634,6 +653,11 @@ func handleCalibrationQueued(ctx context.Context, app core.App, qpuID string, ev
 
 // handleCalibrationProgress writes where a walk has got to onto the request it
 // belongs to, which the dashboard is already subscribed to (RFC 0004 §6.8).
+//
+// The position replaces the last one; the per-node tallies accumulate over it, so
+// the graph can be coloured rather than only a bar drawn (RFC 0006 §5.3). That makes
+// it a read-modify-write of the one node the event names, which at a few hundred
+// events per calibration is not a load concern.
 //
 // A missing request is not an error worth reporting: a driver's own drift check
 // runs on its clock and answers to no queued row, so it reports progress against
@@ -658,9 +682,118 @@ func handleCalibrationProgress(ctx context.Context, app core.App, qpuID string, 
 	if record == nil {
 		return nil
 	}
-	record.Set("progress", progress.ToMap())
+
+	var plan CalibrationPlan
+	_ = json.Unmarshal([]byte(record.GetString("plan")), &plan)
+	var prior map[string]any
+	_ = json.Unmarshal([]byte(record.GetString("progress")), &prior)
+
+	stored := progress.ToMap()
+	stored["nodes"] = advanceNodes(prior, &progress, &plan)
+	record.Set("progress", stored)
 	_ = app.Save(record)
 	return nil
+}
+
+// CalibrationNodeState is one routine's state within a walk in flight, on the
+// request's `progress.nodes` map (RFC 0006 §5.3).
+//
+// Done counts the targets that have finished, Failed how many of those failed, so
+// the drawing reads `3/5` from Done and Total and colours from Failed. The states a
+// walk produces are `running`, `done`, `partial` and `failed`; `pending`, `skipped`
+// and `not_planned` are properties of the plan and are read from it directly.
+type CalibrationNodeState struct {
+	State  string `json:"state"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
+	Failed int    `json:"failed"`
+}
+
+// advanceNodes folds one progress event into the tallies a walk has accumulated.
+//
+// prior is the `progress` object already on the row — the previous event's payload,
+// node map included — and is nil before the first one.
+//
+// Two things make this less obvious than a counter. A progress event fires *after* a
+// target finishes, so the routine it names has just completed one and is still the
+// running one until an event names a different routine; and the payload carries the
+// walk's running totals rather than the outcome of the target it names, so whether
+// that target failed is the difference from the last event's total. Exactly one of
+// the two totals grows per target, which is what makes the difference readable.
+func advanceNodes(prior map[string]any, event *CalibrationProgressPayload, plan *CalibrationPlan) map[string]CalibrationNodeState {
+	nodes := priorNodes(prior)
+
+	node := nodes[event.Routine]
+	node.Total = plan.targetCount(event.Routine, node.Total)
+	node.Done++
+	if float64(event.Failed) > numberOf(prior["failed"]) {
+		node.Failed++
+	}
+	if node.Total > 0 && node.Done >= node.Total {
+		node.State = settledState(node)
+	} else {
+		node.State = "running"
+	}
+	nodes[event.Routine] = node
+
+	// The walk has moved on, so whatever it was on before is finished — however
+	// short of its total the tally looks, which is the case for a node whose plan
+	// the row never received.
+	if previous, ok := prior["routine"].(string); ok && previous != event.Routine {
+		if done, seen := nodes[previous]; seen && done.State == "running" {
+			done.State = settledState(done)
+			nodes[previous] = done
+		}
+	}
+	return nodes
+}
+
+// settledState is what a node that has finished its targets looks like.
+func settledState(node CalibrationNodeState) string {
+	switch {
+	case node.Failed == 0:
+		return "done"
+	case node.Failed >= node.Done:
+		return "failed"
+	default:
+		return "partial"
+	}
+}
+
+// priorNodes recovers the accumulated node map from the stored progress object,
+// which round-trips through JSON and so arrives as floats in maps.
+func priorNodes(prior map[string]any) map[string]CalibrationNodeState {
+	nodes := map[string]CalibrationNodeState{}
+	stored, ok := prior["nodes"].(map[string]any)
+	if !ok {
+		return nodes
+	}
+	for name, value := range stored {
+		fields, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		state, _ := fields["state"].(string)
+		nodes[name] = CalibrationNodeState{
+			State:  state,
+			Done:   int(numberOf(fields["done"])),
+			Total:  int(numberOf(fields["total"])),
+			Failed: int(numberOf(fields["failed"])),
+		}
+	}
+	return nodes
+}
+
+// numberOf reads a JSON number back out of an `any`, whatever numeric shape the
+// decoder chose. Zero for anything that is not one, absent included.
+func numberOf(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	}
+	return 0
 }
 
 // handleCalibrationResult stores a tuner's report and closes out the request it

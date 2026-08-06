@@ -843,6 +843,285 @@ func TestHandleCalibrationProgress_RejectsAPayloadWithNoTotal(t *testing.T) {
 	}
 }
 
+// aPlan is a plan over two routines, the second walked over three targets.
+func aPlan() *CalibrationPlan {
+	return &CalibrationPlan{Nodes: []CalibrationPlanNode{
+		{Name: "resonator_spectroscopy", Targets: []string{"q0"}, Planned: true, HasCheck: true},
+		{Name: "rabi", DependsOn: []string{"resonator_spectroscopy"},
+			Targets: []string{"q0", "q1", "q2"}, Kind: "qubits", Planned: true,
+			Updates: []string{"rxy.amp180"}},
+	}}
+}
+
+// TestHandleCalibrationQueued_AttachesAPlanToARowItDidNotCreate proves the second
+// announcement lands its plan on the row the first one made, rather than being
+// dropped as a duplicate (RFC 0006 §5.1).
+func TestHandleCalibrationQueued_AttachesAPlanToARowItDidNotCreate(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "full", Status: "running",
+		JobID: "drift_check_recalibrate", Trigger: "drift",
+	}
+	if err := saveToDb(app, request); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check_recalibrate", Mode: "full",
+		Reason: "the walk it is about to make", Plan: aPlan(),
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationQueued(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationQueued: %v", err)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, request.ID)
+	if err != nil {
+		t.Fatalf("reload request: %v", err)
+	}
+	var stored CalibrationPlan
+	if err := json.Unmarshal([]byte(record.GetString("plan")), &stored); err != nil {
+		t.Fatalf("the plan is not stored as json: %v", err)
+	}
+	if len(stored.Nodes) != 2 || stored.Nodes[1].Name != "rabi" {
+		t.Fatalf("expected the plan's two nodes in walk order, got %+v", stored.Nodes)
+	}
+	if got := stored.Nodes[1].Updates; len(got) != 1 || got[0] != "rxy.amp180" {
+		t.Errorf("expected the node's device paths to survive the round trip, got %v", got)
+	}
+	// One run, one row: the second announcement carries a plan, not a duplicate.
+	rows, err := app.FindRecordsByFilter(cfg.CollectionCalibrationRequests,
+		"job_id = 'drift_check_recalibrate'", "+created", 0, 0)
+	if err != nil {
+		t.Fatalf("find rows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Errorf("expected 1 row for one calibration, got %d", len(rows))
+	}
+}
+
+// TestHandleCalibrationQueued_CreatesTheRowWithItsPlan proves a plan whose
+// announcement was lost still gets a row, since it is the row's own second
+// announcement that carries it.
+func TestHandleCalibrationQueued_CreatesTheRowWithItsPlan(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check_recalibrate", Mode: "partial",
+		TargetQubits: []string{"q0"}, Plan: aPlan(),
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationQueued(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationQueued: %v", err)
+	}
+
+	record := findCalibrationRequest(app, cfg, "drift_check_recalibrate")
+	if record == nil {
+		t.Fatal("expected a row for the calibration the plan describes")
+	}
+	var stored CalibrationPlan
+	if err := json.Unmarshal([]byte(record.GetString("plan")), &stored); err != nil {
+		t.Fatalf("the plan is not stored as json: %v", err)
+	}
+	if len(stored.Nodes) != 2 {
+		t.Errorf("expected the plan on the created row, got %+v", stored.Nodes)
+	}
+}
+
+// TestHandleCalibrationQueued_LeavesAStoredPlanAloneWhenNoneIsSent proves the
+// announcement made at queue time cannot wipe the plan a later one landed — the two
+// arrive in whatever order the sockets deliver them.
+func TestHandleCalibrationQueued_LeavesAStoredPlanAloneWhenNoneIsSent(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+
+	withPlan, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check_recalibrate", Mode: "full", Plan: aPlan(),
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+	withoutPlan, err := NewEvent(driverRec.Id, EventCalibrationQueued, CalibrationQueuedPayload{
+		JobID: "drift_check_recalibrate", Mode: "full", Reason: "the drift timer",
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	for _, event := range []*Event{withPlan, withoutPlan} {
+		if err := handleCalibrationQueued(ctx, app, qpuRec.Id, event); err != nil {
+			t.Fatalf("handleCalibrationQueued: %v", err)
+		}
+	}
+
+	record := findCalibrationRequest(app, cfg, "drift_check_recalibrate")
+	var stored CalibrationPlan
+	if err := json.Unmarshal([]byte(record.GetString("plan")), &stored); err != nil {
+		t.Fatalf("the plan is not stored as json: %v", err)
+	}
+	if len(stored.Nodes) != 2 {
+		t.Errorf("expected the stored plan to survive an announcement without one, got %+v", stored.Nodes)
+	}
+}
+
+// TestAdvanceNodes_AccumulatesAcrossEvents proves per-node state builds up over a
+// walk rather than being replaced by the latest position (RFC 0006 §5.3).
+//
+// The events are the ones a walk actually emits: `succeeded` and `failed` are the
+// walk's running totals, not the outcome of the target the event names, so whether
+// that target failed is only readable as a difference from the event before.
+func TestAdvanceNodes_AccumulatesAcrossEvents(t *testing.T) {
+	plan := aPlan()
+	walk := []CalibrationProgressPayload{
+		{Step: 1, Total: 2, Routine: "resonator_spectroscopy", Target: "q0", Succeeded: 1},
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q0", Succeeded: 2},
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q1", Succeeded: 2, Failed: 1},
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q2", Succeeded: 3, Failed: 1},
+	}
+
+	prior := map[string]any{}
+	var nodes map[string]CalibrationNodeState
+	for i := range walk {
+		nodes = advanceNodes(prior, &walk[i], plan)
+		// Round-tripped through JSON, as the stored row does it: the reducer reads
+		// its own previous output back out of a json field, not out of memory.
+		stored := walk[i].ToMap()
+		stored["nodes"] = nodes
+		encoded, err := json.Marshal(stored)
+		if err != nil {
+			t.Fatalf("marshal progress: %v", err)
+		}
+		prior = map[string]any{}
+		if err := json.Unmarshal(encoded, &prior); err != nil {
+			t.Fatalf("unmarshal progress: %v", err)
+		}
+	}
+
+	// Its one target passed, and the walk moved on: done.
+	if got := nodes["resonator_spectroscopy"]; got.State != "done" || got.Done != 1 {
+		t.Errorf("resonator_spectroscopy = %+v, want done 1/1", got)
+	}
+	// Three targets, one of them failed: partial, and the tally the drawing shows.
+	rabi := nodes["rabi"]
+	if rabi.State != "partial" || rabi.Done != 3 || rabi.Total != 3 || rabi.Failed != 1 {
+		t.Errorf("rabi = %+v, want partial with 3/3 and 1 failed", rabi)
+	}
+}
+
+// TestAdvanceNodes_MarksTheNamedNodeRunningUntilItsTargetsAreDone proves a node with
+// targets left is `running`, since a progress event fires after a target finishes and
+// the routine it names is still the one being walked.
+func TestAdvanceNodes_MarksTheNamedNodeRunningUntilItsTargetsAreDone(t *testing.T) {
+	event := CalibrationProgressPayload{Step: 2, Total: 2, Routine: "rabi", Target: "q0", Succeeded: 1}
+	nodes := advanceNodes(nil, &event, aPlan())
+
+	if got := nodes["rabi"]; got.State != "running" || got.Done != 1 || got.Total != 3 {
+		t.Errorf("rabi = %+v, want running 1/3", got)
+	}
+}
+
+// TestAdvanceNodes_EveryTargetFailingIsFailedNotPartial keeps the two apart: a node
+// that produced nothing usable is not a node that produced some of it.
+func TestAdvanceNodes_EveryTargetFailingIsFailedNotPartial(t *testing.T) {
+	prior := map[string]any{}
+	var nodes map[string]CalibrationNodeState
+	for i, target := range []string{"q0", "q1", "q2"} {
+		event := CalibrationProgressPayload{
+			Step: 2, Total: 2, Routine: "rabi", Target: target, Failed: i + 1,
+		}
+		nodes = advanceNodes(prior, &event, aPlan())
+		prior = map[string]any{"routine": "rabi", "failed": float64(i + 1), "nodes": jsonRoundTrip(t, nodes)}
+	}
+
+	if got := nodes["rabi"]; got.State != "failed" || got.Failed != 3 {
+		t.Errorf("rabi = %+v, want failed with 3 failures", got)
+	}
+}
+
+// TestAdvanceNodes_WithoutAPlanTheWalkMovingOnSettlesTheNode proves a row that never
+// received a plan still gets usable state: the tally cannot say a node is finished
+// with no total to compare against, but the walk naming a different routine can.
+func TestAdvanceNodes_WithoutAPlanTheWalkMovingOnSettlesTheNode(t *testing.T) {
+	first := CalibrationProgressPayload{Step: 1, Total: 2, Routine: "t1", Target: "q0", Succeeded: 1}
+	nodes := advanceNodes(nil, &first, &CalibrationPlan{})
+	if got := nodes["t1"].State; got != "running" {
+		t.Errorf("t1 = %q, want running while nothing says how many targets it has", got)
+	}
+
+	second := CalibrationProgressPayload{Step: 2, Total: 2, Routine: "t2_echo", Target: "q0", Succeeded: 2}
+	nodes = advanceNodes(
+		map[string]any{"routine": "t1", "succeeded": 1.0, "nodes": jsonRoundTrip(t, nodes)},
+		&second, &CalibrationPlan{},
+	)
+	if got := nodes["t1"].State; got != "done" {
+		t.Errorf("t1 = %q, want done once the walk moved on", got)
+	}
+}
+
+// jsonRoundTrip is how the node map reaches the reducer in production: out of a json
+// field, so every number is a float64 and every state a bare string.
+func jsonRoundTrip(t *testing.T, nodes map[string]CalibrationNodeState) map[string]any {
+	t.Helper()
+	encoded, err := json.Marshal(nodes)
+	if err != nil {
+		t.Fatalf("marshal nodes: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(encoded, &out); err != nil {
+		t.Fatalf("unmarshal nodes: %v", err)
+	}
+	return out
+}
+
+// TestHandleCalibrationProgress_LandsTheNodeMapOnTheRow proves the accumulation
+// reaches the row the dashboard subscribes to, sized from the stored plan.
+func TestHandleCalibrationProgress_LandsTheNodeMapOnTheRow(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, Mode: "full", Status: "running", Plan: aPlan(),
+	}
+	if err := saveToDb(app, request); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+
+	event, err := NewEvent(driverRec.Id, EventCalibrationProgress, CalibrationProgressPayload{
+		JobID: request.ID, Mode: "full", Step: 2, Total: 2,
+		Routine: "rabi", Target: "q0", Succeeded: 1,
+	})
+	if err != nil {
+		t.Fatalf("build event: %v", err)
+	}
+
+	ctx := context.WithValue(context.Background(), driverIDContextKey{}, driverRec.Id)
+	if err := handleCalibrationProgress(ctx, app, qpuRec.Id, event); err != nil {
+		t.Fatalf("handleCalibrationProgress: %v", err)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, request.ID)
+	if err != nil {
+		t.Fatalf("reload request: %v", err)
+	}
+	var stored struct {
+		Nodes map[string]CalibrationNodeState `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(record.GetString("progress")), &stored); err != nil {
+		t.Fatalf("progress is not stored as json: %v", err)
+	}
+	if got := stored.Nodes["rabi"]; got.State != "running" || got.Total != 3 {
+		t.Errorf("nodes[rabi] = %+v, want running out of the plan's 3 targets", got)
+	}
+}
+
 // TestToStringSlice_NarrowsWhateverTheQueueStored proves the stored JSON becomes
 // the string list the dispatch payload declares, whichever form it comes back in.
 func TestToStringSlice_NarrowsWhateverTheQueueStored(t *testing.T) {

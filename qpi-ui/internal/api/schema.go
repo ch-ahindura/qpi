@@ -291,13 +291,59 @@ func (cpp *CalibrationProgressPayload) ToMap() map[string]any {
 	}
 }
 
+// CalibrationPlanNode is one routine in a calibration's plan: what it is, what it
+// depends on, and which targets this run walks it over (RFC 0006 §5.1).
+//
+// Planned is false for a routine the run excludes — disabled in calibration.yml, or
+// outside a partial's subset. Those are sent too: which part of the graph a partial
+// run is not touching is most of the value of drawing it.
+type CalibrationPlanNode struct {
+	Name        string   `json:"name"`
+	DependsOn   []string `json:"depends_on"`
+	Targets     []string `json:"targets"`
+	Kind        string   `json:"kind"`
+	Planned     bool     `json:"planned"`
+	IsBenchmark bool     `json:"is_benchmark"`
+	HasCheck    bool     `json:"has_check"`
+	Updates     []string `json:"updates"`
+}
+
+// CalibrationPlan is the graph a calibration walks, as its driver resolved it.
+//
+// The server keeps no copy of the graph and derives nothing from it: the shape to
+// draw is the enabled subset for one run, which only the driver can compute
+// (RFC 0006 D1). Nodes arrive in walk order.
+type CalibrationPlan struct {
+	Nodes []CalibrationPlanNode `json:"nodes"`
+}
+
+// targetCount is how many targets *routine* is walked over, or fallback when the
+// plan does not name it — a drift check sends no plan at all.
+func (cp *CalibrationPlan) targetCount(routine string, fallback int) int {
+	if cp == nil {
+		return fallback
+	}
+	for _, node := range cp.Nodes {
+		if node.Name == routine {
+			return len(node.Targets)
+		}
+	}
+	return fallback
+}
+
 // CalibrationQueuedPayload is the payload of a CalibrationQueued event: what the
 // driver is about to run, under what id, and what set it off.
+//
+// Plan is absent on the announcement made at queue time and present on the second
+// one, made from the walk once the graph is resolved — two moments in two processes,
+// one event type, because the handler is idempotent (RFC 0006 §5.1). It is also
+// absent for a fidelity_check, which is four disconnected benchmarks (RFC 0006 D6).
 type CalibrationQueuedPayload struct {
-	JobID        string   `json:"job_id"`
-	Mode         string   `json:"mode"`
-	TargetQubits []string `json:"target_qubits"`
-	Reason       string   `json:"reason"`
+	JobID        string           `json:"job_id"`
+	Mode         string           `json:"mode"`
+	TargetQubits []string         `json:"target_qubits"`
+	Reason       string           `json:"reason"`
+	Plan         *CalibrationPlan `json:"plan,omitempty"`
 }
 
 func (cqp *CalibrationQueuedPayload) SetDefaults() {

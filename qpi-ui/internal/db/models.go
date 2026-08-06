@@ -778,8 +778,18 @@ type CalibrationRequest struct {
 	Trigger string `json:"trigger,omitempty" db:"trigger" type:"select" maxSelect:"1" values:"dispatched,drift"`
 	// Progress is where the walk has got to, replaced on each CalibrationProgress
 	// event. On the request rather than in its own collection because it is a
-	// current position, not history: the report is the history.
-	Progress    any    `json:"progress,omitempty" db:"progress" type:"json"`
+	// current position, not history: the report is the history. Its `nodes` map is
+	// the exception — accumulated in place rather than replaced, because colouring
+	// thirty-three nodes needs per-node state (RFC 0006 §5.3).
+	Progress any `json:"progress,omitempty" db:"progress" type:"json"`
+	// Plan is the graph this calibration walks, as its driver resolved it — every
+	// routine, its dependencies, and the targets this run applies it to
+	// (RFC 0006 §5.1). Absent on a drift check, and on rows that predate the field.
+	//
+	// Pinned once: the worker re-reads calibration.yml between jobs but never within
+	// one, so a config edit mid-run cannot make the drawing disagree with the walk it
+	// describes (RFC 0006 D7).
+	Plan        any    `json:"plan,omitempty" db:"plan" type:"json"`
 	RequestedBy string `json:"requested_by,omitempty" db:"requested_by" type:"relation" maxSelect:"1" collection:"users"`
 	Created     string `json:"created" db:"created" type:"autodate" onCreate:"true"`
 }
@@ -872,6 +882,8 @@ func (cr *CalibrationRequest) ToRecord(app core.App) (*core.Record, error) {
 	for field, value := range map[string]any{
 		"target_qubits": cr.TargetQubits,
 		"target_edges":  cr.TargetEdges,
+		"progress":      cr.Progress,
+		"plan":          cr.Plan,
 	} {
 		if value == nil {
 			continue
@@ -903,6 +915,8 @@ func (cr *CalibrationRequest) RefreshFromRecord(record *core.Record) error {
 
 	cr.TargetQubits = record.Get("target_qubits")
 	cr.TargetEdges = record.Get("target_edges")
+	cr.Progress = record.Get("progress")
+	cr.Plan = record.Get("plan")
 	return nil
 }
 
