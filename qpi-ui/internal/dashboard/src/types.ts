@@ -286,9 +286,13 @@ export interface CalibrationRequest {
   /** Who wanted this. `"drift"` is the driver's own doing — a periodic check, or the
    * recalibration it triggers. Empty on requests that predate the field. */
   trigger?: "dispatched" | "drift";
+  /** The admin who dispatched it, as their `users` record. Empty for a run the driver
+   * started itself, and on requests that predate the field. */
+  requested_by?: string;
   created: string;
   expand?: {
     driver?: Driver;
+    requested_by?: { id: string; username?: string; email?: string };
   };
 }
 

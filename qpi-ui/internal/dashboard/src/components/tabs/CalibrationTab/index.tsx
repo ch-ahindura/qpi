@@ -27,6 +27,12 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "text-red-600 dark:text-red-400",
 };
 
+/** The admin who dispatched a calibration, however much of them we can see. */
+function requesterName(request: CalibrationRequest): string {
+  const user = request.expand?.requested_by;
+  return user?.username ?? user?.email ?? "";
+}
+
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   if (seconds < 3600) return `${(seconds / 60).toFixed(1)}m`;
@@ -147,11 +153,16 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
                       {request.status === "running"
                         ? "in progress"
                         : "queued, waiting for the driver"}
-                      {/* Nobody dispatched a drift-triggered run, so say so: the
-                          alternative is an operator looking for who started it. */}
+                      {/* Who wanted this. A drift-triggered run was nobody's request,
+                          so say that rather than leave an operator looking for who
+                          started it. `requested_by` is absent on rows that predate
+                          the field, and expands to nothing for a reader who may not
+                          view users — hence the fallbacks. */}
                       {request.trigger === "drift"
                         ? ", started by the driver's own drift monitoring"
-                        : ""}
+                        : requesterName(request)
+                          ? `, requested by ${requesterName(request)}`
+                          : ""}
                       . A full run can take hours.
                     </div>
                     {/* Only once a routine has finished: before that there is no

@@ -907,6 +907,18 @@ func handleCalibrateDispatch(re *core.RequestEvent) error {
 		return re.Error(http.StatusConflict, "this QPU is switched off", nil)
 	}
 
+	// Who asked. `requested_by` is a relation into `users` and the caller
+	// authenticated against `_superusers`, so it is the proxy user record
+	// getCurrentUser keeps for each admin — created on demand if this is the first
+	// time. Attribution is not worth refusing a calibration over, so a failure to
+	// resolve one leaves the field empty rather than answering an error.
+	requestedBy := ""
+	if user, err := getCurrentUser(re); err == nil {
+		requestedBy = user.ID
+	} else {
+		log.Printf("[QPi] could not attribute a calibration to its requester: %v", err)
+	}
+
 	request := &db.CalibrationRequest{
 		Driver:       req.DriverID,
 		QPU:          driver.QPU,
@@ -914,6 +926,8 @@ func handleCalibrateDispatch(re *core.RequestEvent) error {
 		TargetQubits: req.TargetQubits,
 		TargetEdges:  req.TargetEdges,
 		Status:       "pending",
+		RequestedBy:  requestedBy,
+		Trigger:      "dispatched",
 	}
 	if err := saveToDb(re.App, request); err != nil {
 		return re.Error(http.StatusInternalServerError, "failed to queue calibration", err)

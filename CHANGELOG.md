@@ -32,6 +32,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-ui`: a dispatched calibration records which admin asked for it. `requested_by`
+  had never been filled, and could not have been by that endpoint: it relates to
+  `users` and only a superuser may dispatch.
 - `qpi-driver/py`: a tuner installs with `install-systemd.sh` without editing
   `DRIVER_OPTIONS`. `OPERATION=calibrate` fills in the quantify and calibration config
   paths under `/var/qpi-driver/<service-name>`, the prompts offer `calibrate` and both

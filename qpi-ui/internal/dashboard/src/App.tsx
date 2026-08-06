@@ -189,7 +189,7 @@ export const App: React.FC = () => {
         .getList(1, 50, {
           filter: 'status = "pending" || status = "running"',
           sort: "-created",
-          expand: "driver",
+          expand: "driver,requested_by",
         });
       setCalibrationRequests(records.items as unknown as CalibrationRequest[]);
     } catch (err) {

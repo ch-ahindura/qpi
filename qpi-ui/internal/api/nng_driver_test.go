@@ -641,6 +641,64 @@ func TestHandleCalibrationProgress_WritesOntoTheRequest(t *testing.T) {
 	}
 }
 
+// TestACalibrationRequestCarriesItsRequester proves the two fields the dispatch
+// endpoint sets are ones the collection accepts.
+//
+// Both fail at the insert rather than at compile time — `trigger` is a select and
+// `requested_by` is a relation whose target PocketBase checks — so a wrong value in
+// either would refuse every dispatched calibration rather than lose its attribution.
+func TestACalibrationRequestCarriesItsRequester(t *testing.T) {
+	app, cfg, driverRec, qpuRec := seedDriverForEvents(t)
+
+	// Written the way getCurrentUser writes it: `users` is an auth collection, and a
+	// proxy record for an admin who signs in as a superuser has no password to set.
+	usersCol, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatalf("users collection: %v", err)
+	}
+	admin := core.NewRecord(usersCol)
+	admin.Set("email", "admin@example.com")
+	admin.Set("username", "admin_proxy")
+	if err := app.SaveNoValidate(admin); err != nil {
+		t.Fatalf("seed the admin's proxy user: %v", err)
+	}
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, QPU: qpuRec.Id, Mode: "full", Status: "pending",
+		RequestedBy: admin.Id, Trigger: "dispatched",
+	}
+	if err := saveToDb(app, request); err != nil {
+		t.Fatalf("a dispatched calibration must save with its requester: %v", err)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationRequests, request.ID)
+	if err != nil {
+		t.Fatalf("reload request: %v", err)
+	}
+	if got := record.GetString("requested_by"); got != admin.Id {
+		t.Errorf("requested_by = %q, want %q", got, admin.Id)
+	}
+	if got := record.GetString("trigger"); got != "dispatched" {
+		t.Errorf("trigger = %q, want dispatched", got)
+	}
+}
+
+// TestACalibrationRequestRefusesARequesterThatIsNotAUser is why the endpoint resolves
+// a superuser to its proxy `users` record instead of storing its own id: the caller
+// authenticates against `_superusers`, and an id from there is not one this relation
+// can hold.
+func TestACalibrationRequestRefusesARequesterThatIsNotAUser(t *testing.T) {
+	app, _, driverRec, qpuRec := seedDriverForEvents(t)
+
+	request := &db.CalibrationRequest{
+		Driver: driverRec.Id, QPU: qpuRec.Id, Mode: "full", Status: "pending",
+		RequestedBy: "notarealuserid1", Trigger: "dispatched",
+	}
+	if err := saveToDb(app, request); err == nil {
+		t.Error("expected a requester outside `users` to be refused")
+	}
+}
+
 // TestHandleCalibrationQueued_CreatesTheRowNobodyDispatched proves a drift check
 // gets a request row of its own, running and attributed to drift (RFC 0004 §6.5).
 func TestHandleCalibrationQueued_CreatesTheRowNobodyDispatched(t *testing.T) {
