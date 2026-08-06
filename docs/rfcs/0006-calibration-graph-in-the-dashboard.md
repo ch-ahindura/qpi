@@ -5,8 +5,9 @@
 - **Created:** 2026-08-06
 - **Depends on:** RFC 0004 (the `calibrate` operation, the DAG walk, the report),
   RFC 0005 (the thirty-three-node graph and its checks)
-- **Touches:** `qpi-driver` (Python), `qpi-ui` (server and dashboard). One new event
-  type; no new operation and no new collection.
+- **Touches:** `qpi-driver` (Python), `qpi-ui` (server and dashboard). No new event
+  type, no new operation, no new collection — the plan extends an event that exists
+  and the retention work extends an engine that exists.
 
 ## 1. The idea
 
@@ -56,13 +57,25 @@ plumbing.
 fitted values), `timestamp`, `duration_s`. `benchmarks` holds `fidelity`,
 `error_per_gate` and a free-form `raw_data` — and RB already ships its depths and
 decay rate in there. **A chartable payload already crosses the wire for one class of
-node.** That precedent matters in §9.
+node.** That precedent matters in §7.
 
-**The dashboard has no charting library, deliberately.** `ReadingsChart.tsx` is a
-119-line hand-rolled SVG line chart, and says why: "no charting library — since the
-dashboard build has no reliable access to install one in every environment it runs
-in." The whole `dependencies` list is `react`, `react-dom`, `pocketbase`,
-`lucide-react`. This is a constraint on the design, not a preference.
+**The dashboard has no charting library.** `ReadingsChart.tsx` is a 119-line
+hand-rolled SVG line chart, and says why: "no charting library — since the dashboard
+build has no reliable access to install one in every environment it runs in." The
+whole `dependencies` list is `react`, `react-dom`, `pocketbase`, `lucide-react`.
+
+That reason does not survive checking. `make build-dashboard` runs `npm ci`, as do
+the lint and format targets — the build already requires a registry it can reach, and
+already installs four packages from it. A fifth changes nothing about which
+environments can build. Whatever the comment was protecting against, it is not the
+network. **D4a treats the absence as a choice to re-make, not a constraint to design
+around.**
+
+**There is already a retention engine.** `scheduler.PruneEvents` deletes rows from
+the events log older than `cfg.EventsRetention` (default 720 h, `0` disables), in
+batches of 500, driven by `RunEventsRetentionEngine` — a background loop that exits
+immediately when the framework is off. §9 extends this rather than inventing
+anything.
 
 ## 3. The gap, in three parts
 
@@ -99,41 +112,98 @@ as `CalibrationProgress` itself: a node's state is a current fact that supersede
 last one, not history. The report is the history. This keeps one row per calibration
 and reuses the subscription the dashboard already has.
 
-**D4 — The drawing is dependency-free SVG with a layered layout we compute.** Forced
-by the constraint in §2, and comfortable at this size: eleven layers, eight wide, a
-longest-path layering is a dozen lines. `react-flow` plus `dagre` would be ~100 kB
-against a 364 kB bundle for a graph whose shape barely changes.
+**D4a — The graph is drawn by hand; no graph library.** Not for the reason §2
+retired, but because the job is small and the alternative is aimed elsewhere. Eleven
+layers, eight wide, a fixed shape: longest-path layering is a dozen lines.
+`react-flow` (~40 kB gz) plus `dagre` (~25 kB gz) exists to make nodes draggable,
+pannable and connectable — an interactive editor, which §12 says explicitly we do not
+want. We would be importing an editor to get a static picture.
+
+**D4b — Charts get a library.** This is where hand-rolling stops paying. A fit plot
+needs two traces, real axes with ticks, SI-prefixed units, log scales for a punchout,
+a hover readout, and both themes. `ReadingsChart` is 119 lines for one line, no
+ticks, no legend, one series — and it is the *easy* case. Thirty-three routines'
+worth of fit plots is a charting library whether or not we import one, and the
+written-here version will be the worse of the two.
+
+Recommended: **visx** — modular, so `@visx/scale`, `@visx/axis` and `@visx/shape`
+come to roughly 25–30 kB gz rather than the whole toolkit; SVG, so it themes with the
+same CSS variables as everything else. `recharts` (~100 kB gz) is the
+batteries-included alternative if the team would rather write less. Baseline for
+judging either: the bundle is currently 364 kB raw, **97.67 kB gzipped**.
+
+The choice is phase 3's, not phase 1's, and it should be **measured before it is
+made** — add the candidate, build, compare the gzipped figure. That is a twenty-minute
+experiment and it turns this paragraph into a fact.
 
 **D5 — Charts come from the report, not from the driver's disk.** Extending the
 `raw_data` precedent that `BenchmarkResult` already sets is a path that exists;
 shipping HDF5 datasets off the node is a new subsystem (upload, storage, retention)
 for a feature that wants a few hundred points. §9 bounds it.
 
-**D6 — Three phases, shippable in order.** Phase 1 is worth having alone; phase 3
+**D6 — A drift check does not draw.** `mode: fidelity_check` walks four benchmark
+nodes with no dependencies between them worth looking at; a graph of it would be four
+disconnected boxes. The tab keeps the bar and the tally for that mode and draws the
+graph for `full` and `partial`. The driver therefore sends no plan for a drift check
+at all, which also keeps the most frequent calibration the cheapest to store.
+
+**D7 — A drawing is pinned to the plan it was sent.** The worker re-reads
+`calibration.yml` between jobs but never within one, so a plan describes its run for
+that run's lifetime. The dashboard renders the stored plan and never re-derives the
+shape from progress events, so a config edit mid-run cannot make the picture
+disagree with the walk it is describing.
+
+**D8 — Three phases, shippable in order.** Phase 1 is worth having alone; phase 3
 requires touching every routine's `analyse` and should not gate it.
 
 ## 5. Phase 1 — the plan on the wire
 
-### 5.1 A new event
+### 5.1 No new event: the plan rides `CalibrationQueued`
 
-`CalibrationPlan`, driver → server, emitted once when a calibration starts, after
-`CalibrationQueued` and before the first `CalibrationProgress`.
+`CalibrationQueued` already means "a calibration is starting, here is what it is".
+The plan is the rest of that sentence, so it goes in the same payload rather than in
+an event of its own.
+
+The wrinkle is that the two facts become available at different moments, and in
+different processes. The announcement is made in the driver's main process when the
+job is queued — before the row exists, which is the point of it. The plan is resolved
+inside the worker, in `CalibrationDAG.run`, which is the only place the enabled
+subset and each node's applicable targets are known.
+
+So `CalibrationQueued` is emitted **twice** for one calibration: once at queue time
+without a plan, once from the walk with one. The handler already tolerates this —
+it looks the row up and creates it only when absent (that idempotence was added for a
+driver reconnecting mid-run) — and gains one line to attach the plan when the payload
+carries one. A dispatched calibration, which has a row already and emits no
+announcement today, now emits the second one, so it gets a plan the same way.
+
+The alternative is to move the announcement into the worker so there is only one
+emission. Rejected: it would delay the row until the job starts rather than when the
+driver decides to run it, and losing that is worse than sending a small event twice.
+
+The payload gains `plan`, absent on the first emission and on a `fidelity_check`
+(D6):
 
 ```json
 {
   "job_id": "abc123def456ghi",
   "mode": "full",
-  "nodes": [
-    {
-      "name": "rabi",
-      "depends_on": ["qubit_spectroscopy"],
-      "targets": ["q0", "q1", "q2"],
-      "kind": "qubits",
-      "is_benchmark": false,
-      "has_check": true,
-      "updates": ["rxy.amp180"]
-    }
-  ]
+  "target_qubits": ["q0", "q1", "q2"],
+  "reason": "dispatched",
+  "plan": {
+    "nodes": [
+      {
+        "name": "rabi",
+        "depends_on": ["qubit_spectroscopy"],
+        "targets": ["q0", "q1", "q2"],
+        "kind": "qubits",
+        "planned": true,
+        "is_benchmark": false,
+        "has_check": true,
+        "updates": ["rxy.amp180"]
+      }
+    ]
+  }
 }
 ```
 
@@ -144,16 +214,18 @@ the run entirely (disabled, or outside a partial's `only` list) are **still sent
 marked `"planned": false`: seeing which parts of the graph a partial run is *not*
 touching is most of the value of drawing it.
 
-Emitted from `CalibrationDAG.run`, where the order and the resolved targets are
-already computed, through the same sink `on_progress` uses. It is one event, so it
-rides the existing best-effort path: a plan that fails to send costs the drawing, not
-the calibration.
+The plan is built in `CalibrationDAG.run` and travels through the same sink
+`on_progress` uses, tagged so the result pump can tell the two apart and emit the
+right event. It rides the existing best-effort path: a plan that fails to send costs
+the drawing, not the calibration.
 
 ### 5.2 The server
 
-`handleCalibrationPlan` resolves the row with the existing `findCalibrationRequest`
-and writes the payload to a new `plan` json field. Same silent-on-miss treatment as
-progress — a driver's drift check may have no row if its announcement was lost.
+`handleCalibrationQueued` gains one branch: when the payload carries a `plan`, write
+it to a new `plan` json field on the row it resolved or created. Everything else
+about that handler is unchanged, including the silent-on-miss treatment — a drift
+check whose announcement was lost has no row, and a plan for it is not worth an
+error.
 
 ### 5.3 Per-node state
 
@@ -223,8 +295,10 @@ bounded explicitly:
 - A cap on the whole field, beyond which the summary is dropped and the card says so.
   A report that will not save is worse than a report with no chart in it.
 
-The chart component is the `ReadingsChart` pattern: axes, a line, a scatter, no
-library.
+The chart component uses the library D4b settles on, measured before it is adopted.
+Two traces, ticked axes, SI-prefixed units, a log x-axis where the sweep is
+logarithmic, and both themes — that is the list `ReadingsChart` would have to grow
+into, and the reason not to write it again thirty-three times.
 
 **A routine at a time.** `RoutineResult` gains an optional `fit` field, so a routine
 that has not been converted simply has no chart and the card says the fit summary is
@@ -242,29 +316,86 @@ ignored, so driver and server can deploy in either order.
 
 | Where | What |
 | --- | --- |
-| `qpi_driver/events.py` | `CALIBRATION_PLAN` |
-| `tuners/base/dag.py` | build the plan in `run`, emit through the sink |
-| `builtins/calibrate.py` | forward it as `CalibrationPlan` |
-| `qpi-driver/{go,js}` | mirror the event type, as the others are |
-| `api/schema.go` | `EventCalibrationPlan`, `CalibrationPlanPayload` |
-| `api/nng_driver.go` | `handleCalibrationPlan`; per-node accumulation in `handleCalibrationProgress` |
+| `tuners/base/dag.py` | build the plan in `run`, send it through the sink, tagged |
+| `builtins/calibrate.py` | route a tagged plan to a second `CalibrationQueued`; skip it for `fidelity_check` |
+| `api/schema.go` | `Plan` on `CalibrationQueuedPayload` |
+| `api/nng_driver.go` | attach the plan in `handleCalibrationQueued`; per-node accumulation in `handleCalibrationProgress` |
 | `db/models.go` | `Plan` on `CalibrationRequest` |
-| `drivers/catalog.go` | add to the tuner specs' events |
 | dashboard | `CalibrationGraph`, layout helper, types |
 
-Tests: the plan's shape and that it precedes the first progress event (Python); the
-handler writing it and node state accumulating across several progress events (Go);
-the layering helper against the known eleven layers (a pure function, so a unit test
-without a DOM).
+No new event type, so `events.py`, the Go and TypeScript enums and
+`drivers/catalog.go` are untouched — that is what §5.1 buys.
+
+Tests: the plan's shape, that it is absent for a `fidelity_check`, and that it
+arrives before the first progress event (Python); the handler attaching a plan to a
+row it did not create, and node state accumulating across several progress events
+(Go); the layering helper against the known eleven layers (a pure function, so a unit
+test without a DOM).
 
 **Phase 2 — the card.** Dashboard only, plus whatever the card needs that the plan
 does not already carry. No driver or server change expected.
 
-**Phase 3 — charts.** `RoutineResult.fit`, one routine at a time, starting with the
-two RB benchmarks that need no driver change. A size cap with a test that a report
-over it still saves.
+**Phase 3 — charts.** Measure the candidate libraries against the 97.67 kB gz
+baseline and pick one (D4b). Then `RoutineResult.fit`, one routine at a time,
+starting with the two RB benchmarks that need no driver change. A size cap with a
+test that a report over it still saves.
 
-## 9. Testing strategy
+**Phase 4 — retention.** `PruneCalibrations` beside `PruneEvents`, three config
+durations, wired into `RunEventsRetentionEngine`'s tick. Independent of phases 1–3
+and overdue without them: nothing in the calibration path is pruned today.
+
+## 9. Retention
+
+Everything this RFC adds accumulates, and nothing in the calibration path is pruned
+today. That is already true without it — the gap is pre-existing and this makes it
+bigger — so the policy belongs here rather than in a later RFC.
+
+**The pattern exists.** `scheduler.PruneEvents` deletes events-log rows older than
+`cfg.EventsRetention` in batches of 500, run by `RunEventsRetentionEngine`, disabled
+by setting the duration to `0`, and a no-op when the driver framework is off. What
+follows copies it rather than inventing a second mechanism.
+
+**What accumulates, and how fast.** For a five-qubit chip with a drift check every
+thirty minutes:
+
+| Row | Per calibration | Per year | Prune? |
+| --- | --- | --- | --- |
+| `calibration_requests` (+ `plan`, + node map) | ~6 kB for a full run; a drift check sends no plan (D6) and is ~1 kB | ~20 MB | **Yes — aggressively** |
+| `calibration_results` today | ~10–30 kB (fitted parameters, benchmarks) | ~200 MB | **No — this is the chip's history** |
+| `calibration_results` with phase 3 fit summaries | ~150 kB | ~2.5 GB | **The summaries only** |
+
+**The policy, in three parts:**
+
+1. **Finished requests are bookkeeping.** A `done` or `failed` row exists to have
+   carried a status and a progress position while the run was live. Once the report
+   is stored it holds nothing the report does not. Prune on
+   `cfg.CalibrationRequestRetention`, default 720 h to match the events log, on
+   `status != 'running' && status != 'pending' && created < cutoff`. A `running` row
+   is never pruned however old, or a hung calibration would lose its record while
+   still running.
+2. **Reports are not bookkeeping and are not pruned by default.** They are what the
+   chip was, and RFC 0004 §9's whole argument for storing them is that the history is
+   the point. `cfg.CalibrationResultRetention` exists and defaults to `0` — disabled
+   — so an operator with a disk problem has a lever and nobody else loses history by
+   accident.
+3. **Fit summaries are pruned separately from the reports that carry them.** They are
+   ~90% of a phase 3 row and the least durable part of its value: nobody re-reads the
+   Rabi trace from eight months ago, but the fitted `amp180` is the record of what the
+   chip was. `cfg.CalibrationFitRetention`, default 720 h, strips `fit` from
+   `routine_results` and `raw_data` from `benchmarks` on older rows, leaving
+   everything else. The card says the trace has aged out rather than showing an empty
+   chart.
+
+Point 3 is why phase 3's cap in §7 is a cap and not a budget: a bounded row that is
+also pruned is bounded twice, which is what makes 2.5 GB/year an acceptable worst
+case rather than the number we live with.
+
+**Driver-side raw data is out of scope and stays that way.** `-o save_raw_data=true`
+writes to the driver's own disk, where this server cannot see it and this engine
+cannot reach it. It is off by default for exactly that reason, and its own docs say
+so. An operator who turns it on owns the directory.
+
+## 10. Testing strategy
 
 The layering helper and the state reducer are pure functions and get unit tests. The
 drawing itself gets a Cypress test only if the harness gains the ability to seed a
@@ -276,24 +407,30 @@ The end-to-end path — a real walk against the simulator producing a plan whose
 match the report's `routine_results` — belongs in `test_calibration_e2e.py`, which
 already runs the whole worker path.
 
-## 10. Open questions
+## 11. Settled since the first draft
 
-1. **Does the plan belong on `CalibrationQueued` instead of its own event?** It would
-   save an event type. Against: a dispatched calibration's row is created by the
-   server before the driver has resolved anything, and the plan needs the resolved
-   target lists, so the two are not available at the same moment.
-2. **Should a drift check draw at all?** It walks four benchmark nodes. The graph
-   would be almost empty. Possibly the tab should show the list for
-   `mode: fidelity_check` and the graph for the other two.
-3. **What happens to the plan when the config changes mid-run?** The worker re-reads
-   `calibration.yml` between jobs, not within one, so a plan is valid for its run. The
-   drawing should be pinned to the plan it was sent, not re-derived.
-4. **Retention.** `plan` and the node map live on the request row, which is never
-   deleted. Thirty-three nodes is ~6 kB per calibration; a drift check every thirty
-   minutes for a year is ~100 MB. A pruning policy for finished requests is out of
-   scope here but should not stay unasked.
+Four questions this RFC opened, and where they landed. Kept rather than deleted
+because the reasoning against each is what makes the decision worth trusting.
 
-## 11. What this deliberately does not do
+1. **The plan rides `CalibrationQueued`; there is no `CalibrationPlan` event.** The
+   objection was that the announcement and the plan are known at different moments,
+   in different processes. That is true and the answer is to emit the event twice —
+   the handler is already idempotent, and one small event sent twice is cheaper than
+   a type nobody else needs. §5.1.
+2. **A drift check does not draw.** Four disconnected benchmark boxes is not a
+   picture. It keeps the bar, and the driver sends it no plan — so the most frequent
+   calibration is also the cheapest to store. D6.
+3. **A drawing is pinned to the plan it was sent.** D7.
+4. **Retention is specified here, not deferred.** §9.
+
+Still open:
+
+- **Which charting library, and what it costs.** D4b recommends visx and says to
+  measure before committing. Nobody should take the ~25–30 kB gz on trust.
+- **Whether the Cypress harness should learn to seed a calibration.** §10 argues it
+  should, and that it is worth doing regardless of this RFC.
+
+## 12. What this deliberately does not do
 
 - **No graph editing.** Which routines run is `calibration.yml` on the driver's disk.
   A dashboard that edited the graph would be a second source of truth for it.
