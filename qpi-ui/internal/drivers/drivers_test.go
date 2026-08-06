@@ -351,6 +351,7 @@ func TestCalibrateOptionsMatchTheDriver(t *testing.T) {
 	// qpi_driver/builtins/calibrate.py.
 	want := map[string]bool{
 		"data_dir":                 true,
+		"save_raw_data":            true,
 		"calibration_config":       true,
 		"quantify_hardware_config": true,
 		"quantify_device_config":   true,

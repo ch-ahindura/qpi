@@ -77,8 +77,9 @@ class QbloxBackend(SchedulerBackend):
     # divides by sigma, so the same pulse is one sigma larger here.
     drag_span = 5e-10
 
-    def __init__(self, agent: Any) -> None:
+    def __init__(self, agent: Any, *, should_save_raw_data: bool = False) -> None:
         self._agent = agent
+        self._should_save_raw_data = should_save_raw_data
 
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
         return TimeableSchedule(name=name, repetitions=repetitions)
@@ -86,7 +87,16 @@ class QbloxBackend(SchedulerBackend):
     def run(self, schedule: Any) -> xr.Dataset:
         # The agent owns compilation and execution together, which is the whole
         # of the difference from quantify's separate compiler and coordinator.
-        return self._agent.run(schedule)
+        #
+        # Saving is off unless asked for: the agent would otherwise write a dataset
+        # and an instrument snapshot per schedule — one per routine per target —
+        # that nothing here reads and nothing prunes, and quantify's backend keeps
+        # nothing, so the two would differ in what a calibration leaves behind.
+        return self._agent.run(
+            schedule,
+            save_to_experiment=self._should_save_raw_data,
+            save_snapshot=self._should_save_raw_data,
+        )
 
 
 class QbloxTuner(Tuner):
@@ -107,6 +117,7 @@ class QbloxTuner(Tuner):
         quantify_device_config: Path | dict = Path("quantify.device.yml"),
         is_dummy: bool = False,
         data_dir: Path = Path("bin/data"),
+        save_raw_data: bool = False,
         **kwargs: Any,
     ) -> None:
         is_simulated = bool(kwargs.pop("is_simulated", False))
@@ -151,7 +162,9 @@ class QbloxTuner(Tuner):
                 create_dummy_connections=is_dummy,
                 output_dir=self._data_dir,
             )
-        self._backend = QbloxBackend(self._agent)
+        self._backend = QbloxBackend(
+            self._agent, should_save_raw_data=bool(save_raw_data)
+        )
 
         self._device_config_path = (
             Path(quantify_device_config)

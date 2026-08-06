@@ -171,6 +171,8 @@ def build_from_options(
         "job_timeout": options.get_int("job_timeout", 10),
         "is_dummy": options.get_bool("is_dummy"),
         "is_simulated": options.get_bool("is_simulated"),
+        # qblox-scheduler only; no other executor writes raw data either way.
+        "save_raw_data": options.get_bool("save_raw_data"),
         "quantify_hardware_config": options.get_path(
             "quantify_hardware_config", "./quantify.hardware.json"
         ),

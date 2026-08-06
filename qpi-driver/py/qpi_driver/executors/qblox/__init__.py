@@ -64,6 +64,7 @@ class QbloxExecutor(Executor):
         is_dummy: bool = False,
         data_dir: Path = Path("data"),
         acquisition_timeout: int = 10,
+        save_raw_data: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialize the QbloxExecutor.
@@ -75,6 +76,10 @@ class QbloxExecutor(Executor):
             is_dummy: If True, uses a dummy Cluster instrument.
             data_dir: Directory to where data is temporarily stored.
             acquisition_timeout: Timeout in seconds to wait for acquisition.
+            save_raw_data: If True, the agent writes a dataset and an instrument
+                snapshot under *data_dir* for every job. Off by default: nothing
+                here reads them and nothing prunes them, so a QPU serving jobs
+                would fill its data directory over a run of months.
             **kwargs: Arbitrary keyword arguments passed to the base class.
         """
         super().__init__(name, **kwargs)
@@ -83,6 +88,7 @@ class QbloxExecutor(Executor):
             Instrument.close_all()
 
         self._data_dir = data_dir
+        self._should_save_raw_data = bool(save_raw_data)
         is_simulated = bool(kwargs.pop("is_simulated", False))
         if is_dummy and is_simulated:
             raise ValueError(
@@ -366,7 +372,12 @@ class QbloxExecutor(Executor):
             only_qubit=only_qubit,
         )
 
-        dataset = self._agent.run(schedule, timeout=self._acquisition_timeout)
+        dataset = self._agent.run(
+            schedule,
+            timeout=self._acquisition_timeout,
+            save_to_experiment=self._should_save_raw_data,
+            save_snapshot=self._should_save_raw_data,
+        )
         dataset.attrs.update(
             {
                 "shots": shots,

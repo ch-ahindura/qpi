@@ -12,6 +12,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `--data-dir` (env `QPI_DATA_DIR`) is universal, rather than each
   device's own `-o data_dir=`, which still overrides it. A device builder receives
   `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.
+- `qpi-driver/py`: `-o save_raw_data=true` keeps each acquisition and an instrument
+  snapshot under the data directory. Qblox backends only; nothing to switch on quantify.
+
+### Changed
+
+- `qpi-driver/py`: a `qblox` QPU no longer writes a dataset and a qcodes snapshot for
+  every job, nor `qblox_tuner` for every routine. Nothing read them and nothing pruned
+  them; `-o save_raw_data=true` asks for them back.
 
 ### Fixed
 

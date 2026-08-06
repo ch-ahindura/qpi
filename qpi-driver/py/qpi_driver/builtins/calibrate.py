@@ -257,6 +257,8 @@ def build_from_options(
             "quantify_device_config", "./quantify.device.yml"
         ),
         "data_dir": options.get_dir("data_dir", data_dir, default_name="--data-dir"),
+        # qblox-scheduler only; quantify's backend keeps no raw data either way.
+        "save_raw_data": options.get_bool("save_raw_data"),
         # Where the SPI rack is, for chips whose couplers are parked by one.
         # Empty is correct for a chip with no tunable couplers, and for one
         # whose couplers are biased from inside the cluster.

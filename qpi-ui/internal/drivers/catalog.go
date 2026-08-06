@@ -21,6 +21,7 @@ const (
 func processOptions() []Option {
 	return []Option{
 		dataDirOption(),
+		saveRawDataOption(),
 		{
 			Key:     "job_timeout",
 			Help:    "Seconds a single job may run before it is abandoned.",
@@ -118,9 +119,23 @@ func dataDirOption() Option {
 	}
 }
 
+// saveRawDataOption is likewise shared. Off by default in the driver: nothing reads
+// the files back and nothing prunes them, so it is retention an operator opts into.
+// Qblox-only in effect — qblox-scheduler is the one that can save, and it otherwise
+// would per schedule — but read for every device, as the quantify paths are.
+func saveRawDataOption() Option {
+	return Option{
+		Key:     "save_raw_data",
+		Help:    "Qblox backends only: keep every acquisition and an instrument snapshot under the data directory.",
+		Default: "false",
+		Example: "true",
+	}
+}
+
 func calibrateOptions() []Option {
 	return []Option{
 		dataDirOption(),
+		saveRawDataOption(),
 		{
 			Key:     "calibration_config",
 			Help:    "Path to the calibration configuration YAML.",

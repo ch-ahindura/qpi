@@ -41,6 +41,7 @@ filesystem and nothing else.
 | `is_dummy` | `false` | Run against the vendor's dummy cluster. Compiles and runs; every acquisition is `nan`, so every routine fails. |
 | `is_simulated` | `false` | Run against a simulated chip instead — see below. Both tuners. |
 | `spi_rack_address` | *(none)* | Serial address of the SPI rack holding the couplers' S4g current sources. Only `coupler_anticrossing` uses it, and only when the couplers say `bias.source: spi`; without it that node fails rather than sweeping a bias it cannot hold. |
+| `save_raw_data` | `false` | `qblox_tuner` only: keep each routine's acquisition and an instrument snapshot under `--data-dir`. Off because nothing here reads them back and nothing prunes them. |
 | `drift_check_interval` | `0` | Seconds between periodic benchmark runs. `0` disables them. |
 | `fidelity_threshold` | `0.999` | 1Q fidelity below which a recalibration is triggered. |
 | `fidelity_2q_threshold` | `0.99` | 2Q fidelity below which a recalibration is triggered. |
@@ -55,11 +56,14 @@ above, to `/var/qpi-driver/<service-name>`. It reaches each scheduler's own data
 global — quantify-core's `set_datadir`, qblox-scheduler's `OutputDirectoryManager` —
 which otherwise default to `<cwd>/data` (`/data` for a service) and `~/qblox_data`.
 
-Size it for the backend, not the tuner: `qblox_tuner` saves a `dataset.hdf5` and an
-instrument snapshot for every schedule it runs, which is one per routine per target and
-13 per coupler edge. `quantify_tuner` writes nothing there unless asked — its
-acquisitions come back in memory — so a hardware config with `sequence_to_file: true`, a
-hardware-log download or a diagnostics report is all that lands.
+Neither tuner keeps its acquisitions: they come back from the scheduler in memory, get
+fitted, and what is kept is the fitted parameter in the device YAML. qblox-scheduler
+would save a `dataset.hdf5` and an instrument snapshot per schedule — one per routine
+per target, 13 per coupler edge — and is told not to unless `-o save_raw_data=true`;
+quantify-scheduler has no equivalent, so that option does nothing for `quantify_tuner`.
+What lands in the directory either way is whatever a scheduler was separately asked for:
+a hardware config with `sequence_to_file: true`, a hardware-log download, a diagnostics
+report.
 
 ### What the graph needs from a device file
 

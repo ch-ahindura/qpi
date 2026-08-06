@@ -158,6 +158,19 @@ class TestOptionsAndRegistration:
                 tuner="quantify", **_transport(), options=Options({"data_dir": "/var"})
             )
 
+    def test_saving_raw_data_is_off_unless_asked_for(self):
+        driver = build_from_options(
+            tuner="quantify", **_transport(), options=Options({})
+        )
+        assert driver.tuner_options["save_raw_data"] is False
+
+        driver = build_from_options(
+            tuner="quantify",
+            **_transport(),
+            options=Options({"save_raw_data": "true"}),
+        )
+        assert driver.tuner_options["save_raw_data"] is True
+
     def test_is_simulated_reaches_the_tuner(self):
         """``-o is_simulated=true`` is what runs a node with no hardware at all."""
         driver = build_from_options(
@@ -722,3 +735,38 @@ class TestTunerResolution:
 
     def test_a_tuner_class_is_named_after_itself_when_unnamed(self):
         assert resolve_tuner(StubTuner).name == "stub"
+
+
+class _RecordingAgent:
+    """Stands in for a qblox `HardwareAgent`, recording how `run` was called."""
+
+    def __init__(self):
+        self.kwargs: dict = {}
+
+    def run(self, schedule, **kwargs):
+        self.kwargs = kwargs
+        return schedule
+
+
+class TestSavingRawData:
+    """`-o save_raw_data=` decides whether the qblox agent keeps an acquisition.
+
+    It has to be said explicitly, because the agent's own default is to save a
+    dataset and an instrument snapshot per schedule.
+    """
+
+    def test_the_qblox_backend_saves_nothing_by_default(self):
+        from qpi_driver.tuners.qblox import QbloxBackend
+
+        agent = _RecordingAgent()
+        QbloxBackend(agent).run("schedule")
+
+        assert agent.kwargs == {"save_to_experiment": False, "save_snapshot": False}
+
+    def test_the_qblox_backend_saves_both_when_asked(self):
+        from qpi_driver.tuners.qblox import QbloxBackend
+
+        agent = _RecordingAgent()
+        QbloxBackend(agent, should_save_raw_data=True).run("schedule")
+
+        assert agent.kwargs == {"save_to_experiment": True, "save_snapshot": True}

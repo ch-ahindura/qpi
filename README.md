@@ -444,11 +444,11 @@ Universal options (shared by every operation):
 * `--data-dir`: Directory the driver writes its data under (env: `QPI_DATA_DIR`, default: `./bin/data`). A systemd install points it at `/var/qpi-driver/<service-name>`; `-o data_dir=` overrides it where a unit file still sets one.
 * `-o`, `--option`: A setting of the chosen device as `key=value`, repeatable.
 
-`process` options (`-o`): `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`.
+`process` options (`-o`): `is_dummy` (default `false`), `job_timeout` (seconds, default `10`), `quantify_hardware_config`, `quantify_device_config`, `save_raw_data` (default `false` — `qblox` only: keep each job's acquisition and an instrument snapshot under the data dir).
 
 `monitor` options (`-o`) for `bluefors_gen1`: `channels` (required, `path[:unit],…`), `base_url`, `api_key`, `poll_interval`, `timeout`.
 
-`calibrate` options (`-o`) for `quantify_tuner`/`qblox_tuner`: `calibration_config` (required in practice — a tuner with nothing to run measures nothing and reports success), `quantify_device_config`, `quantify_hardware_config`, `is_dummy`, `is_simulated`, `spi_rack_address`, `drift_check_interval`, `fidelity_threshold`, `fidelity_2q_threshold`.
+`calibrate` options (`-o`) for `quantify_tuner`/`qblox_tuner`: `calibration_config` (required in practice — a tuner with nothing to run measures nothing and reports success), `quantify_device_config`, `quantify_hardware_config`, `is_dummy`, `is_simulated`, `spi_rack_address`, `save_raw_data`, `drift_check_interval`, `fidelity_threshold`, `fidelity_2q_threshold`.
 
 The dashboard is where these are documented and filled in — registering a driver
 generates the command that launches it, with its options in place — and it is the only

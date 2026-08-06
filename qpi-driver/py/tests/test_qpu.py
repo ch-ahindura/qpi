@@ -71,6 +71,16 @@ def test_build_from_options_defaults_every_key():
     )
 
 
+def test_saving_raw_data_is_off_unless_asked_for():
+    driver = build_from_options(executor="mock", **_transport(), options=_options())
+    assert driver.executor_options["save_raw_data"] is False
+
+    driver = build_from_options(
+        executor="mock", **_transport(), options=_options(save_raw_data="yes")
+    )
+    assert driver.executor_options["save_raw_data"] is True
+
+
 def test_build_from_options_returns_an_unstarted_driver():
     """Building connects to nothing and starts no worker."""
     driver = build_from_options(executor="mock", **_transport(), options=_options())
