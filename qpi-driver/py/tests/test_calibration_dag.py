@@ -5,6 +5,7 @@ handling and the refusal to report success having done nothing are all
 properties of the DAG, not of any scheduler.
 """
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -13,7 +14,7 @@ import xarray as xr
 from qpi_driver.tuners.base import RECALIBRATION_ROOTS, Tuner
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
-from qpi_driver.tuners.base.dag import CalibrationDAG
+from qpi_driver.tuners.base.dag import CalibrationDAG, _human_duration
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -488,6 +489,68 @@ class TestTheWalk:
             device=None, backend=FakeBackend(), config=_config()
         )
         assert report.backend == "fake"
+
+
+class TestProgressReporting:
+    """What a walk says about itself while it runs.
+
+    A full DAG is hours in which the journal is the only view of where it has got
+    to, so the position, the target and the outcome are all load-bearing.
+    """
+
+    def test_each_routine_reports_its_position_target_and_outcome(self, caplog):
+        routines = [StubRoutine("a"), FailingRoutine("b", depends_on=("a",))]
+        with caplog.at_level(logging.INFO, logger="qpi_driver.tuners.base.dag"):
+            CalibrationDAG(routines, _config()).run(
+                device=None, backend=FakeBackend(), config=_config()
+            )
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert (
+            "starting full calibration: 2 routine(s) over 1 qubit(s), 0 edge(s)"
+            in messages
+        )
+        assert "[1/2] a running on q0" in messages
+        assert any(m.startswith("[1/2] a q0 ok in ") for m in messages)
+        assert any(m.startswith("[2/2] b q0 FAILED in ") for m in messages)
+        assert any(
+            m.startswith("full calibration partial_failure in ")
+            and m.endswith(": 1 succeeded, 1 failed")
+            for m in messages
+        )
+
+    def test_a_routine_with_no_targets_says_it_was_skipped(self, caplog):
+        config = _config(target_edges=[])
+        with caplog.at_level(logging.INFO, logger="qpi_driver.tuners.base.dag"):
+            CalibrationDAG([StubRoutine("cz", targets="edges")], config).run(
+                device=None, backend=FakeBackend(), config=config
+            )
+
+        assert "[1/1] cz skipped: no edges it applies to" in [
+            record.getMessage() for record in caplog.records
+        ]
+
+    def test_a_check_reports_its_verdict_as_it_is_measured(self, caplog):
+        """`diagnose` runs schedules before the walk starts; those need a voice too."""
+        routines = [CheckableRoutine("a", verdict=False)]
+        with caplog.at_level(logging.INFO, logger="qpi_driver.tuners.base.dag"):
+            CalibrationDAG(routines, _config()).check(
+                "a", ["q0"], None, FakeBackend(), _config()
+            )
+
+        assert any(
+            m.startswith("check a on q0: FAILED (margin ")
+            for m in (record.getMessage() for record in caplog.records)
+        )
+
+
+class TestHumanDuration:
+    def test_it_scales_from_seconds_to_hours(self):
+        assert _human_duration(12.44) == "12.4s"
+        assert _human_duration(59.9) == "59.9s"
+        assert _human_duration(60) == "1m00s"
+        assert _human_duration(192) == "3m12s"
+        assert _human_duration(8040) == "2h14m"
 
 
 class TestSetpointHelpers:

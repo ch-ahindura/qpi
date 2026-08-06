@@ -160,6 +160,15 @@ class CalibrationDAG:
                     exc_info=True,
                 )
                 continue
+            # Diagnosis runs schedules of its own before the walk begins, so without
+            # this a partial recalibration is silent for however long that takes.
+            log.info(
+                "check %s on %s: %s (margin %.2f)",
+                name,
+                target,
+                "passed" if outcome.passed else "FAILED",
+                outcome.margin,
+            )
             outcome.detail = f"{target}: {outcome.detail}"
             if worst is None or _worse_than(outcome, worst):
                 worst = outcome
@@ -281,23 +290,40 @@ class CalibrationDAG:
             report.duration_s = time.monotonic() - started
             return report
 
+        log.info(
+            "starting %s calibration: %d routine(s) over %d qubit(s), %d edge(s)",
+            mode,
+            len(order),
+            len(config.target_qubits),
+            len(config.target_edges),
+        )
+
         ran_any = False
-        for routine_name in order:
+        for position, routine_name in enumerate(order, start=1):
             routine = self.routines[routine_name]
             routine_config = config.get_routine(routine_name)
             targets = self._targets_for(routine_name, config, device)
+            # `[n/total] name` on every line of a walk that runs for hours: the
+            # journal is the only place an operator can see where it has got to.
+            label = f"[{position}/{len(order)}] {routine_name}"
             if not targets:
-                log.info(
-                    "skipping %s: no %s it applies to", routine_name, routine.targets
-                )
+                log.info("%s skipped: no %s it applies to", label, routine.targets)
                 continue
 
+            log.info("%s running on %s", label, ", ".join(targets))
             for target in targets:
                 ran_any = True
-                if self._run_one(
+                target_started = time.monotonic()
+                succeeded = self._run_one(
                     routine, target, device, backend, routine_config, config, report
-                ):
-                    continue
+                )
+                log.info(
+                    "%s %s %s in %s",
+                    label,
+                    target,
+                    "ok" if succeeded else "FAILED",
+                    _human_duration(time.monotonic() - target_started),
+                )
 
         if not ran_any:
             report.status = "failed"
@@ -310,6 +336,14 @@ class CalibrationDAG:
             )
 
         report.duration_s = time.monotonic() - started
+        log.info(
+            "%s calibration %s in %s: %d succeeded, %d failed",
+            mode,
+            report.status,
+            _human_duration(report.duration_s),
+            len(report.routine_results),
+            len(report.errors),
+        )
         return report
 
     def _run_one(
@@ -383,6 +417,18 @@ class CalibrationDAG:
 def utc_timestamp() -> str:
     """Now, in the millisecond-precision UTC form the report payload uses."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _human_duration(seconds: float) -> str:
+    """``12.4s``, ``3m12s`` or ``2h14m`` — a full walk is hours, and ``8040.3s`` is not
+    a number anyone reads."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, remainder = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m{remainder:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
 
 
 def _applies(routine: Any, device: Any, target: str, name: str) -> bool:
