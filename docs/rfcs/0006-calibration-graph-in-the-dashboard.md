@@ -126,15 +126,28 @@ ticks, no legend, one series — and it is the *easy* case. Thirty-three routine
 worth of fit plots is a charting library whether or not we import one, and the
 written-here version will be the worse of the two.
 
-Recommended: **visx** — modular, so `@visx/scale`, `@visx/axis` and `@visx/shape`
-come to roughly 25–30 kB gz rather than the whole toolkit; SVG, so it themes with the
-same CSS variables as everything else. `recharts` (~100 kB gz) is the
-batteries-included alternative if the team would rather write less. Baseline for
-judging either: the bundle is currently 364 kB raw, **97.67 kB gzipped**.
+**It is visx, and the cost is measured rather than estimated.** Built with a real
+fit plot — two traces, ticked axes, an optional log x — imported and rendered so
+nothing is tree-shaken away:
 
-The choice is phase 3's, not phase 1's, and it should be **measured before it is
-made** — add the candidate, build, compare the gzipped figure. That is a twenty-minute
-experiment and it turns this paragraph into a fact.
+| Bundle | Raw | Gzipped | Δ gz |
+| --- | --- | --- | --- |
+| Baseline | 364.55 kB | **97.76 kB** | — |
+| `@visx/scale` + `@visx/shape` | 401.07 kB | **112.61 kB** | +14.85 kB |
+| … + `@visx/axis` | 423.74 kB | **120.21 kB** | +22.45 kB |
+
+Twenty-two kilobytes gzipped for every fit plot in the graph is a good trade against
+hand-rolling thirty-three of them, and it leaves a lever: `@visx/axis` is 7.6 kB of
+that (it pulls in `@visx/text` for tick labels), so a deployment that cares can drop
+it and draw ticks by hand while keeping the scales and shapes that are the actual
+work. `recharts` (~100 kB gz) stays the batteries-included alternative but is not
+recommended — it is four times the cost for a chart we have already specified
+completely.
+
+Reproduce with: add the three packages, render a `FitPlot` behind a condition the
+bundler cannot prove false (an unused export is tree-shaken and measures nothing —
+this is how the first attempt reported no change at all), `npm run build`, and
+`gzip -c dist/assets/index-*.js | wc -c`.
 
 **D5 — Charts come from the report, not from the driver's disk.** Extending the
 `raw_data` precedent that `BenchmarkResult` already sets is a path that exists;
@@ -397,19 +410,27 @@ so. An operator who turns it on owns the directory.
 
 ## 10. Testing strategy
 
-The layering helper and the state reducer are pure functions and get unit tests. The
-drawing itself gets a Cypress test only if the harness gains the ability to seed a
-`calibration_requests` row — it cannot today, which is why the in-flight banner is
-untested. Seeding that row is a prerequisite worth doing on its own, and would cover
-the progress bar shipped already.
+The layering helper and the state reducer are pure functions and get unit tests.
+
+**The Cypress harness learns to seed a calibration**, which it can: `e2e/seed.py`
+already authenticates against `_superusers` and POSTs straight into collections —
+`qpus`, `users`, `api_tokens`, `time_slots` — and a superuser token bypasses the
+`calibration_requests` create rule the same way it bypasses those. One function in
+the same shape as the `time_slots` one, seeding a `running` request with a `plan`, a
+node map and a `progress`, is all it takes.
+
+Worth doing before phase 1 rather than as part of it. It is the missing piece that
+makes the *already shipped* in-flight banner and progress bar testable — both are
+untested today for exactly this reason — so it pays for itself before the graph
+exists to use it.
 
 The end-to-end path — a real walk against the simulator producing a plan whose nodes
 match the report's `routine_results` — belongs in `test_calibration_e2e.py`, which
 already runs the whole worker path.
 
-## 11. Settled since the first draft
+## 11. Settled in review
 
-Four questions this RFC opened, and where they landed. Kept rather than deleted
+Every question this RFC opened, and where it landed. Kept rather than deleted
 because the reasoning against each is what makes the decision worth trusting.
 
 1. **The plan rides `CalibrationQueued`; there is no `CalibrationPlan` event.** The
@@ -422,13 +443,15 @@ because the reasoning against each is what makes the decision worth trusting.
    calibration is also the cheapest to store. D6.
 3. **A drawing is pinned to the plan it was sent.** D7.
 4. **Retention is specified here, not deferred.** §9.
+5. **visx, and it fits.** The draft asked for a measurement before committing, and
+   got one: +22.45 kB gz for scales, shapes and axes against a 97.76 kB baseline, or
+   +14.85 kB without the axis module — the lever if that ever needs pulling. D4b.
+6. **The Cypress harness seeds the calibration.** It can: `seed.py` already writes
+   into collections as a superuser. Doing it early makes the in-flight banner and
+   progress bar — already in production, still untested — testable. §10.
 
-Still open:
-
-- **Which charting library, and what it costs.** D4b recommends visx and says to
-  measure before committing. Nobody should take the ~25–30 kB gz on trust.
-- **Whether the Cypress harness should learn to seed a calibration.** §10 argues it
-  should, and that it is worth doing regardless of this RFC.
+Nothing is open. The RFC is ready to be moved to Accepted and executed in the four
+phases of §8.
 
 ## 12. What this deliberately does not do
 
