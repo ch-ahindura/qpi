@@ -1,6 +1,9 @@
 # RFC 0006 — The Calibration Graph in the Dashboard
 
-- **Status:** Draft
+- **Status:** Implemented — all four phases of §8. Phase 3 converts the fits that
+  have a model curve (Rabi, Ramsey, DRAG, fine amplitude, T1, T2, RB, and the
+  Lorentzian spectroscopies); the rest report no summary and their cards show no
+  chart, which is what "a routine at a time" was for.
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-06
 - **Depends on:** RFC 0004 (the `calibrate` operation, the DAG walk, the report),
