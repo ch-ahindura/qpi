@@ -65,6 +65,9 @@ var (
 	flagDispatchPollInterval          time.Duration
 	flagEventsRetention               time.Duration
 	flagEventsPruneInterval           time.Duration
+	flagCalibrationRequestRetention   time.Duration
+	flagCalibrationResultRetention    time.Duration
+	flagCalibrationFitRetention       time.Duration
 	flagEventRateLimit                int
 	flagPortRangeStart                int
 	flagPortRangeEnd                  int
@@ -98,26 +101,41 @@ type AppConfig struct {
 	DispatchPollInterval          time.Duration
 	EventsRetention               time.Duration
 	EventsPruneInterval           time.Duration
-	EventRateLimit                int
-	PortRangeStart                int
-	PortRangeEnd                  int
-	DisableEmailPasswordAuth      bool
-	OAuth2Providers               []core.OAuth2ProviderConfig
-	Validator                     *validator.Validate
-	TlsCertFile                   string
-	TlsKeyFile                    string
-	TlsCaCertFile                 string
-	TlsCaKeyFile                  string
-	DomainName                    string
-	ServerPort                    int
-	IpAddr                        string
-	tlsConfig                     *certKeyPair
-	parsedTlsConfig               *tls.Config
-	tlsCaConfig                   *certKeyPair
-	tlsCaHash                     string
-	activeCert                    *tls.Certificate
-	activeTheme                   *ThemeSchema
-	mu                            sync.RWMutex
+	// How long a finished calibration request is kept (RFC 0006 §9). Once its
+	// report is stored the row holds nothing the report does not, so this is
+	// bookkeeping and is pruned by default. A `running` row is never pruned however
+	// old, or a hung calibration would lose its record while still running.
+	CalibrationRequestRetention time.Duration
+	// How long a calibration report is kept. Zero — the default — never prunes one:
+	// a report is what the chip *was*, and RFC 0004 §9's whole argument for storing
+	// them is that the history is the point. The lever exists for an operator with a
+	// disk problem, and for nobody else.
+	CalibrationResultRetention time.Duration
+	// How long a report's fit summaries and benchmark raw data are kept, separately
+	// from the report carrying them. They are most of a phase-3 row and the least
+	// durable part of its value: nobody re-reads the Rabi trace from eight months
+	// ago, but the fitted amp180 is the record of what the chip was.
+	CalibrationFitRetention  time.Duration
+	EventRateLimit           int
+	PortRangeStart           int
+	PortRangeEnd             int
+	DisableEmailPasswordAuth bool
+	OAuth2Providers          []core.OAuth2ProviderConfig
+	Validator                *validator.Validate
+	TlsCertFile              string
+	TlsKeyFile               string
+	TlsCaCertFile            string
+	TlsCaKeyFile             string
+	DomainName               string
+	ServerPort               int
+	IpAddr                   string
+	tlsConfig                *certKeyPair
+	parsedTlsConfig          *tls.Config
+	tlsCaConfig              *certKeyPair
+	tlsCaHash                string
+	activeCert               *tls.Certificate
+	activeTheme              *ThemeSchema
+	mu                       sync.RWMutex
 }
 
 // GetCollectionName returns the collection name for a given default collection name.
@@ -443,6 +461,9 @@ func BindFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().DurationVar(&flagDispatchPollInterval, "dispatch-poll-interval", 1*time.Second, "Dispatch poll interval")
 	cmd.PersistentFlags().DurationVar(&flagEventsRetention, "events-retention", 720*time.Hour, "How long to keep events log entries before pruning (driver framework); 0 disables pruning")
 	cmd.PersistentFlags().DurationVar(&flagEventsPruneInterval, "events-prune-interval", 1*time.Hour, "How often the events log retention prune runs (driver framework)")
+	cmd.PersistentFlags().DurationVar(&flagCalibrationRequestRetention, "calibration-request-retention", 720*time.Hour, "How long to keep finished calibration requests; 0 disables pruning. A running one is never pruned")
+	cmd.PersistentFlags().DurationVar(&flagCalibrationResultRetention, "calibration-result-retention", 0, "How long to keep calibration reports; 0 (the default) never prunes one — a report is the chip's history")
+	cmd.PersistentFlags().DurationVar(&flagCalibrationFitRetention, "calibration-fit-retention", 720*time.Hour, "How long to keep a report's fit summaries and benchmark raw data, stripped without touching the rest; 0 disables")
 	cmd.PersistentFlags().IntVar(&flagEventRateLimit, "event-rate-limit", 100, "Max inbound events per second accepted from each driver; 0 disables the limit")
 	cmd.PersistentFlags().IntVar(&flagPortRangeStart, "port-range-start", 6000, "NNG port range start")
 	cmd.PersistentFlags().IntVar(&flagPortRangeEnd, "port-range-end", 7000, "NNG port range end")
@@ -470,6 +491,9 @@ func NewDefaultAppConfig() *AppConfig {
 		DispatchPollInterval:          1 * time.Second,
 		EventsRetention:               720 * time.Hour,
 		EventsPruneInterval:           1 * time.Hour,
+		CalibrationRequestRetention:   720 * time.Hour,
+		CalibrationResultRetention:    0,
+		CalibrationFitRetention:       720 * time.Hour,
 		EventRateLimit:                100,
 		PortRangeStart:                6000,
 		PortRangeEnd:                  7000,
@@ -542,6 +566,9 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 			DispatchPollInterval          *string                     `json:"dispatchPollInterval" yaml:"dispatchPollInterval"`
 			EventsRetention               *string                     `json:"eventsRetention" yaml:"eventsRetention"`
 			EventsPruneInterval           *string                     `json:"eventsPruneInterval" yaml:"eventsPruneInterval"`
+			CalibrationRequestRetention   *string                     `json:"calibrationRequestRetention" yaml:"calibrationRequestRetention"`
+			CalibrationResultRetention    *string                     `json:"calibrationResultRetention" yaml:"calibrationResultRetention"`
+			CalibrationFitRetention       *string                     `json:"calibrationFitRetention" yaml:"calibrationFitRetention"`
 			EventRateLimit                *int                        `json:"eventRateLimit" yaml:"eventRateLimit"`
 			PortRangeStart                *int                        `json:"portRangeStart" yaml:"portRangeStart"`
 			PortRangeEnd                  *int                        `json:"portRangeEnd" yaml:"portRangeEnd"`
@@ -639,6 +666,21 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 		if fileCfg.EventsPruneInterval != nil {
 			if d, err := time.ParseDuration(*fileCfg.EventsPruneInterval); err == nil {
 				cfg.EventsPruneInterval = d
+			}
+		}
+		if fileCfg.CalibrationRequestRetention != nil {
+			if d, err := time.ParseDuration(*fileCfg.CalibrationRequestRetention); err == nil {
+				cfg.CalibrationRequestRetention = d
+			}
+		}
+		if fileCfg.CalibrationResultRetention != nil {
+			if d, err := time.ParseDuration(*fileCfg.CalibrationResultRetention); err == nil {
+				cfg.CalibrationResultRetention = d
+			}
+		}
+		if fileCfg.CalibrationFitRetention != nil {
+			if d, err := time.ParseDuration(*fileCfg.CalibrationFitRetention); err == nil {
+				cfg.CalibrationFitRetention = d
 			}
 		}
 		if fileCfg.EventRateLimit != nil {
@@ -747,6 +789,9 @@ func NewFromFlags(cmd *cobra.Command) (*AppConfig, error) {
 	cfg.DispatchPollInterval = resolveDuration("dispatch-poll-interval", "QPI_DISPATCH_POLL_INTERVAL", cfg.DispatchPollInterval)
 	cfg.EventsRetention = resolveDuration("events-retention", "QPI_EVENTS_RETENTION", cfg.EventsRetention)
 	cfg.EventsPruneInterval = resolveDuration("events-prune-interval", "QPI_EVENTS_PRUNE_INTERVAL", cfg.EventsPruneInterval)
+	cfg.CalibrationRequestRetention = resolveDuration("calibration-request-retention", "QPI_CALIBRATION_REQUEST_RETENTION", cfg.CalibrationRequestRetention)
+	cfg.CalibrationResultRetention = resolveDuration("calibration-result-retention", "QPI_CALIBRATION_RESULT_RETENTION", cfg.CalibrationResultRetention)
+	cfg.CalibrationFitRetention = resolveDuration("calibration-fit-retention", "QPI_CALIBRATION_FIT_RETENTION", cfg.CalibrationFitRetention)
 	cfg.EventRateLimit = resolveInt("event-rate-limit", "QPI_EVENT_RATE_LIMIT", cfg.EventRateLimit)
 	cfg.PortRangeStart = resolveInt("port-range-start", "QPI_PORT_RANGE_START", cfg.PortRangeStart)
 	cfg.PortRangeEnd = resolveInt("port-range-end", "QPI_PORT_RANGE_END", cfg.PortRangeEnd)

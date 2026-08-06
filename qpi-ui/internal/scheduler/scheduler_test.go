@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -385,5 +386,249 @@ func TestFetchNextCalibration_IgnoresOtherDrivers(t *testing.T) {
 
 	if got := FetchNextCalibration(app, "some-other-driver"); got != nil {
 		t.Errorf("expected nothing for another driver, got %s", got.ID)
+	}
+}
+
+// --- the calibration path's retention (RFC 0006 §9) --------------------------
+
+// calibrationRetentionConfig turns each of the three policies on independently, so a
+// test says which one it is about.
+func calibrationRetentionConfig(requests, results, fits time.Duration) *config.AppConfig {
+	cfg := retentionConfig(0)
+	cfg.CalibrationRequestRetention = requests
+	cfg.CalibrationResultRetention = results
+	cfg.CalibrationFitRetention = fits
+	return cfg
+}
+
+// ageRow backdates a row's `created`. It cannot go in through the model: `created` is
+// an autodate PocketBase sets itself on insert.
+func ageRow(t *testing.T, app core.App, collection, id string, age time.Duration) {
+	t.Helper()
+	stamp := time.Now().UTC().Add(-age).Format("2006-01-02 15:04:05.000Z")
+	_, err := app.DB().NewQuery(
+		"UPDATE {{" + collection + "}} SET created = {:created} WHERE id = {:id}",
+	).Bind(map[string]any{"created": stamp, "id": id}).Execute()
+	if err != nil {
+		t.Fatalf("failed to backdate %s %s: %v", collection, id, err)
+	}
+}
+
+func countRows(t *testing.T, app core.App, collection string) int {
+	t.Helper()
+	records, err := app.FindRecordsByFilter(collection, "id != ''", "+created", 0, 0)
+	if err != nil {
+		t.Fatalf("failed to count %s: %v", collection, err)
+	}
+	return len(records)
+}
+
+// seedCalibrated returns an app with one QPU, one tuner, and *cfg* saved on it.
+func seedCalibrated(t *testing.T, cfg *config.AppConfig) (*tests.TestApp, string, string) {
+	t.Helper()
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("failed to create test app: %v", err)
+	}
+	t.Cleanup(app.Cleanup)
+
+	config.SaveConfigOnApp(app, cfg)
+	if err := db.EnsureSchema(app); err != nil {
+		t.Fatalf("failed to ensure schema: %v", err)
+	}
+	qpuID := saveModel(t, app, &db.QPU{Name: "qpu_1", Status: "online", Enabled: true})
+	driverID := saveModel(t, app, &db.Driver{
+		Name: "tuner-1", QPU: qpuID, Kind: "quantify_tuner", Language: "python",
+		Token: "hashed", Status: "online", Enabled: true,
+	})
+	return app, qpuID, driverID
+}
+
+// TestPruneCalibrations_FinishedRequestsAreBookkeeping proves a done or failed row is
+// pruned once past its window, and that a `running` one never is however old: a hung
+// calibration would otherwise lose its record while still running.
+func TestPruneCalibrations_FinishedRequestsAreBookkeeping(t *testing.T) {
+	cfg := calibrationRetentionConfig(time.Hour, 0, 0)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	for _, seed := range []struct {
+		status string
+		age    time.Duration
+	}{
+		{"done", 2 * time.Hour},
+		{"failed", 2 * time.Hour},
+		{"done", 10 * time.Minute},
+		{"running", 1000 * time.Hour},
+		{"pending", 1000 * time.Hour},
+	} {
+		id := saveModel(t, app, &db.CalibrationRequest{
+			Driver: driverID, QPU: qpuID, Mode: "full", Status: seed.status,
+		})
+		ageRow(t, app, cfg.CollectionCalibrationRequests, id, seed.age)
+	}
+
+	requests, _, _, err := PruneCalibrations(app)
+	if err != nil {
+		t.Fatalf("PruneCalibrations error: %v", err)
+	}
+	if requests != 2 {
+		t.Errorf("expected the 2 aged finished rows pruned, got %d", requests)
+	}
+	if remaining := countRows(t, app, cfg.CollectionCalibrationRequests); remaining != 3 {
+		t.Errorf("expected the fresh, running and pending rows to survive, got %d", remaining)
+	}
+}
+
+// TestPruneCalibrations_ReportsSurviveByDefault is the policy: a report is what the
+// chip *was*, and nobody loses that history by accident (RFC 0004 §9).
+func TestPruneCalibrations_ReportsSurviveByDefault(t *testing.T) {
+	cfg := calibrationRetentionConfig(time.Hour, 0, 0)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	id := saveModel(t, app, &db.CalibrationResult{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "success",
+		Timestamp: "2020-01-01T00:00:00.000Z",
+	})
+	ageRow(t, app, cfg.CollectionCalibrationResults, id, 10000*time.Hour)
+
+	_, results, _, err := PruneCalibrations(app)
+	if err != nil {
+		t.Fatalf("PruneCalibrations error: %v", err)
+	}
+	if results != 0 {
+		t.Errorf("expected no reports pruned with the default of 0, got %d", results)
+	}
+	if remaining := countRows(t, app, cfg.CollectionCalibrationResults); remaining != 1 {
+		t.Errorf("expected the report to survive, got %d remaining", remaining)
+	}
+}
+
+// TestPruneCalibrations_ReportsGoWhenAnOperatorAsks proves the lever works when set.
+func TestPruneCalibrations_ReportsGoWhenAnOperatorAsks(t *testing.T) {
+	cfg := calibrationRetentionConfig(0, time.Hour, 0)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	old := saveModel(t, app, &db.CalibrationResult{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "success", Timestamp: "2026-08-06T12:00:00.000Z",
+	})
+	ageRow(t, app, cfg.CollectionCalibrationResults, old, 2*time.Hour)
+	saveModel(t, app, &db.CalibrationResult{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "success", Timestamp: "2026-08-06T12:00:00.000Z",
+	})
+
+	_, results, _, err := PruneCalibrations(app)
+	if err != nil {
+		t.Fatalf("PruneCalibrations error: %v", err)
+	}
+	if results != 1 {
+		t.Errorf("expected the aged report pruned, got %d", results)
+	}
+	if remaining := countRows(t, app, cfg.CollectionCalibrationResults); remaining != 1 {
+		t.Errorf("expected the fresh report to survive, got %d remaining", remaining)
+	}
+}
+
+// TestPruneCalibrations_FitsGoSeparatelyFromTheReport is the whole point of the third
+// policy: the traces are ~90% of the row and the least durable part of its value, and
+// the fitted numbers they came with are the record of what the chip was.
+func TestPruneCalibrations_FitsGoSeparatelyFromTheReport(t *testing.T) {
+	cfg := calibrationRetentionConfig(0, 0, time.Hour)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	id := saveModel(t, app, &db.CalibrationResult{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "success", Timestamp: "2026-08-06T12:00:00.000Z",
+		RoutineResults: []map[string]any{{
+			"routine_name": "rabi",
+			"target":       "q0",
+			"parameters":   map[string]any{"rxy.amp180": 0.2031},
+			"fit":          map[string]any{"x": []float64{1, 2}, "measured": []float64{1, 0.5}},
+		}},
+		Benchmarks: []map[string]any{{
+			"protocol": "rb", "target": "q0", "fidelity": 0.9993,
+			"raw_data": map[string]any{"depths": []int{1, 2, 4}},
+		}},
+	})
+	ageRow(t, app, cfg.CollectionCalibrationResults, id, 2*time.Hour)
+
+	_, results, stripped, err := PruneCalibrations(app)
+	if err != nil {
+		t.Fatalf("PruneCalibrations error: %v", err)
+	}
+	if results != 0 || stripped != 1 {
+		t.Fatalf("expected 1 report stripped and none pruned, got %d/%d", stripped, results)
+	}
+
+	record, err := app.FindRecordById(cfg.CollectionCalibrationResults, id)
+	if err != nil {
+		t.Fatalf("reload report: %v", err)
+	}
+	var routines []map[string]any
+	if err := json.Unmarshal([]byte(record.GetString("routine_results")), &routines); err != nil {
+		t.Fatalf("routine_results is not json: %v", err)
+	}
+	if _, ok := routines[0]["fit"]; ok {
+		t.Error("expected the trace stripped")
+	}
+	// Everything the report is actually for is untouched.
+	if routines[0]["routine_name"] != "rabi" {
+		t.Errorf("expected the result itself intact, got %v", routines[0])
+	}
+	params, _ := routines[0]["parameters"].(map[string]any)
+	if params["rxy.amp180"] != 0.2031 {
+		t.Errorf("expected the fitted parameter intact, got %v", params)
+	}
+
+	var benchmarks []map[string]any
+	if err := json.Unmarshal([]byte(record.GetString("benchmarks")), &benchmarks); err != nil {
+		t.Fatalf("benchmarks is not json: %v", err)
+	}
+	if _, ok := benchmarks[0]["raw_data"]; ok {
+		t.Error("expected the benchmark's raw data stripped")
+	}
+	if benchmarks[0]["fidelity"] != 0.9993 {
+		t.Errorf("expected the fidelity intact, got %v", benchmarks[0])
+	}
+}
+
+// TestPruneCalibrations_StrippingIsIdempotent proves a second pass reports no work.
+// Without it the engine would re-save every aged report on every tick, forever.
+func TestPruneCalibrations_StrippingIsIdempotent(t *testing.T) {
+	cfg := calibrationRetentionConfig(0, 0, time.Hour)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	id := saveModel(t, app, &db.CalibrationResult{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "success", Timestamp: "2026-08-06T12:00:00.000Z",
+		RoutineResults: []map[string]any{{"routine_name": "rabi", "fit": map[string]any{"x": []float64{1}}}},
+		Benchmarks:     []map[string]any{},
+	})
+	ageRow(t, app, cfg.CollectionCalibrationResults, id, 2*time.Hour)
+
+	if _, _, stripped, _ := PruneCalibrations(app); stripped != 1 {
+		t.Fatalf("expected 1 stripped on the first pass, got %d", stripped)
+	}
+	if _, _, stripped, _ := PruneCalibrations(app); stripped != 0 {
+		t.Errorf("expected nothing left to strip, got %d", stripped)
+	}
+}
+
+// TestPruneCalibrations_NoopWhenEveryPolicyIsOff keeps the whole feature switchable.
+func TestPruneCalibrations_NoopWhenEveryPolicyIsOff(t *testing.T) {
+	cfg := calibrationRetentionConfig(0, 0, 0)
+	app, qpuID, driverID := seedCalibrated(t, cfg)
+
+	id := saveModel(t, app, &db.CalibrationRequest{
+		Driver: driverID, QPU: qpuID, Mode: "full", Status: "done",
+	})
+	ageRow(t, app, cfg.CollectionCalibrationRequests, id, 10000*time.Hour)
+
+	requests, results, stripped, err := PruneCalibrations(app)
+	if err != nil {
+		t.Fatalf("PruneCalibrations error: %v", err)
+	}
+	if requests+results+stripped != 0 {
+		t.Errorf("expected nothing touched, got %d/%d/%d", requests, results, stripped)
+	}
+	if remaining := countRows(t, app, cfg.CollectionCalibrationRequests); remaining != 1 {
+		t.Errorf("expected the row to survive, got %d remaining", remaining)
 	}
 }

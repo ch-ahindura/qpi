@@ -536,6 +536,17 @@ func TestNewFromFlags_EventsOpsDefaults(t *testing.T) {
 	if cfg.EventRateLimit != 100 {
 		t.Errorf("expected EventRateLimit default 100, got %d", cfg.EventRateLimit)
 	}
+	// The calibration path (RFC 0006 §9). Requests and traces are bookkeeping and
+	// go by default; a report is the chip's history and never goes unless asked.
+	if cfg.CalibrationRequestRetention != 720*time.Hour {
+		t.Errorf("expected CalibrationRequestRetention default 720h, got %s", cfg.CalibrationRequestRetention)
+	}
+	if cfg.CalibrationFitRetention != 720*time.Hour {
+		t.Errorf("expected CalibrationFitRetention default 720h, got %s", cfg.CalibrationFitRetention)
+	}
+	if cfg.CalibrationResultRetention != 0 {
+		t.Errorf("expected CalibrationResultRetention disabled by default, got %s", cfg.CalibrationResultRetention)
+	}
 }
 
 // TestNewFromFlags_EventsOpsPrecedence verifies the strict resolution order
@@ -547,6 +558,9 @@ func TestNewFromFlags_EventsOpsPrecedence(t *testing.T) {
 		yamlContent := `
 eventsRetention: "48h"
 eventsPruneInterval: "30m"
+calibrationRequestRetention: "24h"
+calibrationResultRetention: "8760h"
+calibrationFitRetention: "1h"
 eventRateLimit: 42
 tlsCertFile: "` + tmpDir + `/c.cert.pem"
 tlsKeyFile: "` + tmpDir + `/c.key"
@@ -577,6 +591,15 @@ ipAddr: "127.0.0.1"
 		if cfg.EventRateLimit != 42 {
 			t.Errorf("expected EventRateLimit 42 from file, got %d", cfg.EventRateLimit)
 		}
+		if cfg.CalibrationRequestRetention != 24*time.Hour {
+			t.Errorf("expected CalibrationRequestRetention 24h from file, got %s", cfg.CalibrationRequestRetention)
+		}
+		if cfg.CalibrationResultRetention != 8760*time.Hour {
+			t.Errorf("expected CalibrationResultRetention 8760h from file, got %s", cfg.CalibrationResultRetention)
+		}
+		if cfg.CalibrationFitRetention != time.Hour {
+			t.Errorf("expected CalibrationFitRetention 1h from file, got %s", cfg.CalibrationFitRetention)
+		}
 	})
 
 	t.Run("env overrides config file", func(t *testing.T) {
@@ -597,6 +620,7 @@ ipAddr: "127.0.0.1"
 		t.Setenv("QPI_CONFIG_FILE", configFile)
 		t.Setenv("QPI_EVENTS_RETENTION", "12h")
 		t.Setenv("QPI_EVENT_RATE_LIMIT", "7")
+		t.Setenv("QPI_CALIBRATION_FIT_RETENTION", "2h")
 
 		cmd := &cobra.Command{}
 		BindFlags(cmd)
@@ -611,15 +635,22 @@ ipAddr: "127.0.0.1"
 		if cfg.EventRateLimit != 7 {
 			t.Errorf("expected EventRateLimit 7 from env, got %d", cfg.EventRateLimit)
 		}
+		if cfg.CalibrationFitRetention != 2*time.Hour {
+			t.Errorf("expected CalibrationFitRetention 2h from env, got %s", cfg.CalibrationFitRetention)
+		}
 	})
 
 	t.Run("flag overrides env", func(t *testing.T) {
 		setupTLSEnv(t, "fo")
 		t.Setenv("QPI_EVENTS_RETENTION", "12h")
 		t.Setenv("QPI_EVENT_RATE_LIMIT", "7")
+		t.Setenv("QPI_CALIBRATION_REQUEST_RETENTION", "2h")
 
 		cmd := &cobra.Command{}
 		BindFlags(cmd)
+		if err := cmd.PersistentFlags().Set("calibration-request-retention", "3h"); err != nil {
+			t.Fatalf("failed to set calibration-request-retention flag: %v", err)
+		}
 		if err := cmd.PersistentFlags().Set("events-retention", "6h"); err != nil {
 			t.Fatalf("failed to set events-retention flag: %v", err)
 		}
@@ -636,6 +667,9 @@ ipAddr: "127.0.0.1"
 		}
 		if cfg.EventRateLimit != 3 {
 			t.Errorf("expected EventRateLimit 3 from flag, got %d", cfg.EventRateLimit)
+		}
+		if cfg.CalibrationRequestRetention != 3*time.Hour {
+			t.Errorf("expected CalibrationRequestRetention 3h from flag, got %s", cfg.CalibrationRequestRetention)
 		}
 	})
 }

@@ -1,8 +1,9 @@
 # Driver Framework Operations Runbook
 
 This runbook covers running the extensible driver framework (RFC 0001) in
-production: keeping the `events` log bounded, protecting the server from a
-misbehaving driver, and the knobs you tune per deployment.
+production: keeping the `events` log and the calibration collections bounded,
+protecting the server from a misbehaving driver, and the knobs you tune per
+deployment.
 
 The driver framework is standard and active across all QPI deployments.
 The collections, retention loops, and limits below run automatically according
@@ -18,10 +19,12 @@ var > config file > default**.
 | Events retention window | `--events-retention` | `QPI_EVENTS_RETENTION` | `eventsRetention` | `720h` (30 days) | How long an entry stays in the `events` log before it is pruned. |
 | Prune interval | `--events-prune-interval` | `QPI_EVENTS_PRUNE_INTERVAL` | `eventsPruneInterval` | `1h` | How often the retention loop runs. |
 | Per-driver rate limit | `--event-rate-limit` | `QPI_EVENT_RATE_LIMIT` | `eventRateLimit` | `100` | Max inbound events per second accepted from each driver. |
+| Calibration request retention | `--calibration-request-retention` | `QPI_CALIBRATION_REQUEST_RETENTION` | `calibrationRequestRetention` | `720h` (30 days) | How long a **finished** calibration request is kept. A `running` or `pending` one is never pruned, however old. |
+| Calibration report retention | `--calibration-result-retention` | `QPI_CALIBRATION_RESULT_RETENTION` | `calibrationResultRetention` | `0` (never) | How long a calibration report is kept. Off by default: a report is what the chip *was*. |
+| Calibration trace retention | `--calibration-fit-retention` | `QPI_CALIBRATION_FIT_RETENTION` | `calibrationFitRetention` | `720h` (30 days) | How long a report's fit traces and benchmark raw data are kept, stripped without touching the fitted numbers. |
 
-Durations use Go's duration syntax (`720h`, `30m`, `90s`). Set
-`eventsRetention` or `eventRateLimit` to `0` to disable pruning or the rate
-limit respectively.
+Durations use Go's duration syntax (`720h`, `30m`, `90s`). Set any retention or
+`eventRateLimit` to `0` to disable that prune or the rate limit respectively.
 
 Example `qpi.config.yml`:
 
@@ -29,6 +32,8 @@ Example `qpi.config.yml`:
 eventsRetention: "168h"      # keep one week of events
 eventsPruneInterval: "30m"
 eventRateLimit: 50           # 50 events/sec per driver
+calibrationFitRetention: "336h"   # keep two weeks of fit traces
+calibrationResultRetention: "0"   # never prune a report (the default)
 ```
 
 ## Retention and pruning
@@ -53,6 +58,39 @@ than climb.
 ```sql
 SELECT count(*) FROM events;
 ```
+
+### The calibration path
+
+The same loop applies three separate policies to the calibration collections,
+because what accumulates there differs in how durable its value is
+(RFC 0006 §9). A chip drift-checked every half hour produces roughly 20 MB of
+requests and 200 MB of reports per year, and phase-3 fit traces would add
+about 2.5 GB.
+
+- **A finished request is bookkeeping.** Once its report is stored, a `done` or
+  `failed` row in `calibration_requests` holds nothing the report does not, so it
+  is pruned on `calibrationRequestRetention`. A `running` or `pending` row is
+  never pruned however old — a hung calibration would otherwise lose its record
+  while still running, and the per-QPU checks that read it would stop seeing the
+  chip as busy.
+- **A report is not bookkeeping.** `calibration_results` is the chip's history,
+  and `calibrationResultRetention` defaults to `0` so nobody loses it by
+  accident. Set it only if you have a disk problem.
+- **Fit traces go separately from the reports carrying them.** They are most of a
+  report's size and the least durable part of its value: nobody re-reads the Rabi
+  trace from eight months ago, but the fitted `amp180` is the record of what the
+  chip was. On `calibrationFitRetention` the loop strips `fit` from each routine
+  result and `raw_data` from each benchmark, leaving every fitted number in place.
+  The Calibration tab then says the traces are not in the report rather than
+  drawing an empty chart.
+
+Logged as `[Retention] pruned N finished calibration request(s) and M report(s),
+stripped traces from K`.
+
+Driver-side raw data is out of scope: `-o save_raw_data=true` writes to the
+driver's own disk, which this server cannot see and this loop cannot reach. It is
+off by default for that reason, and an operator who turns it on owns the
+directory.
 
 ### Index
 

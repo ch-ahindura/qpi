@@ -3,6 +3,7 @@
 package scheduler
 
 import (
+	"encoding/json"
 	"log"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // FetchNextJob implements the session-based booking + opportunistic FIFO algorithm.
@@ -265,32 +267,185 @@ func PruneEvents(app core.App) (int, error) {
 	return pruned, nil
 }
 
+// PruneCalibrations applies the three calibration retention policies of RFC 0006 §9
+// and returns how many rows each touched.
+//
+// They are three because what accumulates differs in how durable its value is. A
+// finished request is bookkeeping — once the report is stored it holds nothing the
+// report does not — so it is pruned by default. A report is what the chip *was* and is
+// never pruned unless an operator asks. A report's fit summaries are ~90% of its size
+// and the least durable part of its value, so they go separately from the report
+// carrying them: nobody re-reads the Rabi trace from eight months ago, but the fitted
+// amp180 is the record.
+//
+// A no-op when the driver framework is off, since neither collection exists then.
+func PruneCalibrations(app core.App) (requests, results, stripped int, err error) {
+	cfg, err := config.GetConfigFromApp(app)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	if cfg.CalibrationRequestRetention > 0 {
+		// A `running` or `pending` row is never pruned however old: a hung
+		// calibration would otherwise lose its record while still running, and the
+		// per-QPU checks that read it would stop seeing the chip as busy.
+		requests, err = pruneOlderThan(app, cfg.CollectionCalibrationRequests,
+			"status != 'running' && status != 'pending' && created < {:cutoff}",
+			cfg.CalibrationRequestRetention)
+		if err != nil {
+			return requests, 0, 0, err
+		}
+	}
+
+	if cfg.CalibrationResultRetention > 0 {
+		results, err = pruneOlderThan(app, cfg.CollectionCalibrationResults,
+			"created < {:cutoff}", cfg.CalibrationResultRetention)
+		if err != nil {
+			return requests, results, 0, err
+		}
+	}
+
+	if cfg.CalibrationFitRetention > 0 {
+		stripped, err = stripAgedFits(app, cfg)
+	}
+	return requests, results, stripped, err
+}
+
+// pruneOlderThan deletes rows from *collection* matching *filter* — which must take a
+// `cutoff` parameter — in the same bounded batches PruneEvents uses.
+func pruneOlderThan(app core.App, collection, filter string, retention time.Duration) (int, error) {
+	cutoff := time.Now().UTC().Add(-retention).Format("2006-01-02 15:04:05.000Z")
+
+	pruned := 0
+	for {
+		stale, err := app.FindRecordsByFilter(
+			collection, filter, "+created", eventsPruneBatchSize, 0,
+			dbx.Params{"cutoff": cutoff},
+		)
+		if err != nil {
+			return pruned, err
+		}
+		if len(stale) == 0 {
+			return pruned, nil
+		}
+		deleted := 0
+		for _, record := range stale {
+			if err := app.Delete(record); err != nil {
+				log.Printf("[Retention] failed to delete %s %s: %v", collection, record.Id, err)
+				continue
+			}
+			deleted++
+		}
+		pruned += deleted
+		if len(stale) < eventsPruneBatchSize || deleted == 0 {
+			return pruned, nil
+		}
+	}
+}
+
+// stripAgedFits removes `fit` from each routine result and `raw_data` from each
+// benchmark on reports past cfg.CalibrationFitRetention, leaving the report itself and
+// every fitted number in it untouched.
+//
+// The rows are found by filtering on age alone and then checking whether anything
+// changed, rather than by asking the database whether a JSON column contains a key:
+// that is what keeps this working across the two shapes a report can have — one from
+// before phase 3, and one whose summaries the driver already dropped for size.
+func stripAgedFits(app core.App, cfg *config.AppConfig) (int, error) {
+	cutoff := time.Now().UTC().Add(-cfg.CalibrationFitRetention).Format("2006-01-02 15:04:05.000Z")
+
+	aged, err := app.FindRecordsByFilter(
+		cfg.CollectionCalibrationResults, "created < {:cutoff}",
+		"+created", eventsPruneBatchSize, 0, dbx.Params{"cutoff": cutoff},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	stripped := 0
+	for _, record := range aged {
+		results, resultsChanged := withoutKey(record.GetString("routine_results"), "fit")
+		benchmarks, benchmarksChanged := withoutKey(record.GetString("benchmarks"), "raw_data")
+		if !resultsChanged && !benchmarksChanged {
+			continue
+		}
+		if resultsChanged {
+			record.Set("routine_results", results)
+		}
+		if benchmarksChanged {
+			record.Set("benchmarks", benchmarks)
+		}
+		if err := app.Save(record); err != nil {
+			log.Printf("[Retention] failed to strip traces from report %s: %v", record.Id, err)
+			continue
+		}
+		stripped++
+	}
+	return stripped, nil
+}
+
+// withoutKey removes *key* from every object in the stored JSON array, reporting
+// whether it removed any. Unparseable or key-free JSON comes back untouched.
+func withoutKey(stored, key string) (types.JSONRaw, bool) {
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(stored), &rows); err != nil {
+		return nil, false
+	}
+	changed := false
+	for _, row := range rows {
+		if _, ok := row[key]; ok {
+			delete(row, key)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil, false
+	}
+	encoded, err := json.Marshal(rows)
+	if err != nil {
+		return nil, false
+	}
+	return types.JSONRaw(encoded), true
+}
+
 // RunEventsRetentionEngine runs a background loop that periodically prunes the
-// events log to keep its growth bounded, copying the shape of
-// RunRecoveryEngine. It exits immediately when the driver framework is off or
-// retention is disabled, so a legacy deployment starts no extra goroutine.
+// events log and the calibration path to keep their growth bounded, copying the
+// shape of RunRecoveryEngine. It exits immediately when the driver framework is off
+// or every retention is disabled, so a legacy deployment starts no extra goroutine.
 func RunEventsRetentionEngine(app core.App) {
 	cfg, err := config.GetConfigFromApp(app)
 	if err != nil {
 		log.Printf("[Retention] failed to get config: %v", err)
 		return
 	}
-	if cfg.EventsRetention <= 0 {
+	// Nothing in the calibration path was pruned before this; the gap was
+	// pre-existing (RFC 0006 §9), so those durations keep the engine running even
+	// where an operator has switched the events log off.
+	if cfg.EventsRetention <= 0 && cfg.CalibrationRequestRetention <= 0 &&
+		cfg.CalibrationResultRetention <= 0 && cfg.CalibrationFitRetention <= 0 {
 		return
 	}
 
 	ticker := time.NewTicker(cfg.EventsPruneInterval)
 	defer ticker.Stop()
-	log.Printf("[Retention] Engine started (retention=%s, interval=%s)", cfg.EventsRetention, cfg.EventsPruneInterval)
+	log.Printf("[Retention] Engine started (events=%s, calibration requests=%s, reports=%s, fits=%s, interval=%s)",
+		cfg.EventsRetention, cfg.CalibrationRequestRetention,
+		cfg.CalibrationResultRetention, cfg.CalibrationFitRetention, cfg.EventsPruneInterval)
 
 	for range ticker.C {
-		pruned, err := PruneEvents(app)
-		if err != nil {
+		if pruned, err := PruneEvents(app); err != nil {
 			log.Printf("[Retention] prune error: %v", err)
-			continue
-		}
-		if pruned > 0 {
+		} else if pruned > 0 {
 			log.Printf("[Retention] pruned %d expired events", pruned)
+		}
+
+		requests, results, stripped, err := PruneCalibrations(app)
+		if err != nil {
+			log.Printf("[Retention] calibration prune error: %v", err)
+		}
+		if requests+results+stripped > 0 {
+			log.Printf("[Retention] pruned %d finished calibration request(s) and %d report(s), stripped traces from %d",
+				requests, results, stripped)
 		}
 	}
 }

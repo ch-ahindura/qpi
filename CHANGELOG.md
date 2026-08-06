@@ -50,6 +50,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `-o save_raw_data=true` keeps each acquisition and an instrument
   snapshot under the data directory. Qblox backends only; nothing to switch on quantify.
 
+- `qpi-ui`: the calibration collections are pruned. `--calibration-request-retention`
+  (720h) drops finished requests, never a running one; `--calibration-fit-retention`
+  (720h) strips a report's fit traces and benchmark raw data while leaving every fitted
+  number; `--calibration-result-retention` (0, off) can drop whole reports. Nothing in
+  the calibration path was pruned before, so a chip drift-checked every half hour grew
+  its request rows without limit.
 - `repo`: `make test-dashboard` runs the dashboard's pure helpers under vitest. Nothing
   could unit-test a function in there before, so anything not worth a Cypress spec
   against a live server went untested.
