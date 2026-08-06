@@ -99,7 +99,8 @@ check_installer() {
     # Each remaining argument is a line the unit file has to contain: what the
     # installer is expected to have worked out on the operator's behalf.
     for expected in "$@"; do
-        if ! docker exec $CONTAINER_ID grep -qF "$expected" "$unit"; then
+        # -e, because every -o option we look for would otherwise be read as grep's own.
+        if ! docker exec $CONTAINER_ID grep -qF -e "$expected" "$unit"; then
             echo "FAILED: $label unit file does not mention '$expected'."
             docker exec $CONTAINER_ID cat "$unit" || true
             exit 1
