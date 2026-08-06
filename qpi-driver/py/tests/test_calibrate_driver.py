@@ -23,8 +23,10 @@ from qpi_driver.builtins.registry import Operation, devices, resolve
 from qpi_driver.events import Event, EventType
 from qpi_driver.options import Options
 from qpi_driver.tuners import Tuner, resolve_tuner
-from qpi_driver.tuners.base.backend import DEFAULT_ACQUISITION_TIMEOUT_S
-from qpi_driver.tuners.base.config import CalibrationConfig
+from qpi_driver.tuners.base.config import (
+    DEFAULT_ROUTINE_TIMEOUT_S,
+    CalibrationConfig,
+)
 from qpi_driver.tuners.base.report import BenchmarkResult, CalibrationReport
 
 
@@ -890,7 +892,7 @@ class TestRoutineTimeoutBoundsTheWait:
         coordinator = _RecordingCoordinator()
         QuantifyBackend(_passthrough_compiler(), coordinator).run("schedule")
 
-        assert coordinator.timeout_sec == DEFAULT_ACQUISITION_TIMEOUT_S
+        assert coordinator.timeout_sec == DEFAULT_ROUTINE_TIMEOUT_S
 
     def test_the_qblox_backend_passes_it_to_the_agent(self):
         from qpi_driver.tuners.qblox import QbloxBackend
@@ -906,4 +908,4 @@ class TestRoutineTimeoutBoundsTheWait:
         agent = _RecordingAgent()
         QbloxBackend(agent).run("schedule")
 
-        assert agent.kwargs["timeout"] == DEFAULT_ACQUISITION_TIMEOUT_S
+        assert agent.kwargs["timeout"] == DEFAULT_ROUTINE_TIMEOUT_S

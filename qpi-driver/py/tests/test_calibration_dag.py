@@ -13,7 +13,11 @@ import pytest
 import xarray as xr
 from qpi_driver.tuners.base import RECALIBRATION_ROOTS, Tuner
 from qpi_driver.tuners.base.backend import SchedulerBackend
-from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
+from qpi_driver.tuners.base.config import (
+    DEFAULT_ROUTINE_TIMEOUT_S,
+    CalibrationConfig,
+    RoutineConfig,
+)
 from qpi_driver.tuners.base.dag import CalibrationDAG, _human_duration
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
@@ -32,7 +36,7 @@ class FakeBackend(SchedulerBackend):
 
     def __init__(self, dataset: xr.Dataset | None = None) -> None:
         self.ran: list[Any] = []
-        self.timeouts: list[float | None] = []
+        self.timeouts: list[float] = []
         self._dataset = (
             dataset if dataset is not None else xr.Dataset({"y": ("x", [1.0, 2.0])})
         )
@@ -40,7 +44,9 @@ class FakeBackend(SchedulerBackend):
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
         return {"name": name, "ops": []}
 
-    def run(self, schedule: Any, timeout_s: float | None = None) -> xr.Dataset:
+    def run(
+        self, schedule: Any, timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
+    ) -> xr.Dataset:
         self.ran.append(schedule)
         self.timeouts.append(timeout_s)
         return self._dataset

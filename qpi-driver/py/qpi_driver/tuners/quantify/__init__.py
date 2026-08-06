@@ -34,7 +34,7 @@ from qpi_driver.executors.quantify.config import (
     load_quantum_device,
 )
 from qpi_driver.tuners.base import SchedulerBackend, Tuner
-from qpi_driver.tuners.base.backend import DEFAULT_ACQUISITION_TIMEOUT_S
+from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S
 
 log = logging.getLogger(__name__)
 
@@ -81,15 +81,15 @@ class QuantifyBackend(SchedulerBackend):
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
         return Schedule(name, repetitions=repetitions)
 
-    def run(self, schedule: Any, timeout_s: float | None = None) -> xr.Dataset:
+    def run(
+        self, schedule: Any, timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
+    ) -> xr.Dataset:
         compiled = self._compiler.compile(schedule)
         self._instrument_coordinator.prepare(compiled)
         self._instrument_coordinator.start()
         # Floored to whole minutes downstream with a minimum of one, so a ceiling
         # that is not a multiple of 60 waits no longer than the multiple below it.
-        self._instrument_coordinator.wait_done(
-            timeout_sec=int(timeout_s or DEFAULT_ACQUISITION_TIMEOUT_S)
-        )
+        self._instrument_coordinator.wait_done(timeout_sec=int(timeout_s))
         return self._instrument_coordinator.retrieve_acquisition()
 
 
