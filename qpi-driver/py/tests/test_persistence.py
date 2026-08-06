@@ -28,6 +28,14 @@ class FakeParameter:
         return self._value
 
 
+class CountingParameter(FakeParameter):
+    reads = 0
+
+    def get(self):
+        self.reads += 1
+        return super().get()
+
+
 class Unreadable:
     def get(self):
         raise RuntimeError("instrument offline")
@@ -165,12 +173,12 @@ class TestSerialisation:
         assert "obj" not in serialise_device(device)["q0"]["rxy"]
 
     def test_the_identity_parameter_is_not_calibration(self):
-        device = FakeDevice(
-            elements={
-                "q0": FakeElement("q0", parameters={"IDN": FakeParameter("acme")})
-            }
-        )
+        """And is never read: qcodes answers `IDN` by asking the instrument."""
+        idn = CountingParameter("acme")
+        device = FakeDevice(elements={"q0": FakeElement("q0", parameters={"IDN": idn})})
+
         assert "IDN" not in serialise_device(device)["q0"]
+        assert idn.reads == 0
 
     def test_lists_of_scalars_survive(self):
         device = FakeDevice(

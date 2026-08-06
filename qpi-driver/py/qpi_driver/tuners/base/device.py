@@ -10,6 +10,7 @@ not: everything here takes either shape. The alternative — two copies of every
 routine — is exactly what this package is arranged to avoid.
 """
 
+from collections.abc import Collection
 from typing import Any
 
 #: Parameters the two schedulers spell differently. Looked up in order, so a
@@ -75,14 +76,21 @@ def _names(accessor: Any) -> list[str]:
     return list(accessor() if callable(accessor) else accessor)
 
 
-def parameters_of(owner: Any) -> dict[str, Any]:
+def parameters_of(owner: Any, skip: Collection[str] = ()) -> dict[str, Any]:
     """Every readable parameter of *owner* as plain values.
 
     qcodes exposes ``parameters`` as a mapping of Parameter objects and pydantic
     as a mapping of values already; both reduce to the same dict here.
+
+    *skip* is applied before the read, not after: reading a qcodes parameter runs
+    its getter, and ``IDN``'s sends ``*IDN?`` to a device element that has no
+    ``ask`` — which qcodes logs as a warning with a full traceback. Filtering the
+    result instead still pays for the read.
     """
     values: dict[str, Any] = {}
     for name, parameter in (getattr(owner, "parameters", None) or {}).items():
+        if name in skip:
+            continue
         try:
             values[name] = parameter.get() if hasattr(parameter, "get") else parameter
         except Exception:  # noqa: BLE001 - an unreadable parameter is not calibration

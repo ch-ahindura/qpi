@@ -60,6 +60,7 @@ BACKUP_SUFFIX = ".prev"
 #: exercised.
 _UNCALIBRATED = frozenset(
     {
+        # Reading this asks the element for an identity it has no `ask` to answer.
         "IDN",
         ELEMENT_TYPE_PROP,
         "name",
@@ -116,9 +117,7 @@ def _serialise_parameters(owner: Any) -> dict[str, Any]:
     string the loader would then push back into a numeric parameter.
     """
     values: dict[str, Any] = {}
-    for name, value in parameters_of(owner).items():
-        if name in _UNCALIBRATED:
-            continue
+    for name, value in parameters_of(owner, skip=_UNCALIBRATED).items():
         if value is None or isinstance(value, (bool, int, float, str)):
             values[name] = value
         elif isinstance(value, (list, tuple)) and all(

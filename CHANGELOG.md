@@ -43,6 +43,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a `calibrate` driver writes under the data directory like a QPU does.
   `qblox_tuner` passed `bin/data` to its hardware agent whatever it was told, so a tuner
   installed as a service could not start: `/bin/data` is a `PermissionError`.
+- `qpi-driver/py`: writing the calibration back no longer logs a qcodes `*IDN?` warning
+  and traceback per element. It read `IDN` along with the calibration, so a clean walk
+  ended looking like it had failed.
 - `qpi-driver/py`: `quantify_tuner` sets quantify-core's data directory, so a hardware
   config with `sequence_to_file: true`, a hardware-log download or a diagnostics report
   no longer writes to `<cwd>/data` — `/data` for a service.
