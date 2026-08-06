@@ -99,12 +99,15 @@ def write_calibration_config(
 def run_job(job: dict, tuner: SimulatedTuner, config: CalibrationConfig) -> dict:
     """One calibration through the worker's own entry point.
 
-    The queue also carries a progress update per routine and target; the outcome is
-    the one item that is not one, and there is still exactly one of those.
+    The queue also carries the plan and a progress update per routine and target;
+    the outcome is the one item that is neither, and there is still exactly one of
+    those.
     """
     queue = RecordingQueue()
     _execute_calibration(job, tuner, config, queue)
-    outcomes = [item for item in queue.items if "progress" not in item]
+    outcomes = [
+        item for item in queue.items if "progress" not in item and "plan" not in item
+    ]
     assert len(outcomes) == 1, queue.items
     return outcomes[0]
 
@@ -164,6 +167,40 @@ class TestAFullCalibration:
         assert [u["step"] for u in updates] == sorted(u["step"] for u in updates)
         assert updates[-1]["step"] == updates[-1]["total"]
         assert updates[-1]["succeeded"] == len(updates)
+
+    def test_the_plan_describes_the_walk_the_report_then_records(self, tmp_path):
+        """A real walk, so the plan's nodes and the report's results cannot disagree."""
+        tuner = SimulatedTuner()
+        config = write_calibration_config(tmp_path)
+
+        queue = RecordingQueue()
+        _execute_calibration({"mode": "full", "job_id": "job-1"}, tuner, config, queue)
+
+        plans = [item for item in queue.items if "plan" in item]
+        assert len(plans) == 1
+        assert plans[0]["job_id"] == "job-1"
+        assert plans[0]["target_qubits"] == ["q0"]
+
+        nodes = plans[0]["plan"]["nodes"]
+        planned = [n["name"] for n in nodes if n["planned"] and n["targets"]]
+        report = queue.items[-1]["report"]
+        assert planned == [r["routine_name"] for r in report["routine_results"]], (
+            "the plan promised a walk the report did not make"
+        )
+        # Every routine is described, walked or not — the drawing shows both.
+        assert set(routine_names()) == {n["name"] for n in nodes}
+
+    def test_a_drift_check_publishes_no_plan(self, tmp_path):
+        """Four disconnected benchmark nodes is not a picture (RFC 0006 D6)."""
+        tuner = SimulatedTuner()
+        config = write_calibration_config(tmp_path)
+
+        queue = RecordingQueue()
+        _execute_calibration(
+            {"mode": "fidelity_check", "job_id": "drift_check"}, tuner, config, queue
+        )
+
+        assert not any("plan" in item for item in queue.items)
 
     def test_a_full_calibration_measures_coherence_it_does_not_tune(self, tmp_path):
         """T1 and T2 write nothing, so their value is only in the report."""

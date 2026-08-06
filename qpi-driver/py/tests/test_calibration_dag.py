@@ -26,7 +26,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
-from qpi_driver.tuners.routines import all_routines, routine_names
+from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines, routine_names
 
 
 class FakeBackend(SchedulerBackend):
@@ -603,6 +603,8 @@ class TestTheProgressSink:
             on_progress=updates.append,
         )
 
+        # The plan is the first thing said, and the only one that is not a position.
+        assert "plan" in updates.pop(0)
         assert [(u["step"], u["routine"], u["target"]) for u in updates] == [
             (1, "a", "q0"),
             (1, "a", "q1"),
@@ -632,6 +634,111 @@ class TestTheProgressSink:
         )
 
         assert report.status == "success"
+
+
+class TestThePlan:
+    """The graph a run publishes for the dashboard to draw (RFC 0006 §5.1)."""
+
+    def test_a_node_carries_what_the_dashboard_draws_it_from(self):
+        routines = [
+            StubRoutine("a"),
+            CheckableRoutine("b", depends_on=("a",), verdict=True),
+        ]
+        routines[1].updates = ("rxy.amp180",)
+        config = _config(target_qubits=["q0", "q1"])
+        dag = CalibrationDAG(routines, config)
+
+        nodes = dag.plan(dag.execution_order(), config)["nodes"]
+
+        assert nodes[1] == {
+            "name": "b",
+            "depends_on": ["a"],
+            "targets": ["q0", "q1"],
+            "kind": "qubits",
+            "planned": True,
+            "is_benchmark": False,
+            "has_check": True,
+            "updates": ["rxy.amp180"],
+        }
+
+    def test_an_excluded_routine_is_still_sent_marked_unplanned(self):
+        """Which parts of the graph a partial run is *not* touching is most of the value."""
+        routines = [StubRoutine("a"), StubRoutine("b", depends_on=("a",))]
+        config = _config()
+        dag = CalibrationDAG(routines, config)
+
+        nodes = dag.plan(["a"], config)["nodes"]
+
+        assert [(n["name"], n["planned"]) for n in nodes] == [("a", True), ("b", False)]
+
+    def test_a_declined_target_is_absent_from_the_node_it_declined(self):
+        class Fussy(StubRoutine):
+            def applies_to(self, device, target):
+                return target != "q1"
+
+        config = _config(target_qubits=["q0", "q1", "q2"])
+        dag = CalibrationDAG([Fussy("a")], config)
+
+        assert dag.plan(["a"], config, device=object())["nodes"][0]["targets"] == [
+            "q0",
+            "q2",
+        ]
+
+    def test_it_arrives_before_the_first_progress_event(self):
+        updates: list[dict] = []
+        config = _config()
+
+        CalibrationDAG([StubRoutine("a")], config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        assert "plan" in updates[0]
+        assert updates[0]["target_qubits"] == ["q0"]
+        assert not any("plan" in u for u in updates[1:])
+
+    def test_a_run_with_nothing_to_walk_publishes_no_plan(self):
+        """There is no walk to draw, and the report says why."""
+        updates: list[dict] = []
+        config = _config(target_qubits=[])
+
+        CalibrationDAG([StubRoutine("a")], config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        assert updates == []
+
+    def test_the_real_graph_is_thirty_three_nodes_with_one_root(self):
+        config = _config()
+        dag = CalibrationDAG(all_routines(), config)
+        order = dag.execution_order()
+
+        nodes = dag.plan(order, config)["nodes"]
+
+        assert len(nodes) == len(ROUTINE_CLASSES)
+        assert [n["name"] for n in nodes if not n["depends_on"]] == [
+            "resonator_spectroscopy"
+        ]
+        assert all(n["planned"] for n in nodes)
+        assert {n["name"] for n in nodes if n["is_benchmark"]} == {
+            "readout_fidelity",
+            "rb",
+            "interleaved_rb",
+            "allxy_check",
+        }
+        assert {n["name"] for n in nodes if n["kind"] == "edges"} == {
+            "coupler_anticrossing",
+            "cz_spectroscopy",
+            "cz_parametrization",
+            "cz_chevron",
+            "conditional_phase",
+            "interleaved_rb",
+        }
 
 
 class TestHumanDuration:

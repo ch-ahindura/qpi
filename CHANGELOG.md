@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a calibration publishes the graph it is about to walk on a second
+  `CalibrationQueued` — every routine, its dependencies, its resolved targets and
+  whether this run touches it. The shape existed only as `depends_on` on the driver's
+  own classes, so nothing downstream could draw more than a progress bar. A drift check
+  sends none: four disconnected benchmarks is not a picture.
 - `qpi-driver/py`: a calibration logs where it has got to — `[7/33] rabi q2 ok in 41.2s`
   per routine and target, each check's verdict as it is measured, and a closing summary.
   A full walk is hours that previously said nothing until it finished.

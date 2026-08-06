@@ -179,8 +179,17 @@ class CalibrateDriver(QpiDriver):
                 log.info("Result pump received shutdown signal")
                 return
 
-            # Before the clear below: progress says the calibration is still going,
-            # and treating it as an outcome would free the driver to accept another.
+            # Both before the clear below: neither is an outcome, and treating one
+            # as such would free the driver to accept another calibration.
+            if "plan" in item:
+                self._emit_queued(
+                    item["job_id"],
+                    item["mode"],
+                    item.get("target_qubits") or [],
+                    "the walk it is about to make",
+                    plan=item["plan"],
+                )
+                continue
             if "progress" in item:
                 self._emit_progress(item["job_id"], item["progress"])
                 continue
@@ -207,7 +216,12 @@ class CalibrateDriver(QpiDriver):
                 self._job_queue.put(follow_up)
 
     def _emit_queued(
-        self, job_id: str, mode: str, target_qubits: list[str], reason: str
+        self,
+        job_id: str,
+        mode: str,
+        target_qubits: list[str],
+        reason: str,
+        plan: dict[str, Any] | None = None,
     ) -> None:
         """Say that this driver has queued a calibration nobody dispatched.
 
@@ -216,21 +230,31 @@ class CalibrateDriver(QpiDriver):
         of nothing. This is what gives them one — announced before the job is queued,
         so the row exists before any progress reports against it.
 
+        Emitted a second time, with *plan*, once the walk has resolved the graph it
+        will actually take (RFC 0006 §5.1). The two facts are known in different
+        processes and at different moments, and the server's handler is already
+        idempotent, so sending one small event twice is cheaper than a second event
+        type — and a dispatched calibration, which makes no announcement of its own,
+        gets its plan by the same route.
+
         Best-effort: the calibration is the point and the announcement is not, so a
         socket that will not carry it costs the dashboard a row, not the chip a
         recalibration.
         """
+        payload: dict[str, Any] = {
+            "job_id": job_id,
+            "mode": mode,
+            "target_qubits": list(target_qubits),
+            "reason": reason,
+        }
+        if plan is not None:
+            payload["plan"] = plan
         try:
             self.emit(
                 Event(
                     type=EventType.CALIBRATION_QUEUED,
                     driver=self.name,
-                    payload={
-                        "job_id": job_id,
-                        "mode": mode,
-                        "target_qubits": list(target_qubits),
-                        "reason": reason,
-                    },
+                    payload=payload,
                 )
             )
         except Exception:  # noqa: BLE001 - see above
@@ -551,7 +575,18 @@ def _queue_progress(
     mode: str,
     update: dict[str, Any],
 ) -> None:
-    """Pass one progress update up to the main process, tagged with its job."""
+    """Pass one update from the walk up to the main process, tagged with its job.
+
+    A ``plan`` key means the walk is describing its graph rather than its position,
+    which the result pump turns into a `CalibrationQueued` instead of a
+    `CalibrationProgress`. A drift check's plan is dropped here: four disconnected
+    benchmark nodes is not a picture worth drawing (RFC 0006 D6), and dropping it
+    keeps the most frequent calibration the cheapest to store.
+    """
+    if "plan" in update:
+        if mode != "fidelity_check":
+            result_queue.put({"job_id": job_id, "mode": mode, **update})
+        return
     result_queue.put({"job_id": job_id, "progress": {"mode": mode, **update}})
 
 

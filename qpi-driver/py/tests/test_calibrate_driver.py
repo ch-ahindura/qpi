@@ -15,6 +15,7 @@ from qpi_driver.builtins.calibrate import (
     CalibrateDriver,
     _drifted_targets,
     _execute_calibration,
+    _queue_progress,
     build_from_options,
     calibrate_worker,
     device_spec,
@@ -430,6 +431,86 @@ class TestResultPump:
             "target_qubits": ["q0"],
             "reason": f"drift measured by {DRIFT_CHECK_JOB_ID}",
         }
+
+    def test_a_plan_is_announced_again_rather_than_as_an_event_of_its_own(
+        self, monkeypatch
+    ):
+        """The row is created at queue time and the plan is resolved in the worker.
+
+        Two moments, two processes, one event type: the server's handler is already
+        idempotent (RFC 0006 §5.1).
+        """
+        driver = _driver()
+        driver._busy.set()
+        plan = {"nodes": [{"name": "rabi", "planned": True}]}
+        emitted = _pump_once(
+            driver,
+            {
+                "job_id": "j1",
+                "mode": "full",
+                "plan": plan,
+                "target_qubits": ["q0", "q1"],
+            },
+            monkeypatch,
+        )
+
+        assert emitted[0].type is EventType.CALIBRATION_QUEUED
+        assert emitted[0].payload == {
+            "job_id": "j1",
+            "mode": "full",
+            "target_qubits": ["q0", "q1"],
+            "reason": "the walk it is about to make",
+            "plan": plan,
+        }
+        # A plan is not an outcome; the calibration it describes has hours to go.
+        assert driver._busy.is_set()
+
+    def test_an_announcement_without_a_plan_carries_no_plan_key(self, monkeypatch):
+        """A field the server does not know is ignored, but an empty one is a lie."""
+        driver = _driver(drift_check_interval=900)
+        emitted: list[Event] = []
+        monkeypatch.setattr(driver, "emit", emitted.append)
+
+        driver._check_fidelity()
+
+        assert "plan" not in emitted[0].payload
+
+
+class TestQueueingTheWalksUpdates:
+    """How the worker tags what the walk tells it, on its way to the main process."""
+
+    def test_a_position_is_queued_as_progress(self):
+        queue = RecordingQueue()
+        _queue_progress(queue, "j1", "full", {"step": 7, "total": 33})
+        assert queue.items == [
+            {"job_id": "j1", "progress": {"mode": "full", "step": 7, "total": 33}}
+        ]
+
+    def test_a_plan_is_queued_alongside_the_mode_that_resolved_it(self):
+        queue = RecordingQueue()
+        plan = {"nodes": []}
+        _queue_progress(queue, "j1", "partial", {"plan": plan, "target_qubits": ["q0"]})
+        assert queue.items == [
+            {
+                "job_id": "j1",
+                "mode": "partial",
+                "plan": plan,
+                "target_qubits": ["q0"],
+            }
+        ]
+
+    def test_a_drift_checks_plan_is_dropped_here(self):
+        """Four disconnected benchmark nodes is not a picture (RFC 0006 D6)."""
+        queue = RecordingQueue()
+        _queue_progress(
+            queue, DRIFT_CHECK_JOB_ID, "fidelity_check", {"plan": {"nodes": []}}
+        )
+        assert queue.items == []
+
+    def test_a_drift_check_still_reports_its_position(self):
+        queue = RecordingQueue()
+        _queue_progress(queue, DRIFT_CHECK_JOB_ID, "fidelity_check", {"step": 2})
+        assert queue.items[0]["progress"] == {"mode": "fidelity_check", "step": 2}
 
 
 class _ConfigRecordingTuner(StubTuner):

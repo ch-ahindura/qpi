@@ -23,8 +23,10 @@ from qpi_driver.tuners.base.routines import (
 log = logging.getLogger(__name__)
 
 #: Called once per routine-and-target as the walk proceeds, with the keys the
-#: ``CalibrationProgress`` event carries. Reporting is best-effort — see
-#: :meth:`CalibrationDAG.run` — so a sink may raise without ending a calibration.
+#: ``CalibrationProgress`` event carries — and once before any of them with a
+#: ``plan`` key instead, which is what tells the two apart (RFC 0006 §5.1).
+#: Reporting is best-effort — see :meth:`CalibrationDAG.run` — so a sink may
+#: raise without ending a calibration.
 ProgressSink = Callable[[dict[str, Any]], None]
 
 
@@ -247,6 +249,41 @@ class CalibrationDAG:
             return [], notes
         return self.partial_order(sorted(blamed)), notes
 
+    def plan(
+        self, order: list[str], config: CalibrationConfig, device: Any = None
+    ) -> dict[str, Any]:
+        """The graph this run is about to walk, for the dashboard to draw (RFC 0006 §5.1).
+
+        Only the driver can compute this: the shape the dashboard must draw is the
+        *enabled subset* for this run, which depends on ``calibration.yml``, on the
+        mode, and for a partial run on what `diagnose` blamed.
+
+        Every routine is described, whether or not it is in *order* — a routine
+        excluded by being disabled or outside a partial's subset is sent with
+        ``planned: false``, because seeing which parts of the graph a partial run is
+        *not* touching is most of the value of drawing it.
+
+        Nodes come in walk order, the excluded ones after, so a drawing that orders
+        a layer by this sequence matches the walk.
+        """
+        planned = set(order)
+        return {
+            "nodes": [
+                {
+                    "name": name,
+                    "depends_on": list(self.routines[name].depends_on),
+                    "targets": self._targets_for(name, config, device),
+                    "kind": self.routines[name].targets,
+                    "planned": name in planned,
+                    "is_benchmark": self.routines[name].is_benchmark,
+                    "has_check": self.routines[name].has_check,
+                    "updates": list(self.routines[name].updates),
+                }
+                for name in order
+                + [name for name in self.routines if name not in planned]
+            ]
+        }
+
     def _targets_for(
         self, name: str, config: CalibrationConfig, device: Any = None
     ) -> list[str]:
@@ -277,10 +314,11 @@ class CalibrationDAG:
         routine set with no targets — which is reported as ``failed`` rather
         than as a success that measured nothing.
 
-        *on_progress* is told where the walk has got to after each target, for the
-        dashboard to show during the hours before a report exists. A sink that
-        raises is logged and the walk carries on: nobody loses a calibration
-        because the thing watching it went away.
+        *on_progress* is told the plan once, before anything runs, and then where
+        the walk has got to after each target — the first so the dashboard can draw
+        the graph, the rest so it can colour it during the hours before a report
+        exists. A sink that raises is logged and the walk carries on: nobody loses a
+        calibration because the thing watching it went away.
         """
         report = CalibrationReport(
             timestamp=utc_timestamp(), duration_s=0.0, mode=mode, backend=backend.name
@@ -308,6 +346,16 @@ class CalibrationDAG:
             len(order),
             len(config.target_qubits),
             len(config.target_edges),
+        )
+
+        # Before the first target, so the dashboard has a graph to colour rather
+        # than a graph that appears one routine late.
+        _report_progress(
+            on_progress,
+            {
+                "plan": self.plan(order, config, device),
+                "target_qubits": list(config.target_qubits),
+            },
         )
 
         ran_any = False
@@ -452,7 +500,7 @@ def utc_timestamp() -> str:
 
 
 def _report_progress(sink: ProgressSink | None, update: dict[str, Any]) -> None:
-    """Tell *sink* where the walk is, if there is one, without letting it stop the walk."""
+    """Hand *update* to *sink*, if there is one, without letting it stop the walk."""
     if sink is None:
         return
     try:
