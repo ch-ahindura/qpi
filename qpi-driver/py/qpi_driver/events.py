@@ -25,6 +25,7 @@ class EventType(str, Enum):
     CALIBRATE_DISPATCH = "CalibrateDispatch"
     CALIBRATION_RESULT = "CalibrationResult"
     CALIBRATION_PROGRESS = "CalibrationProgress"
+    CALIBRATION_QUEUED = "CalibrationQueued"
     QPU_STATE = "QPUState"
 
 

@@ -39,6 +39,9 @@ const (
 	// CalibrationProgress is emitted by a calibrate driver after each routine, so
 	// the dashboard can show where a walk that runs for hours has got to.
 	CalibrationProgress EventType = "CalibrationProgress"
+	// CalibrationQueued is emitted by a calibrate driver that has queued a
+	// calibration of its own, which QPI-UI has no request row for otherwise.
+	CalibrationQueued EventType = "CalibrationQueued"
 	// QPUState tells a driver its QPU's service state: online, maintenance or
 	// disabled. Re-asserted on change, so a driver that reconnects is told again.
 	QPUState EventType = "QPUState"

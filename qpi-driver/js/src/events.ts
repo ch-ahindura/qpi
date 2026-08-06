@@ -20,6 +20,7 @@ export enum EventType {
   CalibrateDispatch = "CalibrateDispatch",
   CalibrationResult = "CalibrationResult",
   CalibrationProgress = "CalibrationProgress",
+  CalibrationQueued = "CalibrationQueued",
   QPUState = "QPUState",
 }
 

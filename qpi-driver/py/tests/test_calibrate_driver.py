@@ -285,6 +285,35 @@ class TestTheDriftTimer:
         driver._check_fidelity()
         assert driver._job_queue.items == []
 
+    def test_a_drift_check_announces_itself_before_queueing(self, monkeypatch):
+        """Nobody dispatched it, so QPI-UI has no row for it unless the driver says so.
+
+        Before the job is queued, so the row exists before progress reports on it.
+        """
+        driver = _driver(drift_check_interval=900)
+        emitted: list[Event] = []
+        monkeypatch.setattr(driver, "emit", emitted.append)
+
+        driver._check_fidelity()
+
+        assert emitted[0].type is EventType.CALIBRATION_QUEUED
+        assert emitted[0].payload == {
+            "job_id": DRIFT_CHECK_JOB_ID,
+            "mode": "fidelity_check",
+            "target_qubits": [],
+            "reason": "the drift timer",
+        }
+
+    def test_a_skipped_drift_check_announces_nothing(self, monkeypatch):
+        driver = _driver(drift_check_interval=900)
+        driver._busy.set()
+        emitted: list[Event] = []
+        monkeypatch.setattr(driver, "emit", emitted.append)
+
+        driver._check_fidelity()
+
+        assert emitted == []
+
 
 def _pump_once(driver, item, monkeypatch):
     """Run the pump over one item, then stop it."""
@@ -375,7 +404,7 @@ class TestResultPump:
         report = CalibrationReport(
             timestamp="t", duration_s=1.0, mode="fidelity_check", backend="stub"
         )
-        _pump_once(
+        emitted = _pump_once(
             driver,
             {
                 "job_id": DRIFT_CHECK_JOB_ID,
@@ -389,6 +418,15 @@ class TestResultPump:
         assert driver._job_queue.items == [
             {"mode": "partial", "job_id": "r1", "target_qubits": ["q0"]}
         ]
+        # Announced too, and after the drift check's own result: a recalibration
+        # nobody asked for is otherwise a QPU busy for hours with nothing to show why.
+        queued = [e for e in emitted if e.type is EventType.CALIBRATION_QUEUED]
+        assert queued[0].payload == {
+            "job_id": "r1",
+            "mode": "partial",
+            "target_qubits": ["q0"],
+            "reason": f"drift measured by {DRIFT_CHECK_JOB_ID}",
+        }
 
 
 class _ConfigRecordingTuner(StubTuner):

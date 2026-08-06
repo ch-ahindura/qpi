@@ -138,6 +138,7 @@ class CalibrateDriver(QpiDriver):
             return
         log.info("Queuing periodic drift check")
         self._busy.set()
+        self._emit_queued(DRIFT_CHECK_JOB_ID, "fidelity_check", [], "the drift timer")
         self._job_queue.put(
             {
                 "mode": "fidelity_check",
@@ -197,7 +198,43 @@ class CalibrateDriver(QpiDriver):
             for follow_up in item.get("follow_up", []):
                 log.info("Drift detected; queuing recalibration of %s", follow_up)
                 self._busy.set()
+                self._emit_queued(
+                    follow_up["job_id"],
+                    follow_up["mode"],
+                    follow_up.get("target_qubits") or [],
+                    f"drift measured by {job_id}",
+                )
                 self._job_queue.put(follow_up)
+
+    def _emit_queued(
+        self, job_id: str, mode: str, target_qubits: list[str], reason: str
+    ) -> None:
+        """Say that this driver has queued a calibration nobody dispatched.
+
+        A drift check and the recalibration it triggers run on this driver's clock,
+        so QPI-UI has no queued row for either and its Calibration tab showed hours
+        of nothing. This is what gives them one — announced before the job is queued,
+        so the row exists before any progress reports against it.
+
+        Best-effort: the calibration is the point and the announcement is not, so a
+        socket that will not carry it costs the dashboard a row, not the chip a
+        recalibration.
+        """
+        try:
+            self.emit(
+                Event(
+                    type=EventType.CALIBRATION_QUEUED,
+                    driver=self.name,
+                    payload={
+                        "job_id": job_id,
+                        "mode": mode,
+                        "target_qubits": list(target_qubits),
+                        "reason": reason,
+                    },
+                )
+            )
+        except Exception:  # noqa: BLE001 - see above
+            log.warning("could not announce calibration %s", job_id, exc_info=True)
 
     def _emit_progress(self, job_id: str, update: dict[str, Any]) -> None:
         """Emit one CalibrationProgress, so the dashboard can show a walk in flight.
