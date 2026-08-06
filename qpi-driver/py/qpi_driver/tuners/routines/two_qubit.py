@@ -10,7 +10,7 @@ import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
-from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
 from qpi_driver.tuners.base.device import (
     phase_correction_names,
     read_path,
@@ -138,6 +138,7 @@ class CouplerAnticrossing(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
         if bias is None or not getattr(bias, "holds_current", False):
             # A recorder counts as nothing here, and that distinction is the point.
@@ -171,7 +172,8 @@ class CouplerAnticrossing(CalibrationRoutine):
                 schedule = self._probe(parent, frequencies, config, backend)
                 try:
                     fitted = fit_resonator_spectroscopy(
-                        frequencies, signal_of(backend.run(schedule))
+                        frequencies,
+                        signal_of(backend.run(schedule, timeout_s=timeout_s)),
                     )
                 except FitError:
                     # A bias that pushed the qubit clean out of the window is not a

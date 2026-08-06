@@ -388,7 +388,12 @@ class CalibrationDAG:
                 # loop — see `CalibrationRoutine.measure`. One node needs this and the
                 # rest must not pay for it.
                 params = routine.measure(
-                    target, device, routine_config, backend, self.bias
+                    target,
+                    device,
+                    routine_config,
+                    backend,
+                    self.bias,
+                    timeout_s=config.routine_timeout_s,
                 )
                 elapsed = time.monotonic() - started
                 if elapsed > config.routine_timeout_s:

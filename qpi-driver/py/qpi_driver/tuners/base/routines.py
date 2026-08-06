@@ -18,7 +18,7 @@ from typing import Any, Literal
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
-from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
 
 log = logging.getLogger(__name__)
 
@@ -144,6 +144,7 @@ class CalibrationRoutine(ABC):
         config: Any,
         backend: Any,
         bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
         """Run the whole measurement, for a routine one schedule cannot express.
 
@@ -163,6 +164,12 @@ class CalibrationRoutine(ABC):
         against the reference pipelines' `external_samplespace`. The DAG calls this
         instead of the standard path, and *bias* is whatever can park a coupler, or
         ``None`` when nothing can.
+
+        *timeout_s* is the walk's ``routine_timeout_s``, and an override has to hand
+        it to every `backend.run` it makes. It cannot be read from *config*, which is
+        this routine's own `RoutineConfig` and knows nothing of the walk — so a loop
+        that drops it silently bounds each of its acquisitions by the default instead
+        of by what the operator set.
 
         Returns the same fitted parameters `analyse` would.
         """

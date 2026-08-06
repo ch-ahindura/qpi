@@ -77,6 +77,22 @@ class FailingRoutine(StubRoutine):
         raise RoutineError("could not fit")
 
 
+class SelfMeasuringRoutine(StubRoutine):
+    """Runs its own acquisition loop, as `coupler_anticrossing` does."""
+
+    def measure(
+        self,
+        target,
+        device,
+        config,
+        backend,
+        bias=None,
+        timeout_s=DEFAULT_ROUTINE_TIMEOUT_S,
+    ):
+        backend.run(backend.new_schedule(self.name), timeout_s=timeout_s)
+        return {"value": 1.0}
+
+
 class CheckableRoutine(StubRoutine):
     """A stub whose check outcome is scripted rather than measured.
 
@@ -498,6 +514,16 @@ class TestTheWalk:
         config.routine_timeout_s = 1800.0
         backend = FakeBackend()
         CalibrationDAG([StubRoutine("a")], config).run(
+            device=None, backend=backend, config=config
+        )
+        assert backend.timeouts == [1800.0]
+
+    def test_a_self_measuring_routine_gets_the_configured_ceiling_too(self):
+        """Its loop makes its own `backend.run` calls, which the DAG never sees."""
+        config = _config()
+        config.routine_timeout_s = 1800.0
+        backend = FakeBackend()
+        CalibrationDAG([SelfMeasuringRoutine("a")], config).run(
             device=None, backend=backend, config=config
         )
         assert backend.timeouts == [1800.0]
