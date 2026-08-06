@@ -233,7 +233,7 @@ class StubBackend(RecordingBackend):
     supply data fails loudly instead of fitting a fabrication.
     """
 
-    def run(self, schedule: _Schedule) -> xr.Dataset:
+    def run(self, schedule: _Schedule, timeout_s: float | None = None) -> xr.Dataset:
         raise NotImplementedError(
             "StubBackend does not run schedules; supply the acquisition yourself, "
             "or use SimulatedBackend"
@@ -276,7 +276,7 @@ class SimulatedBackend(RecordingBackend):
         #: transmon cannot hold — see :mod:`qpi_driver.simulation.coupled`.
         self.coupled = coupled or CoupledTransmons()
 
-    def run(self, schedule: _Schedule) -> xr.Dataset:
+    def run(self, schedule: _Schedule, timeout_s: float | None = None) -> xr.Dataset:
         acquire = self._ACQUISITIONS.get(schedule.name)
         if acquire is None:
             raise NotImplementedError(

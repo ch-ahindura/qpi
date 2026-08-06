@@ -37,6 +37,7 @@ from qpi_driver.executors.qblox.config import (
     load_quantum_device,
 )
 from qpi_driver.tuners.base import SchedulerBackend, Tuner
+from qpi_driver.tuners.base.backend import DEFAULT_ACQUISITION_TIMEOUT_S
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ class QbloxBackend(SchedulerBackend):
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
         return TimeableSchedule(name=name, repetitions=repetitions)
 
-    def run(self, schedule: Any) -> xr.Dataset:
+    def run(self, schedule: Any, timeout_s: float | None = None) -> xr.Dataset:
         # The agent owns compilation and execution together, which is the whole
         # of the difference from quantify's separate compiler and coordinator.
         #
@@ -94,6 +95,7 @@ class QbloxBackend(SchedulerBackend):
         # nothing, so the two would differ in what a calibration leaves behind.
         return self._agent.run(
             schedule,
+            timeout=int(timeout_s or DEFAULT_ACQUISITION_TIMEOUT_S),
             save_to_experiment=self._should_save_raw_data,
             save_snapshot=self._should_save_raw_data,
         )

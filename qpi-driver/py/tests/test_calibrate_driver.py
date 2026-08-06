@@ -23,6 +23,7 @@ from qpi_driver.builtins.registry import Operation, devices, resolve
 from qpi_driver.events import Event, EventType
 from qpi_driver.options import Options
 from qpi_driver.tuners import Tuner, resolve_tuner
+from qpi_driver.tuners.base.backend import DEFAULT_ACQUISITION_TIMEOUT_S
 from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.report import BenchmarkResult, CalibrationReport
 
@@ -833,7 +834,8 @@ class TestSavingRawData:
         agent = _RecordingAgent()
         QbloxBackend(agent).run("schedule")
 
-        assert agent.kwargs == {"save_to_experiment": False, "save_snapshot": False}
+        assert agent.kwargs["save_to_experiment"] is False
+        assert agent.kwargs["save_snapshot"] is False
 
     def test_the_qblox_backend_saves_both_when_asked(self):
         from qpi_driver.tuners.qblox import QbloxBackend
@@ -841,4 +843,67 @@ class TestSavingRawData:
         agent = _RecordingAgent()
         QbloxBackend(agent, should_save_raw_data=True).run("schedule")
 
-        assert agent.kwargs == {"save_to_experiment": True, "save_snapshot": True}
+        assert agent.kwargs["save_to_experiment"] is True
+        assert agent.kwargs["save_snapshot"] is True
+
+
+class _RecordingCoordinator:
+    def prepare(self, compiled):
+        pass
+
+    def start(self):
+        pass
+
+    def wait_done(self, timeout_sec):
+        self.timeout_sec = timeout_sec
+
+    def retrieve_acquisition(self):
+        return "dataset"
+
+
+def _passthrough_compiler():
+    return type("Compiler", (), {"compile": staticmethod(lambda schedule: schedule)})()
+
+
+class TestRoutineTimeoutBoundsTheWait:
+    """`routine_timeout_s` has to reach the instruments to mean anything.
+
+    Its whole purpose is that a routine hanging on an instrument must not hang the
+    worker, and the elapsed-time check in `_run_one` cannot do that on its own: it
+    runs after `wait_done` has returned, so it reports a hang rather than ending
+    one. The number is only a ceiling if the wait itself is given it.
+    """
+
+    def test_the_quantify_backend_waits_as_long_as_it_is_told(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_passthrough_compiler(), coordinator).run(
+            "schedule", timeout_s=3600
+        )
+
+        assert coordinator.timeout_sec == 3600
+
+    def test_the_quantify_backend_falls_back_when_told_nothing(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_passthrough_compiler(), coordinator).run("schedule")
+
+        assert coordinator.timeout_sec == DEFAULT_ACQUISITION_TIMEOUT_S
+
+    def test_the_qblox_backend_passes_it_to_the_agent(self):
+        from qpi_driver.tuners.qblox import QbloxBackend
+
+        agent = _RecordingAgent()
+        QbloxBackend(agent).run("schedule", timeout_s=3600)
+
+        assert agent.kwargs["timeout"] == 3600
+
+    def test_the_qblox_backend_falls_back_when_told_nothing(self):
+        from qpi_driver.tuners.qblox import QbloxBackend
+
+        agent = _RecordingAgent()
+        QbloxBackend(agent).run("schedule")
+
+        assert agent.kwargs["timeout"] == DEFAULT_ACQUISITION_TIMEOUT_S

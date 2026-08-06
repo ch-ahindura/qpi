@@ -156,7 +156,7 @@ class CalibrationDAG:
                 )
                 if schedule is None:
                     continue
-                dataset = backend.run(schedule)
+                dataset = backend.run(schedule, timeout_s=config.routine_timeout_s)
                 outcome = routine.analyse_check(dataset, target, device, routine_config)
             except Exception:  # noqa: BLE001 - an unevaluable check is not drift
                 log.warning(
@@ -409,7 +409,10 @@ class CalibrationDAG:
                 return True
 
             schedule = routine.build_schedule(target, device, routine_config, backend)
-            dataset = backend.run(schedule)
+            # The ceiling goes *into* the wait rather than only being checked after
+            # it: `wait_done` blocks, so the check below can report a hang but never
+            # end one.
+            dataset = backend.run(schedule, timeout_s=config.routine_timeout_s)
             elapsed = time.monotonic() - started
             if elapsed > config.routine_timeout_s:
                 raise RoutineError(

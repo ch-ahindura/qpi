@@ -32,6 +32,7 @@ class FakeBackend(SchedulerBackend):
 
     def __init__(self, dataset: xr.Dataset | None = None) -> None:
         self.ran: list[Any] = []
+        self.timeouts: list[float | None] = []
         self._dataset = (
             dataset if dataset is not None else xr.Dataset({"y": ("x", [1.0, 2.0])})
         )
@@ -39,8 +40,9 @@ class FakeBackend(SchedulerBackend):
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
         return {"name": name, "ops": []}
 
-    def run(self, schedule: Any) -> xr.Dataset:
+    def run(self, schedule: Any, timeout_s: float | None = None) -> xr.Dataset:
         self.ran.append(schedule)
+        self.timeouts.append(timeout_s)
         return self._dataset
 
 
@@ -483,6 +485,16 @@ class TestTheWalk:
         )
         assert report.status == "failed"
         assert "routine_timeout_s" in report.errors[0]
+
+    def test_the_timeout_reaches_the_backend_rather_than_only_the_stopwatch(self):
+        """Checked after the fact it can report a hang; passed down it can end one."""
+        config = _config()
+        config.routine_timeout_s = 1800.0
+        backend = FakeBackend()
+        CalibrationDAG([StubRoutine("a")], config).run(
+            device=None, backend=backend, config=config
+        )
+        assert backend.timeouts == [1800.0]
 
     def test_the_report_names_its_backend(self):
         report = CalibrationDAG([StubRoutine("a")], _config()).run(

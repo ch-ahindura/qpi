@@ -16,6 +16,11 @@ from typing import Any
 
 import xarray as xr
 
+#: Fallback wait for one schedule when the caller names no timeout — a backend driven
+#: directly, or a routine running its own acquisition loop. The DAG passes
+#: ``routine_timeout_s``, which is the number an operator actually sets.
+DEFAULT_ACQUISITION_TIMEOUT_S = 60
+
 
 class SchedulerBackend(ABC):
     """The scheduler operations a routine composes, plus a way to run the result.
@@ -91,8 +96,14 @@ class SchedulerBackend(ABC):
         """An empty schedule this backend's compiler will accept."""
 
     @abstractmethod
-    def run(self, schedule: Any) -> xr.Dataset:
-        """Compile, execute and retrieve *schedule* as an acquisition dataset."""
+    def run(self, schedule: Any, timeout_s: float | None = None) -> xr.Dataset:
+        """Compile, execute and retrieve *schedule* as an acquisition dataset.
+
+        *timeout_s* bounds the wait on the instruments, and the DAG passes the
+        routine's own ``routine_timeout_s``. It has to be passed down rather than
+        checked afterwards: the wait blocks, so a ceiling applied to the elapsed
+        time once it returns cannot interrupt a sequencer that never stops.
+        """
 
     def idle(self, schedule: Any, duration: float) -> None:
         """Append an idle of *duration* seconds — the delay every T1/T2 sweep needs.
