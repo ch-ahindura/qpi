@@ -181,13 +181,13 @@ export const App: React.FC = () => {
 
   const loadCalibrationRequests = useCallback(async () => {
     try {
-      // Only what is still in flight: a calibration takes hours, and this is
-      // what lets the panel say "in progress" during the gap before a report
-      // exists. Finished requests are represented by their report.
+      // The newest requests whatever their status. The in-flight ones are what
+      // let the panel say "in progress" during the hours before a report exists;
+      // the finished ones are there for the graph, which is only on the request
+      // while the parameters it explains are only in the report (RFC 0006 §6).
       const records = await pb
         .collection("calibration_requests")
         .getList(1, 50, {
-          filter: 'status = "pending" || status = "running"',
           sort: "-created",
           expand: "driver,requested_by",
         });

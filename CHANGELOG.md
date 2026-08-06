@@ -21,6 +21,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   and showing each one's `3/5` tally. A bar said `step 7 of 33` and nothing about what
   the run had reached, what a failure had stranded downstream of it, or which part of
   the graph a partial run was leaving alone.
+- `qpi-ui`: clicking a routine in the graph says what it measures, which device paths it
+  writes, what it depends on and feeds, and how the run went on each target — the fitted
+  parameters, the duration, and the fit error that stopped it. The report listed the same
+  numbers with no way to ask about one routine.
 - `qpi-ui`: a calibration request stores the graph its driver is walking, and its
   `progress.nodes` map accumulates each routine's state — `running`, `done`, `partial`
   or `failed`, with the targets finished out of its total. `progress` only ever held

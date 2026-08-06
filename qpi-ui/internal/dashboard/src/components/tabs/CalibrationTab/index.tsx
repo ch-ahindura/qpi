@@ -4,6 +4,9 @@ import type { CalibrationRequest, CalibrationResult, Driver } from "@/types";
 import { TUNER_KINDS } from "@/types";
 import { CalibrationGraph } from "./elements/CalibrationGraph";
 import { FidelityGrid } from "./elements/FidelityGrid";
+import { statusOf } from "./elements/layout";
+import { NodeCard } from "./elements/NodeCard";
+import { reportFor } from "./elements/nodeDetail";
 import { ParameterTable } from "./elements/ParameterTable";
 import {
   TriggerCalibrationModal,
@@ -77,15 +80,32 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
     [visible],
   );
 
-  const inFlight = useMemo(
+  const forDriver = useMemo(
     () =>
       requests.filter(
-        (r) =>
-          (r.status === "running" || r.status === "pending") &&
-          (selectedDriver === "all" || r.driver === selectedDriver),
+        (r) => selectedDriver === "all" || r.driver === selectedDriver,
       ),
     [requests, selectedDriver],
   );
+
+  const inFlight = useMemo(
+    () =>
+      forDriver.filter((r) => r.status === "running" || r.status === "pending"),
+    [forDriver],
+  );
+
+  // One graph per tuner: the run it is making, or the last one it made. The
+  // finished ones matter because a plan is only on the request, while the fitted
+  // parameters the card shows are only in the report — so the graph has to outlive
+  // the walk for the two to ever be in front of an operator together.
+  const graphed = useMemo(() => {
+    const newest = new Map<string, CalibrationRequest>();
+    for (const request of forDriver) {
+      if (!request.plan?.nodes?.length) continue;
+      if (!newest.has(request.driver)) newest.set(request.driver, request);
+    }
+    return [...newest.values()];
+  }, [forDriver]);
 
   return (
     <div className="space-y-8">
@@ -205,22 +225,13 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
           {/* One per run that published a plan. A drift check sends none — it walks
               four benchmarks with nothing between them, and the bar above says all
               there is to say about it (RFC 0006 D6). */}
-          {inFlight
-            .filter((request) => request.plan?.nodes?.length)
-            .map((request) => (
-              <section key={`graph-${request.id}`}>
-                <h2 className="text-sm uppercase tracking-wider text-gray-500 dark:text-zinc-500 mb-3">
-                  {request.mode.replace("_", " ")} calibration graph
-                  <span className="ml-2 normal-case tracking-normal text-gray-400 dark:text-zinc-600">
-                    on {request.expand?.driver?.name ?? request.driver}
-                  </span>
-                </h2>
-                <CalibrationGraph
-                  plan={request.plan!}
-                  nodes={request.progress?.nodes}
-                />
-              </section>
-            ))}
+          {graphed.map((request) => (
+            <GraphSection
+              key={`graph-${request.id}`}
+              request={request}
+              results={results}
+            />
+          ))}
 
           <section>
             <h2 className="text-sm uppercase tracking-wider text-gray-500 dark:text-zinc-500 mb-3">
@@ -340,5 +351,58 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
         />
       )}
     </div>
+  );
+};
+
+/** One tuner's graph, beside the card for whichever node is selected.
+ *
+ * A component of its own because the selection is per graph, and a hook cannot live
+ * inside the loop that renders them. */
+const GraphSection: React.FC<{
+  request: CalibrationRequest;
+  results: CalibrationResult[];
+}> = ({ request, results }) => {
+  const [selected, setSelected] = useState<string | null>(null);
+  const plan = request.plan!;
+  const report = useMemo(() => reportFor(request, results), [request, results]);
+
+  const node = plan.nodes.find((n) => n.name === selected);
+  const reported = selected ? request.progress?.nodes?.[selected] : undefined;
+  const running = request.status === "running" || request.status === "pending";
+
+  return (
+    <section>
+      <h2 className="text-sm uppercase tracking-wider text-gray-500 dark:text-zinc-500 mb-3">
+        {request.mode.replace("_", " ")} calibration graph
+        <span className="ml-2 normal-case tracking-normal text-gray-400 dark:text-zinc-600">
+          on {request.expand?.driver?.name ?? request.driver}
+          {!running && ` · finished ${request.status}`}
+        </span>
+      </h2>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] items-start">
+        <CalibrationGraph
+          plan={plan}
+          nodes={request.progress?.nodes}
+          selected={selected}
+          onSelect={setSelected}
+        />
+        {node ? (
+          <NodeCard
+            node={node}
+            status={statusOf(node, reported)}
+            done={reported?.done ?? 0}
+            total={reported?.total || node.targets.length}
+            plan={plan}
+            report={report}
+            onSelect={setSelected}
+          />
+        ) : (
+          <p className="text-xs text-gray-400 dark:text-zinc-600 lg:pt-2">
+            Click a routine for what it measures, what it writes, and how it
+            went on each target.
+          </p>
+        )}
+      </div>
+    </section>
   );
 };

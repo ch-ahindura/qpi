@@ -22,6 +22,13 @@ declare namespace Cypress {
     seedCalibration(
       fields?: Record<string, unknown>,
     ): Chainable<SeededCalibration>;
+    /** The report a run produced, on *driverId*. Timestamped now unless told
+     * otherwise, so it lands after the request it answers — which is how the two are
+     * matched, a report carrying no job id. Seed it *after* the request. */
+    seedCalibrationReport(
+      driverId: string,
+      fields?: Record<string, unknown>,
+    ): Chainable<string>;
   }
 }
 
@@ -63,9 +70,12 @@ function deleteAll(token: string, col: string, filter?: string) {
 
 Cypress.Commands.add("resetDb", () => {
   asSuperuser().then((token) => {
-    ["notifications", "qpu_time_requests", "calibration_requests"].forEach(
-      (col) => deleteAll(token, col),
-    );
+    [
+      "notifications",
+      "qpu_time_requests",
+      "calibration_requests",
+      "calibration_results",
+    ].forEach((col) => deleteAll(token, col));
     deleteAll(token, "drivers", `name = "${SEEDED_TUNER}"`);
   });
 });
@@ -114,8 +124,33 @@ Cypress.Commands.add("seedCalibration", (fields = {}) => {
           })
           .then((request) => ({
             driverId,
+            qpuId,
             requestId: request.body.id as string,
           })),
       );
   });
+});
+
+Cypress.Commands.add("seedCalibrationReport", (driverId, fields = {}) => {
+  return asSuperuser().then((token) =>
+    cy
+      .request({
+        method: "POST",
+        url: `${PB}/api/collections/calibration_results/records`,
+        headers: { Authorization: token },
+        body: {
+          driver: driverId,
+          timestamp: new Date().toISOString(),
+          duration_s: 100,
+          mode: "full",
+          backend: "cypress",
+          status: "success",
+          routine_results: [],
+          benchmarks: [],
+          errors: [],
+          ...fields,
+        },
+      })
+      .then((result) => result.body.id as string),
+  );
 });

@@ -10,6 +10,8 @@ interface CalibrationGraphProps {
   plan: CalibrationPlan;
   /** What the walk has reported per routine. Absent before the first routine ends. */
   nodes?: Record<string, CalibrationNodeState>;
+  selected?: string | null;
+  onSelect?: (routine: string) => void;
 }
 
 // Eleven layers at this pitch is ~700px tall and eight nodes wide is ~1200px, so the
@@ -76,6 +78,8 @@ const LEGEND: { status: CalibrationNodeStatus; label: string }[] = [
 export const CalibrationGraph: React.FC<CalibrationGraphProps> = ({
   plan,
   nodes,
+  selected,
+  onSelect,
 }) => {
   const layout = useMemo(() => layoutGraph(plan, nodes ?? {}), [plan, nodes]);
 
@@ -136,6 +140,9 @@ export const CalibrationGraph: React.FC<CalibrationGraphProps> = ({
                 key={placed.node.name}
                 data-testid={`calibration-node-${placed.node.name}`}
                 data-status={placed.status}
+                data-selected={placed.node.name === selected || undefined}
+                onClick={() => onSelect?.(placed.node.name)}
+                className={onSelect ? "cursor-pointer" : undefined}
               >
                 <title>{`${placed.node.name} — ${placed.status}`}</title>
                 <rect
@@ -144,7 +151,7 @@ export const CalibrationGraph: React.FC<CalibrationGraphProps> = ({
                   width={NODE_W}
                   height={NODE_H}
                   rx={4}
-                  strokeWidth={1}
+                  strokeWidth={placed.node.name === selected ? 2.5 : 1}
                   strokeDasharray={style.dashed ? "3 3" : undefined}
                   className={style.box}
                 />
