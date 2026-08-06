@@ -12,6 +12,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a calibration logs where it has got to — `[7/33] rabi q2 ok in 41.2s`
   per routine and target, each check's verdict as it is measured, and a closing summary.
   A full walk is hours that previously said nothing until it finished.
+- `qpi-ui`: the Calibration tab shows a walk in flight — `step 7 of 33 — rabi on q2`,
+  the ok/failed counts and a bar. Fed by a new `CalibrationProgress` event, which
+  lands on the queued request rather than being kept as history.
 - `qpi-driver/py`: `--data-dir` (env `QPI_DATA_DIR`) is universal, rather than each
   device's own `-o data_dir=`, which still overrides it. A device builder receives
   `data_dir` alongside the transport arguments, so one outside this SDK has to accept it.

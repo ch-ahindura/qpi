@@ -277,8 +277,23 @@ export interface CalibrationRequest {
   target_qubits?: string[];
   target_edges?: string[];
   status: "pending" | "running" | "done" | "failed";
+  /** Where the walk has got to, replaced on each CalibrationProgress event. Absent
+   * until the first routine finishes, and on a request that predates the field. */
+  progress?: CalibrationProgress;
   created: string;
   expand?: {
     driver?: Driver;
   };
+}
+
+/** One routine and target of a walk in flight, with its running totals. */
+export interface CalibrationProgress {
+  mode: string;
+  step: number;
+  total: number;
+  routine: string;
+  target: string;
+  succeeded: number;
+  failed: number;
+  elapsed_s: number;
 }

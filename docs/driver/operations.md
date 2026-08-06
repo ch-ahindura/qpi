@@ -192,6 +192,18 @@ curl -X POST "$QPI_ADDR/api/op/calibrate/dispatch" \
 until the first reports. A `full` run is hours, so prefer `fidelity_check`
 (minutes, changes nothing) to find out whether a full run is warranted.
 
+**Watching one run.** A tuner emits `CalibrationProgress` after each routine and
+target, which lands on the queued request's `progress` field — so the Calibration
+tab shows `step 7 of 33 — rabi on q2` and a bar, live. The same thing is in the
+driver's own journal in more detail, one line per target plus each check's verdict:
+
+```bash
+journalctl -u <service-name>.qpi-driver.service -f
+```
+
+A driver's own drift check reports progress too, but it answers to no queued row,
+so that one is visible only in the journal.
+
 **The device file has a backup.** Every successful write-back leaves the previous
 file as `quantify.device.yml.prev`. If a calibration makes fidelity worse, that
 is the fastest way back — no restart, and no waiting on another calibration:

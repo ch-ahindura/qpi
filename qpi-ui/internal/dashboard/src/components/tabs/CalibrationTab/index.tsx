@@ -138,15 +138,47 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
               <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
               <div className="text-sm text-blue-800 dark:text-blue-300">
                 {inFlight.map((request) => (
-                  <div key={request.id}>
-                    <span className="font-medium">
-                      {request.expand?.driver?.name ?? request.driver}
-                    </span>{" "}
-                    — {request.mode.replace("_", " ")} calibration{" "}
-                    {request.status === "running"
-                      ? "in progress"
-                      : "queued, waiting for the driver"}
-                    . A full run can take hours.
+                  <div key={request.id} className="space-y-1">
+                    <div>
+                      <span className="font-medium">
+                        {request.expand?.driver?.name ?? request.driver}
+                      </span>{" "}
+                      — {request.mode.replace("_", " ")} calibration{" "}
+                      {request.status === "running"
+                        ? "in progress"
+                        : "queued, waiting for the driver"}
+                      . A full run can take hours.
+                    </div>
+                    {/* Only once a routine has finished: before that there is no
+                        position to show, and "0 of 33" would read as stuck. */}
+                    {request.progress && (
+                      <div data-testid="calibration-progress">
+                        <div className="flex items-center justify-between gap-4 text-xs">
+                          <span>
+                            step {request.progress.step} of{" "}
+                            {request.progress.total} —{" "}
+                            <span className="font-medium">
+                              {request.progress.routine}
+                            </span>{" "}
+                            on {request.progress.target}
+                          </span>
+                          <span className="tabular-nums whitespace-nowrap">
+                            {request.progress.succeeded} ok
+                            {request.progress.failed > 0 &&
+                              `, ${request.progress.failed} failed`}{" "}
+                            · {formatDuration(request.progress.elapsed_s)}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1 w-full rounded bg-blue-200 dark:bg-blue-500/20">
+                          <div
+                            className="h-1 rounded bg-blue-600 dark:bg-blue-400 transition-all"
+                            style={{
+                              width: `${Math.min(100, (request.progress.step / request.progress.total) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
