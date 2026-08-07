@@ -2,12 +2,35 @@
 
 VERSION ?= 0.4.1
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
+EXECUTORS := mock aer quantify qblox
 
 # Scratch locations for the documentation checks. Under bin/, which is already
 # ignored, so a failed run leaves nothing in the working tree for git to notice.
 DOCS_EXAMPLE_VENV := bin/.docs-example-venv
 DOCS_SITE_VENV := bin/.docs-site-venv
 DOCS_SITE_OUT := bin/.docs-site
+# The framework modules the coverage floor applies to: the SDK, the CLI, the device
+# registry and its options, and the executors that need no hardware. Everything else
+# is reported but not gated — see cov-py.
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
+PY_COV_MIN := 96
+
+
+# `uv sync` reinstalls qblox_instruments, and macOS strips the code signature
+# from the q1asm assembler it bundles — after which every schedule that
+# assembles dies with "Assembly failed". So each target that syncs has to put
+# the signature back. Silent and `|| true`: on Linux, and in an environment
+# without qblox_instruments at all, there is nothing to sign and that is fine.
+RESIGN_Q1ASM = @if [ "$$(uname)" = "Darwin" ]; then codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; fi
+
+# The Go packages the coverage floor applies to: the device registry and the CLI over
+# it, both of which need no server. The base SDK (driver.go: Run, recvLoop, the TLS
+# dialling) and `qpi-driver/main.go` are reported but not gated — the first needs a
+# live server and is covered by `make test-e2e-driver`, and the second is `main`,
+# which no in-process test can call. `cli.Execute` is inside a gated package but
+# calls os.Exit, hence 94 rather than 96.
+GO_COV_GATED := ./devices/... ./cli/...
+GO_COV_MIN := 94
 
 all: build
 
@@ -18,12 +41,6 @@ venv-check:
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi
 
-# `uv sync` reinstalls qblox_instruments, and macOS strips the code signature
-# from the q1asm assembler it bundles — after which every schedule that
-# assembles dies with "Assembly failed". So each target that syncs has to put
-# the signature back. Silent and `|| true`: on Linux, and in an environment
-# without qblox_instruments at all, there is nothing to sign and that is fine.
-RESIGN_Q1ASM = @if [ "$$(uname)" = "Darwin" ]; then codesign --force --deep --sign - qpi-driver/py/.venv/lib/python3.12/site-packages/qblox_instruments/assemblers/q1asm_macos 2>/dev/null || true; fi
 
 build: venv-check build-dashboard
 	@echo "Building Go server..."
@@ -130,17 +147,15 @@ test-go-minimal:
 	@echo "Running Go server unit tests..."
 	(cd qpi-ui && go test -race -cover ./...)
 
-test-py: test-py-base test-py-cli test-py-aer test-py-quantify test-py-qblox test-py-sim test-py-loop
+test-py: test-py-sim
+	@for exec in $(EXECUTORS); do \
+		$(MAKE) test-py-driver EXECUTOR=$$exec || exit 1; \
+		$(MAKE) test-py-loop EXECUTOR=$$exec || exit 1; \
+	done
 
-# The framework modules the coverage floor applies to: the SDK, the CLI, the device
-# registry and its options, and the executors that need no hardware. Everything else
-# is reported but not gated — see cov-py.
-PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
-PY_COV_MIN := 96
-
-test-py-base:
-	@echo "Running Python driver tests with base deps only (mock executor)..."
-	$(UV) sync --project qpi-driver/py --dev
+test-py-driver:
+	@echo "Running Python driver tests with [$(EXECUTOR)] extra..."
+	$(UV) sync --project qpi-driver/py --extra $(EXECUTOR) --dev
 	$(RESIGN_Q1ASM)
 	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
 
@@ -158,29 +173,6 @@ test-py-cli:
 	-(cd qpi-driver/py && $(UV) run coverage report \
 		--include='qpi_driver/executors/qblox/*,qpi_driver/executors/quantify/*,qpi_driver/executors/presto/*,qpi_driver/executors/qiskit_aer/*,qpi_driver/executors/utils/*,qpi_driver/compat/*')
 
-test-py-aer:
-	@echo "Running Python driver tests with [aer] extra..."
-	$(UV) sync --project qpi-driver/py --extra aer --dev
-	$(RESIGN_Q1ASM)
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
-
-test-py-quantify:
-	@echo "Running Python driver tests with [quantify] extra..."
-	$(UV) sync --project qpi-driver/py --extra quantify --dev
-	$(RESIGN_Q1ASM)
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
-
-test-py-qblox:
-	@echo "Running Python driver tests with [qblox] extra..."
-	$(UV) sync --project qpi-driver/py --extra qblox --dev
-	$(RESIGN_Q1ASM)
-	$(UV) run --project qpi-driver/py pytest qpi-driver/py/tests/ -v
-
-# Tier 3 of the calibration testing strategy (RFC 0004 §7): the routines against
-# acquisition data generated from a real transmon Hamiltonian (scqubits) and the
-# Lindblad master equation (qutip), rather than from the analytic form each fit
-# already assumes — and then the whole calibration end to end over that same
-# simulator. Needs no scheduler: it supplies the acquisition itself.
 test-py-sim:
 	@echo "Running Python calibration tests against the physics simulator..."
 	$(UV) sync --project qpi-driver/py --extra sim --dev
@@ -189,24 +181,14 @@ test-py-sim:
 		qpi-driver/py/tests/test_physics_simulation.py \
 		qpi-driver/py/tests/test_calibration_e2e.py
 
-# The two operations against one another, with only the cluster replaced: a
-# tuner calibrates a simulated chip, writes quantify.device.yml, and an executor
-# loads that file and runs circuits on the same chip. Needs a scheduler *and*
-# the simulator, which is why it is its own environment rather than folded into
-# test-py-quantify or test-py-sim.
 test-py-loop:
-	@echo "Running the calibrate/process loop against the simulated chip..."
-	# Both schedulers: the loop is parametrised over them, and syncing only one
-	# silently skips half the tests — which is how qblox stayed a stub.
-	$(UV) sync --project qpi-driver/py --extra quantify --extra qblox --extra sim --dev
+	@echo "Running the calibrate/process loop against the $(EXECUTOR) simulated chip..."
+	$(UV) sync --project qpi-driver/py --extra $(EXECUTOR) --extra sim --dev
 	$(RESIGN_Q1ASM)
 	# --no-sync, because `uv run` otherwise re-syncs to the project's *default*
-	# dependency set and prunes the `sim` group the line above just installed. Then
-	# every test in the file skips on `importorskip("scqubits")` and pytest exits 0,
-	# so the target reports success having run nothing. Seen when this follows
-	# test-py-sim in one `make test`, which is the order `make test` uses.
 	$(UV) run --no-sync --project qpi-driver/py pytest \
 		qpi-driver/py/tests/test_calibration_loop.py -v
+
 
 # The dashboard's pure helpers — graph layering and the state derivation beside it.
 # Anything needing a DOM is a Cypress spec against the real server instead
@@ -236,15 +218,6 @@ test-py-client:
 test-js-driver:
 	@echo "Running JS/TS driver SDK tests..."
 	(cd qpi-driver/js && npm ci && npm test)
-
-# The Go packages the coverage floor applies to: the device registry and the CLI over
-# it, both of which need no server. The base SDK (driver.go: Run, recvLoop, the TLS
-# dialling) and `qpi-driver/main.go` are reported but not gated — the first needs a
-# live server and is covered by `make test-e2e-driver`, and the second is `main`,
-# which no in-process test can call. `cli.Execute` is inside a gated package but
-# calls os.Exit, hence 94 rather than 96.
-GO_COV_GATED := ./devices/... ./cli/...
-GO_COV_MIN := 94
 
 test-go-driver:
 	@echo "Running Go driver SDK tests..."

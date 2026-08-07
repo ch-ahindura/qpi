@@ -15,15 +15,7 @@ env:
   RAW_VERSION: ${{ github.ref_name }}
 
 jobs:
-  # -------------------------------------------------------------------------
-  # The checks that do not vary by extra, run once rather than per matrix leg.
-  #
-  # These used to sit inside the matrix below, so every one of its five legs ran
-  # the same Go vet, the same ruff, and the same CLI suite — four redundant copies
-  # of each. `lint-go` depends on `build-dashboard`, so each leg also built the
-  # dashboard twice: once explicitly and once as that prerequisite.
-  # -------------------------------------------------------------------------
-  lint-and-test-shared:
+  lint-and-test-server-and-driver:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
@@ -59,21 +51,16 @@ jobs:
 
     - name: Test CLI
       run: make test-py-cli
+    
+    - name: Test simulator
+      run: |
+        make test-py-sim
 
-  # -------------------------------------------------------------------------
-  # Core lint-and-test matrix (server + driver)
-  # -------------------------------------------------------------------------
-  lint-and-test-server-and-driver:
+  lint-and-test-server-and-driver-per-extra:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25.x']
-        python-version: ['3.12']
-        node-version: ['20.x']
-        # 'sim' is not an executor — it is the simulated chip the tier-3
-        # physics tests and the whole calibrate/execute loop run against.
-        # Without it here, none of those ever run on CI.
-        extra: ['mock', 'aer', 'quantify', 'qblox', 'sim']
+        extra: ['mock', 'aer', 'quantify', 'qblox']
 
     steps:
     - name: Checkout Code
@@ -82,75 +69,63 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version: '1.25.x'
         cache-dependency-path: 'qpi-ui/go.sum'
 
     - name: Set up uv
       uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: '3.12'
         enable-cache: true
         cache-dependency-glob: "qpi-driver/py/pyproject.toml"
 
     - name: Set up nodejs
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: '20.x'
 
     - name: Install dependencies & formatting tools
       run: |
-        if [ "${{ matrix.extra }}" = "mock" ]; then
-          uv sync --project qpi-driver/py --extra cli --dev
-        elif [ "${{ matrix.extra }}" = "aer" ]; then
-          uv sync --project qpi-driver/py --extra cli --extra aer --dev
-        elif [ "${{ matrix.extra }}" = "quantify" ]; then
-          uv sync --project qpi-driver/py --extra cli --extra quantify --dev
-        elif [ "${{ matrix.extra }}" = "qblox" ]; then
-          uv sync --project qpi-driver/py --extra cli --extra qblox --dev
-        elif [ "${{ matrix.extra }}" = "sim" ]; then
-          # Both schedulers: the loop tests are parametrised over them.
-          uv sync --project qpi-driver/py --extra cli --extra quantify --extra qblox --extra sim --dev
-        fi
+        uv sync --project qpi-driver/py --extra cli --extra ${{ matrix.extra }} --dev
         sudo apt-get update && sudo apt-get install -y zip
 
-    # Only for the legs that go on to run a driver end to end: `build_server`
-    # is a bare `go build`, and main.go embeds the dashboard's dist. The `sim`
-    # leg runs no driver, so it needs no dashboard.
     - name: Build dashboard
-      if: matrix.extra != 'sim'
       run: make build-dashboard
 
     - name: Run Python Unit Tests for '${{ matrix.extra }}'
       run: |
-        if [ "${{ matrix.extra }}" = "mock" ]; then
-          make test-py-base
-        elif [ "${{ matrix.extra }}" = "aer" ]; then
-          make test-py-aer
-        elif [ "${{ matrix.extra }}" = "quantify" ]; then
-          make test-py-quantify
-        elif [ "${{ matrix.extra }}" = "qblox" ]; then
-          make test-py-qblox
-        elif [ "${{ matrix.extra }}" = "sim" ]; then
-          # The routines against real physics, then the whole loop: calibrate a
-          # simulated chip and run circuits on what the calibration wrote.
-          make test-py-sim
-          make test-py-loop
-        fi
+        make test-py-driver EXECUTOR=${{ matrix.extra }}
 
-    # 'sim' names no executor a driver can be started with, so there is no
-    # driver end-to-end run for it — its own end-to-end coverage is test-py-loop.
     - name: Run E2E Integration Tests for driver '${{ matrix.extra }}'
-      if: matrix.extra != 'sim'
       run: make test-e2e-driver EXECUTOR=${{ matrix.extra }}
+
+
+  test-simulated-calibrate-and-process-loop:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        extra: ['quantify', 'qblox']
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        python-version: '3.12'
+        enable-cache: true
+        cache-dependency-glob: "qpi-driver/py/pyproject.toml"
+
+    - name: Run Tests for '${{ matrix.extra }}'
+      run: |
+        make test-py-loop EXECUTOR=${{ matrix.extra }}
 
   # -------------------------------------------------------------------------
   # qpi-client / Go SDK
   # -------------------------------------------------------------------------
   lint-and-test-go-client:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: ['1.25.x']
 
     steps:
     - name: Checkout Code
@@ -159,7 +134,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: ${{ matrix.go-version }}
+        go-version: '1.25.x'
         cache-dependency-path: 'qpi-client/go/go.sum'
         
 
