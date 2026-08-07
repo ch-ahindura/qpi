@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+from qpi_driver.reload import ConfigFile
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import (
     CalibrationConfig,
@@ -31,7 +32,6 @@ from qpi_driver.tuners.base.routines import (
     RoutineError,
 )
 from qpi_driver.tuners.routines import all_routines, routine_names
-from qpi_driver.reload import ConfigFile
 from qpi_driver.tuners.utils.persistence import apply_device_config, save_device_config
 
 log = logging.getLogger(__name__)

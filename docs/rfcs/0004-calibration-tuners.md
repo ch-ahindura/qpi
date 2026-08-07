@@ -764,13 +764,13 @@ alone. The last column below is part of the design, not bookkeeping:
 
 | Test file | Tier | Runs under | Tests |
 |-----------|------|------------|-------|
-| `tests/test_calibration_dag.py` | 1 | `test-py-base` | DAG topological sort, cycle detection, partial DAG, `recalibrate`'s narrowing |
-| `tests/test_calibration_config.py` | 1 | `test-py-base` | Config parsing, defaults, validation |
-| `tests/test_fitting.py` | 1 | `test-py-base` | All fitting functions against synthetic data |
-| `tests/test_persistence.py` | 1 | `test-py-base` | YAML write-back round-trip |
-| `tests/test_clifford.py` | 1 | `test-py-base` | Clifford group generation + inverse correctness |
-| `tests/test_calibrate_driver.py` | 1 | `test-py-base` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
-| `tests/test_tuner_routines.py` | 2 | `test-py-quantify` + `test-py-qblox` | Schedule compilation for each routine |
+| `tests/test_calibration_dag.py` | 1 | `test-py-driver EXECUTOR=mock` | DAG topological sort, cycle detection, partial DAG, `recalibrate`'s narrowing |
+| `tests/test_calibration_config.py` | 1 | `test-py-driver EXECUTOR=mock` | Config parsing, defaults, validation |
+| `tests/test_fitting.py` | 1 | `test-py-driver EXECUTOR=mock` | All fitting functions against synthetic data |
+| `tests/test_persistence.py` | 1 | `test-py-driver EXECUTOR=mock` | YAML write-back round-trip |
+| `tests/test_clifford.py` | 1 | `test-py-driver EXECUTOR=mock` | Clifford group generation + inverse correctness |
+| `tests/test_calibrate_driver.py` | 1 | `test-py-driver EXECUTOR=mock` | Driver event handling, worker lifecycle — over a stub `Tuner`, no scheduler |
+| `tests/test_tuner_routines.py` | 2 | `test-py-driver EXECUTOR=quantify` + `test-py-driver EXECUTOR=qblox` | Schedule compilation for each routine |
 | `tests/test_physics_simulation.py` | 3 | `test-py-sim` | Routines against scqubits/qutip data; RB against real Clifford unitaries; the CZ routines against a coupled pair; the readout resonator's own lineshape and punchout curve |
 | `tests/test_calibration_e2e.py` | 3 | `test-py-sim` | A whole calibration through `_execute_calibration`: full, partial, drift and the job it queues, write-back |
 | `tests/fixtures/simulation.py` | 3 | — | The backends, fake device and tuner built on the simulators |
@@ -783,7 +783,7 @@ testable without a lab: the tuner is resolved by name, class *or instance*
 hardware.
 
 There is deliberately **no** dedicated calibration Makefile target. The tier-1 files run
-under `test-py-base`, the tier-2 file runs under the two existing scheduler
+under `test-py-driver EXECUTOR=mock`, the tier-2 file runs under the two existing scheduler
 targets, and a sixth target would mean a sixth environment that installs a
 scheduler in order to run tests that do not need one. §9 lists the targets that
 actually cover this feature.
@@ -838,10 +838,10 @@ this has nothing. A driver warns once per change and keeps running.
 ### Automated tests
 
 ```bash
-make test-py-base        # Fitting, DAG, config, Clifford, persistence, driver lifecycle
-make test-py-cli         # the same suite under [cli], plus the coverage floor on the CLI and registry
-make test-py-quantify    # quantify_tuner routine compilation (dummy Cluster)
-make test-py-qblox       # qblox_tuner routine compilation (dummy Cluster)
+make test-py-driver EXECUTOR=mock      # Fitting, DAG, config, Clifford, persistence, driver lifecycle
+make test-py-cli                       # the same suite under [cli], plus the coverage floor on the CLI and registry
+make test-py-driver EXECUTOR=quantify  # quantify_tuner routine compilation (dummy Cluster)
+make test-py-driver EXECUTOR=qblox     # qblox_tuner routine compilation (dummy Cluster)
 make test-py-sim         # the routines against scqubits/qutip physics
 make test-py-loop        # the whole DAG, then circuits on what it wrote — both schedulers
 make test-go             # Event routing, handler, dispatcher queue, catalog invariants

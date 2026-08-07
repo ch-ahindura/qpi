@@ -157,7 +157,9 @@ export function QpuCard({
                 }`}
               >
                 <Wrench className="w-3.5 h-3.5" />
-                {qpu.status === "maintenance" ? "Under maintenance" : "Maintenance"}
+                {qpu.status === "maintenance"
+                  ? "Under maintenance"
+                  : "Maintenance"}
               </button>
             </div>
           </div>

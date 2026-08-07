@@ -28,7 +28,6 @@ from qpi_driver.executors.quantify.config import (
     load_quantum_device,
 )
 from qpi_driver.executors.quantify.conv import to_quantify_gates
-from qpi_driver.reload import ConfigFile
 from qpi_driver.executors.utils.batch import (
     combine_circuit_datasets,
     iter_circuit_datasets,
@@ -46,6 +45,7 @@ from qpi_driver.executors.utils.discriminator import (
 )
 from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
 from qpi_driver.executors.utils.types import cast_to
+from qpi_driver.reload import ConfigFile
 
 log = logging.getLogger(__name__)
 

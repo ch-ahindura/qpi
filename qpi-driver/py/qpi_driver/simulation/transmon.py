@@ -16,6 +16,7 @@ in the ``sim`` extra, and a base install must still be able to import
 this package.
 """
 
+import functools
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,16 @@ _SOLVER_OPTIONS = {"nsteps": 200_000}
 #: same thing by an amplitude as a schedule does. Derived from the coordinator's
 #: `DEFAULT_DRIVE_STRENGTH`: a pi rotation at 0.2 in 20 ns.
 _RABI_GHZ_PER_UNIT = 1.0 / (2 * 0.2 * 20.0)
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_scqubits_eigenvals(
+    EJ: float, EC: float, ng: float, ncut: int, evals_count: int
+) -> tuple[float, ...]:
+    import scqubits
+
+    transmon = scqubits.Transmon(EJ=EJ, EC=EC, ng=ng, ncut=ncut)
+    return tuple(transmon.eigenvals(evals_count=evals_count))
 
 
 def require_simulation_deps() -> None:
@@ -145,10 +156,10 @@ class TransmonSimulator:
 
     def eigenvalues(self, count: int | None = None) -> np.ndarray:
         """Transmon eigenenergies in GHz, by diagonalising the real Hamiltonian."""
-        import scqubits
-
-        transmon = scqubits.Transmon(EJ=self.EJ, EC=self.EC, ng=self.ng, ncut=self.ncut)
-        return transmon.eigenvals(evals_count=count or self.levels)
+        evals = _cached_scqubits_eigenvals(
+            self.EJ, self.EC, self.ng, self.ncut, count or self.levels
+        )
+        return np.array(evals)
 
     @property
     def f01(self) -> float:

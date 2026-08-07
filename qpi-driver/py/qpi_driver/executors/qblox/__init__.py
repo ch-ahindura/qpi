@@ -22,7 +22,6 @@ from qpi_driver.executors.qblox.config import (
     load_quantum_device,
 )
 from qpi_driver.executors.qblox.conv import generate_schedule
-from qpi_driver.reload import ConfigFile
 from qpi_driver.executors.utils.batch import (
     combine_circuit_datasets,
     iter_circuit_datasets,
@@ -40,6 +39,7 @@ from qpi_driver.executors.utils.discriminator import (
 )
 from qpi_driver.executors.utils.qiskit import load_qasm, measured_qubits
 from qpi_driver.executors.utils.types import cast_to
+from qpi_driver.reload import ConfigFile
 
 log = logging.getLogger(__name__)
 

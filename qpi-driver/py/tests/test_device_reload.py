@@ -9,7 +9,6 @@ import importlib.util
 
 import pytest
 import yaml
-
 from qpi_driver.executors.base import CircuitPayload, JobPayload
 
 from .utils.io import load_json_fixture, load_yaml_fixture

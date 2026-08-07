@@ -1,7 +1,7 @@
 """Every routine compiles against a real scheduler (RFC 0004 §7, tier 2).
 
 These need a scheduler, so they skip on a base install and run under
-``make test-py-quantify`` and ``make test-py-qblox``. What they prove is that
+``make test-py-driver EXECUTOR=quantify`` and ``make test-py-driver EXECUTOR=qblox``. What they prove is that
 each routine builds a schedule the backend's compiler accepts — the dummy
 cluster returns no real data, so analysis is tier 1's job, not this file's.
 
@@ -241,7 +241,6 @@ def test_a_device_config_changed_under_a_tuner_is_applied_to_the_live_device(
     that back over whatever changed.
     """
     import yaml
-
     from qpi_driver.tuners.base.device import read_path
 
     path = quantify_tuner._device_config_path

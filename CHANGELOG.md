@@ -7,6 +7,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- `repo`: Cleaned up and refactored `Makefile`.
+- `repo`: Cleaned up `.github/workflows/ci.yml`.
+- `qpi-driver/py`: Optimized `test-py-loop` execution speed with
+`@functools.lru_cache` to `_cached_scqubits_eigenvals` in `transmon.py`.
+
 ## [0.4.1] - 2026-08-07
 
 ### Fixed

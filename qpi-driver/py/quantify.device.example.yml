@@ -17,6 +17,9 @@ q0:
     pulse_duration: 300e-9
     acq_delay: 100e-9
     integration_time: 1e-6
+    # FIXME: Add all parameters for the given element type (Check the elements/CalibratedTransmon)
+    # FIXME: How do we fail early instead of timing out on sequencer not returning results
+    #   - Maybe log the compiled schedule say to a file and check it out later
 
 q1:
   element_type:

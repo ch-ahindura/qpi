@@ -15,6 +15,7 @@ from qpi_driver.compat.quantify import (
     DRAGPulse,
     IdlePulse,
     Instrument,
+    InstrumentCoordinator,
     Measure,
     Reset,
     Rxy,
@@ -74,7 +75,9 @@ class QuantifyBackend(SchedulerBackend):
     # Dimensionless: the derivative component as a fraction of the Gaussian.
     drag_span = 0.2
 
-    def __init__(self, compiler: Any, instrument_coordinator: Any) -> None:
+    def __init__(
+        self, compiler: SerialCompiler, instrument_coordinator: InstrumentCoordinator
+    ) -> None:
         self._compiler = compiler
         self._instrument_coordinator = instrument_coordinator
 
@@ -85,6 +88,8 @@ class QuantifyBackend(SchedulerBackend):
         self, schedule: Any, timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
     ) -> xr.Dataset:
         compiled = self._compiler.compile(schedule)
+        # FIXME: Try to log the compiled schedule to see how wrong it could be
+        # log.info(compiled.to_json())
         self._instrument_coordinator.prepare(compiled)
         self._instrument_coordinator.start()
         # Floored to whole minutes downstream with a minimum of one, so a ceiling

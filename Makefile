@@ -1,7 +1,6 @@
-.PHONY: test-dashboard test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site all build build-dashboard test test-js-driver test-go-driver lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver package package-driver package-driver-js package-driver-go package-js package-py package-go publish-js publish-driver-js publish-py clean venv-check test-e2e-dashboard
-
 VERSION ?= 0.4.1
 UV := $(shell command -v uv 2> /dev/null || echo "$$HOME/.local/bin/uv")
+EXECUTOR ?= mock
 EXECUTORS := mock aer quantify qblox
 
 # Scratch locations for the documentation checks. Under bin/, which is already
@@ -9,12 +8,12 @@ EXECUTORS := mock aer quantify qblox
 DOCS_EXAMPLE_VENV := bin/.docs-example-venv
 DOCS_SITE_VENV := bin/.docs-site-venv
 DOCS_SITE_OUT := bin/.docs-site
+
 # The framework modules the coverage floor applies to: the SDK, the CLI, the device
 # registry and its options, and the executors that need no hardware. Everything else
 # is reported but not gated — see cov-py.
 PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
 PY_COV_MIN := 96
-
 
 # `uv sync` reinstalls qblox_instruments, and macOS strips the code signature
 # from the q1asm assembler it bundles — after which every schedule that
@@ -32,6 +31,11 @@ RESIGN_Q1ASM = @if [ "$$(uname)" = "Darwin" ]; then codesign --force --deep --si
 GO_COV_GATED := ./devices/... ./cli/...
 GO_COV_MIN := 94
 
+# ---------------------------------------------------------------------------
+# Build & Setup targets
+# ---------------------------------------------------------------------------
+.PHONY: all build build-dashboard serve-docs venv-check
+
 all: build
 
 # Automatically create the virtual environment if not already in one and uv is missing.
@@ -40,7 +44,6 @@ venv-check:
 		echo "uv not found, installing..."; \
 		curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi
-
 
 build: venv-check build-dashboard
 	@echo "Building Go server..."
@@ -68,6 +71,13 @@ serve-docs:
 # ---------------------------------------------------------------------------
 # Test targets
 # ---------------------------------------------------------------------------
+.PHONY: test test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site \
+        test-go test-py test-py-driver \
+        test-py-cli test-py-sim test-py-loop \
+        test-dashboard test-js-client test-go-client test-py-client \
+        test-js-driver test-go-driver test-e2e test-e2e-driver \
+        test-e2e-client-py test-e2e-client-js test-e2e-client-go \
+        test-e2e-dashboard test-e2e-dashboard-visual test-e2e-systemd
 
 test: test-go test-py test-js-client test-go-client test-py-client test-js-driver test-go-driver test-dashboard test-docs test-e2e
 
@@ -143,10 +153,6 @@ test-go: build-dashboard
 	@echo "Running Go unit tests (server)..."
 	(cd qpi-ui && go test -race -v ./...)
 
-test-go-minimal:
-	@echo "Running Go server unit tests..."
-	(cd qpi-ui && go test -race -cover ./...)
-
 test-py: test-py-sim
 	@for exec in $(EXECUTORS); do \
 		$(MAKE) test-py-driver EXECUTOR=$$exec || exit 1; \
@@ -189,7 +195,6 @@ test-py-loop:
 	$(UV) run --no-sync --project qpi-driver/py pytest \
 		qpi-driver/py/tests/test_calibration_loop.py -v
 
-
 # The dashboard's pure helpers — graph layering and the state derivation beside it.
 # Anything needing a DOM is a Cypress spec against the real server instead
 # (RFC 0006 §10), which is what test-e2e-dashboard runs.
@@ -204,10 +209,6 @@ test-js-client:
 test-go-client:
 	@echo "Running Go client tests..."
 	(cd qpi-client/go && go test -race -v ./...)
-
-test-go-client-minimal:
-	@echo "Running Go client tests..."
-	(cd qpi-client/go && go test -race -cover ./...)
 
 test-py-client:
 	@echo "Running Python client tests..."
@@ -231,10 +232,6 @@ test-go-driver:
 				printf "Coverage OK: %s\n", $$3 }')
 	@echo "Coverage of the base SDK transport, for information only:"
 	-(cd qpi-driver/go && go test -cover ./... | grep coverage)
-
-test-go-driver-minimal:
-	@echo "Running Go driver SDK tests..."
-	(cd qpi-driver/go && go test -race -cover ./...)
 
 test-e2e: test-e2e-driver test-e2e-client-py test-e2e-client-js test-e2e-client-go test-e2e-dashboard test-e2e-systemd
 
@@ -272,6 +269,7 @@ test-e2e-systemd:
 # ---------------------------------------------------------------------------
 # Lint targets
 # ---------------------------------------------------------------------------
+.PHONY: lint lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver
 
 lint: lint-go lint-py lint-js lint-dashboard lint-go-client lint-py-client lint-js-driver lint-go-driver
 
@@ -316,6 +314,7 @@ lint-go-driver:
 # ---------------------------------------------------------------------------
 # Format targets
 # ---------------------------------------------------------------------------
+.PHONY: format format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver
 
 format: format-go format-py format-js format-dashboard format-go-client format-py-client format-js-driver format-go-driver
 
@@ -356,6 +355,11 @@ format-go-driver:
 # ---------------------------------------------------------------------------
 # Package / Publish targets
 # ---------------------------------------------------------------------------
+.PHONY: package package-js package-py package-driver package-driver-js package-driver-go package-go \
+        publish-js publish-driver-js publish-py
+
+package: package-js package-py package-driver package-driver-js
+
 package-js:
 	@echo "Packaging JS client..."
 	(cd qpi-client/js && npm ci && npm run build)
@@ -396,6 +400,7 @@ publish-py:
 # ---------------------------------------------------------------------------
 # Clean
 # ---------------------------------------------------------------------------
+.PHONY: clean
 
 clean:
 	@echo "Cleaning up..."

@@ -24,7 +24,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.x'
+        go-version: '1.26.x'
         cache-dependency-path: 'qpi-ui/go.sum'
 
     - name: Set up uv
@@ -37,7 +37,7 @@ jobs:
     - name: Set up nodejs
       uses: actions/setup-node@v4
       with:
-        node-version: '20.x'
+        node-version: '22.x'
 
     - name: Install dependencies
       run: uv sync --project qpi-driver/py --extra cli --dev
@@ -69,7 +69,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.x'
+        go-version: '1.26.x'
         cache-dependency-path: 'qpi-ui/go.sum'
 
     - name: Set up uv
@@ -82,12 +82,10 @@ jobs:
     - name: Set up nodejs
       uses: actions/setup-node@v4
       with:
-        node-version: '20.x'
+        node-version: '22.x'
 
-    - name: Install dependencies & formatting tools
-      run: |
-        uv sync --project qpi-driver/py --extra cli --extra ${{ matrix.extra }} --dev
-        sudo apt-get update && sudo apt-get install -y zip
+    - name: Install dependencies
+      run: uv sync --project qpi-driver/py --extra cli --extra ${{ matrix.extra }} --dev
 
     - name: Build dashboard
       run: make build-dashboard
@@ -134,7 +132,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25.x'
+        go-version: '1.26.x'
         cache-dependency-path: 'qpi-client/go/go.sum'
         
 
@@ -180,7 +178,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: ['20.x']
+        node-version: ['22.x']
 
     steps:
     - name: Checkout Code
@@ -206,7 +204,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25.x']
+        go-version: ['1.26.x']
 
     steps:
     - name: Checkout Code
@@ -231,7 +229,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: ['20.x']
+        node-version: ['22.x']
 
     steps:
     - name: Checkout Code
@@ -348,7 +346,9 @@ jobs:
   # Publish qpi-driver to PyPI
   # -------------------------------------------------------------------------
   publish-pypi-driver:
-    needs: [lint-and-test-shared, lint-and-test-server-and-driver]
+    needs: 
+     - lint-and-test-server-and-driver-per-extra
+     - lint-and-test-server-and-driver
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_TO_PYPI == 'true'
     environment:
@@ -474,7 +474,10 @@ jobs:
   # Publish Go server binaries to GitHub Release
   # -------------------------------------------------------------------------
   publish-go-release:
-    needs: [lint-and-test-shared, lint-and-test-server-and-driver, test-dashboard-cypress]
+    needs: 
+      - lint-and-test-server-and-driver
+      - lint-and-test-server-and-driver
+      - test-dashboard-cypress
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_GO_APP == 'true'
     permissions:
