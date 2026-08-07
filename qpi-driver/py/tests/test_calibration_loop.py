@@ -1328,15 +1328,15 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
     "t1": {"delays": [round(6e-6 * i, 9) for i in range(21)]},
     "t2_echo": {"delays": [round(2e-6 * i, 9) for i in range(41)]},
     "fine_amplitude": {"repetitions": [1, 3, 5, 7, 9]},
-    "rb": {"depths": [1, 4, 16, 32], "circuits_per_depth": 6},
-    "interleaved_rb": {"depths": [1, 4, 10, 20], "circuits_per_depth": 4},
+    "rb": {"depths": [1, 4, 16, 32], "circuits_per_depth": 2},
+    "interleaved_rb": {"depths": [1, 4, 10, 20], "circuits_per_depth": 2},
     # Narrow, because the avoided crossing is a few MHz wide and the default grid
     # steps ~75 MHz per point — see `MIN_CHEVRON_CONTRAST`.
     "cz_chevron": {
-        "amplitudes": [round(0.365 + i * 0.00115, 5) for i in range(21)],
-        "durations": [round(20e-9 + i * 5e-9, 11) for i in range(45)],
+        "amplitudes": [round(0.365 + i * 0.0023, 5) for i in range(11)],
+        "durations": [round(20e-9 + i * 10e-9, 11) for i in range(23)],
     },
-    "conditional_phase": {"phases": [round(i * 15.0, 1) for i in range(25)]},
+    "conditional_phase": {"phases": [round(i * 30.0, 1) for i in range(13)]},
 }
 
 
