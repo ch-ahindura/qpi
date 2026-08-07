@@ -40,7 +40,7 @@ def test_cli_version():
     try:
         expected_version = importlib.metadata.version("qpi-driver")
     except importlib.metadata.PackageNotFoundError:
-        expected_version = "0.4.0"
+        expected_version = "0.4.1"
     assert expected_version in result.stdout
 
 
@@ -418,7 +418,7 @@ def test_version_falls_back_when_the_package_is_not_installed():
         "version",
         side_effect=importlib.metadata.PackageNotFoundError("qpi-driver"),
     ):
-        assert _get_version() == "0.4.0"
+        assert _get_version() == "0.4.1"
 
 
 def test_cli_process_requires_token():

@@ -77,12 +77,12 @@ The server is available as a single executable binary, as well as native OS pack
 #### Standalone Binary (macOS & Linux)
 Download the binary for your platform, make it executable, and run:
 ```bash
-# macOS (replace 0.4.0 with the version you wish to install)
-curl -LO https://github.com/sopherapps/qpi/releases/download/v0.4.0/qpi-0.4.0-darwin-amd64
-chmod +x qpi-0.4.0-darwin-amd64 && mv qpi-0.4.0-darwin-amd64 qpi
+# macOS (replace 0.4.1 with the version you wish to install)
+curl -LO https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi-0.4.1-darwin-amd64
+chmod +x qpi-0.4.1-darwin-amd64 && mv qpi-0.4.1-darwin-amd64 qpi
 
 # Linux (standalone binary)
-curl -L https://github.com/sopherapps/qpi/releases/download/v0.4.0/qpi-0.4.0-linux-amd64.tar.gz | tar -xz
+curl -L https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi-0.4.1-linux-amd64.tar.gz | tar -xz
 
 # Start the server
 ./qpi serve
@@ -91,8 +91,8 @@ curl -L https://github.com/sopherapps/qpi/releases/download/v0.4.0/qpi-0.4.0-lin
 #### Native Linux Packages (Ubuntu, Debian, Fedora, Alpine)
 For Debian/Ubuntu, download and install the `.deb` package:
 ```bash
-wget https://github.com/sopherapps/qpi/releases/download/v0.4.0/qpi_0.4.0_amd64.deb
-sudo apt install ./qpi_0.4.0_amd64.deb
+wget https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi_0.4.1_amd64.deb
+sudo apt install ./qpi_0.4.1_amd64.deb
 ```
 *(Note: Installing the package automatically registers and starts `qpi.service` under systemd (or OpenRC on Alpine) to run the server in the background on port `8090`)*
 

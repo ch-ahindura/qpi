@@ -27,7 +27,7 @@ import (
 
 // Version is the CLI version; overridable at build time with
 // -ldflags "-X github.com/sopherapps/qpi/qpi-driver/go/cli.Version=…".
-var Version = "0.4.0"
+var Version = "0.4.1"
 
 // commonFlags are the universal options `start` shares across every operation,
 // mirroring the Python CLI. A device's own settings go through -o instead.
