@@ -16,6 +16,51 @@ env:
 
 jobs:
   # -------------------------------------------------------------------------
+  # The checks that do not vary by extra, run once rather than per matrix leg.
+  #
+  # These used to sit inside the matrix below, so every one of its five legs ran
+  # the same Go vet, the same ruff, and the same CLI suite — four redundant copies
+  # of each. `lint-go` depends on `build-dashboard`, so each leg also built the
+  # dashboard twice: once explicitly and once as that prerequisite.
+  # -------------------------------------------------------------------------
+  lint-and-test-shared:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.x'
+        cache-dependency-path: 'qpi-ui/go.sum'
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+      with:
+        python-version: '3.12'
+        enable-cache: true
+        cache-dependency-glob: "qpi-driver/py/pyproject.toml"
+
+    - name: Set up nodejs
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+
+    - name: Install dependencies
+      run: uv sync --project qpi-driver/py --extra cli --dev
+
+    # Builds the dashboard itself, which `go vet` needs: main.go embeds its dist.
+    - name: Lint orchestrator
+      run: make lint-go
+
+    - name: Lint driver
+      run: make lint-py
+
+    - name: Test CLI
+      run: make test-py-cli
+
+  # -------------------------------------------------------------------------
   # Core lint-and-test matrix (server + driver)
   # -------------------------------------------------------------------------
   lint-and-test-server-and-driver:
@@ -68,17 +113,12 @@ jobs:
         fi
         sudo apt-get update && sudo apt-get install -y zip
 
+    # Only for the legs that go on to run a driver end to end: `build_server`
+    # is a bare `go build`, and main.go embeds the dashboard's dist. The `sim`
+    # leg runs no driver, so it needs no dashboard.
     - name: Build dashboard
+      if: matrix.extra != 'sim'
       run: make build-dashboard
-
-    - name: Lint ochestrator
-      run: make lint-go 
-      
-    - name: Lint driver
-      run: make lint-py
-
-    - name: Test CLI 
-      run: make test-py-cli
 
     - name: Run Python Unit Tests for '${{ matrix.extra }}'
       run: |
@@ -270,6 +310,11 @@ jobs:
     - name: Lint dashboard
       run: make lint-dashboard
 
+    # The pure helpers, before the four-minute Cypress run: a broken one fails
+    # here in seconds instead of as a puzzling assertion against a live server.
+    - name: Run Dashboard Unit Tests
+      run: make test-dashboard
+
     - name: Run E2E Cypress Dashboard Tests
       run: make test-e2e-dashboard
 
@@ -328,7 +373,7 @@ jobs:
   # Publish qpi-driver to PyPI
   # -------------------------------------------------------------------------
   publish-pypi-driver:
-    needs: lint-and-test-server-and-driver
+    needs: [lint-and-test-shared, lint-and-test-server-and-driver]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_TO_PYPI == 'true'
     environment:
@@ -454,7 +499,7 @@ jobs:
   # Publish Go server binaries to GitHub Release
   # -------------------------------------------------------------------------
   publish-go-release:
-    needs: [lint-and-test-server-and-driver, test-dashboard-cypress]
+    needs: [lint-and-test-shared, lint-and-test-server-and-driver, test-dashboard-cypress]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_GO_APP == 'true'
     permissions:
