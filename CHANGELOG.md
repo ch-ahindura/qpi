@@ -7,6 +7,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- `qpi-driver/py`: a `quantify` tuner or executor creates its data directory's parents.
+  quantify-core's own `mkdir` is not recursive, so a directory whose parent did not
+  exist yet — `bin/data` in a checkout where nothing has run `make build` — failed at
+  construction with a `FileNotFoundError` naming the child.
+
 ## [0.4.0] - 2026-08-06
 
 ### Added

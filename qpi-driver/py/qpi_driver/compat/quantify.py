@@ -2,6 +2,7 @@
 
 import logging
 from enum import Enum
+from pathlib import Path
 from typing import Any, TypeAlias
 
 from qpi_driver.compat.shared import BasicCompatClass
@@ -14,7 +15,7 @@ try:
     from qcodes.instrument.channel import InstrumentChannel
     from qcodes.instrument.parameter import ManualParameter
     from qcodes.parameters import ParameterBase
-    from quantify_core.data.handling import set_datadir
+    from quantify_core.data.handling import set_datadir as _set_datadir
     from quantify_scheduler import Operation, Schedule
     from quantify_scheduler.backends.graph_compilation import SerialCompiler
     from quantify_scheduler.backends.qblox_backend import (
@@ -69,7 +70,7 @@ except ImportError as exp:
     logging.debug(f"failed importing from quantify.compat {exp}")
     IS_QUANTIFY_INSTALLED: bool = False
 
-    def set_datadir(*args, **kwargs):
+    def _set_datadir(*args, **kwargs):
         pass
 
     def field_validator(*args, **kwargs):
@@ -168,3 +169,17 @@ except ImportError as exp:
         @classmethod
         def close_all(cls):
             pass
+
+
+def set_datadir(datadir: Any = None) -> None:
+    """quantify-core's ``set_datadir``, with the directory created first.
+
+    Its own ``mkdir`` is not recursive, so pointing it anywhere whose *parent* does
+    not exist yet dies with a ``FileNotFoundError`` naming the child — `bin/data` in
+    a checkout where nothing has run `make build`, or a service's data directory
+    before its first start. The path is already vetted as safe by
+    :func:`~qpi_driver.paths.as_safe_dir` wherever it came from an ``-o`` option.
+    """
+    if datadir is not None:
+        Path(datadir).mkdir(parents=True, exist_ok=True)
+    _set_datadir(datadir)
