@@ -1,0 +1,2798 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/">
+      
+      
+      
+        <link rel="next" href="theming/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#what-is-qpi" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="driver/python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="rfcs/" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-qpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is QPI?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is QPI?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#operations-and-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operations and devices
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation &amp; Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation &amp; Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-install-start-the-server-qpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install &amp; Start the Server (qpi)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Install &amp; Start the Server (qpi)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standalone-binary-macos-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standalone Binary (macOS &amp; Linux)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-linux-packages-ubuntu-debian-fedora-alpine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Linux Packages (Ubuntu, Debian, Fedora, Alpine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-connect-a-qpu-driver-qpi-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Connect a QPU Driver (qpi-driver)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Connect a QPU Driver (qpi-driver)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-linux-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        systemd Service (Linux - Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standalone-cli-macos-linux-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standalone CLI (macOS, Linux, Windows)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-submit-a-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Submit a Job
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Deep Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Deep Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-server-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Server Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-configuration-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Configuration Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-api-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server API &amp; Collections
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server API &amp; Collections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-routes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Routes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pocketbase-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PocketBase Collections
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-driver-package-qpi-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python Driver Package (qpi-driver)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Python Driver Package (qpi-driver)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#extensible-executors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extensible Executors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-driver-for-each-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Driver for Each Executor
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running the Driver for Each Executor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-mock-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Mock Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-qiskit-aer-simulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Qiskit Aer Simulator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-quantify-executor-qblox-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Quantify Executor (Qblox Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-qblox-executor-qblox-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Qblox Executor (Qblox Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-calibration-tuners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Calibration Tuners
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-lifecycle-makefile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Lifecycle (Makefile)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gratitude" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gratitude
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="rfcs/0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-qpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is QPI?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What is QPI?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#operations-and-devices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operations and devices
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#installation-quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Installation &amp; Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Installation &amp; Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-install-start-the-server-qpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Install &amp; Start the Server (qpi)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. Install &amp; Start the Server (qpi)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#standalone-binary-macos-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standalone Binary (macOS &amp; Linux)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#native-linux-packages-ubuntu-debian-fedora-alpine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Native Linux Packages (Ubuntu, Debian, Fedora, Alpine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-connect-a-qpu-driver-qpi-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Connect a QPU Driver (qpi-driver)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Connect a QPU Driver (qpi-driver)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-linux-recommended" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        systemd Service (Linux - Recommended)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standalone-cli-macos-linux-windows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standalone CLI (macOS, Linux, Windows)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-submit-a-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Submit a Job
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-deep-dive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Deep Dive
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture Deep Dive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#key-server-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Server Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-configuration-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server Configuration Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server-api-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server API &amp; Collections
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Server API &amp; Collections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-routes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Routes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pocketbase-collections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PocketBase Collections
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-driver-package-qpi-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python Driver Package (qpi-driver)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Python Driver Package (qpi-driver)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#extensible-executors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extensible Executors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-driver-for-each-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the Driver for Each Executor
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running the Driver for Each Executor">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-mock-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Mock Executor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-qiskit-aer-simulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Qiskit Aer Simulator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-quantify-executor-qblox-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Quantify Executor (Qblox Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-qblox-executor-qblox-cluster" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Qblox Executor (Qblox Cluster)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-calibration-tuners" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Calibration Tuners
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-lifecycle-makefile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Lifecycle (Makefile)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gratitude" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gratitude
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<pre align="center">
+ ██████╗ ██████╗ ██╗
+██╔═══██╗██╔══██╗██║
+██║   ██║██████╔╝██║
+██║▄▄ ██║██╔═══╝ ██║
+╚██████╔╝██║     ██║
+ ╚══▀▀═╝ ╚═╝     ╚═╝
+</pre>
+
+<h1 align="center">QPI: Quantum Processing Interface</h1>
+
+<p align="center">
+  <a href="https://github.com/sopherapps/qpi/actions/workflows/ci.yml"><img src="https://github.com/sopherapps/qpi/actions/workflows/ci.yml/badge.svg" alt="CI/CD Workflow"></a>
+  <a href="https://badge.fury.io/py/qpi-driver"><img src="https://badge.fury.io/py/qpi-driver.svg" alt="PyPI qpi-driver"></a>
+  <a href="https://badge.fury.io/py/qpi-client"><img src="https://badge.fury.io/py/qpi-client.svg" alt="PyPI qpi-client"></a>
+  <img src="https://img.shields.io/github/v/tag/sopherapps/qpi" alt="GitHub Tag">
+</p>
+
+<p align="center">
+  <strong><a href="https://sopherapps.github.io/qpi/">📚 Read the Documentation</a></strong> | <strong><a href="https://qpi.sopherapps.se">🚀 Live Demo</a></strong>
+</p>
+
+<h2 id="what-is-qpi">What is QPI?</h2>
+<p>QPI is a distributed quantum control stack architecture designed to manage, schedule, and execute quantum circuits across multiple Quantum Processing Units (QPUs). </p>
+<p>It consists of three main components:
+1. <strong>Server (<code>qpi-ui</code>)</strong>: A Go-based server that manages the job queue, user time-slot bookings, and dispatches jobs to available QPUs. It includes a built-in React web dashboard.
+2. <strong>Drivers (<code>qpi-driver</code>)</strong>: A framework, with SDKs in Python, Go and TypeScript, for the daemons that run alongside lab equipment and exchange typed events with the server. A QPU is one kind of driver; a cryostat monitor is another.
+3. <strong>Clients</strong>: SDKs (Python, Go, JS) for end-users to submit OpenQASM (or Qiskit) quantum jobs over the network.</p>
+<pre class="mermaid"><code>flowchart LR
+    User[Clients] --&gt;|Submit Quantum Jobs| Server
+    Server --&gt;|Dispatch Jobs| Driver1[Driver: process]
+    Server --&gt;|Dispatch Jobs| Driver2[Driver: process]
+    Driver3[Driver: monitor] --&gt;|Report readings| Server
+    Driver1 --&gt;|Control| Hardware1[Physical QPU]
+    Driver2 --&gt;|Control| Hardware2[Simulated QPU]
+    Driver3 --&gt;|Poll| Hardware3[Cryostat]</code></pre>
+<h3 id="operations-and-devices">Operations and devices</h3>
+<p>A driver is described by two things, and the difference between them is the whole
+extensibility story (see <a href="https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md">RFC 0003</a>):</p>
+<ul>
+<li>An <strong>operation</strong> is what the driver <em>does</em>, and it is a contract with the server:
+  <code>process</code> runs jobs pushed to it and reports results; <code>monitor</code> reports readings
+  upward on its own schedule; <code>calibrate</code> executes calibration routines to track parameter drift on quantum hardware. The server must have a handler for each, so the set is
+  closed — a new operation is a coordinated change across the server and the SDKs.</li>
+<li>A <strong>device</strong> is the <em>backend</em> implementing an operation — an executor for
+  <code>process</code> (<code>mock</code>, <code>qiskit_aer</code>, <code>quantify</code>, <code>qblox</code>), a tuner for <code>calibrate</code> (<code>quantify_tuner</code>, <code>qblox_tuner</code>), a piece of lab hardware for
+  <code>monitor</code> (<code>bluefors_gen1</code>). The set is open: anyone can add one without touching
+  the SDK, and <code>--device</code> then runs it exactly like a built-in.</li>
+</ul>
+<p>So every driver is launched the same way — one verb, one operation, one device:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>qblox<span class="w">   </span>…<span class="w">   </span><span class="c1"># a QPU</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>monitor<span class="w"> </span>--device<span class="w"> </span>bluefors_gen1<span class="w">   </span>…<span class="w">   </span><span class="c1"># a cryostat</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--device<span class="w"> </span>quantify_tuner<span class="w"> </span>…<span class="w"> </span><span class="c1"># a calibrator</span>
+</code></pre></div>
+<p>There is deliberately no separate "custom driver" mechanism. Because an operation is
+already a contract the server implements, a custom driver is always a custom
+<em>device</em> of an existing operation, and one concept covers it.</p>
+<h2 id="installation-quick-start">Installation &amp; Quick Start</h2>
+<p>QPI is distributed as pre-compiled binaries and OS-specific packages for the server, and a Python package for the drivers and clients.</p>
+<h3 id="1-install-start-the-server-qpi">1. Install &amp; Start the Server (<code>qpi</code>)</h3>
+<p>The server is available as a single executable binary, as well as native OS packages (<code>.deb</code>, <code>.rpm</code>, <code>.apk</code>) for Linux distributions.</p>
+<h4 id="standalone-binary-macos-linux">Standalone Binary (macOS &amp; Linux)</h4>
+<p>Download the binary for your platform, make it executable, and run:
+<div class="highlight"><pre><span></span><code><span class="c1"># macOS (replace 0.4.1 with the version you wish to install)</span>
+curl<span class="w"> </span>-LO<span class="w"> </span>https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi-0.4.1-darwin-amd64
+chmod<span class="w"> </span>+x<span class="w"> </span>qpi-0.4.1-darwin-amd64<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mv<span class="w"> </span>qpi-0.4.1-darwin-amd64<span class="w"> </span>qpi
+
+<span class="c1"># Linux (standalone binary)</span>
+curl<span class="w"> </span>-L<span class="w"> </span>https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi-0.4.1-linux-amd64.tar.gz<span class="w"> </span><span class="p">|</span><span class="w"> </span>tar<span class="w"> </span>-xz
+
+<span class="c1"># Start the server</span>
+./qpi<span class="w"> </span>serve
+</code></pre></div></p>
+<h4 id="native-linux-packages-ubuntu-debian-fedora-alpine">Native Linux Packages (Ubuntu, Debian, Fedora, Alpine)</h4>
+<p>For Debian/Ubuntu, download and install the <code>.deb</code> package:
+<div class="highlight"><pre><span></span><code>wget<span class="w"> </span>https://github.com/sopherapps/qpi/releases/download/v0.4.1/qpi_0.4.1_amd64.deb
+sudo<span class="w"> </span>apt<span class="w"> </span>install<span class="w"> </span>./qpi_0.4.1_amd64.deb
+</code></pre></div>
+<em>(Note: Installing the package automatically registers and starts <code>qpi.service</code> under systemd (or OpenRC on Alpine) to run the server in the background on port <code>8090</code>)</em></p>
+<h4 id="windows">Windows</h4>
+<p>Download the <code>qpi-windows-amd64.zip</code> from <a href="https://github.com/sopherapps/qpi/releases">GitHub Releases</a>, unzip it, and run <code>qpi.exe serve</code>.</p>
+<p><em>Once the server is running, the web dashboard is available at <code>http://127.0.0.1:8090/</code>. You can log in using the PocketBase Admin UI at <code>http://127.0.0.1:8090/_/</code> to create your initial superuser account.</em></p>
+<hr />
+<h3 id="2-connect-a-qpu-driver-qpi-driver">2. Connect a QPU Driver (<code>qpi-driver</code>)</h3>
+<p>The driver runs alongside the QPU hardware (or simulation backend) to process jobs from the server.</p>
+<h4 id="systemd-service-linux-recommended">systemd Service (Linux - Recommended)</h4>
+<p>To install the driver as a persistent background systemd service (mimicking Astral's installation workflow), run the interactive script:</p>
+<div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Alternatively, you can run the installer non-interactively by specifying the variables directly:
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_TOKEN</span><span class="o">=</span><span class="s2">&quot;&lt;your-qpu-token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_ADDR</span><span class="o">=</span><span class="s2">&quot;http://127.0.0.1:8090&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">CA_FINGERPRINT</span><span class="o">=</span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">SERVICE_NAME</span><span class="o">=</span><span class="s2">&quot;qpu-1&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">OPERATION</span><span class="o">=</span><span class="s2">&quot;process&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">DEVICE</span><span class="o">=</span><span class="s2">&quot;mock&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>bash
+</code></pre></div></p>
+<p><code>OPERATION="calibrate"</code> with <code>DEVICE="quantify_tuner"</code> (or <code>"qblox_tuner"</code>) installs a
+tuner the same way. Either way the installer creates <code>/var/qpi-driver/&lt;SERVICE_NAME&gt;</code>,
+passes it to the driver as <code>QPI_DATA_DIR</code>, and points every config file it manages —
+<code>quantify.device.yml</code>, <code>quantify.hardware.json</code>, <code>calibration.yml</code> — inside it, so
+putting them there is the whole of the configuration.</p>
+<h4 id="standalone-cli-macos-linux-windows">Standalone CLI (macOS, Linux, Windows)</h4>
+<p>Ensure Python 3.12 is installed, then install using <code>pip</code> or <code>uv</code>:
+<div class="highlight"><pre><span></span><code><span class="c1"># Install qpi-driver using uv tool (recommended)</span>
+uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[cli]&quot;</span>
+
+<span class="c1"># Start the driver daemon</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--qpi-addr<span class="w"> </span>http://127.0.0.1:8090<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--token<span class="w"> </span><span class="s2">&quot;&lt;YOUR_ACCESS_TOKEN&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;YOUR_CA_FINGERPRINT&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="w"> </span><span class="s2">&quot;mock&quot;</span>
+</code></pre></div></p>
+<hr />
+<h3 id="3-submit-a-job">3. Submit a Job</h3>
+<p>Users can submit quantum jobs via the Python client:
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>qpi-client
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">qpi_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">QPIClient</span>
+
+<span class="n">client</span> <span class="o">=</span> <span class="n">QPIClient</span><span class="p">(</span><span class="s2">&quot;http://127.0.0.1:8090&quot;</span><span class="p">,</span> <span class="n">api_token</span><span class="o">=</span><span class="s2">&quot;&lt;YOUR_USER_API_TOKEN&gt;&quot;</span><span class="p">)</span>
+<span class="n">job</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">submit_job</span><span class="p">(</span><span class="n">circuits</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;circuit&quot;</span><span class="p">:</span> <span class="s2">&quot;OPENQASM 2.0; ...&quot;</span><span class="p">}],</span> <span class="n">shots</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">job</span><span class="p">)</span>
+</code></pre></div></p>
+<hr />
+<h2 id="architecture-deep-dive">Architecture Deep Dive</h2>
+<p>The architecture consists of four primary components under the hood:
+1. <strong>PocketBase Go Server (<code>qpi-ui/main.go</code>):</strong> Extends PocketBase with Go, handling job queues, session-based bookings, and real-time job dispatching. Actively listens for LAN connections on dynamically allocated network ports.
+2. <strong>React SPA Dashboard (<code>qpi-ui/internal/dashboard</code>):</strong> Single-page application built with Vite, React 19, TypeScript, and Tailwind CSS. It is served directly from the server (via <code>//go:embed</code>) at <code>/</code> for viewing jobs, allocating QPU time, scheduling announcements, managing bookings, and observing calibration telemetry.
+3. <strong>Drivers (<code>qpi-driver</code>):</strong> Run on isolated hardware nodes. A <code>process</code> driver (a QPU) isolates job execution in a worker subprocess, so a heavy or crashing executor never blocks its receive loop; a <code>monitor</code> driver just polls its hardware on a timer; a <code>calibrate</code> driver (a tuner) walks its calibration graph and writes the fitted parameters back to the device config every <code>process</code> driver reads. All three exchange the same typed events with the server.
+4. <strong>QPI Clients (Python, JavaScript, Go):</strong> SDKs for submitting jobs to the quantum computer using OpenQASM specification (and Qiskit circuits if one uses the Python client)</p>
+<p>To optimize performance and simplify communication over multiprocessing queues, the worker process executes the quantum job, processes the resulting <code>xarray</code> dataset into a Qiskit-compatible result dictionary using the executor's <code>process_result()</code> method, and directly sends the results via the queue to the result sender process. This removes file-system serialization overhead.</p>
+<pre class="mermaid"><code>graph TD
+    subgraph pocketbase [PocketBase Go Server]
+        PB[PocketBase API / DB]
+        Dispatcher[NNG PUSH Dispatcher]
+        Listener[NNG PULL Listener]
+        Recovery[Recovery Engine]
+    end
+
+    subgraph python_driver [Driver: process operation]
+        MainProc[Main Process: NNG PULL]
+        Worker[Worker Process: Executor]
+        ResultSender[Result-pump thread: NNG PUSH]
+    end
+
+    %% Client Interactions
+    User[Client] --&gt;|Submit Job| PB
+
+    %% Handshake &amp; Connection
+    MainProc --&gt;|HTTP POST /api/op/drivers/connect| PB
+    PB --&gt;|Assigned Ports &amp; JWT| MainProc
+
+    %% Multiprocessing Communication
+    Dispatcher --&gt;|NNG PUSH Command Port| MainProc
+    MainProc --&gt;|multiprocessing.Queue Job Payload| Worker
+    Worker --&gt;|1. Executes &amp; Processes Results| Worker
+    Worker --&gt;|2. Queue Qiskit-format Dict| ResultSender
+    ResultSender --&gt;|3. NNG PUSH Result Port| Listener</code></pre>
+<h3 id="key-server-features">Key Server Features</h3>
+<ul>
+<li><strong>Dashboard Theming:</strong> Fully customizable UI via PocketBase. Superusers can dynamically change the site name, logo, color palettes (light/dark), and inject custom CSS/JS on the fly without recompiling.</li>
+<li><strong>Session-Based Booking with Opportunistic FIFO:</strong> Dispatches jobs prioritizing users who have booked the current time slot. Fallback mechanism allows other users' pending jobs to execute if the slot booker is idle.</li>
+<li><strong>Auto-Schema Migration &amp; Port Allocation:</strong> Automatically creates required database collections (<code>qpus</code>, <code>time_slots</code>, <code>quantum_jobs</code>, <code>qpu_time_requests</code>, <code>notifications</code>) and dynamically allocates race-free TCP ports for registered QPUs.</li>
+<li><strong>Stale Job Recovery:</strong> A background ticking routine monitors running jobs and resets them to <code>pending</code> if their driver hangs or disconnects (timeout default: 20 seconds).</li>
+<li><strong>Admin Notifications:</strong> Broadcast or targeted notifications with time-window visibility and per-user dismiss support. Only superusers can create, update, or delete notifications. Authenticated users see only notifications relevant to them (broadcast or targeted) that are within their active time window and not dismissed.</li>
+</ul>
+<h3 id="server-configuration-options">Server Configuration Options</h3>
+<p>The Go server can be configured via CLI flags, environment variables, or a configuration file (JSON or YAML, specified via <code>--config-file</code> or <code>QPI_CONFIG_FILE</code>). The precedence hierarchy is: CLI Flag &gt; Env Var &gt; Config File &gt; Default.</p>
+<table>
+<thead>
+<tr>
+<th>CLI Option</th>
+<th>Environment Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--config-file</code></td>
+<td><code>QPI_CONFIG_FILE</code></td>
+<td><code>qpi.config.yml</code></td>
+<td>Path to JSON or YAML configuration file.</td>
+</tr>
+<tr>
+<td><code>--domain</code></td>
+<td><code>QPI_DOMAIN</code></td>
+<td></td>
+<td>The domain name this server is running on.</td>
+</tr>
+<tr>
+<td><code>--ip-addr</code></td>
+<td><code>QPI_IP_ADDR</code></td>
+<td>"127.0.0.1"</td>
+<td>The public IP address to include in the generated TLS certificates.</td>
+</tr>
+<tr>
+<td><code>--server-port</code></td>
+<td><code>QPI_SERVER_PORT</code></td>
+<td><code>8090</code></td>
+<td>The port this server should run on.</td>
+</tr>
+<tr>
+<td><code>--tls-ca-cert-file</code></td>
+<td><code>QPI_TLS_CA_CERT_FILE</code></td>
+<td><code>.qpi.ca.pem</code></td>
+<td>Path to TLS root CA certificate file.</td>
+</tr>
+<tr>
+<td><code>--tls-ca-key-file</code></td>
+<td><code>QPI_TLS_CA_KEY_FILE</code></td>
+<td><code>.qpi.ca.key</code></td>
+<td>Path to TLS root CA key file.</td>
+</tr>
+<tr>
+<td><code>--tls-cert-file</code></td>
+<td><code>QPI_TLS_CERT_FILE</code></td>
+<td><code>.qpi.cert.pem</code></td>
+<td>Path to TLS certificate file.</td>
+</tr>
+<tr>
+<td><code>--tls-key-file</code></td>
+<td><code>QPI_TLS_KEY_FILE</code></td>
+<td><code>.qpi.key</code></td>
+<td>Path to TLS key file.</td>
+</tr>
+<tr>
+<td><code>--qpus-collection</code></td>
+<td><code>QPI_QPUS_COLLECTION</code></td>
+<td><code>qpus</code></td>
+<td>Collection name for QPUs.</td>
+</tr>
+<tr>
+<td><code>--timeslots-collection</code></td>
+<td><code>QPI_TIMESLOTS_COLLECTION</code></td>
+<td><code>time_slots</code></td>
+<td>Collection name for Reservation Time Slots.</td>
+</tr>
+<tr>
+<td><code>--jobs-collection</code></td>
+<td><code>QPI_JOBS_COLLECTION</code></td>
+<td><code>quantum_jobs</code></td>
+<td>Collection name for Quantum Jobs.</td>
+</tr>
+<tr>
+<td><code>--api-tokens-collection</code></td>
+<td><code>QPI_API_TOKENS_COLLECTION</code></td>
+<td><code>api_tokens</code></td>
+<td>Collection name for API Tokens.</td>
+</tr>
+<tr>
+<td><code>--notifications-collection</code></td>
+<td><code>QPI_NOTIFICATIONS_COLLECTION</code></td>
+<td><code>notifications</code></td>
+<td>Collection name for Notifications.</td>
+</tr>
+<tr>
+<td><code>--qpu-time-requests-collection</code></td>
+<td><code>QPI_QPU_TIME_REQUESTS_COLLECTION</code></td>
+<td><code>qpu_time_requests</code></td>
+<td>Collection name for QPU Time Requests.</td>
+</tr>
+<tr>
+<td><code>--idle-threshold</code></td>
+<td><code>QPI_IDLE_THRESHOLD</code></td>
+<td><code>5s</code></td>
+<td>Time to wait before running fallback FIFO jobs.</td>
+</tr>
+<tr>
+<td><code>--recovery-interval</code></td>
+<td><code>QPI_RECOVERY_INTERVAL</code></td>
+<td><code>10s</code></td>
+<td>Interval for resetting hung/stale jobs.</td>
+</tr>
+<tr>
+<td><code>--job-timeout</code></td>
+<td><code>QPI_JOB_TIMEOUT</code></td>
+<td><code>20s</code></td>
+<td>Max execution time before a job is reset.</td>
+</tr>
+<tr>
+<td><code>--dispatch-poll-interval</code></td>
+<td><code>QPI_DISPATCH_POLL_INTERVAL</code></td>
+<td><code>1s</code></td>
+<td>Frequency of checking queue for pending jobs.</td>
+</tr>
+<tr>
+<td><code>--port-range-start</code></td>
+<td><code>QPI_PORT_RANGE_START</code></td>
+<td><code>6000</code></td>
+<td>NNG port range start.</td>
+</tr>
+<tr>
+<td><code>--port-range-end</code></td>
+<td><code>QPI_PORT_RANGE_END</code></td>
+<td><code>7000</code></td>
+<td>NNG port range end.</td>
+</tr>
+<tr>
+<td><code>--disable-email-password-auth</code></td>
+<td><code>QPI_DISABLE_EMAIL_PASSWORD_AUTH</code></td>
+<td><code>false</code></td>
+<td>Disable email/password login on the users collection.</td>
+</tr>
+<tr>
+<td><code>--oauth2-providers</code></td>
+<td><code>QPI_OAUTH2_PROVIDERS</code></td>
+<td></td>
+<td>JSON string representing OAuth2 providers config.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="server-api-collections">Server API &amp; Collections</h2>
+<p>The server exposes both <strong>custom HTTP routes</strong> and <strong>PocketBase collection endpoints</strong> for client interaction.</p>
+<h3 id="custom-routes">Custom Routes</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Route</th>
+<th>Auth</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/qpus/create</code></td>
+<td>Superuser</td>
+<td>Creates a new QPU record and returns the generated access token.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/qpu/toggle</code></td>
+<td>Superuser</td>
+<td>Enables or disables a QPU by name.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/qpu/maintenance</code></td>
+<td>Superuser</td>
+<td>Puts a QPU into or out of maintenance by id.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/op/qpus/availability</code></td>
+<td>Public</td>
+<td>Lists the QPUs not taking jobs, each with the reason.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/drivers/create</code></td>
+<td>Superuser</td>
+<td>Registers a driver and returns its access token.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/drivers/connect</code></td>
+<td>Access token</td>
+<td>Connects a driver and returns its name, assigned NNG ports + JWT.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/drivers/toggle</code></td>
+<td>Superuser</td>
+<td>Enables or disables a driver by id.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/op/version</code></td>
+<td>Superuser</td>
+<td>Retrieves the application's current version.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/jobs</code></td>
+<td>Authenticated</td>
+<td>Submits a new quantum job.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/jobs</code></td>
+<td>Authenticated</td>
+<td>Lists jobs for the authenticated user.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/jobs/{id}</code></td>
+<td>Authenticated</td>
+<td>Retrieves a specific job.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/jobs/{id}/cancel</code></td>
+<td>Authenticated</td>
+<td>Cancels a pending job.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/op/calibrate/dispatch</code></td>
+<td>Superuser</td>
+<td>Queues a calibration for a tuner driver to pick up.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/qpus</code></td>
+<td>Public</td>
+<td>Lists all registered QPUs.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/qpus/{name}</code></td>
+<td>Public</td>
+<td>Retrieves a specific QPU.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/tokens</code></td>
+<td>Authenticated</td>
+<td>Creates a new API token.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/tokens</code></td>
+<td>Authenticated</td>
+<td>Lists API tokens for the authenticated user.</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/api/tokens/{id}</code></td>
+<td>Authenticated</td>
+<td>Retrieves a specific API token.</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/api/tokens/{id}</code></td>
+<td>Authenticated</td>
+<td>Updates an API token (name/expiry).</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/api/tokens/{id}</code></td>
+<td>Authenticated</td>
+<td>Deletes an API token.</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/notifications/{id}/dismiss</code></td>
+<td>Authenticated</td>
+<td>Dismisses a notification for the current user.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pocketbase-collections">PocketBase Collections</h3>
+<p>All collection endpoints follow the standard PocketBase REST pattern: <code>/api/collections/{name}/records</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Collection</th>
+<th>Auth Rules</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>users</code></td>
+<td>Owner-only</td>
+<td>Authenticated users with <code>qpu_seconds</code> balance.</td>
+</tr>
+<tr>
+<td><code>qpus</code></td>
+<td>Public read; superuser CUD</td>
+<td>QPU hardware records with status, ports, and config.</td>
+</tr>
+<tr>
+<td><code>time_slots</code></td>
+<td>Owner-only CRUD; superuser bypass</td>
+<td>Calendar reservations linked to <code>users</code>.</td>
+</tr>
+<tr>
+<td><code>quantum_jobs</code></td>
+<td>Public read; authenticated create</td>
+<td>Job queue with payload, status, and results.</td>
+</tr>
+<tr>
+<td><code>calibration_results</code></td>
+<td>Authenticated read; superuser CUD</td>
+<td>Reports from calibration runs: fitted parameters, benchmark fidelities and errors.</td>
+</tr>
+<tr>
+<td><code>calibration_requests</code></td>
+<td>Authenticated read; superuser CUD</td>
+<td>The queue of calibrations waiting for, or being run by, a tuner driver.</td>
+</tr>
+<tr>
+<td><code>qpu_time_requests</code></td>
+<td>Owner-only CRUD; superuser update</td>
+<td>Requests for additional QPU time (pending/approved/rejected).</td>
+</tr>
+<tr>
+<td><code>notifications</code></td>
+<td>Authenticated read (visibility-filtered); superuser CUD</td>
+<td>Admin announcements with broadcast/targeted reach, time windows, and dismiss tracking.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="python-driver-package-qpi-driver">Python Driver Package (<code>qpi-driver</code>)</h2>
+<p>The Python driver has been modularized as a standard package structure inside the <code>qpi-driver/</code> directory.</p>
+<h3 id="extensible-executors">Extensible Executors</h3>
+<p>The package introduces an abstract base <code>Executor</code> class (<code>base.py</code>) which library users can extend to implement custom hardware/simulator backends:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver</span><span class="w"> </span><span class="kn">import</span> <span class="n">Executor</span><span class="p">,</span> <span class="n">JobPayload</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xarray</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xr</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyCustomExecutor</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JobPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">:</span>
+        <span class="c1"># Implement custom control/simulation logic here</span>
+        <span class="o">...</span>
+        <span class="k">return</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dataset</span><span class="p">:</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="c1"># Convert dataset to Qiskit-compatible results dict</span>
+        <span class="o">...</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;counts&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">},</span> <span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="o">...</span><span class="p">}</span>
+</code></pre></div>
+<p>Built-in executors include:
+* <code>MockExecutor</code> (<code>mock</code>): Simulates quantum circuits using Qiskit's <code>BasicSimulator</code>.
+* <code>QiskitAerExecutor</code> (<code>qiskit_aer</code>): Runs quantum circuit simulations using <code>qiskit-aer</code>.
+* <code>QuantifyExecutor</code> (<code>quantify</code>): Executes quantum circuits using <code>quantify-scheduler</code> and a Qblox cluster compiler.
+* <code>QbloxExecutor</code> (<code>qblox</code>): Executes quantum circuits using <code>qblox-scheduler</code> and a Qblox cluster compiler.
+* <code>QuantifyTuner</code> (<code>quantify_tuner</code>): Calibrates quantum chips via <code>quantify-scheduler</code>.
+* <code>QbloxTuner</code> (<code>qblox_tuner</code>): Calibrates quantum chips via <code>qblox-scheduler</code>.
+* Placeholder executors: <code>PrestoExecutor</code> (<code>presto</code>).</p>
+<h3 id="running-the-driver-for-each-executor">Running the Driver for Each Executor</h3>
+<p>A QPU is a <code>process</code> driver; pick the backend with the <code>--device</code> / <code>-d</code> option. Backend-specific settings (dummy mode, quantify config files) are passed as repeatable <code>-o key=value</code> options.</p>
+<h4 id="1-mock-executor">1. Mock Executor</h4>
+<p>Runs simulated measurements without external physics dependencies.
+<div class="highlight"><pre><span></span><code><span class="c1"># Install the package with cli extra</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli]&quot;</span>
+
+<span class="c1"># Start the driver using the mock device</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;mock&quot;</span>
+</code></pre></div></p>
+<h4 id="2-qiskit-aer-simulator">2. Qiskit Aer Simulator</h4>
+<p>Runs realistic circuit simulations using Qiskit Aer.
+<div class="highlight"><pre><span></span><code><span class="c1"># Install the package with simulator extras</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli,aer]&quot;</span>
+
+<span class="c1"># Start the driver using the qiskit_aer device</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;qiskit_aer&quot;</span>
+</code></pre></div></p>
+<h4 id="3-quantify-executor-qblox-cluster">3. Quantify Executor (Qblox Cluster)</h4>
+<p>Compiles and runs circuits using <code>quantify-scheduler</code>.
+* <strong>Dummy/Simulation Mode</strong>: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
+  <div class="highlight"><pre><span></span><code><span class="c1"># Install the package with quantify extra</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli,quantify]&quot;</span>
+
+<span class="c1"># Start driver in dummy mode</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;quantify&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">is_dummy</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml
+</code></pre></div>
+* <strong>Real Hardware Mode</strong>: Compiles and deploys to actual physical Qblox hardware.
+  <div class="highlight"><pre><span></span><code><span class="c1"># Start driver with a hardware config file</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;quantify&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml
+</code></pre></div></p>
+<h4 id="4-qblox-executor-qblox-cluster">4. Qblox Executor (Qblox Cluster)</h4>
+<p>Compiles and runs circuits using <code>qblox-scheduler</code>.
+* <strong>Dummy/Simulation Mode</strong>: Compiles the schedule and executes it against a dummy local Qblox instrument cluster.
+  <div class="highlight"><pre><span></span><code><span class="c1"># Install the package with qblox extra</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli,qblox]&quot;</span>
+
+<span class="c1"># Start driver in dummy mode</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;qblox&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">is_dummy</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml
+</code></pre></div>
+* <strong>Real Hardware Mode</strong>: Compiles and deploys to actual physical Qblox hardware.
+  <div class="highlight"><pre><span></span><code><span class="c1"># Start driver with a hardware config file</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;qblox&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml
+</code></pre></div></p>
+<h3 id="5-calibration-tuners">5. Calibration Tuners</h3>
+<p>Runs calibration experiments against the chip, fits the results, and writes the fitted
+parameters back to the same <code>quantify.device.yml</code> the <code>process</code> driver reads for every
+job. A tuner registers as its own driver, separate from the QPU driver on the same node.</p>
+<p><code>calibration_config</code> is the one option worth setting deliberately: it says which routines
+run and over what. A tuner cannot start without it — a calibration with nothing to run
+would report success having measured nothing, so its absence is a startup error rather
+than a default.</p>
+<p>The graph is thirty-three routines, from finding the resonators through the readout
+discriminator, the 1-2 transition and leakage, to a two-qubit gate. A node may carry a
+<em>check</em> beside its sweep, so a partial recalibration re-runs what is measurably stale
+rather than a fixed list. Nodes whose result needs a submodule the chip's element does
+not have decline instead of failing, so a stock <code>BasicTransmonElement</code> config still
+calibrates everything it has room for.</p>
+<ul>
+<li><strong>Quantify Tuner</strong> (quantify-scheduler):
+  <div class="highlight"><pre><span></span><code><span class="c1"># Install the package with quantify_tuner extra</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli,quantify_tuner]&quot;</span>
+
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;quantify_tuner&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>qpi-driver/py/calibration.example.yml<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml<span class="w"> </span>-o<span class="w"> </span><span class="nv">is_dummy</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div></li>
+<li><strong>Qblox Tuner</strong> (qblox-scheduler):
+  <div class="highlight"><pre><span></span><code><span class="c1"># Install the package with qblox_tuner extra</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;./qpi-driver/py[cli,qblox_tuner]&quot;</span>
+
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;qblox_tuner&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>qpi-driver/py/calibration.example.yml<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>qpi-driver/py/quantify.hardware.example.json<span class="w"> </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>qpi-driver/py/quantify.device.example.yml
+</code></pre></div></li>
+<li><strong>With drift monitoring</strong>: give the tuner an interval and it benchmarks on its own
+  schedule, recalibrating the qubits whose fidelity has fallen below threshold. Edges are
+  judged against the two-qubit threshold and qubits against the one-qubit one.
+  <div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--token<span class="w"> </span><span class="s2">&quot;my-super-secret-token-12345&quot;</span><span class="w"> </span>--ca-fingerprint<span class="w"> </span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span>--device<span class="w"> </span><span class="s2">&quot;quantify_tuner&quot;</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>qpi-driver/py/calibration.example.yml<span class="w"> </span>-o<span class="w"> </span><span class="nv">drift_check_interval</span><span class="o">=</span><span class="m">1800</span><span class="w"> </span>-o<span class="w"> </span><span class="nv">fidelity_threshold</span><span class="o">=</span><span class="m">0</span>.999<span class="w"> </span>-o<span class="w"> </span><span class="nv">fidelity_2q_threshold</span><span class="o">=</span><span class="m">0</span>.99
+</code></pre></div></li>
+</ul>
+<p><strong>Triggering one from the server.</strong> Admins can queue a calibration from the dashboard's
+Calibration tab, or directly:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$QPI_ADDR</span><span class="s2">/api/op/calibrate/dispatch&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: </span><span class="nv">$ADMIN_TOKEN</span><span class="s2">&quot;</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;driver_id&quot;: &quot;&lt;driver-id&gt;&quot;, &quot;mode&quot;: &quot;fidelity_check&quot;}&#39;</span>
+</code></pre></div>
+<p><code>mode</code> is one of <code>fidelity_check</code> (benchmarks only — minutes, changes nothing), <code>partial</code>
+(narrows to <code>target_qubits</code> and re-runs what the checks blame), or <code>full</code> (the whole
+graph, hours).
+The request is queued rather than sent: it survives a restart and runs when an offline
+driver reconnects. A tuner runs one calibration at a time.</p>
+<p>See the <a href="https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md">Calibration Tuners reference</a>
+for the routine graph, the <code>calibration.yml</code> format, and how the device file is written back.</p>
+<h3 id="cli-usage">CLI Usage</h3>
+<p>The package exposes a command-line interface via <code>typer</code>. A driver is run with one verb, <code>start</code>: <code>--operation</code> says what it does — <code>process</code> (a QPU), <code>monitor</code> (e.g. a cryostat) or <code>calibrate</code> (a tuner) — and <code>--device</code> which backend within it. Options can be passed as flags or fall back to their environment variables.</p>
+<p>Universal options (shared by every operation):
+* <code>-a</code>, <code>--qpi-addr</code>: Full URL of the QPI server (env: <code>QPI_ADDR</code>, default: <code>http://127.0.0.1:8090</code>).
+* <code>-t</code>, <code>--token</code>: Access token identifying the driver (env: <code>QPI_ACCESS_TOKEN</code>, required).
+* <code>-d</code>, <code>--device</code>: Which backend to run within the operation, e.g. <code>mock</code>, <code>qblox</code>, <code>bluefors_gen1</code>, <code>quantify_tuner</code> (env: <code>QPI_DEVICE</code>).
+* <code>--ca-file</code>: Path to the downloaded root CA certificate of the server (env: <code>QPI_CA_FILE</code>, default: <code>./bin/qpi.ca.pem</code>).
+* <code>--ca-fingerprint</code>: Fingerprint pinning the server's root CA; shown after creating the QPU/driver in the dashboard (env: <code>QPI_CA_FINGERPRINT</code>, required).
+* <code>--data-dir</code>: Directory the driver writes its data under (env: <code>QPI_DATA_DIR</code>, default: <code>./bin/data</code>). A systemd install points it at <code>/var/qpi-driver/&lt;service-name&gt;</code>; <code>-o data_dir=</code> overrides it where a unit file still sets one.
+* <code>-o</code>, <code>--option</code>: A setting of the chosen device as <code>key=value</code>, repeatable.</p>
+<p><code>process</code> options (<code>-o</code>): <code>is_dummy</code> (default <code>false</code>), <code>job_timeout</code> (seconds, default <code>10</code>), <code>quantify_hardware_config</code>, <code>quantify_device_config</code>, <code>save_raw_data</code> (default <code>false</code> — <code>qblox</code> only: keep each job's acquisition and an instrument snapshot under the data dir).</p>
+<p><code>monitor</code> options (<code>-o</code>) for <code>bluefors_gen1</code>: <code>channels</code> (required, <code>path[:unit],…</code>), <code>base_url</code>, <code>api_key</code>, <code>poll_interval</code>, <code>timeout</code>.</p>
+<p><code>calibrate</code> options (<code>-o</code>) for <code>quantify_tuner</code>/<code>qblox_tuner</code>: <code>calibration_config</code> (required in practice — a tuner with nothing to run measures nothing and reports success), <code>quantify_device_config</code>, <code>quantify_hardware_config</code>, <code>is_dummy</code>, <code>is_simulated</code>, <code>spi_rack_address</code>, <code>save_raw_data</code>, <code>drift_check_interval</code>, <code>fidelity_threshold</code>, <code>fidelity_2q_threshold</code>.</p>
+<p>The dashboard is where these are documented and filled in — registering a driver
+generates the command that launches it, with its options in place — and it is the only
+place they are described: a device in an SDK is a name and a builder, so there is no
+second list to fall out of step (<a href="https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0003-driver-extensibility.md">RFC 0003 §9</a>).
+<code>qpi-driver devices</code> on the node says which devices that build can run. An <code>-o</code> key no
+device reads is an error rather than a setting silently ignored.</p>
+<hr />
+<h2 id="developer-lifecycle-makefile">Developer Lifecycle (Makefile)</h2>
+<p>A <code>Makefile</code> is provided in the root directory to simplify development, linting, formatting, and testing.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Build Go binary (automatically compiles the React dashboard) and sync Python driver package</span>
+make<span class="w"> </span>build
+
+<span class="c1"># Run all unit tests and end-to-end integration tests (clients and driver)</span>
+make<span class="w"> </span><span class="nb">test</span>
+
+<span class="c1"># Run only Python driver unit tests</span>
+make<span class="w"> </span>test-py
+
+<span class="c1"># Run the dashboard&#39;s pure-helper unit tests (no DOM, no server)</span>
+make<span class="w"> </span>test-dashboard
+
+<span class="c1"># Run dashboard Cypress E2E tests (PocketBase + Driver + Cypress)</span>
+make<span class="w"> </span>test-e2e-dashboard
+
+<span class="c1"># Check the documentation against the code: the make targets and paths it names,</span>
+<span class="c1"># its Python/Go/TypeScript snippets, the custom-device example, and the site</span>
+make<span class="w"> </span>test-docs
+
+<span class="c1"># Run linters across Go, Python driver, JS client, and dashboard codebases</span>
+make<span class="w"> </span>lint
+
+<span class="c1"># Automatically format all source files in the repository</span>
+make<span class="w"> </span>format
+
+<span class="c1"># Clean database, build artifacts, cache files</span>
+make<span class="w"> </span>clean
+</code></pre></div>
+<h2 id="license">License</h2>
+<p>Copyright (c) 2026 <a href="https://github.com/Tinitto">Martin Ahindura</a></p>
+<p>Licensed under the <a href="https://github.com/sopherapps/qpi/blob/main/LICENSE">MIT License</a></p>
+<h2 id="gratitude">Gratitude</h2>
+<blockquote>
+<p>"What is more, I consider everything a loss because of the surpassing worth of knowing Christ Jesus
+my Lord, for whose sake I have lost all things"</p>
+<p>-- Philippians 3: 8</p>
+</blockquote>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

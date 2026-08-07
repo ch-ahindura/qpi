@@ -1,0 +1,1979 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/rfcs/0006-calibration-graph-in-the-dashboard/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>RFC 0006 — The Calibration Graph in the Dashboard - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rfc-0006-the-calibration-graph-in-the-dashboard" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              RFC 0006 — The Calibration Graph in the Dashboard
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../driver/python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-what-exists-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. What exists today
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-gap-in-three-parts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The gap, in three parts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-phase-1-the-plan-on-the-wire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Phase 1 — the plan on the wire
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Phase 1 — the plan on the wire">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-no-new-event-the-plan-rides-calibrationqueued" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 No new event: the plan rides CalibrationQueued
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 The server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-per-node-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Per-node state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-the-drawing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 The drawing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-phase-2-the-node-card" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Phase 2 — the node card
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-phase-3-charts-behind-a-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Phase 3 — charts behind a node
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Implementation plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-retention" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Retention
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-testing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Testing strategy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-settled-in-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Settled in review
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-what-this-deliberately-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. What this deliberately does not do
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rfc-0006-the-calibration-graph-in-the-dashboard">RFC 0006 — The Calibration Graph in the Dashboard</h1>
+<ul>
+<li><strong>Status:</strong> Implemented — all four phases of §8. Phase 3 converts the fits that
+  have a model curve (Rabi, Ramsey, DRAG, fine amplitude, T1, T2, RB, and the
+  Lorentzian spectroscopies); the rest report no summary and their cards show no
+  chart, which is what "a routine at a time" was for.</li>
+<li><strong>Author:</strong> Martin Ahindura</li>
+<li><strong>Created:</strong> 2026-08-06</li>
+<li><strong>Depends on:</strong> RFC 0004 (the <code>calibrate</code> operation, the DAG walk, the report),
+  RFC 0005 (the thirty-three-node graph and its checks)</li>
+<li><strong>Touches:</strong> <code>qpi-driver</code> (Python), <code>qpi-ui</code> (server and dashboard). No new event
+  type, no new operation, no new collection — the plan extends an event that exists
+  and the retention work extends an engine that exists.</li>
+</ul>
+<h2 id="1-the-idea">1. The idea</h2>
+<p>The Calibration tab can now say <code>step 7 of 33 — rabi on q2</code>, and draw a bar. That is
+a position in a list. The thing actually being walked is a graph, and its shape is
+the part an operator reasons with: which nodes are downstream of the one that just
+failed, whether the run is still in readout bring-up or has reached the two-qubit
+gate, what a stalled node is waiting on.</p>
+<p>The dashboard cannot draw that graph, for one reason: <strong>it does not know it.</strong> The
+graph exists only as <code>depends_on</code> on thirty-three Python classes inside the driver.
+Nothing crosses the wire that describes it.</p>
+<p>This RFC gets the graph across, draws it, and makes a node clickable — first showing
+what is already known about it, later showing the data behind its fit.</p>
+<h2 id="2-what-exists-today">2. What exists today</h2>
+<p>Established by reading the code, not assumed:</p>
+<p><strong>The graph.</strong> Thirty-three routines, thirty-five dependency edges, a single root
+(<code>resonator_spectroscopy</code>), eleven layers deep and at most eight nodes wide. Four
+routines are benchmarks (<code>readout_fidelity</code>, <code>rb</code>, <code>interleaved_rb</code>, <code>allxy_check</code>),
+six target edges rather than qubits, four carry a check. Serialised with the fields
+below it is <strong>5.3 kB of JSON</strong> — small enough that how we ship it is not a
+performance question.</p>
+<p><strong>Per-node metadata already declared.</strong> Every <code>CalibrationRoutine</code> has <code>name</code>,
+<code>depends_on</code>, <code>targets</code> (<code>qubits</code>|<code>edges</code>), <code>is_benchmark</code>, <code>has_check</code>,
+<code>measures_itself</code>, and <code>updates</code> — the device-config paths it writes, e.g. <code>rabi</code>
+declares <code>("rxy.amp180",)</code>. Twelve routines declare no <code>updates</code> because they measure
+without tuning (<code>t1</code>, <code>t2_echo</code>, <code>rb</code>, <code>allxy</code>, …). An info card has real content
+available without inventing anything.</p>
+<p><strong>The events.</strong> <code>CalibrationQueued</code> announces a run before it starts;
+<code>CalibrationProgress</code> fires after each routine-and-target with <code>step</code>, <code>total</code>,
+<code>routine</code>, <code>target</code>, <code>succeeded</code>, <code>failed</code>, <code>elapsed_s</code>; <code>CalibrationResult</code> carries
+the report at the end.</p>
+<p><strong>The row.</strong> A calibration has one <code>calibration_requests</code> record — dispatched ones
+keyed by record id, self-triggered ones by the <code>job_id</code> field — carrying <code>status</code>,
+<code>trigger</code>, and a <code>progress</code> object that each progress event <em>replaces</em>. The dashboard
+subscribes to that collection, so a write to the row reaches the browser with no new
+plumbing.</p>
+<p><strong>The report.</strong> <code>routine_results</code> holds per routine-and-target: <code>parameters</code> (the
+fitted values), <code>timestamp</code>, <code>duration_s</code>. <code>benchmarks</code> holds <code>fidelity</code>,
+<code>error_per_gate</code> and a free-form <code>raw_data</code> — and RB already ships its depths and
+decay rate in there. <strong>A chartable payload already crosses the wire for one class of
+node.</strong> That precedent matters in §7.</p>
+<p><strong>The dashboard has no charting library.</strong> <code>ReadingsChart.tsx</code> is a 119-line
+hand-rolled SVG line chart, and says why: "no charting library — since the dashboard
+build has no reliable access to install one in every environment it runs in." The
+whole <code>dependencies</code> list is <code>react</code>, <code>react-dom</code>, <code>pocketbase</code>, <code>lucide-react</code>.</p>
+<p>That reason does not survive checking. <code>make build-dashboard</code> runs <code>npm ci</code>, as do
+the lint and format targets — the build already requires a registry it can reach, and
+already installs four packages from it. A fifth changes nothing about which
+environments can build. Whatever the comment was protecting against, it is not the
+network. <strong>D4a treats the absence as a choice to re-make, not a constraint to design
+around.</strong></p>
+<p><strong>There is already a retention engine.</strong> <code>scheduler.PruneEvents</code> deletes rows from
+the events log older than <code>cfg.EventsRetention</code> (default 720 h, <code>0</code> disables), in
+batches of 500, driven by <code>RunEventsRetentionEngine</code> — a background loop that exits
+immediately when the framework is off. §9 extends this rather than inventing
+anything.</p>
+<h2 id="3-the-gap-in-three-parts">3. The gap, in three parts</h2>
+<p>They differ by an order of magnitude in cost, and should not be committed to as one
+piece of work.</p>
+<ol>
+<li><strong>The shape is not on the wire.</strong> No node list, no edges. A bar is the most the
+   dashboard can honestly draw.</li>
+<li><strong>Progress is a scalar.</strong> <code>progress</code> holds the latest position and nothing else.
+   Colouring thirty-three nodes needs per-node state, which means accumulating rather
+   than replacing.</li>
+<li><strong>Nothing chartable exists per node.</strong> Fitted parameters reach the report;
+   the sweep behind them does not. <code>-o save_raw_data=true</code> writes datasets to the
+   driver's own disk, which the server cannot read and nothing prunes.</li>
+</ol>
+<h2 id="4-decisions">4. Decisions</h2>
+<p><strong>D1 — The driver publishes the plan; the server does not hold a copy of the graph.</strong>
+A second copy is the thing this codebase repeatedly refuses (RFC 0003 §9), and here
+it would be wrong as well as duplicated: the graph the dashboard must draw is the
+<em>enabled subset</em> for this run, which depends on <code>calibration.yml</code>, on <code>mode</code>, and for
+a partial run on what <code>diagnose</code> blamed. Only the driver can compute it. The Go test
+that pins the catalog's <code>-o</code> keys to the Python builder exists because that
+duplication was already tried once.</p>
+<p><strong>D2 — A node is a routine, not a routine-and-target.</strong> On five qubits with one edge
+the walk is ~141 routine-and-target pairs; the graph is thirty-three nodes. The
+drawing is of routines, each carrying its own <code>3/5 done</code> tally. Drawing 141 nodes
+would be a picture of the sweep, not of the dependency structure that makes the
+picture worth having.</p>
+<p><strong>D3 — Per-node state lives on the request row, beside <code>progress</code>.</strong> Same reasoning
+as <code>CalibrationProgress</code> itself: a node's state is a current fact that supersedes the
+last one, not history. The report is the history. This keeps one row per calibration
+and reuses the subscription the dashboard already has.</p>
+<p><strong>D4a — The graph is drawn by hand; no graph library.</strong> Not for the reason §2
+retired, but because the job is small and the alternative is aimed elsewhere. Eleven
+layers, eight wide, a fixed shape: longest-path layering is a dozen lines.
+<code>react-flow</code> (~40 kB gz) plus <code>dagre</code> (~25 kB gz) exists to make nodes draggable,
+pannable and connectable — an interactive editor, which §12 says explicitly we do not
+want. We would be importing an editor to get a static picture.</p>
+<p><strong>D4b — Charts get a library.</strong> This is where hand-rolling stops paying. A fit plot
+needs two traces, real axes with ticks, SI-prefixed units, log scales for a punchout,
+a hover readout, and both themes. <code>ReadingsChart</code> is 119 lines for one line, no
+ticks, no legend, one series — and it is the <em>easy</em> case. Thirty-three routines'
+worth of fit plots is a charting library whether or not we import one, and the
+written-here version will be the worse of the two.</p>
+<p><strong>It is visx, and the cost is measured rather than estimated.</strong> Built with a real
+fit plot — two traces, ticked axes, an optional log x — imported and rendered so
+nothing is tree-shaken away:</p>
+<table>
+<thead>
+<tr>
+<th>Bundle</th>
+<th>Raw</th>
+<th>Gzipped</th>
+<th>Δ gz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Baseline</td>
+<td>364.55 kB</td>
+<td><strong>97.76 kB</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>@visx/scale</code> + <code>@visx/shape</code></td>
+<td>401.07 kB</td>
+<td><strong>112.61 kB</strong></td>
+<td>+14.85 kB</td>
+</tr>
+<tr>
+<td>… + <code>@visx/axis</code></td>
+<td>423.74 kB</td>
+<td><strong>120.21 kB</strong></td>
+<td>+22.45 kB</td>
+</tr>
+</tbody>
+</table>
+<p>Twenty-two kilobytes gzipped for every fit plot in the graph is a good trade against
+hand-rolling thirty-three of them, and it leaves a lever: <code>@visx/axis</code> is 7.6 kB of
+that (it pulls in <code>@visx/text</code> for tick labels), so a deployment that cares can drop
+it and draw ticks by hand while keeping the scales and shapes that are the actual
+work. <code>recharts</code> (~100 kB gz) stays the batteries-included alternative but is not
+recommended — it is four times the cost for a chart we have already specified
+completely.</p>
+<p>Reproduce with: add the three packages, render a <code>FitPlot</code> behind a condition the
+bundler cannot prove false (an unused export is tree-shaken and measures nothing —
+this is how the first attempt reported no change at all), <code>npm run build</code>, and
+<code>gzip -c dist/assets/index-*.js | wc -c</code>.</p>
+<p><strong>D5 — Charts come from the report, not from the driver's disk.</strong> Extending the
+<code>raw_data</code> precedent that <code>BenchmarkResult</code> already sets is a path that exists;
+shipping HDF5 datasets off the node is a new subsystem (upload, storage, retention)
+for a feature that wants a few hundred points. §9 bounds it.</p>
+<p><strong>D6 — A drift check does not draw.</strong> <code>mode: fidelity_check</code> walks four benchmark
+nodes with no dependencies between them worth looking at; a graph of it would be four
+disconnected boxes. The tab keeps the bar and the tally for that mode and draws the
+graph for <code>full</code> and <code>partial</code>. The driver therefore sends no plan for a drift check
+at all, which also keeps the most frequent calibration the cheapest to store.</p>
+<p><strong>D7 — A drawing is pinned to the plan it was sent.</strong> The worker re-reads
+<code>calibration.yml</code> between jobs but never within one, so a plan describes its run for
+that run's lifetime. The dashboard renders the stored plan and never re-derives the
+shape from progress events, so a config edit mid-run cannot make the picture
+disagree with the walk it is describing.</p>
+<p><strong>D8 — Three phases, shippable in order.</strong> Phase 1 is worth having alone; phase 3
+requires touching every routine's <code>analyse</code> and should not gate it.</p>
+<h2 id="5-phase-1-the-plan-on-the-wire">5. Phase 1 — the plan on the wire</h2>
+<h3 id="51-no-new-event-the-plan-rides-calibrationqueued">5.1 No new event: the plan rides <code>CalibrationQueued</code></h3>
+<p><code>CalibrationQueued</code> already means "a calibration is starting, here is what it is".
+The plan is the rest of that sentence, so it goes in the same payload rather than in
+an event of its own.</p>
+<p>The wrinkle is that the two facts become available at different moments, and in
+different processes. The announcement is made in the driver's main process when the
+job is queued — before the row exists, which is the point of it. The plan is resolved
+inside the worker, in <code>CalibrationDAG.run</code>, which is the only place the enabled
+subset and each node's applicable targets are known.</p>
+<p>So <code>CalibrationQueued</code> is emitted <strong>twice</strong> for one calibration: once at queue time
+without a plan, once from the walk with one. The handler already tolerates this —
+it looks the row up and creates it only when absent (that idempotence was added for a
+driver reconnecting mid-run) — and gains one line to attach the plan when the payload
+carries one. A dispatched calibration, which has a row already and emits no
+announcement today, now emits the second one, so it gets a plan the same way.</p>
+<p>The alternative is to move the announcement into the worker so there is only one
+emission. Rejected: it would delay the row until the job starts rather than when the
+driver decides to run it, and losing that is worse than sending a small event twice.</p>
+<p>The payload gains <code>plan</code>, absent on the first emission and on a <code>fidelity_check</code>
+(D6):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;job_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc123def456ghi&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;full&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;target_qubits&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;q0&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;q1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;q2&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;dispatched&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;plan&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;nodes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rabi&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;depends_on&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;qubit_spectroscopy&quot;</span><span class="p">],</span>
+<span class="w">        </span><span class="nt">&quot;targets&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;q0&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;q1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;q2&quot;</span><span class="p">],</span>
+<span class="w">        </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;qubits&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;planned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;is_benchmark&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;has_check&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;updates&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;rxy.amp180&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>targets</code> is the resolved list this run will walk — after <code>applies_to</code> has declined
+the ones whose result has nowhere to go (RFC 0005 §7) — so a node the dashboard draws
+as skipped is skipped for a reason the driver already computed. Nodes excluded from
+the run entirely (disabled, or outside a partial's <code>only</code> list) are <strong>still sent</strong>,
+marked <code>"planned": false</code>: seeing which parts of the graph a partial run is <em>not</em>
+touching is most of the value of drawing it.</p>
+<p>The plan is built in <code>CalibrationDAG.run</code> and travels through the same sink
+<code>on_progress</code> uses, tagged so the result pump can tell the two apart and emit the
+right event. It rides the existing best-effort path: a plan that fails to send costs
+the drawing, not the calibration.</p>
+<h3 id="52-the-server">5.2 The server</h3>
+<p><code>handleCalibrationQueued</code> gains one branch: when the payload carries a <code>plan</code>, write
+it to a new <code>plan</code> json field on the row it resolved or created. Everything else
+about that handler is unchanged, including the silent-on-miss treatment — a drift
+check whose announcement was lost has no row, and a plan for it is not worth an
+error.</p>
+<h3 id="53-per-node-state">5.3 Per-node state</h3>
+<p><code>progress</code> gains a <code>nodes</code> map, <code>{routine: {state, done, total, failed}}</code>, updated in
+place as each progress event arrives. The handler becomes a read-modify-write of the
+one node named in the event, which at a few hundred events per calibration is not a
+load concern.</p>
+<p>States: <code>pending</code>, <code>running</code>, <code>done</code>, <code>failed</code>, <code>partial</code> (some targets failed),
+<code>skipped</code> (no targets applied), <code>not_planned</code>.</p>
+<p><code>running</code> needs care: a progress event fires <em>after</em> a target finishes, so the node
+the event names has just completed one target, and the running node is that same node
+until the next event names a different one. The handler marks the named node
+<code>running</code> while its tally is short of its total, and the <em>previous</em> node <code>done</code> when a
+new name appears.</p>
+<h3 id="54-the-drawing">5.4 The drawing</h3>
+<p>A new <code>CalibrationGraph</code> component under <code>CalibrationTab/elements/</code>.</p>
+<p>Layout: layer = longest path from a root over <code>depends_on</code> (the eleven layers in §2);
+within a layer, order by the plan's own sequence so the drawing matches the walk.
+Nodes are boxes on a grid, edges are SVG paths. Eleven layers at ~64 px is ~700 px
+tall, eight wide at ~140 px is ~1100 px — so it scrolls in its container on a narrow
+screen, and the whole graph is visible on a desktop.</p>
+<p>Colour by state, using the palette the tab already uses for status. A node shows its
+name and, when it has more than one target, <code>3/5</code>.</p>
+<h2 id="6-phase-2-the-node-card">6. Phase 2 — the node card</h2>
+<p>Clicking a node opens a card beside the graph. Everything it shows in phase 2 is data
+already on the client:</p>
+<ul>
+<li><strong>What it is</strong>: name, <code>qubits</code>/<code>edges</code>, benchmark and check flags.</li>
+<li><strong>What it writes</strong>: the <code>updates</code> paths, or "measures only — writes nothing" for
+  the twelve that declare none.</li>
+<li><strong>Where it sits</strong>: what it depends on, and what depends on it. Clicking either
+  navigates.</li>
+<li><strong>How this run went</strong>: per target, the state, the duration, and — once the report
+  has arrived — the fitted <code>parameters</code> from <code>routine_results</code>, and <code>fidelity</code> /
+  <code>error_per_gate</code> for a benchmark.</li>
+<li><strong>Why it failed</strong>: the matching entry from the report's <code>errors</code>, which is already
+  keyed <code>routine[target]</code>.</li>
+</ul>
+<p>For a run still in flight the card shows the tally and whatever targets have
+finished; the parameters appear when the report lands.</p>
+<h2 id="7-phase-3-charts-behind-a-node">7. Phase 3 — charts behind a node</h2>
+<p>This is the phase that needs new data, and the honest cost is per routine.</p>
+<p>A routine's <code>analyse</code> receives the sweep dataset and returns fitted parameters. To
+chart it, <code>analyse</code> must also return the <strong>fit summary</strong>: the x values, the measured
+y values, and the fitted curve evaluated on the same x. For a 41-point sweep that is
+~1 kB as JSON; for the whole graph on five qubits, a few hundred kB in the report.</p>
+<p>That is a real increase in the size of a <code>calibration_results</code> row, and it should be
+bounded explicitly:</p>
+<ul>
+<li>Downsample to at most 200 points per trace. Every routine's sweep in
+  <code>calibration.example.yml</code> is 41 points or fewer, so this is a ceiling rather than a
+  loss today.</li>
+<li>Two traces per target: measured and fitted. No residuals; they are a subtraction the
+  client can do.</li>
+<li>A cap on the whole field, beyond which the summary is dropped and the card says so.
+  A report that will not save is worse than a report with no chart in it.</li>
+</ul>
+<p>The chart component uses the library D4b settles on, measured before it is adopted.
+Two traces, ticked axes, SI-prefixed units, a log x-axis where the sweep is
+logarithmic, and both themes — that is the list <code>ReadingsChart</code> would have to grow
+into, and the reason not to write it again thirty-three times.</p>
+<p><strong>A routine at a time.</strong> <code>RoutineResult</code> gains an optional <code>fit</code> field, so a routine
+that has not been converted simply has no chart and the card says the fit summary is
+not available for it. The four benchmarks are the natural first ones — RB already puts
+its decay curve in <code>raw_data</code>, so <code>rb</code> and <code>interleaved_rb</code> are a rendering job with
+no driver change at all.</p>
+<h2 id="8-implementation-plan">8. Implementation plan</h2>
+<p>Each phase is independently shippable and independently useful. An event the server
+does not know is logged and dropped, and a field the dashboard does not know is
+ignored, so driver and server can deploy in either order.</p>
+<p><strong>Phase 1 — the graph, drawn and live.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tuners/base/dag.py</code></td>
+<td>build the plan in <code>run</code>, send it through the sink, tagged</td>
+</tr>
+<tr>
+<td><code>builtins/calibrate.py</code></td>
+<td>route a tagged plan to a second <code>CalibrationQueued</code>; skip it for <code>fidelity_check</code></td>
+</tr>
+<tr>
+<td><code>api/schema.go</code></td>
+<td><code>Plan</code> on <code>CalibrationQueuedPayload</code></td>
+</tr>
+<tr>
+<td><code>api/nng_driver.go</code></td>
+<td>attach the plan in <code>handleCalibrationQueued</code>; per-node accumulation in <code>handleCalibrationProgress</code></td>
+</tr>
+<tr>
+<td><code>db/models.go</code></td>
+<td><code>Plan</code> on <code>CalibrationRequest</code></td>
+</tr>
+<tr>
+<td>dashboard</td>
+<td><code>CalibrationGraph</code>, layout helper, types</td>
+</tr>
+</tbody>
+</table>
+<p>No new event type, so <code>events.py</code>, the Go and TypeScript enums and
+<code>drivers/catalog.go</code> are untouched — that is what §5.1 buys.</p>
+<p>Tests: the plan's shape, that it is absent for a <code>fidelity_check</code>, and that it
+arrives before the first progress event (Python); the handler attaching a plan to a
+row it did not create, and node state accumulating across several progress events
+(Go); the layering helper against the known eleven layers (a pure function, so a unit
+test without a DOM).</p>
+<p><strong>Phase 2 — the card.</strong> Dashboard only, plus whatever the card needs that the plan
+does not already carry. No driver or server change expected.</p>
+<p><strong>Phase 3 — charts.</strong> Measure the candidate libraries against the 97.67 kB gz
+baseline and pick one (D4b). Then <code>RoutineResult.fit</code>, one routine at a time,
+starting with the two RB benchmarks that need no driver change. A size cap with a
+test that a report over it still saves.</p>
+<p><strong>Phase 4 — retention.</strong> <code>PruneCalibrations</code> beside <code>PruneEvents</code>, three config
+durations, wired into <code>RunEventsRetentionEngine</code>'s tick. Independent of phases 1–3
+and overdue without them: nothing in the calibration path is pruned today.</p>
+<h2 id="9-retention">9. Retention</h2>
+<p>Everything this RFC adds accumulates, and nothing in the calibration path is pruned
+today. That is already true without it — the gap is pre-existing and this makes it
+bigger — so the policy belongs here rather than in a later RFC.</p>
+<p><strong>The pattern exists.</strong> <code>scheduler.PruneEvents</code> deletes events-log rows older than
+<code>cfg.EventsRetention</code> in batches of 500, run by <code>RunEventsRetentionEngine</code>, disabled
+by setting the duration to <code>0</code>, and a no-op when the driver framework is off. What
+follows copies it rather than inventing a second mechanism.</p>
+<p><strong>What accumulates, and how fast.</strong> For a five-qubit chip with a drift check every
+thirty minutes:</p>
+<table>
+<thead>
+<tr>
+<th>Row</th>
+<th>Per calibration</th>
+<th>Per year</th>
+<th>Prune?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>calibration_requests</code> (+ <code>plan</code>, + node map)</td>
+<td>~6 kB for a full run; a drift check sends no plan (D6) and is ~1 kB</td>
+<td>~20 MB</td>
+<td><strong>Yes — aggressively</strong></td>
+</tr>
+<tr>
+<td><code>calibration_results</code> today</td>
+<td>~10–30 kB (fitted parameters, benchmarks)</td>
+<td>~200 MB</td>
+<td><strong>No — this is the chip's history</strong></td>
+</tr>
+<tr>
+<td><code>calibration_results</code> with phase 3 fit summaries</td>
+<td>~150 kB</td>
+<td>~2.5 GB</td>
+<td><strong>The summaries only</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The policy, in three parts:</strong></p>
+<ol>
+<li><strong>Finished requests are bookkeeping.</strong> A <code>done</code> or <code>failed</code> row exists to have
+   carried a status and a progress position while the run was live. Once the report
+   is stored it holds nothing the report does not. Prune on
+   <code>cfg.CalibrationRequestRetention</code>, default 720 h to match the events log, on
+   <code>status != 'running' &amp;&amp; status != 'pending' &amp;&amp; created &lt; cutoff</code>. A <code>running</code> row
+   is never pruned however old, or a hung calibration would lose its record while
+   still running.</li>
+<li><strong>Reports are not bookkeeping and are not pruned by default.</strong> They are what the
+   chip was, and RFC 0004 §9's whole argument for storing them is that the history is
+   the point. <code>cfg.CalibrationResultRetention</code> exists and defaults to <code>0</code> — disabled
+   — so an operator with a disk problem has a lever and nobody else loses history by
+   accident.</li>
+<li><strong>Fit summaries are pruned separately from the reports that carry them.</strong> They are
+   ~90% of a phase 3 row and the least durable part of its value: nobody re-reads the
+   Rabi trace from eight months ago, but the fitted <code>amp180</code> is the record of what the
+   chip was. <code>cfg.CalibrationFitRetention</code>, default 720 h, strips <code>fit</code> from
+   <code>routine_results</code> and <code>raw_data</code> from <code>benchmarks</code> on older rows, leaving
+   everything else. The card says the trace has aged out rather than showing an empty
+   chart.</li>
+</ol>
+<p>Point 3 is why phase 3's cap in §7 is a cap and not a budget: a bounded row that is
+also pruned is bounded twice, which is what makes 2.5 GB/year an acceptable worst
+case rather than the number we live with.</p>
+<p><strong>Driver-side raw data is out of scope and stays that way.</strong> <code>-o save_raw_data=true</code>
+writes to the driver's own disk, where this server cannot see it and this engine
+cannot reach it. It is off by default for exactly that reason, and its own docs say
+so. An operator who turns it on owns the directory.</p>
+<h2 id="10-testing-strategy">10. Testing strategy</h2>
+<p>The layering helper and the state reducer are pure functions and get unit tests.</p>
+<p><strong>The Cypress harness learns to seed a calibration</strong>, which it can: <code>e2e/seed.py</code>
+already authenticates against <code>_superusers</code> and POSTs straight into collections —
+<code>qpus</code>, <code>users</code>, <code>api_tokens</code>, <code>time_slots</code> — and a superuser token bypasses the
+<code>calibration_requests</code> create rule the same way it bypasses those. One function in
+the same shape as the <code>time_slots</code> one, seeding a <code>running</code> request with a <code>plan</code>, a
+node map and a <code>progress</code>, is all it takes.</p>
+<p>Worth doing before phase 1 rather than as part of it. It is the missing piece that
+makes the <em>already shipped</em> in-flight banner and progress bar testable — both are
+untested today for exactly this reason — so it pays for itself before the graph
+exists to use it.</p>
+<p>The end-to-end path — a real walk against the simulator producing a plan whose nodes
+match the report's <code>routine_results</code> — belongs in <code>test_calibration_e2e.py</code>, which
+already runs the whole worker path.</p>
+<h2 id="11-settled-in-review">11. Settled in review</h2>
+<p>Every question this RFC opened, and where it landed. Kept rather than deleted
+because the reasoning against each is what makes the decision worth trusting.</p>
+<ol>
+<li><strong>The plan rides <code>CalibrationQueued</code>; there is no <code>CalibrationPlan</code> event.</strong> The
+   objection was that the announcement and the plan are known at different moments,
+   in different processes. That is true and the answer is to emit the event twice —
+   the handler is already idempotent, and one small event sent twice is cheaper than
+   a type nobody else needs. §5.1.</li>
+<li><strong>A drift check does not draw.</strong> Four disconnected benchmark boxes is not a
+   picture. It keeps the bar, and the driver sends it no plan — so the most frequent
+   calibration is also the cheapest to store. D6.</li>
+<li><strong>A drawing is pinned to the plan it was sent.</strong> D7.</li>
+<li><strong>Retention is specified here, not deferred.</strong> §9.</li>
+<li><strong>visx, and it fits.</strong> The draft asked for a measurement before committing, and
+   got one: +22.45 kB gz for scales, shapes and axes against a 97.76 kB baseline, or
+   +14.85 kB without the axis module — the lever if that ever needs pulling. D4b.</li>
+<li><strong>The Cypress harness seeds the calibration.</strong> It can: <code>seed.py</code> already writes
+   into collections as a superuser. Doing it early makes the in-flight banner and
+   progress bar — already in production, still untested — testable. §10.</li>
+</ol>
+<p>Nothing is open. The RFC is ready to be moved to Accepted and executed in the four
+phases of §8.</p>
+<h2 id="12-what-this-deliberately-does-not-do">12. What this deliberately does not do</h2>
+<ul>
+<li><strong>No graph editing.</strong> Which routines run is <code>calibration.yml</code> on the driver's disk.
+  A dashboard that edited the graph would be a second source of truth for it.</li>
+<li><strong>No re-running a single node from the card.</strong> The DAG exists because a node's
+  inputs come from its parents; re-running one in isolation is exactly what
+  <code>diagnose</code> refuses to do (RFC 0005 §8). A "recalibrate from here" action is
+  conceivable, but it is a partial dispatch with a seed, not a node-level button, and
+  it needs its own design.</li>
+<li><strong>No raw dataset transfer.</strong> See D5.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

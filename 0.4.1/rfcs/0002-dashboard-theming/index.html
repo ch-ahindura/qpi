@@ -1,0 +1,2576 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/rfcs/0002-dashboard-theming/">
+      
+      
+        <link rel="prev" href="../0001-driver-framework/">
+      
+      
+        <link rel="next" href="../0003-driver-extensibility/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>0002 Dashboard Theming - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rfc-0002-dashboard-theming" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              0002 Dashboard Theming
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../driver/python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Data model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Data model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-default-theme-constant-go-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Default theme constant (Go server)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-in-memory-theme-cache-app-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 In-memory theme cache (app store)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-themes-collection-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 themes collection schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-design-tokens-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Design tokens structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-api-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 API rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-is_active-uniqueness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 is_active uniqueness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. API endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. API endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-theme-asset-endpoints-public-no-auth-cached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Theme asset endpoints (public, no auth, cached)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-admin-endpoints-superuser-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Admin endpoints (superuser-only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-frontend-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Frontend integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Frontend integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-theme-loading-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Theme loading lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-css-custom-property-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 CSS custom property bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-theme-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Theme context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-themetoggle-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 ThemeToggle changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-admin-theme-management-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Admin theme management UI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Security
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Security">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-access-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Access control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-custom-css" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Custom CSS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-custom-js" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Custom JS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-file-uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 File uploads
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-what-exists-today-and-what-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. What exists today, and what changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. What exists today, and what changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Today
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-data-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Data model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Data model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-default-theme-constant-go-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Default theme constant (Go server)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-in-memory-theme-cache-app-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 In-memory theme cache (app store)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-themes-collection-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 themes collection schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-design-tokens-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 Design tokens structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-api-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 API rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#36-is_active-uniqueness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.6 is_active uniqueness
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. API endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. API endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-theme-asset-endpoints-public-no-auth-cached" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Theme asset endpoints (public, no auth, cached)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-admin-endpoints-superuser-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 Admin endpoints (superuser-only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-frontend-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Frontend integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Frontend integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-theme-loading-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 Theme loading lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-css-custom-property-bridge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 CSS custom property bridge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-theme-context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Theme context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-themetoggle-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.4 ThemeToggle changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#55-admin-theme-management-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.5 Admin theme management UI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Security
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Security">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-access-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Access control
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-custom-css" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 Custom CSS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-custom-js" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Custom JS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#64-file-uploads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.4 File uploads
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-what-exists-today-and-what-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. What exists today, and what changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. What exists today, and what changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Today
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#after" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        After
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rfc-0002-dashboard-theming">RFC 0002 — Dashboard Theming</h1>
+<ul>
+<li><strong>Status:</strong> Implemented</li>
+<li><strong>Author:</strong> Martin Ahindura</li>
+<li><strong>Created:</strong> 2026-07-23</li>
+<li><strong>Touches:</strong> <code>qpi-ui</code> (Go/PocketBase), dashboard (React/Tailwind v4)</li>
+<li><strong>Issue:</strong> TBD</li>
+</ul>
+<h2 id="1-the-idea">1. The idea</h2>
+<p>QPI ships a single, hard-coded dashboard look-and-feel. Every deployment looks
+identical — same colours, same logo icon, same "QPI Interface" brand text. For
+organisations hosting their own QPI instance, this is limiting: a university lab
+wants its crest in the sidebar, a startup wants its brand palette, and some
+operators want to go further — injecting custom CSS or even JavaScript to reshape
+the dashboard without forking the codebase.</p>
+<p>This RFC introduces <strong>runtime-customizable theming</strong>. A superuser creates theme
+records in a new PocketBase <code>themes</code> collection, activates one, and every user's
+dashboard immediately picks up the new look. A theme is <strong>self-contained</strong> — it
+carries both light-mode and dark-mode colour palettes so the look is uniform
+across modes. Themes carry:</p>
+<ol>
+<li><strong>Design tokens</strong> — a JSON object with two colour palettes (light and dark)
+   plus shared tokens (fonts, spacing, border-radius, shadows, etc.), applied at
+   runtime via CSS custom properties.</li>
+<li><strong>Branding assets</strong> — logo image (file upload), site/app name, tagline.</li>
+<li><strong>Custom CSS and JavaScript</strong> — raw text fields whose contents are served
+   by dedicated API endpoints and loaded by the dashboard in <code>&lt;style&gt;</code> /
+   <code>&lt;script&gt;</code> tags, enabling arbitrarily deep customisation without a
+   rebuild.</li>
+</ol>
+<p>The dashboard's light/dark toggle switches <strong>which colour palette</strong> within the
+active theme is applied — fonts, spacing, branding, and custom CSS/JS stay the
+same across both modes.</p>
+<h2 id="2-vocabulary">2. Vocabulary</h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Theme</strong></td>
+<td>A record in the <code>themes</code> collection holding one complete visual identity: both colour palettes, shared tokens, branding, and custom CSS/JS.</td>
+</tr>
+<tr>
+<td><strong>Active theme</strong></td>
+<td>The theme whose <code>is_active</code> is <code>true</code>. At most one at a time.</td>
+</tr>
+<tr>
+<td><strong>Design tokens</strong></td>
+<td>A JSON object whose keys map to CSS custom properties. Colours split into <code>light</code> and <code>dark</code>; everything else is shared.</td>
+</tr>
+<tr>
+<td><strong>Default theme</strong></td>
+<td><code>DefaultThemeTokens</code>, a Go constant — the single source of truth for defaults. The frontend falls back to it, and it pre-populates the admin form.</td>
+</tr>
+<tr>
+<td><strong>Cached theme</strong></td>
+<td>The active theme held in PocketBase's in-memory app store and refreshed by collection hooks. Theme endpoints read it rather than the database (§3.2).</td>
+</tr>
+<tr>
+<td><strong>Custom CSS</strong></td>
+<td>An admin-authored CSS block served as a virtual stylesheet, loaded after the base styles so it can override anything.</td>
+</tr>
+<tr>
+<td><strong>Custom JS</strong></td>
+<td>An admin-authored script served as a virtual script, loaded after the app bundle.</td>
+</tr>
+</tbody>
+</table>
+<p>Custom CSS and JS are shared across modes: they can reference <code>--qpi-*</code> properties,
+which change per mode on their own.</p>
+<h2 id="3-data-model">3. Data model</h2>
+<h3 id="31-default-theme-constant-go-server">3.1 Default theme constant (Go server)</h3>
+<p>The Go server defines a <code>DefaultThemeTokens</code> variable that is the <strong>single
+source of truth</strong> for all dashboard defaults. This is a Go struct that:</p>
+<ul>
+<li>Provides the compiled-in CSS custom property fallback values.</li>
+<li>Is served via the <code>/api/theme/defaults</code> endpoint so the frontend admin UI
+  can pre-populate the theme editor form with these values.</li>
+<li>Matches the exact structure of the <code>tokens</code> JSON field (§3.4).</li>
+<li>Is what the theme endpoints return when no theme is active.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="c1">// DefaultThemeTokens is the single source of truth for dashboard design tokens.</span>
+<span class="kd">var</span><span class="w"> </span><span class="nx">DefaultThemeTokens</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ThemeTokens</span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Colors</span><span class="p">:</span><span class="w"> </span><span class="nx">ThemeColors</span><span class="p">{</span>
+<span class="w">        </span><span class="nx">Light</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">            </span><span class="s">&quot;background&quot;</span><span class="p">:</span><span class="w">        </span><span class="s">&quot;#f9fafb&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#ffffff&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface-dim&quot;</span><span class="p">:</span><span class="w">       </span><span class="s">&quot;#f3f4f6&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface-container&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;#e5e7eb&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;primary&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#111827&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;secondary&quot;</span><span class="p">:</span><span class="w">         </span><span class="s">&quot;#6366f1&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;success&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#22c55e&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;warning&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#eab308&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;error&quot;</span><span class="p">:</span><span class="w">             </span><span class="s">&quot;#ef4444&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;border&quot;</span><span class="p">:</span><span class="w">            </span><span class="s">&quot;#e5e7eb&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">Dark</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">            </span><span class="s">&quot;background&quot;</span><span class="p">:</span><span class="w">        </span><span class="s">&quot;#09090b&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#18181b&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface-dim&quot;</span><span class="p">:</span><span class="w">       </span><span class="s">&quot;#131315&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;surface-container&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;#201f22&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;primary&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#ffffff&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;secondary&quot;</span><span class="p">:</span><span class="w">         </span><span class="s">&quot;#6366f1&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;success&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#22c55e&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;warning&quot;</span><span class="p">:</span><span class="w">           </span><span class="s">&quot;#eab308&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;error&quot;</span><span class="p">:</span><span class="w">             </span><span class="s">&quot;#ef4444&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="s">&quot;border&quot;</span><span class="p">:</span><span class="w">            </span><span class="s">&quot;#27272a&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nx">Fonts</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;sans&quot;</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;Inter, sans-serif&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;mono&quot;</span><span class="p">:</span><span class="w">    </span><span class="s">&quot;JetBrains Mono, monospace&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;display&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Geist, sans-serif&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nx">Spacing</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;sidebar-width&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;240px&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nx">Radius</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;sm&quot;</span><span class="p">:</span><span class="w">   </span><span class="s">&quot;0.25rem&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;md&quot;</span><span class="p">:</span><span class="w">   </span><span class="s">&quot;0.375rem&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;lg&quot;</span><span class="p">:</span><span class="w">   </span><span class="s">&quot;0.5rem&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;full&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;9999px&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nx">Shadows</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+<span class="w">        </span><span class="s">&quot;sm&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0 1px 2px rgba(0,0,0,0.05)&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;md&quot;</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0 4px 6px rgba(0,0,0,0.1)&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="p">}</span>
+
+<span class="kd">var</span><span class="w"> </span><span class="nx">DefaultThemeBranding</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ThemeBranding</span><span class="p">{</span>
+<span class="w">    </span><span class="nx">SiteName</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;QPI Interface&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">Tagline</span><span class="p">:</span><span class="w">  </span><span class="s">&quot;Control Hub&quot;</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>File:</strong> <code>qpi-ui/internal/config/theme_defaults.go</code> (new file).</p>
+<h3 id="32-in-memory-theme-cache-app-store">3.2 In-memory theme cache (app store)</h3>
+<p>To avoid querying the database on every page load, the active theme is cached
+in PocketBase's in-memory app store — the same mechanism used by <code>AppConfig</code>
+(<code>SaveConfigOnApp</code> / <code>GetConfigFromApp</code>).</p>
+<div class="highlight"><pre><span></span><code><span class="kd">const</span><span class="w"> </span><span class="nx">appStoreActiveThemeKey</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;active_theme&quot;</span>
+
+<span class="c1">// SaveActiveThemeOnApp caches the active theme in the app store.</span>
+<span class="c1">// Pass nil to clear the cache and revert to the default theme.</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">SaveActiveThemeOnApp</span><span class="p">(</span><span class="nx">app</span><span class="w"> </span><span class="nx">core</span><span class="p">.</span><span class="nx">App</span><span class="p">,</span><span class="w"> </span><span class="nx">theme</span><span class="w"> </span><span class="o">*</span><span class="nx">db</span><span class="p">.</span><span class="nx">Theme</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">theme</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">theme</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">GetDefaultThemeRecord</span><span class="p">()</span><span class="w"> </span><span class="c1">// helper that constructs a Theme from DefaultThemeTokens</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nx">app</span><span class="p">.</span><span class="nx">Store</span><span class="p">().</span><span class="nx">Set</span><span class="p">(</span><span class="nx">appStoreActiveThemeKey</span><span class="p">,</span><span class="w"> </span><span class="nx">theme</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// GetActiveThemeFromApp retrieves the cached active theme.</span>
+<span class="c1">// This is guaranteed to return a valid theme (falling back to the default theme).</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">GetActiveThemeFromApp</span><span class="p">(</span><span class="nx">app</span><span class="w"> </span><span class="nx">core</span><span class="p">.</span><span class="nx">App</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">db</span><span class="p">.</span><span class="nx">Theme</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">value</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">app</span><span class="p">.</span><span class="nx">Store</span><span class="p">().</span><span class="nx">Get</span><span class="p">(</span><span class="nx">appStoreActiveThemeKey</span><span class="p">)</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">theme</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">value</span><span class="p">.(</span><span class="o">*</span><span class="nx">db</span><span class="p">.</span><span class="nx">Theme</span><span class="p">);</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">theme</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">theme</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="c1">// Fallback if cache is completely empty for some reason</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">GetDefaultThemeRecord</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Lifecycle:</strong></p>
+<ol>
+<li><strong>Bootstrap (<code>OnBootstrap</code>):</strong> after <code>EnsureSchema</code>, query the <code>themes</code>
+   collection for the record with <code>is_active = true</code>. If found, call
+   <code>SaveActiveThemeOnApp(app, &amp;theme)</code>. If not found, call <code>SaveActiveThemeOnApp(app, nil)</code>
+   which automatically caches the synthesized default theme.</li>
+<li><strong>Create/Update hook (<code>OnThemeUpsert</code>):</strong> when a theme is saved with
+   <code>is_active = true</code>, deactivate all other themes in the DB, then cache the
+   new active theme via <code>SaveActiveThemeOnApp</code>. When a record that was active
+   is saved with <code>is_active = false</code>, clear the cache by calling <code>SaveActiveThemeOnApp(app, nil)</code> (which reverts to the default theme).</li>
+<li><strong>Update hook (content change):</strong> when the currently active theme's content
+   changes (tokens, CSS, JS, branding, logo), refresh the cache with the
+   updated record.</li>
+<li><strong>Delete hook (<code>OnRecordDelete</code>):</strong> if the deleted theme was the cached active
+   theme, call <code>SaveActiveThemeOnApp(app, nil)</code> to revert to the default theme.</li>
+</ol>
+<p>The theme endpoints therefore read one in-memory pointer rather than querying the
+database, which is what makes them as cheap as serving a static file.</p>
+<h3 id="33-themes-collection-schema">3.3 <code>themes</code> collection schema</h3>
+<p>One new PocketBase collection: <strong><code>themes</code></strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>text</td>
+<td>✓</td>
+<td>Human-readable theme name (e.g. "Quantum Lab").</td>
+</tr>
+<tr>
+<td><code>is_active</code></td>
+<td>bool</td>
+<td></td>
+<td>Whether this theme is the currently active one. At most one theme is active at any time.</td>
+</tr>
+<tr>
+<td><code>site_name</code></td>
+<td>text</td>
+<td></td>
+<td>The application name shown in the sidebar brand area. Defaults to <code>DefaultThemeBranding.SiteName</code> if empty.</td>
+</tr>
+<tr>
+<td><code>tagline</code></td>
+<td>text</td>
+<td></td>
+<td>Short tagline below the site name (defaults to <code>DefaultThemeBranding.Tagline</code>).</td>
+</tr>
+<tr>
+<td><code>logo</code></td>
+<td>file</td>
+<td></td>
+<td>Logo image file upload (PNG/SVG/WEBP, max 2 MB). Falls back to the default Cpu icon if empty.</td>
+</tr>
+<tr>
+<td><code>favicon</code></td>
+<td>file</td>
+<td></td>
+<td>Favicon file upload (ICO/PNG/SVG, max 512 KB). Falls back to the default if empty.</td>
+</tr>
+<tr>
+<td><code>tokens</code></td>
+<td>json</td>
+<td></td>
+<td>Design token object. See §3.4 for structure. Omitted keys inherit from <code>DefaultThemeTokens</code>.</td>
+</tr>
+<tr>
+<td><code>custom_css</code></td>
+<td>text (long)</td>
+<td></td>
+<td>Raw CSS injected as a <code>&lt;style&gt;</code> block after the base stylesheet. Shared across light and dark modes (can reference <code>--qpi-*</code> custom properties that change per mode).</td>
+</tr>
+<tr>
+<td><code>custom_js</code></td>
+<td>text (long)</td>
+<td></td>
+<td>Raw JavaScript injected as a <code>&lt;script&gt;</code> block after the app bundle. Shared across modes.</td>
+</tr>
+<tr>
+<td><code>created</code></td>
+<td>autodate</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>updated</code></td>
+<td>autodate</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h3 id="34-design-tokens-structure">3.4 Design tokens structure</h3>
+<p>The <code>tokens</code> JSON field mirrors <code>DefaultThemeTokens</code> (§3.1) — two colour palettes
+plus tokens shared between them, so a theme is fully self-contained:</p>
+<div class="highlight"><pre><span></span><code>{
+  &quot;colors&quot;: {
+    &quot;light&quot;: { &quot;background&quot;: &quot;#f9fafb&quot;, &quot;surface&quot;: &quot;#ffffff&quot;, … },
+    &quot;dark&quot;:  { &quot;background&quot;: &quot;#09090b&quot;, &quot;surface&quot;: &quot;#18181b&quot;, … }
+  },
+  &quot;fonts&quot;:   { &quot;sans&quot;: …, &quot;mono&quot;: …, &quot;display&quot;: … },
+  &quot;spacing&quot;: { &quot;sidebar-width&quot;: &quot;240px&quot; },
+  &quot;radius&quot;:  { &quot;sm&quot;: …, &quot;md&quot;: …, &quot;lg&quot;: …, &quot;full&quot;: … },
+  &quot;shadows&quot;: { &quot;sm&quot;: …, &quot;md&quot;: … }
+}
+</code></pre></div>
+<p>The keys and their default values are those in §3.1. The frontend always applies
+the shared tokens and swaps only <code>colors.light</code> or <code>colors.dark</code> on toggle. Omitted
+keys inherit from <code>DefaultThemeTokens</code>.</p>
+<h3 id="35-api-rules">3.5 API rules</h3>
+<p>The <code>themes</code> collection is publicly readable so that the dashboard can style the login modal before authentication. All mutations are admin-only:</p>
+<ul>
+<li><strong>ListRule / ViewRule:</strong> <code>""</code> (publicly readable).</li>
+<li><strong>CreateRule / UpdateRule / DeleteRule:</strong> <code>nil</code> (superuser-only).</li>
+</ul>
+<p>The custom theme endpoints (§4.1) are also <strong>public</strong> (no auth), serving theme data
+like static file assets from the in-memory cache.</p>
+<h3 id="36-is_active-uniqueness">3.6 <code>is_active</code> uniqueness</h3>
+<p>At most one theme is active. <code>OnRecordCreate</code> / <code>OnRecordUpdate</code> enforce it: saving a
+theme with <code>is_active = true</code> clears the flag on any other. The cache follows the
+same hooks — see the lifecycle in §3.2.</p>
+<h2 id="4-api-endpoints">4. API endpoints</h2>
+<h3 id="41-theme-asset-endpoints-public-no-auth-cached">4.1 Theme asset endpoints (public, no auth, cached)</h3>
+<p>These are custom Go handlers registered on the router. They read from the
+in-memory app store cache — <strong>no database queries at request time.</strong> They
+serve data as if it were static file assets, with appropriate cache headers.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Content-Type</th>
+<th>Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/theme/active</code></td>
+<td><code>application/json</code></td>
+<td>Returns the cached active theme record (without <code>custom_css</code> and <code>custom_js</code>). Because the cache falls back to the default theme, this always returns a valid theme record.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/theme/defaults</code></td>
+<td><code>application/json</code></td>
+<td>Returns the server's <code>DefaultThemeTokens</code> and <code>DefaultThemeBranding</code>. Used by the admin form as pre-populated defaults.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/theme/css</code></td>
+<td><code>text/css</code></td>
+<td>Returns the <code>custom_css</code> field of the cached active theme. Empty 204 if no active theme or no custom CSS.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/theme/js</code></td>
+<td><code>text/javascript</code></td>
+<td>Returns the <code>custom_js</code> field of the cached active theme. Empty 204 if none.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Cache headers:</strong></p>
+<p>All theme endpoints include <code>Cache-Control: public, max-age=300</code> (5 minutes).
+The browser treats them like static assets — fast to load, reasonable
+propagation delay when the admin changes the theme. The <code>/api/theme/defaults</code>
+endpoint can use a longer <code>max-age</code> (e.g. 3600) since it only changes on
+server version upgrades.</p>
+<p><strong>Design decisions:</strong></p>
+<ul>
+<li>CSS and JS are served as separate endpoints rather than inline in the JSON
+  response so the browser can cache them independently and the <code>&lt;link&gt;</code> /
+  <code>&lt;script&gt;</code> tags work naturally.</li>
+<li>Custom CSS/JS are <strong>shared</strong> across modes — they can reference <code>--qpi-color-*</code>
+  custom properties which automatically change when the user toggles modes.
+  No per-mode CSS/JS endpoints are needed.</li>
+<li>Logo and favicon files are served via PocketBase's built-in file API
+  (<code>/api/files/themes/{id}/{filename}</code>), which handles caching headers
+  automatically.</li>
+</ul>
+<h3 id="42-admin-endpoints-superuser-only">4.2 Admin endpoints (superuser-only)</h3>
+<p>Theme CRUD uses the standard PocketBase collection REST API
+(<code>/api/collections/themes/records/...</code>). No custom admin endpoints are needed —
+the existing PocketBase CRUD + the collection rules (§3.5) are sufficient.</p>
+<p>The collection hooks (§3.6) run server-side on every create/update/delete,
+keeping the in-memory cache in sync transparently.</p>
+<h2 id="5-frontend-integration">5. Frontend integration</h2>
+<h3 id="51-theme-loading-lifecycle">5.1 Theme loading lifecycle</h3>
+<pre class="mermaid"><code>sequenceDiagram
+    participant B as Browser
+    participant D as Dashboard (React)
+    participant S as QPI Server (in-memory cache)
+
+    B-&gt;&gt;S: GET /api/theme/active (like a static asset)
+    S--&gt;&gt;B: Theme JSON (from cache, no DB query)
+    B-&gt;&gt;D: Apply shared tokens (fonts, spacing, radius, shadows)
+    B-&gt;&gt;D: Apply colour palette for current mode (light or dark)
+    B-&gt;&gt;D: Apply branding (site name, tagline, logo)
+    B-&gt;&gt;S: GET /api/theme/css (like a static asset)
+    S--&gt;&gt;B: text/css (from cache, or 204)
+    B-&gt;&gt;S: GET /api/theme/js (like a static asset)
+    S--&gt;&gt;B: text/javascript (from cache, or 204)
+    Note over D: Dashboard renders with themed styles
+
+    D-&gt;&gt;D: User toggles light/dark
+    D-&gt;&gt;D: Swap colour palette (light ↔ dark) from same theme
+    Note over D: No re-fetch needed — both palettes already loaded</code></pre>
+<p>On boot the dashboard fetches <code>/api/theme/active</code>, applies the shared tokens and the
+palette matching the current mode (from <code>localStorage</code>) — <code>tokens.colors.light</code> or
+<code>tokens.colors.dark</code> — as CSS custom properties on <code>:root</code>, sets the branding, and injects the custom CSS and JS as
+<code>&lt;style id="qpi-theme-css"&gt;</code> and <code>&lt;script id="qpi-theme-js"&gt;</code> in <code>&lt;head&gt;</code>. Toggling
+modes swaps only the palette — both are already loaded, so nothing is re-fetched.</p>
+<h3 id="52-css-custom-property-bridge">5.2 CSS custom property bridge</h3>
+<p>The dashboard's <code>index.css</code> defines its design tokens as CSS custom properties
+that Tailwind v4's <code>@theme</code> directive maps to utilities. The defaults come from
+the Go server's <code>DefaultThemeTokens</code> values (compiled-in):</p>
+<div class="highlight"><pre><span></span><code><span class="p">@</span><span class="k">theme</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nt">--color-background</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-color-background</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">f9fafb</span><span class="o">);</span>
+<span class="w">  </span><span class="nt">--color-surface</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-color-surface</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">ffffff</span><span class="o">);</span>
+<span class="w">  </span><span class="nt">--color-primary</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-color-primary</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">111827</span><span class="o">);</span>
+<span class="w">  </span><span class="nt">--color-secondary</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-color-secondary</span><span class="o">,</span><span class="w"> </span><span class="p">#</span><span class="nn">6366f1</span><span class="o">);</span>
+<span class="w">  </span><span class="c">/* ... etc. */</span>
+<span class="w">  </span><span class="nt">--spacing-sidebar-width</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-spacing-sidebar-width</span><span class="o">,</span><span class="w"> </span><span class="nt">240px</span><span class="o">);</span>
+<span class="w">  </span><span class="nt">--font-sans</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-font-sans</span><span class="o">,</span><span class="w"> </span><span class="s2">&quot;Inter&quot;</span><span class="o">,</span><span class="w"> </span><span class="nt">sans-serif</span><span class="o">);</span>
+<span class="w">  </span><span class="nt">--font-mono</span><span class="o">:</span><span class="w"> </span><span class="nt">var</span><span class="o">(</span><span class="nt">--qpi-font-mono</span><span class="o">,</span><span class="w"> </span><span class="s2">&quot;JetBrains Mono&quot;</span><span class="o">,</span><span class="w"> </span><span class="nt">monospace</span><span class="o">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The <code>var(--qpi-*, &lt;default&gt;)</code> pattern means the dashboard works with its
+built-in defaults when no theme is active, and overrides seamlessly when a
+theme sets the <code>--qpi-*</code> properties. The dark-mode colour swap is done by
+the ThemeContext setting different <code>--qpi-color-*</code> values when <code>.dark</code> is
+toggled.</p>
+<h3 id="53-theme-context">5.3 Theme context</h3>
+<p>A new React context (<code>ThemeContext</code>) exposes the active theme and helpers:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">interface</span><span class="w"> </span><span class="nx">ThemeContextValue</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">theme</span><span class="o">:</span><span class="w"> </span><span class="kt">ThemeRecord</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span><span class="w">     </span><span class="c1">// the active theme (contains both palettes)</span>
+<span class="w">  </span><span class="nx">siteName</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">              </span><span class="c1">// resolved from theme or default</span>
+<span class="w">  </span><span class="nx">tagline</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">logoUrl</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">faviconUrl</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">isDark</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">toggleMode</span><span class="o">:</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="p">;</span>
+<span class="w">  </span><span class="nx">isLoading</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Components that need branding info (e.g. <code>Sidebar</code>, <code>LoginModal</code>, the HTML
+<code>&lt;title&gt;</code>) consume this context instead of hard-coding strings.</p>
+<h3 id="54-themetoggle-changes">5.4 ThemeToggle changes</h3>
+<p>The existing <code>ThemeToggle</code> component gains one responsibility: after toggling
+the <code>dark</code> class, it also tells the <code>ThemeContext</code> to swap the colour palette
+(from the same theme). Since both palettes are already loaded, this is an
+instant client-side operation — no network fetch.</p>
+<h3 id="55-admin-theme-management-ui">5.5 Admin theme management UI</h3>
+<p>A new section in the existing <strong>Admin Panel</strong> tab lets superusers:</p>
+<ul>
+<li>List all themes with their active status.</li>
+<li>Create / edit a theme: form fields for name, site name, tagline, logo upload,
+  and a token JSON editor pre-populated with the server's <code>DefaultThemeTokens</code>
+  values (fetched from <code>/api/theme/defaults</code>), plus text areas for custom CSS
+  and JS.</li>
+<li>Toggle a theme as active (with confirmation, since it affects all users).</li>
+<li>Preview a theme before activating it.</li>
+<li>Delete inactive themes.</li>
+</ul>
+<h2 id="6-security">6. Security</h2>
+<h3 id="61-access-control">6.1 Access control</h3>
+<p>Mutations are superuser-only, reads are public, per the collection rules in §3.5. The
+custom endpoints (§4.1) are public handlers serving cached data.</p>
+<h3 id="62-custom-css">6.2 Custom CSS</h3>
+<p>Custom CSS is admin-authored and served as a static stylesheet. The risk is
+minimal — CSS cannot exfiltrate data or execute code (beyond cosmetic damage
+like hiding elements). No sanitisation is applied; the admin is trusted.</p>
+<h3 id="63-custom-js">6.3 Custom JS</h3>
+<p>Custom JavaScript is <strong>more powerful</strong> — it runs in the user's browser with the
+same origin as the dashboard, meaning it can access <code>localStorage</code>, cookies, and
+the PocketBase auth token. This is equivalent to a superuser deploying custom
+frontend code.</p>
+<p><strong>Mitigations:</strong></p>
+<ul>
+<li><strong>Admin-only creation:</strong> only superusers can write to the <code>themes</code> collection
+  (API rules, §3.5).</li>
+<li><strong>Audit trail:</strong> PocketBase's built-in audit log captures who created/updated
+  each theme.</li>
+<li><strong>Opt-in:</strong> the <code>custom_js</code> field is optional. Deployments that don't need it
+  simply leave it empty.</li>
+<li><strong>CSP header (recommended):</strong> operators can add a Content-Security-Policy
+  header that restricts <code>script-src</code> to <code>'self'</code>, which would block inline
+  scripts. However, since the JS is served from a same-origin endpoint, a
+  stricter CSP would need a nonce or hash — a future enhancement if needed.</li>
+</ul>
+<p>The philosophy is the same as PocketBase's own admin JS hooks or any CMS
+template system: the admin is trusted to not inject malicious code into their
+own application.</p>
+<h3 id="64-file-uploads">6.4 File uploads</h3>
+<p>Logo and favicon uploads are constrained by:</p>
+<ul>
+<li><strong>MIME types:</strong> <code>image/png</code>, <code>image/svg+xml</code>, <code>image/webp</code>, <code>image/x-icon</code>.</li>
+<li><strong>Max size:</strong> logo 2 MB, favicon 512 KB.</li>
+<li><strong>No execution:</strong> images are served with their actual content type; no path
+  traversal is possible (PocketBase handles this).</li>
+</ul>
+<h2 id="7-what-exists-today-and-what-changes">7. What exists today, and what changes</h2>
+<h3 id="today">Today</h3>
+<ul>
+<li><strong>Colours</strong> are hard-coded in <code>tailwind.config.js</code> (dark-only palette:
+  <code>background: #09090b</code>, <code>surface: #18181b</code>, etc.) and in <code>index.css</code> as
+  Tailwind <code>@layer base</code> / <code>dark:</code> variants.</li>
+<li><strong>Dark/light toggle</strong> is a <code>localStorage</code>-backed class toggle
+  (<code>ThemeToggle.tsx</code>), flipping <code>.dark</code> on <code>&lt;html&gt;</code>. The toggle only switches
+  Tailwind's <code>dark:</code> variant; there is no concept of distinct palettes.</li>
+<li><strong>Branding</strong> is hard-coded in <code>Sidebar.tsx</code> ("QPI Interface", "Control Hub",
+  <code>Cpu</code> icon) and in <code>index.html</code> (<code>&lt;title&gt;QPI Dashboard — Obsidian
+  Precision&lt;/title&gt;</code>).</li>
+<li><strong>No custom CSS/JS injection</strong> exists.</li>
+<li><strong>No single source of truth</strong> for design defaults — values are scattered
+  across <code>tailwind.config.js</code>, <code>index.css</code>, and component files.</li>
+</ul>
+<h3 id="after">After</h3>
+<p>§3–§6 describe the result. The guarantee worth stating separately: <strong>the dashboard
+works identically with zero themes configured</strong> — every CSS custom property has a
+compiled-in default from <code>DefaultThemeTokens</code>, and branding falls back to
+<code>DefaultThemeBranding</code>.</p>
+<h2 id="8-decisions">8. Decisions</h2>
+<p>Why each mechanism, rather than what it does (§3–§6 cover that):</p>
+<ol>
+<li>
+<p><strong>Runtime CSS custom properties, not Tailwind recompilation.</strong> Recompiling would
+   need a Node.js build step on the server. The cost is that only token <em>values</em> are
+   overridable, not arbitrary utilities — which <code>custom_css</code> covers.</p>
+</li>
+<li>
+<p><strong>Separate CSS/JS endpoints, not inline in JSON.</strong> The browser caches them
+   independently, <code>&lt;link&gt;</code> and <code>&lt;script&gt;</code> work naturally, and <code>/api/theme/active</code>
+   stays small.</p>
+</li>
+<li>
+<p><strong>Both palettes in one record.</strong> Keeps a theme's identity uniform across modes and
+   avoids a <code>category</code> field and a more complicated <code>is_active</code> hook.</p>
+</li>
+<li>
+<p><strong>Defaults defined in Go.</strong> The frontend fallbacks, the admin form's initial values
+   and the no-active-theme behaviour all derive from <code>DefaultThemeTokens</code>, so backend
+   and frontend cannot drift.</p>
+</li>
+<li>
+<p><strong>Cache in the app store.</strong> The database is read once at bootstrap and on admin
+   mutations, never per request.</p>
+</li>
+<li>
+<p><strong>Custom CSS/JS shared across modes.</strong> The toggle only changes colour properties,
+   so custom code that references <code>--qpi-color-*</code> follows the mode for free.</p>
+</li>
+<li>
+<p><strong>Custom JS opt-in, unsandboxed.</strong> The power it gives matches the trust already
+   placed in a superuser. No iframe or Web Worker in v1.</p>
+</li>
+<li>
+<p><strong>Logo and favicon as PocketBase file fields.</strong> Reuses its storage, thumbnailing
+   and serving rather than inventing an upload flow.</p>
+</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

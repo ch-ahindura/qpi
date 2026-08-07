@@ -1,0 +1,2143 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/rfcs/0003-driver-extensibility/">
+      
+      
+        <link rel="prev" href="../0002-dashboard-theming/">
+      
+      
+        <link rel="next" href="../0004-calibration-tuners/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>0003 Driver Extensibility - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rfc-0003-driver-extensibility" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              0003 Driver Extensibility
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../driver/python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-is-wrong-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What is wrong today
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The command line
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. The command line">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-one-verb-rather-than-a-subcommand-per-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why one verb rather than a subcommand per operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-a-device-is-a-name-and-a-builder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. A device is a name and a builder
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-extending-three-routes-same-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Extending: three routes, same registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-the-sdk-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. The SDK shape
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-cross-language-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Cross-language parity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-where-truth-lives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Where truth lives
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Migration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Implementation plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-what-is-wrong-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. What is wrong today
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-the-command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. The command line
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. The command line">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-one-verb-rather-than-a-subcommand-per-operation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why one verb rather than a subcommand per operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-a-device-is-a-name-and-a-builder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. A device is a name and a builder
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-extending-three-routes-same-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Extending: three routes, same registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-the-sdk-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. The SDK shape
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-cross-language-parity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Cross-language parity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-where-truth-lives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Where truth lives
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Security
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. Migration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-implementation-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Implementation plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rfc-0003-driver-extensibility">RFC 0003 — Driver Extensibility</h1>
+<ul>
+<li><strong>Status:</strong> Implemented</li>
+<li><strong>Author:</strong> Martin Ahindura</li>
+<li><strong>Created:</strong> 2026-07-27</li>
+<li><strong>Touches:</strong> the driver SDKs (<code>qpi-driver/py</code>, <code>qpi-driver/go</code>, <code>qpi-driver/js</code>), <code>qpi-ui</code> (Go/PocketBase), docs</li>
+<li><strong>Builds on:</strong> <a href="../0001-driver-framework/">RFC 0001 — Driver Framework</a> §3, §4, §7</li>
+<li><strong>Issue:</strong> TBD</li>
+</ul>
+<h2 id="1-the-idea">1. The idea</h2>
+<p>RFC 0001 made "a driver" a first-class thing: an external process that exchanges
+typed events with QPI-UI, built against an SDK. It delivered two kinds of driver —
+a QPU that runs jobs (<code>process</code>) and a cryostat monitor that reports upward
+(<code>monitor</code>) — and a CLI that launches either.</p>
+<p>What it did not deliver is a way for anyone <strong>outside this repository</strong> to add one.
+Today the set of runnable backends is two dictionaries compiled into the Python
+SDK. A lab with a cryostat we have never heard of, or a QPU control stack we do not
+ship an executor for, has exactly one route: fork the SDK, or write a bespoke
+program and give up the CLI, the systemd installer, and the dashboard's setup
+snippets along with it.</p>
+<p>This RFC makes the backend set <strong>open</strong>, and does it without adding a second way to
+do anything. Three ideas carry the whole design:</p>
+<ol>
+<li><strong>An operation is a contract; a device is an implementation.</strong> The operation
+   (<code>process</code>, <code>monitor</code>) is a fixed enum, because QPI-UI must have a handler for
+   the events it involves. The device — which backend implements that contract — is
+   open-ended, and that is where extension happens.</li>
+<li><strong>A device is described by data, and built by a function that returns a driver.</strong>
+   A <code>DeviceSpec</code> is a name, an operation and a builder. The builder returns the
+   driver rather than running it, so every device is unit-testable without a server.
+   What its <code>-o</code> keys mean is QPI-UI's to document, not the SDK's (§9).</li>
+<li><strong>One CLI verb.</strong> <code>qpi-driver start --operation &lt;op&gt; --device &lt;dev&gt;</code>. Adding an
+   operation stops meaning "add a subcommand", and adding a device stops meaning
+   "edit the SDK".</li>
+</ol>
+<h2 id="2-vocabulary">2. Vocabulary</h2>
+<p>Extends RFC 0001 §2, which defines <em>driver</em>, <em>event</em>, <em>event type</em> and <em>SDK</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Operation</strong></td>
+<td>What a driver <em>does</em>, as a contract with QPI-UI: which event types flow, in which direction, with which payload shapes. A closed enum — <code>process</code>, <code>monitor</code> today — because each operation needs a QPI-UI handler to exist. Generalises what RFC 0001 §4 called the CLI subcommand.</td>
+</tr>
+<tr>
+<td><strong>Device</strong></td>
+<td>The specific backend implementing an operation: <code>qblox</code> and <code>mock</code> are <code>process</code> devices, <code>bluefors_gen1</code> is a <code>monitor</code> device. Open-ended. What <code>--device</code> selects.</td>
+</tr>
+<tr>
+<td><strong>Device spec</strong></td>
+<td>The data-only description of one device: its name, its operation, its <code>-o</code> option schema, its install extra, and its builder.</td>
+</tr>
+<tr>
+<td><strong>Device builder</strong></td>
+<td>A function that takes the transport settings plus parsed <code>-o</code> options and <strong>returns an unstarted driver</strong>. It does not run it.</td>
+</tr>
+<tr>
+<td><strong>Option schema</strong></td>
+<td>The declared <code>-o key=value</code> settings a device accepts — key, help text, type, default, whether required.</td>
+</tr>
+</tbody>
+</table>
+<p>An operation is to a device roughly what an OS device class is to a driver for a
+particular card: the class fixes the interface, the driver implements it for one
+piece of hardware.</p>
+<h2 id="3-what-is-wrong-today">3. What is wrong today</h2>
+<p>Grounding, so an implementer fixes the actual problems rather than the ones they
+imagine.</p>
+<p><strong>Backends are a closed set.</strong> <code>PROCESS_DRIVERS</code> and <code>MONITOR_DRIVERS</code>
+(<code>qpi-driver/py/qpi_driver/builtins/__init__.py</code>) map a device name to a run
+function. There is no registration hook, no plugin mechanism, and no way to name a
+backend the SDK was not compiled with. Adding a device means a pull request here.</p>
+<p><strong><code>-o</code> options are undiscoverable and unchecked.</strong> <code>--help</code> says "See the chosen
+device for the keys it reads", which is an instruction to go read the source. Worse,
+each device pulls the keys it wants out of the option dict and silently ignores the
+rest, so <code>-o data_dirr=/data</code> runs cheerfully with the default data directory. The
+same is true in all three SDKs.</p>
+<p><strong>The pluggable unit runs instead of building, and so cannot be tested.</strong> In
+Python a device's entry point is <code>Callable[..., None]</code> that blocks until
+interrupted. The only way to assert that <code>-o job_timeout=30</code> reaches the driver is
+to monkeypatch the layer beneath it. Three separate things are also all spelled
+<code>run</code> — the event loop, a construct-and-run convenience, and the per-device
+adapter — which makes the call path harder to follow than it needs to be.</p>
+<p><strong>Every operation costs a subcommand.</strong> <code>process</code> and <code>monitor</code> are near-identical
+command bodies differing in one dictionary, and the helper they share takes that
+dictionary as its first parameter. A third operation means a third copy.</p>
+<p><strong>The three SDKs have drifted.</strong> Python's device entry point blocks and returns
+<code>None</code>; Go's runs and returns <code>error</code>; TypeScript's builds and returns a driver
+(which is the shape this RFC adopts). Neither Go nor TypeScript ships a <code>process</code>
+device at all, yet both advertise <code>--device mock</code> as the default, so
+<code>qpi-driver process</code> in those SDKs fails with <code>unknown process device "mock";
+known devices:</code> and an empty list.</p>
+<p><strong>The catalog exists twice.</strong> <code>qpi-ui/internal/drivers/catalog.go</code> lists the same
+devices, extras and <code>-o</code> options as the SDKs do, in order to render the dashboard's
+setup snippets (RFC 0001 §3 step 2). Nothing checks the two agree, and there is no
+good reason for there to be two — see §9.</p>
+<h2 id="4-the-command-line">4. The command line</h2>
+<p>One verb. The operation and the device are both values:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver start --operation &lt;op&gt; --device &lt;dev&gt; [-o key=value ...] [transport flags]
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># a mock QPU</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>mock<span class="w"> </span>-o<span class="w"> </span><span class="nv">data_dir</span><span class="o">=</span>./data
+
+<span class="c1"># a cryostat monitor</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>monitor<span class="w"> </span>--device<span class="w"> </span>bluefors_gen1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-o<span class="w"> </span><span class="nv">base_url</span><span class="o">=</span>http://localhost:49099<span class="w"> </span>-o<span class="w"> </span><span class="nv">channels</span><span class="o">=</span>mapper.bf.tmc:K,mapper.bf.pmc:mbar
+
+<span class="c1"># a backend this SDK has never heard of</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>mylab.executors:PrestoV2
+</code></pre></div>
+<p><code>--operation</code> is required, takes one of the known operations, and falls back to
+<code>QPI_OPERATION</code>. It has <strong>no short form</strong>: <code>-o</code> is already <code>--option</code>, and a
+capital <code>-O</code> beside a lowercase <code>-o</code> is a typo waiting to happen. Being a
+set-once value in a systemd unit, it does not need one.</p>
+<p><code>--device</code> is required, and falls back to <code>QPI_DEVICE</code>. There is no default: QPI-UI
+generates the command that launches a driver and it always names a device, so a value
+the SDK filled in could only be a guess (§9).</p>
+<p>The transport flags are unchanged from RFC 0001: <code>--qpi-addr</code>/<code>-a</code>, <code>--token</code>/<code>-t</code>,
+<code>--device</code>/<code>-d</code>, <code>--ca-file</code>, <code>--ca-fingerprint</code>, <code>--option</code>/<code>-o</code>,
+<code>--recv-timeout-ms</code>, each with its existing environment variable and default.
+<code>--name</code>/<code>-n</code> is gone (§11).</p>
+<p>One command says what a build can run:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver devices [--operation &lt;op&gt;]   # the registered names, by operation
+</code></pre></div>
+<h3 id="why-one-verb-rather-than-a-subcommand-per-operation">Why one verb rather than a subcommand per operation</h3>
+<p>An operation is data — it names a contract with the server. Encoding it in the
+command name means every new operation is a new code path in every SDK, plus a new
+branch in the installers and in the dashboard's snippet templates. Encoding it as a
+validated enum value means a new operation is a new entry in a table, which is the
+same thing this RFC does for devices. The uniformity is the point: an operator
+learns one command, and a contributor adding a monitoring operation touches a
+table rather than a CLI.</p>
+<p>The cost is honest: <code>start --operation process</code> is longer to type than <code>process</code>,
+and it is a breaking change to every published invocation. Both are accepted —
+see §11.</p>
+<h2 id="5-a-device-is-a-name-and-a-builder">5. A device is a name and a builder</h2>
+<div class="highlight"><pre><span></span><code><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DeviceSpec</span><span class="p">:</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>                            <span class="c1"># &quot;qblox&quot;, &quot;bluefors_gen1&quot;</span>
+    <span class="n">operation</span><span class="p">:</span> <span class="n">Operation</span>
+    <span class="n">build</span><span class="p">:</span> <span class="n">DeviceBuilder</span>                 <span class="c1"># (options, **transport) -&gt; unstarted driver</span>
+</code></pre></div>
+<p>That is the whole of it. A device has no summary, no declared option schema and no
+install target, because none of that is the driver's to publish — see §9. Specs live
+beside the code they describe: the QPU module owns the <code>process</code> specs, the Bluefors
+module owns its own.</p>
+<p><code>-o</code> values reach the builder as the strings they were typed as, in an <code>Options</code>
+object with typed accessors that each take the fallback:</p>
+<div class="highlight"><pre><span></span><code><span class="n">data_dir</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get_dir</span><span class="p">(</span><span class="s2">&quot;data_dir&quot;</span><span class="p">,</span> <span class="s2">&quot;./bin/data&quot;</span><span class="p">)</span>
+<span class="n">interval</span> <span class="o">=</span> <span class="n">options</span><span class="o">.</span><span class="n">get_float</span><span class="p">(</span><span class="s2">&quot;poll_interval&quot;</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">)</span>
+<span class="n">channels</span> <span class="o">=</span> <span class="n">parse_channels</span><span class="p">(</span><span class="n">options</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="s2">&quot;channels&quot;</span><span class="p">,</span> <span class="s2">&quot;mapper.bf.tmc:K&quot;</span><span class="p">))</span>
+</code></pre></div>
+<p>Two consequences, both deliberate:</p>
+<ul>
+<li><strong>The default lives in the one piece of code that acts on it</strong>, rather than as a
+  string in a schema that something else parses.</li>
+<li><strong>What a device accepts is the set of keys it reads.</strong> <code>Options</code> remembers the
+  reads, so an <code>-o</code> key nothing looked at is reported after the build —
+  <code>unknown option 'data_dirr' for process device 'mock'</code> — which keeps a typo an
+  error without a declared list to check it against. That matters more than it
+  sounds: every built-in executor's constructor takes <code>**kwargs</code>, so an unread key
+  would otherwise vanish silently.</li>
+</ul>
+<p><code>qpi-driver devices</code> lists the names a build has, and nothing else. It answers the
+one question the driver is the authority on — <em>what can this node run?</em> — which is
+what an operator asks after <code>pip install</code>ing a distribution of devices or writing
+one.</p>
+<h2 id="6-extending-three-routes-same-registry">6. Extending: three routes, same registry</h2>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">register</span><span class="p">(</span><span class="n">spec</span><span class="p">:</span> <span class="n">DeviceSpec</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">devices</span><span class="p">(</span><span class="n">operation</span><span class="p">:</span> <span class="n">Operation</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">DeviceSpec</span><span class="p">,</span> <span class="o">...</span><span class="p">]:</span> <span class="o">...</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">resolve</span><span class="p">(</span><span class="n">operation</span><span class="p">:</span> <span class="n">Operation</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">DeviceSpec</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<p><strong>1. Built in.</strong> The devices the SDK ships register themselves at import: one
+declarative list of specs.</p>
+<p><strong>2. Installed.</strong> A third-party distribution advertises devices through the
+<code>qpi_driver.devices</code> entry-point group. <code>pip install mylab-qpi-devices</code> and its
+devices are listed by <code>qpi-driver devices</code> and accepted by <code>--device</code>, with no change
+here. This is the route for a device meant to be shared, versioned and installed
+on a production node.</p>
+<p><strong>3. Named by import path.</strong> <code>--device mylab.executors:PrestoV2</code> resolves the
+device by importing it, with no packaging ceremony at all. This is the route for
+"I have a class in a file and I want to run it now".</p>
+<p>A device value is treated as an import path when it contains <code>.</code> or <code>:</code>, and as a
+registered name otherwise — registered names are plain identifiers, so the two
+never collide, and a mistyped <code>mockk</code> still gets <code>unknown process device 'mockk';
+known devices: …</code> rather than an import error. Both <code>module:attr</code> and <code>module.attr</code>
+are accepted, following Pydantic's <code>ImportString</code> convention.</p>
+<p>What the imported object must be depends on the operation, because that is already
+what a device means — for <code>process</code> a device is an executor, for <code>monitor</code> it is
+the driver itself:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Import target</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>process</code></td>
+<td><code>Executor</code> subclass or instance</td>
+<td>wrapped in the built-in QPU driver</td>
+</tr>
+<tr>
+<td><code>monitor</code></td>
+<td><code>DeviceSpec</code>, or a device builder</td>
+<td>used directly</td>
+</tr>
+</tbody>
+</table>
+<p>Either operation also accepts a <code>DeviceSpec</code>, which is how a device gets a name of
+its own rather than being known by the specifier that imported it. An executor
+imported this way is handed every <code>-o</code> key the SDK does not read itself, as typed:
+its constructor is the only thing that knows those keys exist.</p>
+<p>Notably, there is <strong>no separate mechanism for "a whole custom driver"</strong>. Because an
+operation is a contract QPI-UI must already implement, a custom driver is always a
+custom device of an existing operation. One concept covers it.</p>
+<h2 id="7-the-sdk-shape">7. The SDK shape</h2>
+<p>A device builder returns an unstarted driver; the CLI starts it:</p>
+<div class="highlight"><pre><span></span><code><span class="n">DeviceBuilder</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">QpiDriver</span><span class="p">]</span>
+
+<span class="n">driver</span> <span class="o">=</span> <span class="n">spec</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="n">options</span><span class="o">=</span><span class="n">parsed_options</span><span class="p">,</span> <span class="o">**</span><span class="n">transport</span><span class="p">)</span>
+<span class="n">driver</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</code></pre></div>
+<p>That inversion is small and buys three things: a device can be built and asserted
+on in a unit test with no server; <code>QpiDriver.run()</code> becomes the only thing in the
+SDK that runs anything; and the Python, Go and TypeScript SDKs finally agree on one
+contract — TypeScript's, which had it right.</p>
+<p>Everything else in RFC 0001 §4 is unchanged. A driver still subclasses the SDK base,
+still implements <code>handle_event</code>, still calls <code>emit</code> and <code>every</code>. Writing a driver is
+not what this RFC changes; making one <em>runnable by the CLI</em> is.</p>
+<h2 id="8-cross-language-parity">8. Cross-language parity</h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Python</th>
+<th>Go</th>
+<th>TypeScript</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>start --operation … --device …</code></td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Builder returns an unstarted driver</td>
+<td>yes</td>
+<td>yes</td>
+<td>already does</td>
+</tr>
+<tr>
+<td>Builder reads raw <code>-o</code> options via <code>Options</code></td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Exported, extensible registry</td>
+<td><code>register()</code></td>
+<td><code>Register()</code> from an importable package</td>
+<td><code>registerDevice()</code></td>
+</tr>
+<tr>
+<td><code>devices</code> lists what the build has</td>
+<td>yes</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Installed third-party devices</td>
+<td>entry points</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Device named by import path</td>
+<td><code>mod:attr</code></td>
+<td><strong>not possible</strong></td>
+<td><code>./mod.js#Export</code></td>
+</tr>
+</tbody>
+</table>
+<p>Go has no runtime import by name, so its extension story is compile-time and the
+SDK must make that pleasant rather than pretend otherwise: a downstream program
+imports the devices package, calls <code>Register</code>, and delegates to the SDK's root
+command. That program gets the same CLI, the same generated help, and the same
+option validation as the stock binary. Its <code>--device</code> accepts registered names
+only, which is not a lesser mechanism — in Go it is <em>the</em> mechanism.</p>
+<p>Where an SDK ships no device for an operation, <code>start --operation process</code> must say
+so plainly — that this SDK ships no <code>process</code> devices, and where to find one — rather
+than report an empty list of known devices. No SDK has a default device (§4).</p>
+<h2 id="9-where-truth-lives">9. Where truth lives</h2>
+<p><strong>QPI-UI is the single source of truth, for operations and for devices alike.</strong> It is
+where a driver is registered, where a device is chosen, where its <code>-o</code> options are
+described and filled in, and where the command that launches it is generated. The
+driver SDKs publish no catalog at all.</p>
+<p>This reverses an earlier version of this RFC, which split the two: operations to the
+server, devices and their options to the driver, reconciled by <code>catalog --json</code> and a
+drift test over checked-in fixtures. That did not survive contact with the work. The
+split meant the same device was described twice — once in <code>qpi-ui/internal/drivers</code>,
+once in each SDK — and the thing keeping the copies together was a <code>make</code> target,
+<code>sync-driver-catalog</code>, that a person had to remember to run after touching either
+side. Three SDKs' worth of <code>OptionSpec</code> tables, three checked-in JSON fixtures, a
+renderer, a generated README table and a drift test, all in service of an agreement
+that a single description makes free.</p>
+<p>What the driver keeps is what only it can know:</p>
+<ul>
+<li><strong>Which devices this particular build has.</strong> <code>qpi-driver devices</code> reads its own
+  registry — the honest answer for a node, since it depends on the extras installed,
+  the entry points present and, in Go, what was compiled in. Names only; a name is
+  enough to run one.</li>
+<li><strong>Whether the options it was given make sense.</strong> The builder reads what it
+  understands and the CLI reports the rest (§5).</li>
+</ul>
+<p>The driver is not another client of QPI-UI. It receives work and reports results; it
+does not ask the server about itself. If a driver-side view of the catalog ever
+becomes genuinely necessary, the server should serve it over the connection the driver
+already has, authenticated by the token it already holds — but nothing needs it today,
+and adding it would invert the relationship for no gain.</p>
+<h2 id="10-security">10. Security</h2>
+<p>Routes 1 and 2 of §6 change nothing: code arrives by <code>pip install</code>, as it always
+has.</p>
+<p>Route 3 — <code>--device mylab:Thing</code> — executes arbitrary importable code, exactly as
+<code>python -m mylab</code> does. It is an operator-supplied argument on the operator's own
+machine, not anything QPI-UI can influence: the server never sends a device name,
+and a driver's own registration cannot introduce one. Two obligations follow, both
+of them local:</p>
+<ul>
+<li>A failed import reports one clean line, not a traceback carrying filesystem
+  paths into the journal.</li>
+<li>Neither the import-path route nor the entry-point route may bypass the existing
+  safe-path checks on <code>--ca-file</code> or on a device's path-valued options.</li>
+</ul>
+<p>RFC 0001 §9 otherwise stands unchanged: TLS everywhere, CA pinned by fingerprint,
+tokens stored hashed, and QPI-UI still stores no driver code. Where an SDK has
+drifted from that — accepting a connection without verifying the pinned
+fingerprint, for instance — this work brings it back in line rather than leaving the
+weaker path available by omission.</p>
+<h2 id="11-migration">11. Migration</h2>
+<p>This is a breaking release for the driver CLI and the Python SDK's API. The project
+is pre-1.0 and makes no stability promise, so the design breaks what has stopped
+earning its keep instead of accumulating aliases. The obligation that comes with
+that is to break <strong>once</strong>, and to publish a table rather than let users discover
+removals one traceback at a time.</p>
+<p><strong>Command line.</strong> <code>qpi-driver process …</code> and <code>qpi-driver monitor …</code> become
+<code>qpi-driver start --operation process …</code> and <code>--operation monitor …</code>. Every flag,
+short form, environment variable and default is otherwise unchanged, bar one:
+<code>--name</code>/<code>-n</code> and <code>QPI_DRIVER_NAME</code> are removed, because a driver's display label
+belongs to the admin who registered it in the dashboard and <code>drivers/connect</code> hands
+it back rather than accepting one. Unknown <code>-o</code> keys now fail instead of being
+ignored — which is the point, though it will surface typos that had been quietly
+tolerated. The systemd installers, the dashboard's generated snippets, and the
+end-to-end suites move with it; the installers' <code>QPU_NAME</code> becomes <code>SERVICE_NAME</code>,
+which is what it always named.</p>
+<p><strong>Python API.</strong> The QPU convenience wrapper gives way to constructing the driver
+directly (<code>QpuDriver(...).run()</code>), the two device registries and their callable type
+alias give way to the registry functions in §6, and the per-device run functions
+become builders returning a driver. The full removed → replacement table ships in
+<code>CHANGELOG.md</code> with the release.</p>
+<p>The driver-authoring surface — <code>QpiDriver</code>, <code>handle_event</code>, <code>emit</code>, <code>every</code>,
+<code>Event</code>, <code>EventType</code>, <code>Executor</code> — does not change. Someone who has written a driver
+against RFC 0001 keeps it; only how it is launched and registered moves.</p>
+<h2 id="12-implementation-plan">12. Implementation plan</h2>
+<p>Complete. The sequence was Python internals first (registry, extension routes), then
+the command grammar across all three SDKs together with the installers and snippet
+generators, then Go and TypeScript parity, then documentation, then coverage gates.
+The phased plan itself was kept outside the repository.</p>
+<h2 id="13-decisions">13. Decisions</h2>
+<p>Recorded here rather than in a separate ADR, per the RFC conventions.</p>
+<ol>
+<li><strong>An operation is a closed enum; a device is open.</strong> §1, §2.</li>
+<li><strong>One CLI verb, <code>start</code>, with the operation as a value.</strong> §4.</li>
+<li><strong>A device is a name, an operation and a builder; the builder returns an unstarted
+   driver.</strong> §5, §7.</li>
+<li><strong>Three registration routes, one registry</strong>, and no fourth mechanism for a "custom
+   driver" — a custom driver is a custom device. §6.</li>
+<li><strong>Import paths follow Pydantic's <code>ImportString</code></strong>, <code>module:attr</code> or <code>module.attr</code>;
+   a device value is an import path when it contains <code>.</code> or <code>:</code>. §6.</li>
+<li><strong>There is no option schema.</strong> Reading an option declares it, and an option
+   nothing read is an error. §5.</li>
+<li><strong><code>--operation</code> gets no short form</strong>, because <code>-o</code> is <code>--option</code>. §4.</li>
+<li><strong>QPI-UI holds the whole catalog; the driver publishes none.</strong> Reverses an earlier
+   decision taken here; §9 records why.</li>
+<li><strong>Break once, with a published migration table.</strong> §11.</li>
+</ol>
+<p><strong>Rejected.</strong> A dedicated flag naming a callable to run an operation: it answers
+the question <code>--device</code> already asks, and it puts an SDK-internal concept in the
+operator's vocabulary. A JSON-valued <code>-o</code> option mapping names to import paths:
+nesting a second syntax inside a <code>key=value</code> flag, when the device name can simply
+<em>be</em> the path. Keeping a subcommand per operation: cheaper today, a per-language
+code path per operation forever. Making the built-in device list discovery-only:
+entry points come from installed distribution metadata, so the SDK would break
+wherever it is used from a source tree rather than an install.</p>
+<h2 id="14-notes">14. Notes</h2>
+<p>The documentation predates the framework in places and describes the SDK as though
+it were a QPU driver with some extras, rather than a driver framework of which the
+QPU is one instance — including the top-level README and a Python architecture
+diagram showing a result-sending process that is in fact a thread. Correcting that
+framing is part of this work, not a follow-up: the extension mechanism above is
+close to unusable if the surrounding prose does not present devices and operations
+as the first-class things they are.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

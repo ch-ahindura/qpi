@@ -1,0 +1,2218 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/driver/tuners/">
+      
+      
+        <link rel="prev" href="../python_api/">
+      
+      
+        <link rel="next" href="../go/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Calibration Tuners - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#calibration-tuners" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Calibration Tuners
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../rfcs/" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#running-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running one
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running one">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-graph-needs-from-a-device-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the graph needs from a device file
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-node-with-no-hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A node with no hardware
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-calibration-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The calibration graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The calibration graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuring-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#drift-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drift monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-to-your-device-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens to your device file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-tuner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a tuner
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#running-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running one
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running one">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Options
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-graph-needs-from-a-device-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the graph needs from a device file
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-node-with-no-hardware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A node with no hardware
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-calibration-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The calibration graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The calibration graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuring-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuring it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#drift-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drift monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-happens-to-your-device-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What happens to your device file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-tuner" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a tuner
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="calibration-tuners">Calibration Tuners</h1>
+<p>Superconducting transmon qubits drift. Frequencies, pulse amplitudes and
+coherence times move on timescales of minutes to hours, so parameters that were
+right this morning are approximately right by lunchtime and wrong by evening.</p>
+<p>The <code>calibrate</code> operation is how a QPI node keeps up: it runs calibration
+experiments against the chip, fits the results, and writes the fitted parameters
+back to the same <code>quantify.device.yml</code> the <code>process</code> driver reads for every job.</p>
+<p>Design and rationale:
+<a href="https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0004-calibration-tuners.md">RFC 0004</a>
+for the machinery,
+<a href="https://github.com/sopherapps/qpi/blob/main/docs/rfcs/0005-calibration-graph-completion.md">RFC 0005</a>
+for the rest of the graph.</p>
+<h2 id="running-one">Running one</h2>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--device<span class="w"> </span>quantify_tuner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>./calibration.yml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>./quantify.device.yml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>./quantify.hardware.json<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">is_dummy</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>Install the extra that matches the device: <code>qpi-driver[cli,quantify_tuner]</code> or
+<code>qpi-driver[cli,qblox_tuner]</code>.</p>
+<p>A tuner registers as its own driver, separate from the QPU driver on the same
+node — as a cryostat monitor does. The two share the device YAML through the
+filesystem and nothing else.</p>
+<h3 id="options">Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>calibration_config</code></td>
+<td><code>./calibration.yml</code></td>
+<td>Which routines run, over what, and how far.</td>
+</tr>
+<tr>
+<td><code>quantify_device_config</code></td>
+<td><code>./quantify.device.yml</code></td>
+<td>The device calibration file, re-read at the start of each calibration and written back.</td>
+</tr>
+<tr>
+<td><code>quantify_hardware_config</code></td>
+<td><code>./quantify.hardware.json</code></td>
+<td>Hardware connectivity. Changing it needs a restart; the tuner warns and keeps running on the one it started with.</td>
+</tr>
+<tr>
+<td><code>is_dummy</code></td>
+<td><code>false</code></td>
+<td>Run against the vendor's dummy cluster. Compiles and runs; every acquisition is <code>nan</code>, so every routine fails.</td>
+</tr>
+<tr>
+<td><code>is_simulated</code></td>
+<td><code>false</code></td>
+<td>Run against a simulated chip instead — see below. Both tuners.</td>
+</tr>
+<tr>
+<td><code>spi_rack_address</code></td>
+<td><em>(none)</em></td>
+<td>Serial address of the SPI rack holding the couplers' S4g current sources. Only <code>coupler_anticrossing</code> uses it, and only when the couplers say <code>bias.source: spi</code>; without it that node fails rather than sweeping a bias it cannot hold.</td>
+</tr>
+<tr>
+<td><code>save_raw_data</code></td>
+<td><code>false</code></td>
+<td><code>qblox_tuner</code> only: keep each routine's acquisition and an instrument snapshot under <code>--data-dir</code>. Off because nothing here reads them back and nothing prunes them.</td>
+</tr>
+<tr>
+<td><code>drift_check_interval</code></td>
+<td><code>0</code></td>
+<td>Seconds between periodic benchmark runs. <code>0</code> disables them.</td>
+</tr>
+<tr>
+<td><code>fidelity_threshold</code></td>
+<td><code>0.999</code></td>
+<td>1Q fidelity below which a recalibration is triggered.</td>
+</tr>
+<tr>
+<td><code>fidelity_2q_threshold</code></td>
+<td><code>0.99</code></td>
+<td>2Q fidelity below which a recalibration is triggered.</td>
+</tr>
+</tbody>
+</table>
+<p>All of them have working defaults except the calibration config, which must
+exist: a tuner with no config would have nothing to run, and a run that does
+nothing raises nothing, so it would report success.</p>
+<p>Where a tuner writes is <code>--data-dir</code> rather than an <code>-o</code>, because it is the same
+directory for every driver on the node; a systemd install sets it, and the config paths
+above, to <code>/var/qpi-driver/&lt;service-name&gt;</code>. It reaches each scheduler's own data-dir
+global — quantify-core's <code>set_datadir</code>, qblox-scheduler's <code>OutputDirectoryManager</code> —
+which otherwise default to <code>&lt;cwd&gt;/data</code> (<code>/data</code> for a service) and <code>~/qblox_data</code>.</p>
+<p>Neither tuner keeps its acquisitions: they come back from the scheduler in memory, get
+fitted, and what is kept is the fitted parameter in the device YAML. qblox-scheduler
+would save a <code>dataset.hdf5</code> and an instrument snapshot per schedule — one per routine
+per target, 13 per coupler edge — and is told not to unless <code>-o save_raw_data=true</code>;
+quantify-scheduler has no equivalent, so that option does nothing for <code>quantify_tuner</code>.
+What lands in the directory either way is whatever a scheduler was separately asked for:
+a hardware config with <code>sequence_to_file: true</code>, a hardware-log download, a diagnostics
+report.</p>
+<h3 id="what-the-graph-needs-from-a-device-file">What the graph needs from a device file</h3>
+<p>Every node runs against a stock <code>BasicTransmonElement</code> except the ones whose result
+has nowhere to go. Those <em>decline</em> rather than fail, so a chip configured before
+RFC 0005 calibrates everything it can and reports success rather than a column of
+red for parameters its elements were never going to have:</p>
+<table>
+<thead>
+<tr>
+<th>Needs</th>
+<th>Nodes that decline without it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spec</code> on a <code>CalibratedTransmon</code></td>
+<td>none — <code>qubit_spectroscopy</code> still sweeps power, it just does not remember the answer</td>
+</tr>
+<tr>
+<td><code>measure_2state</code></td>
+<td><code>readout_operating_point</code></td>
+</tr>
+<tr>
+<td><code>r12</code></td>
+<td><code>rabi_12</code>, <code>resonator_spectroscopy_second_excited</code></td>
+</tr>
+<tr>
+<td><code>measure_3state</code></td>
+<td><code>ramsey_12</code>, <code>drag_12</code>, <code>fine_amplitude_12</code>, <code>three_state_operating_point</code>, <code>three_state_discrimination</code></td>
+</tr>
+<tr>
+<td><code>bias.parking_current</code> on the edge</td>
+<td><code>coupler_anticrossing</code> — and with one but no rack to deliver it, that node <em>fails</em> rather than declining: an edge declaring a bias nothing can hold is a misconfiguration, not an absent feature</td>
+</tr>
+<tr>
+<td><code>clock_freqs.cz</code> on the edge</td>
+<td><code>cz_spectroscopy</code>, <code>cz_parametrization</code> — a <code>CompositeSquareEdge</code> has no drive frequency, and <code>cz_chevron</code> is its counterpart</td>
+</tr>
+</tbody>
+</table>
+<p>Point an element at
+<code>qpi_driver.executors.quantify.elements.calibrated_transmon.CalibratedTransmon</code> (or the
+<code>qblox</code> twin) to opt that qubit into the rest.</p>
+<h2 id="a-node-with-no-hardware">A node with no hardware</h2>
+<p><code>-o is_simulated=true</code> puts a simulated chip where the cluster goes. The
+compiled schedule is played through a transmon built from a real Hamiltonian
+(<code>scqubits</code>) and evolved with the Lindblad master equation (<code>qutip</code>), so the
+routines fit real physics and the calibration written back is a calibration of
+<em>something</em>.</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;qpi-driver[cli,quantify_tuner,sim]&#39;</span>
+
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--device<span class="w"> </span>quantify_tuner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>./calibration.yml<span class="w"> </span>-o<span class="w"> </span><span class="nv">is_simulated</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>The <code>sim</code> extra supplies <code>scqubits</code> and <code>qutip</code>. Without it, <code>-o is_simulated=true</code>
+fails at startup saying so.</p>
+<p>The <code>process</code> driver takes the same option, and that is the point — point both
+at the same <code>quantify.device.yml</code> and the whole node runs with no instruments:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s1">&#39;qpi-driver[cli,quantify,sim]&#39;</span>
+
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>quantify<span class="w"> </span>-o<span class="w"> </span><span class="nv">is_simulated</span><span class="o">=</span><span class="nb">true</span>
+</code></pre></div>
+<p>Use it to rehearse a bring-up, to develop against, or to check a change to a
+routine before taking the cryostat down for it. It is not a substitute for
+hardware — see the limits below.</p>
+<p><strong>Not the same as <code>is_dummy</code>.</strong> The vendor's dummy cluster compiles and runs a
+schedule and then returns <code>nan</code> for every acquisition, so nothing distinguishes
+a correct calibration from a wrong one. The simulator reads the schedule it was
+given, so an <code>amp180</code> off by a factor of ten produces the wrong population,
+measured.</p>
+<p><strong>What it models, and what it does not.</strong> One- and two-qubit gates, clock
+detuning, relaxation and dephasing, and a readout resonator each qubit level pulls
+to its own frequency — so the IQ clouds are derived from a dispersive response and
+an amplifier chain rather than placed, and reading away from resonance costs
+contrast. The transmon has three rungs and is driven as a ladder, so leakage into
+<code>|2&gt;</code> is real and the EF chain has something to measure. A CZ is a flux pulse
+walking the pair through the <code>|11&gt;</code>-<code>|02&gt;</code> avoided crossing, so the conditional
+phase is integrated rather than asserted and a Bell state comes out entangled. Both
+mechanisms the hardware has: DC flux on a qubit's own port, and a parametric drive
+on a coupler, where the drive <em>frequency</em> is the resonance condition rather than a
+carrier detail. A coupler is a mode of its own, tuning with the DC bias a routine
+parks it at.</p>
+<p>Not modelled: crosstalk. Each qubit's readout chain differs — its own resonance
+and its own rotation — but the transmons themselves are one Hamiltonian repeated,
+so it will never show you a chip whose <em>qubits</em> differ, which on real hardware is
+most of what calibration is for.</p>
+<p><strong>Both schedulers.</strong> quantify reaches its hardware through an instrument
+coordinator, which the simulator replaces outright. qblox reaches it through a
+<code>HardwareAgent</code> that compiles and runs in one call — but <code>compile</code> needs no
+instrument, so a real agent keeps compilation and only execution is simulated.
+A schedule that would not assemble for a cluster does not assemble here either.</p>
+<p><strong>The two-qubit model is weaker than the one-qubit one.</strong> A transmon's levels
+come from diagonalising a real Cooper-pair-box Hamiltonian: nothing in it was
+chosen. The coupler's exchange strength, its flux-to-frequency curve and the transition
+its parametric drive bridges <em>were</em> chosen, because this project has no device to
+measure them from — though an edge that has characterised its own gap can declare
+it (<code>clock_freqs.sideband_gap</code>) and be simulated against that instead. The dynamics
+they produce are real and a routine still has to find a crossing it was not told
+the location of, but read a two-qubit result as "against a plausible coupler",
+not "against a real one".</p>
+<p>Only <code>quantify_tuner</code> and the <code>quantify</code> executor support it. qblox-scheduler
+reaches its hardware through a different interface, and passing the flag there
+is an error rather than a silent fallback.</p>
+<h2 id="the-calibration-graph">The calibration graph</h2>
+<p>Routines declare what they depend on, and a full calibration is a topological
+walk of that graph. Nothing else encodes the order.</p>
+<div class="highlight"><pre><span></span><code>resonator_spectroscopy → { time_of_flight, resonator_relaxation }
+resonator_spectroscopy → resonator_punchout → qubit_spectroscopy → rabi
+
+rabi → resonator_spectroscopy_excited
+rabi → readout_operating_point → readout_discrimination → readout_fidelity
+rabi → ramsey → drag → { allxy, fine_amplitude → { rb, allxy_check } }
+rabi → { t1, t2_echo }
+
+rabi → f12_spectroscopy → rabi_12 → resonator_spectroscopy_second_excited
+{ rabi_12, readout_operating_point } → three_state_operating_point
+three_state_operating_point → { ramsey_12 → drag_12,
+                                fine_amplitude_12,
+                                three_state_discrimination }
+
+qubit_spectroscopy → flux_spectroscopy
+rabi → coupler_anticrossing
+rabi → cz_spectroscopy → cz_parametrization
+{ rb, flux_spectroscopy } → cz_chevron → conditional_phase → interleaved_rb
+</code></pre></div>
+<p>The readout chain <strong>straddles</strong> the qubit chain rather than preceding it, which is
+the one piece of the shape worth knowing: finding the resonator needs no qubit
+control, but measuring its resonance with the qubit in <code>|1&gt;</code> needs a calibrated π
+pulse, so half the readout nodes sit below <code>rabi</code>.</p>
+<p><strong>Readout.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Routine</th>
+<th>Writes</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>time_of_flight</code></td>
+<td><code>measure.acq_delay</code></td>
+<td>How long the signal takes back through the cables, read off a raw trace.</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy</code></td>
+<td><code>clock_freqs.readout</code></td>
+<td>Lorentzian fit over a readout sweep.</td>
+</tr>
+<tr>
+<td><code>resonator_relaxation</code></td>
+<td>—</td>
+<td>The resonator linewidth, which nothing else measures.</td>
+</tr>
+<tr>
+<td><code>resonator_punchout</code></td>
+<td><code>measure.pulse_amp</code>, <code>clock_freqs.readout</code></td>
+<td>Highest power still in the dressed regime — and the resonance <em>at</em> that power, since choosing a power moves it.</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy_excited</code></td>
+<td>—</td>
+<td>The dispersive shift: the resonance with the qubit in <code>\|1&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>readout_operating_point</code></td>
+<td><code>measure_2state.frequency</code>, <code>measure_2state.pulse_amp</code></td>
+<td>Where to read for <em>discrimination</em>, which is not where the most signal comes back. Frequency and amplitude together, since the resonance moves with power.</td>
+</tr>
+<tr>
+<td><code>readout_discrimination</code></td>
+<td><code>measure.acq_rotation</code>, <code>measure.acq_threshold</code></td>
+<td>The line every <code>meas_level=2</code> shot is assigned against. Fitted at the point above.</td>
+</tr>
+<tr>
+<td><code>readout_fidelity</code></td>
+<td>—</td>
+<td>Benchmark. Assignment fidelity, so readout drift is visible to the drift check.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The qubit.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Routine</th>
+<th>Writes</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qubit_spectroscopy</code></td>
+<td><code>clock_freqs.f01</code>, <code>spec.amplitude</code></td>
+<td>Two-tone, sweeping drive power alongside frequency rather than guessing it.</td>
+</tr>
+<tr>
+<td><code>rabi</code></td>
+<td><code>rxy.amp180</code></td>
+<td>π amplitude is half the oscillation period.</td>
+</tr>
+<tr>
+<td><code>ramsey</code></td>
+<td><code>clock_freqs.f01</code></td>
+<td>Fine frequency, plus T2*.</td>
+</tr>
+<tr>
+<td><code>t1</code>, <code>t2_echo</code></td>
+<td>—</td>
+<td>Characterisation; nothing is tuned from them.</td>
+</tr>
+<tr>
+<td><code>drag</code></td>
+<td><code>rxy.motzoi</code> (<code>rxy.beta</code> under qblox)</td>
+<td>Zero crossing of X90-Y180 against Y90-X180.</td>
+</tr>
+<tr>
+<td><code>allxy</code></td>
+<td>—</td>
+<td>21-pair diagnostic against the ideal staircase.</td>
+</tr>
+<tr>
+<td><code>fine_amplitude</code></td>
+<td><code>rxy.amp180</code></td>
+<td>Amplifies a small error over repeated π pulses.</td>
+</tr>
+<tr>
+<td><code>rb</code>, <code>interleaved_rb</code>, <code>allxy_check</code></td>
+<td>—</td>
+<td>Benchmarks. Their fidelity is what the drift check reads.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The 1-2 transition.</strong> A transmon is a ladder used as a qubit, and every gate leaks
+a little population onto the third rung — where a two-state readout does not lose
+those shots but <em>reports</em> them as one of the other two. This chain is the only route
+to that number.</p>
+<table>
+<thead>
+<tr>
+<th>Routine</th>
+<th>Writes</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>f12_spectroscopy</code></td>
+<td><code>clock_freqs.f12</code></td>
+<td>Prepares <code>\|1&gt;</code> and sweeps the <code>.12</code> clock. Reports the anharmonicity.</td>
+</tr>
+<tr>
+<td><code>rabi_12</code></td>
+<td><code>r12.ef_amp180</code></td>
+<td>The EF π pulse. Read out on the two-state chain, which is what lets it precede three-state readout.</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy_second_excited</code></td>
+<td>—</td>
+<td>Checks the pull goes as <code>chi(1-2n)</code> — that the ladder is evenly spaced, which three-state readout rests on.</td>
+</tr>
+<tr>
+<td><code>three_state_operating_point</code></td>
+<td><code>measure_3state.frequency</code>, <code>measure_3state.pulse_amp</code></td>
+<td>Where all three levels separate. Ranked on the <em>closest</em> pair, since a classifier is only as good as the two states it confuses most.</td>
+</tr>
+<tr>
+<td><code>ramsey_12</code></td>
+<td><code>clock_freqs.f12</code></td>
+<td>Refines f12 from megahertz to kilohertz, plus a 1-2 T2*.</td>
+</tr>
+<tr>
+<td><code>drag_12</code></td>
+<td><code>r12.ef_motzoi</code></td>
+<td>Cancels the 0-1 excitation an EF pulse causes off-resonantly.</td>
+</tr>
+<tr>
+<td><code>fine_amplitude_12</code></td>
+<td><code>r12.ef_amp180</code></td>
+<td>Refines the EF π the way <code>fine_amplitude</code> refines the 0-1 one.</td>
+</tr>
+<tr>
+<td><code>three_state_discrimination</code></td>
+<td>—</td>
+<td>Leakage. Classifies by nearest centre, not by a line: three clouds do not have one.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Two qubits.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Routine</th>
+<th>Writes</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flux_spectroscopy</code></td>
+<td>—</td>
+<td>Coupler frequency against flux.</td>
+</tr>
+<tr>
+<td><code>coupler_anticrossing</code></td>
+<td><code>bias.parking_current</code></td>
+<td>Walks the coupler down through the qubit over a DC bias and parks it a stated fraction short of the crossing. Sets instrument state between acquisitions, so it runs its own measurement loop.</td>
+</tr>
+<tr>
+<td><code>cz_spectroscopy</code></td>
+<td><code>clock_freqs.cz</code></td>
+<td>The frequency a parametric CZ has to be driven at — frequency decides whether the gate runs at all.</td>
+</tr>
+<tr>
+<td><code>cz_parametrization</code></td>
+<td><code>cz.square_amp</code>, <code>cz.square_duration</code></td>
+<td>Its amplitude and duration, from the exchange rate against drive.</td>
+</tr>
+<tr>
+<td><code>cz_chevron</code></td>
+<td><code>cz.square_amp</code>, <code>cz.square_duration</code></td>
+<td>The baseband counterpart: a DC-flux CZ is pushed onto the crossing by amplitude, so it needs the 2D sweep.</td>
+</tr>
+<tr>
+<td><code>conditional_phase</code></td>
+<td><code>cz.parent_phase_correction</code>, <code>cz.child_phase_correction</code></td>
+<td>Brings the conditional phase to π. Two corrections, because each qubit's single-qubit phase is its own.</td>
+</tr>
+</tbody>
+</table>
+<p>Two-qubit routines target edges rather than qubits, and need <code>target_edges</code> and
+a flux-tunable coupler. They are disabled in the shipped example config, because
+on a chip without one they are pure failure noise. An edge whose two qubits are
+not both in <code>target_qubits</code> is refused at startup: a chevron over an uncalibrated
+qubit still fits a curve and still writes an amplitude, so the wrong answer here is
+a calibrated-<em>looking</em> gate rather than an error.</p>
+<h3 id="checks">Checks</h3>
+<p>A routine may carry a cheap <strong>check</strong> beside the sweep that derives its parameter —
+"is this still right?" rather than "what is it?". <code>recalibrate</code> runs the checks and
+re-runs only what fails, and if a failing node's own dependency also fails the blame
+moves up, because recalibrating a node whose input is wrong measures the wrong thing
+twice (Kelly et al., <a href="https://arxiv.org/abs/1803.03226">arXiv:1803.03226</a>).</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>What it asks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resonator_spectroscopy</code></td>
+<td>Three points across the line: how far the configured frequency sits from the peak.</td>
+</tr>
+<tr>
+<td><code>resonator_punchout</code></td>
+<td>Two short scans, at the configured power and half of it. Dressed, the line does not move; punched through, it walks.</td>
+</tr>
+<tr>
+<td><code>rabi</code></td>
+<td>Five π pulses, so a small <code>amp180</code> error grows past what one π pulse can show.</td>
+</tr>
+<tr>
+<td><code>readout_discrimination</code></td>
+<td>The same experiment at a few hundred shots — the one case where a cheaper version answers the question, since counting misassignments needs far fewer shots than placing the line.</td>
+</tr>
+</tbody>
+</table>
+<p>A routine with <strong>no</strong> check is unknown rather than stale, and cannot be blamed —
+otherwise every diagnosis would walk to the root and a partial recalibration would
+cost more than a full one.</p>
+<h2 id="configuring-it">Configuring it</h2>
+<p>See <a href="https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/calibration.example.yml"><code>calibration.example.yml</code></a>. The shortest
+useful file is just <code>target_qubits</code> — every routine is enabled unless it says
+otherwise, and every sweep has a default.</p>
+<p>Two rules are worth knowing because they are the opposite of what a config file
+usually does:</p>
+<ul>
+<li><strong>A routine the file does not mention runs.</strong> The alternative makes an empty
+  file mean "calibrate nothing", and since that raises nothing it reports
+  success — the worst answer a calibration can give.</li>
+<li><strong>A routine name that matches no routine is a startup error.</strong> A typo like
+  <code>rabi_oscillations</code> for <code>rabi</code> would otherwise enable nothing and leave the
+  real routine at its default, with nothing in the run mentioning it.</li>
+</ul>
+<h2 id="drift-monitoring">Drift monitoring</h2>
+<p>With <code>-o drift_check_interval=1800</code> the driver runs the benchmarks every half
+hour. If a fidelity falls below its threshold — the two-qubit one for an edge,
+the one-qubit one for a qubit — it queues a partial recalibration rather than a
+full run.</p>
+<p>A partial run is narrower in two ways. It targets only the affected qubits, the
+edges touching them, and — because an edge is refused unless both its ends are
+targeted — those edges' far qubits. And it runs only what the checks blame:
+<code>diagnose</code> asks each routine whether its parameter still holds, takes the
+shallowest node with evidence against it, and re-runs that node and everything
+downstream of it. Downstream because recalibrating a frequency invalidates the
+gates tuned against it.</p>
+<p>With no checks it falls back to seeding at <code>qubit_spectroscopy</code>, which is what
+RFC 0004 did unconditionally: the readout chain is skipped because finding the
+resonator is a bring-up step rather than a drift one, and it is most of what makes
+a full calibration long. The difference now is that a readout drift is not
+<em>invisible</em> — <code>resonator_spectroscopy</code> has a check, so if the readout has moved the
+blame walks up into it and the report says so. A run where every check passes
+recalibrates nothing, and says that too.</p>
+<h2 id="what-happens-to-your-device-file">What happens to your device file</h2>
+<p>The write-back is the part worth understanding, because a tuner writes what
+every subsequent job reads.</p>
+<ul>
+<li>Nothing is written unless at least one routine produced a result. A failed run
+  leaves the file exactly as it was.</li>
+<li>The candidate is written to a temporary file, checked that it reads back as
+  written and is shaped as the loader expects, and only then moved into place.</li>
+<li>The previous file is kept as <code>quantify.device.yml.prev</code>, so a calibration that
+  makes things worse can be undone without a second run:
+  <code>qpi_driver.tuners.utils.persistence.restore_backup</code>.</li>
+<li>A fitted value outside the sweep that produced it is treated as a failed fit,
+  not as a new parameter.</li>
+<li><strong>The <code>process</code> driver beside it picks the new file up on its next job</strong> — no
+  restart, no signal; the file is the whole channel. A restored <code>.prev</code>, or
+  parameters worked out by hand, arrive the same way.</li>
+<li>The tuner re-reads it at the start of each calibration, so a chip something else
+  moved is not calibrated from stale values and then overwritten with them.</li>
+</ul>
+<h2 id="adding-a-tuner">Adding a tuner</h2>
+<p>A tuner is to <code>calibrate</code> what an executor is to <code>process</code>. Subclass <code>Tuner</code>,
+supply a <code>SchedulerBackend</code> and a device, and name it by import path:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--device<span class="w"> </span>mylab.tuners:MyTuner<span class="w"> </span>…
+</code></pre></div>
+<p>The routines are backend-agnostic — both supported schedulers expose the same
+gate vocabulary, so one routine set serves both, and <code>tuners/base/device.py</code>
+absorbs the differences that remain. A new backend supplies the schedule class
+and a way to run one; it does not reimplement the experiments.</p>
+<h2 id="status">Status</h2>
+<p>The routines build real swept schedules and compile against both schedulers'
+dummy clusters. The fits are checked three ways: against synthetic data, against
+a physics simulator (<code>make test-py-sim</code>, which builds the transmon from a real
+Hamiltonian with scqubits and integrates the master equation with qutip), and —
+for randomized benchmarking — against sequences composed from this package's own
+Clifford decomposition and evolved as unitaries.</p>
+<p><code>make test-py-loop</code> runs whole calibrations against that simulator, under both
+schedulers: the full graph, a partial recalibration, a drift check and the
+recalibration it queues, and the write-back. Faults came out of it that no test of a
+single routine could see — a benchmark fit that reported the same fidelity for every
+chip better than about 3% error per Clifford, a partial recalibration that quietly
+ran the full graph, and a parametric CZ that had never once worked because a held
+flux offset dropped its drive frequency.</p>
+<p>Two gaps remain, and they are the ones that matter:</p>
+<ul>
+<li>The two-qubit model is weaker than the one-qubit one, and the qubits do not
+  differ from each other. A routine can be wrong in a way this simulator agrees
+  with.</li>
+<li><strong>Nothing here has been run against physical hardware.</strong> The graph is wired for
+  it — a real bias rack, and nodes that decline rather than fail on an element that
+  cannot hold their result — but wired for it is not verified against it. The manual
+  verification in RFC 0004 §9 is what remains before this is trustworthy in a lab.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

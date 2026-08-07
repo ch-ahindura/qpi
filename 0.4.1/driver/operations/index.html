@@ -1,0 +1,2056 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/driver/operations/">
+      
+      
+        <link rel="prev" href="../javascript/">
+      
+      
+        <link rel="next" href="../../clients/python/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Operations Runbook - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#driver-framework-operations-runbook" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Operations Runbook
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../rfcs/" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tuning-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning knobs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retention-and-pruning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retention and pruning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Retention and pruning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-calibration-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The calibration path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-driver-rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-driver rate limiting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-device-on-a-production-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a device on a production node
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding a device on a production node">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-ways-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two ways in
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-an-option-error-looks-like-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an option error looks like now
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-connecting-is-refused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When connecting is refused
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-a-calibration-on-a-production-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running a calibration on a production node
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#taking-a-qpu-out-of-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Taking a QPU out of service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-takes-effect-without-a-restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What takes effect without a restart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tuning-knobs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuning knobs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#retention-and-pruning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retention and pruning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Retention and pruning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-calibration-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The calibration path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-driver-rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-driver rate limiting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-device-on-a-production-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a device on a production node
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding a device on a production node">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-ways-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two ways in
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-an-option-error-looks-like-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an option error looks like now
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-connecting-is-refused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When connecting is refused
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-a-calibration-on-a-production-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running a calibration on a production node
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#taking-a-qpu-out-of-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Taking a QPU out of service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-takes-effect-without-a-restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What takes effect without a restart
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="driver-framework-operations-runbook">Driver Framework Operations Runbook</h1>
+<p>This runbook covers running the extensible driver framework (RFC 0001) in
+production: keeping the <code>events</code> log and the calibration collections bounded,
+protecting the server from a misbehaving driver, and the knobs you tune per
+deployment.</p>
+<p>The driver framework is standard and active across all QPI deployments.
+The collections, retention loops, and limits below run automatically according
+to your configuration.</p>
+<h2 id="tuning-knobs">Tuning knobs</h2>
+<p>Every setting follows the same precedence as the rest of QPI: <strong>CLI flag &gt; env
+var &gt; config file &gt; default</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Flag</th>
+<th>Env</th>
+<th>Config key</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Events retention window</td>
+<td><code>--events-retention</code></td>
+<td><code>QPI_EVENTS_RETENTION</code></td>
+<td><code>eventsRetention</code></td>
+<td><code>720h</code> (30 days)</td>
+<td>How long an entry stays in the <code>events</code> log before it is pruned.</td>
+</tr>
+<tr>
+<td>Prune interval</td>
+<td><code>--events-prune-interval</code></td>
+<td><code>QPI_EVENTS_PRUNE_INTERVAL</code></td>
+<td><code>eventsPruneInterval</code></td>
+<td><code>1h</code></td>
+<td>How often the retention loop runs.</td>
+</tr>
+<tr>
+<td>Per-driver rate limit</td>
+<td><code>--event-rate-limit</code></td>
+<td><code>QPI_EVENT_RATE_LIMIT</code></td>
+<td><code>eventRateLimit</code></td>
+<td><code>100</code></td>
+<td>Max inbound events per second accepted from each driver.</td>
+</tr>
+<tr>
+<td>Calibration request retention</td>
+<td><code>--calibration-request-retention</code></td>
+<td><code>QPI_CALIBRATION_REQUEST_RETENTION</code></td>
+<td><code>calibrationRequestRetention</code></td>
+<td><code>720h</code> (30 days)</td>
+<td>How long a <strong>finished</strong> calibration request is kept. A <code>running</code> or <code>pending</code> one is never pruned, however old.</td>
+</tr>
+<tr>
+<td>Calibration report retention</td>
+<td><code>--calibration-result-retention</code></td>
+<td><code>QPI_CALIBRATION_RESULT_RETENTION</code></td>
+<td><code>calibrationResultRetention</code></td>
+<td><code>0</code> (never)</td>
+<td>How long a calibration report is kept. Off by default: a report is what the chip <em>was</em>.</td>
+</tr>
+<tr>
+<td>Calibration trace retention</td>
+<td><code>--calibration-fit-retention</code></td>
+<td><code>QPI_CALIBRATION_FIT_RETENTION</code></td>
+<td><code>calibrationFitRetention</code></td>
+<td><code>720h</code> (30 days)</td>
+<td>How long a report's fit traces and benchmark raw data are kept, stripped without touching the fitted numbers.</td>
+</tr>
+</tbody>
+</table>
+<p>Durations use Go's duration syntax (<code>720h</code>, <code>30m</code>, <code>90s</code>). Set any retention or
+<code>eventRateLimit</code> to <code>0</code> to disable that prune or the rate limit respectively.</p>
+<p>Example <code>qpi.config.yml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">eventsRetention</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;168h&quot;</span><span class="w">      </span><span class="c1"># keep one week of events</span>
+<span class="nt">eventsPruneInterval</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;30m&quot;</span>
+<span class="nt">eventRateLimit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">           </span><span class="c1"># 50 events/sec per driver</span>
+<span class="nt">calibrationFitRetention</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;336h&quot;</span><span class="w">   </span><span class="c1"># keep two weeks of fit traces</span>
+<span class="nt">calibrationResultRetention</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;0&quot;</span><span class="w">   </span><span class="c1"># never prune a report (the default)</span>
+</code></pre></div>
+<h2 id="retention-and-pruning">Retention and pruning</h2>
+<p>The <code>events</code> collection is the single trace log of every driver→UI event a
+handler chooses to persist (for example a cryostat monitor's readings). Left
+unbounded it grows with every reading, so a background loop
+(<code>RunEventsRetentionEngine</code>) deletes entries older than <code>eventsRetention</code> on
+each <code>eventsPruneInterval</code> tick.</p>
+<ul>
+<li>Pruning compares each row's <code>ts</code> (the event's own UTC timestamp) against
+  <code>now - eventsRetention</code> and deletes in bounded batches, so a large backlog
+  never blocks on a single transaction.</li>
+<li>The loop exits immediately if the framework is off or <code>eventsRetention</code> is
+  <code>0</code>, so a legacy deployment starts no extra goroutine.</li>
+<li>Deletions are logged as <code>[Retention] pruned N expired events</code>.</li>
+</ul>
+<p>To confirm pruning is keeping growth flat, watch the row count over a window
+longer than the retention period under steady load; it should plateau rather
+than climb.</p>
+<div class="highlight"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="k">count</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">events</span><span class="p">;</span>
+</code></pre></div>
+<h3 id="the-calibration-path">The calibration path</h3>
+<p>The same loop applies three separate policies to the calibration collections,
+because what accumulates there differs in how durable its value is
+(RFC 0006 §9). A chip drift-checked every half hour produces roughly 20 MB of
+requests and 200 MB of reports per year, and phase-3 fit traces would add
+about 2.5 GB.</p>
+<ul>
+<li><strong>A finished request is bookkeeping.</strong> Once its report is stored, a <code>done</code> or
+  <code>failed</code> row in <code>calibration_requests</code> holds nothing the report does not, so it
+  is pruned on <code>calibrationRequestRetention</code>. A <code>running</code> or <code>pending</code> row is
+  never pruned however old — a hung calibration would otherwise lose its record
+  while still running, and the per-QPU checks that read it would stop seeing the
+  chip as busy.</li>
+<li><strong>A report is not bookkeeping.</strong> <code>calibration_results</code> is the chip's history,
+  and <code>calibrationResultRetention</code> defaults to <code>0</code> so nobody loses it by
+  accident. Set it only if you have a disk problem.</li>
+<li><strong>Fit traces go separately from the reports carrying them.</strong> They are most of a
+  report's size and the least durable part of its value: nobody re-reads the Rabi
+  trace from eight months ago, but the fitted <code>amp180</code> is the record of what the
+  chip was. On <code>calibrationFitRetention</code> the loop strips <code>fit</code> from each routine
+  result and <code>raw_data</code> from each benchmark, leaving every fitted number in place.
+  The Calibration tab then says the traces are not in the report rather than
+  drawing an empty chart.</li>
+</ul>
+<p>Logged as <code>[Retention] pruned N finished calibration request(s) and M report(s),
+stripped traces from K</code>.</p>
+<p>Driver-side raw data is out of scope: <code>-o save_raw_data=true</code> writes to the
+driver's own disk, which this server cannot see and this loop cannot reach. It is
+off by default for that reason, and an operator who turns it on owns the
+directory.</p>
+<h3 id="index">Index</h3>
+<p>A composite index <code>idx_events_type_ts</code> on <code>events(type, ts)</code> backs both the
+dashboard's per-type, time-ordered charts and the retention scan. It is created
+idempotently by the schema migration; no manual step is required.</p>
+<h2 id="per-driver-rate-limiting">Per-driver rate limiting</h2>
+<p>Each connected driver's inbound event stream is guarded by its own token-bucket
+limiter (<code>eventRateLimit</code> events/sec, bursting up to one second's worth). When a
+driver exceeds its rate, the surplus events are logged and dropped —
+<code>[DriverListener &lt;id&gt;] rate limit exceeded, dropping event</code> — and the listener
+keeps running. One driver flooding events cannot starve the others: limiters are
+per-driver, not global.</p>
+<p>Tune <code>eventRateLimit</code> to comfortably exceed a healthy driver's emit rate. A
+monitor emitting every few seconds needs only a handful per second; the default
+of <code>100</code> leaves wide headroom. Set it to <code>0</code> only if you trust every driver and
+want no cap.</p>
+<h2 id="adding-a-device-on-a-production-node">Adding a device on a production node</h2>
+<p>A driver runs one <strong>operation</strong> on one <strong>device</strong> (see
+<a href="../../rfcs/0003-driver-extensibility/">RFC 0003</a>). The operations are fixed — the
+server must have a handler for each — but the devices are not, so a lab can run a
+backend the SDK has never heard of without patching it.</p>
+<p>Start by asking the node what it can already run. The list comes from the installed
+SDK's own registry, so it describes that node rather than the documentation:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>devices<span class="w">                    </span><span class="c1"># names, by operation</span>
+qpi-driver<span class="w"> </span>devices<span class="w"> </span>--operation<span class="w"> </span>monitor
+</code></pre></div>
+<p>Names only. What a device does, and which <code>-o</code> keys it wants, is documented in QPI-UI
+where the driver is registered — the driver publishes no catalog of its own, so there
+is nothing to sync and nothing that can disagree (<a href="../../rfcs/0003-driver-extensibility/">RFC 0003 §9</a>).</p>
+<h3 id="two-ways-in">Two ways in</h3>
+<p><strong>Installed</strong> (Python only) — the route for a device meant to be versioned and
+deployed. The distribution advertises it under the <code>qpi_driver.devices</code> entry-point
+group; after <code>pip install</code>, it is indistinguishable from a built-in:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>--with<span class="w"> </span>mylab-devices<span class="w"> </span><span class="s2">&quot;qpi-driver[cli]&quot;</span>
+qpi-driver<span class="w"> </span>devices<span class="w"> </span>--operation<span class="w"> </span>process<span class="w">     </span><span class="c1"># mylab&#39;s devices are now listed</span>
+</code></pre></div>
+<p>An entry point that will not import is logged and skipped, never fatal — one broken
+third-party package cannot stop the driver from starting. Check the journal for
+<code>skipping device entry point</code> if a device you expected is missing.</p>
+<p><strong>Named by import path</strong> — the route for "I have a class in a file". No packaging:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Python: module:attr, or module.attr</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>mylab.executors:PrestoV2<span class="w"> </span>…
+<span class="c1"># TypeScript: ./module.js#export   (`:` is a URL scheme separator in a JS specifier)</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>monitor<span class="w"> </span>--device<span class="w"> </span>./dist/my-device.js#MyExport<span class="w"> </span>…
+</code></pre></div>
+<p>Both routes run code the operator installed or named; the server never supplies a
+device value and cannot introduce one. The Go SDK has no import-path route — Go
+resolves imports at compile time, so a device there is registered in your own <code>main</code>
+and the binary rebuilt.</p>
+<p>An executor named by import path is handed every <code>-o</code> key the SDK does not read
+itself, as the string it was typed as: its constructor is the only thing that knows
+those keys exist.</p>
+<h3 id="what-an-option-error-looks-like-now">What an option error looks like now</h3>
+<p>An <code>-o</code> key the chosen device never read is an error, where it used to be ignored.
+This is the change most likely to surprise an existing unit file: a typo that
+previously meant "running with a default nobody chose" now means the driver does not
+start.</p>
+<div class="highlight"><pre><span></span><code>$ qpi-driver start --operation process --device mock --token … --ca-fingerprint … -o data_dirr=/data
+Error: unknown option &#39;data_dirr&#39; for process device &#39;mock&#39;.
+</code></pre></div>
+<p>The other three are worth recognising in a journal:</p>
+<div class="highlight"><pre><span></span><code>Error: missing required option &#39;channels&#39;, e.g. -o channels=mapper.bf.tmc:K,mapper.bf.pmc:mbar
+Error: bad value for -o job_timeout: invalid literal for int() with base 10: &#39;soon&#39;
+Error: bad value for -o data_dir: /var is not in a safe location
+</code></pre></div>
+<p>The last one is a safety check, not a bug: a driver may only read and write under a
+small allow-list (<code>/var/qpi-driver</code>, <code>/etc/qpi-driver</code>, <code>/tmp</code>, <code>/var/tmp</code>, the
+user's home). It applies to a device named by import path exactly as to a built-in.</p>
+<p>All four exit 1 before the driver connects to anything, so a <code>Restart=on-failure</code>
+unit will loop on them — check <code>systemctl status</code> rather than waiting for the
+dashboard to show the driver online.</p>
+<h2 id="when-connecting-is-refused">When connecting is refused</h2>
+<div class="highlight"><pre><span></span><code>409  &quot;tuner-1&quot; is already connected as this QPU&#39;s calibrate driver; one per QPU
+</code></pre></div>
+<p>One driver per role per QPU: two <code>process</code> drivers would hand one chip two schedules,
+two tuners would each write the device file. Scoped by <em>operation</em>, so a
+<code>quantify_tuner</code> refuses a <code>qblox_tuner</code>. Registering a second is fine — only
+connecting it while the first is live is not, which is what makes a standby possible.</p>
+<p>If nothing is actually connected and this still appears, the named driver is holding
+its lease: disable it (<code>POST /api/op/drivers/toggle</code>, <code>enabled: false</code>) to release the
+ports and goroutines. A dead process releases on socket detach, and a restarted server
+starts with no leases and resets every driver to <code>offline</code>.</p>
+<h2 id="running-a-calibration-on-a-production-node">Running a calibration on a production node</h2>
+<p>A <code>calibrate</code> driver differs operationally from the other two in one way that
+matters: it writes a file the QPU beside it reads. Everything below follows from
+that.</p>
+<p><strong>Queue one, don't send one.</strong> <code>POST /api/op/calibrate/dispatch</code> (admin-only)
+adds a row to <code>calibration_requests</code>; the driver's dispatcher picks it up on its
+next tick. That indirection is deliberate — a request survives a server restart,
+is requeued on a send error, and runs when a driver that was offline reconnects.
+The dashboard's Calibration tab is the same call with a form in front of it.</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$QPI_ADDR</span><span class="s2">/api/op/calibrate/dispatch&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: </span><span class="nv">$ADMIN_TOKEN</span><span class="s2">&quot;</span><span class="w"> </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;driver_id&quot;: &quot;&lt;driver-id&gt;&quot;, &quot;mode&quot;: &quot;fidelity_check&quot;}&#39;</span>
+</code></pre></div>
+<p><strong>One at a time.</strong> A tuner runs a single calibration; a second is not dispatched
+until the first reports. A <code>full</code> run is hours, so prefer <code>fidelity_check</code>
+(minutes, changes nothing) to find out whether a full run is warranted.</p>
+<p><strong>Watching one run.</strong> A tuner emits <code>CalibrationProgress</code> after each routine and
+target, which lands on the queued request's <code>progress</code> field — so the Calibration
+tab shows <code>step 7 of 33 — rabi on q2</code> and a bar, live. The same thing is in the
+driver's own journal in more detail, one line per target plus each check's verdict:</p>
+<div class="highlight"><pre><span></span><code>journalctl<span class="w"> </span>-u<span class="w"> </span>&lt;service-name&gt;.qpi-driver.service<span class="w"> </span>-f
+</code></pre></div>
+<p>A driver's own drift check reports progress too, but it answers to no queued row,
+so that one is visible only in the journal.</p>
+<p><strong>The device file has a backup.</strong> Every successful write-back leaves the previous
+file as <code>quantify.device.yml.prev</code>. If a calibration makes fidelity worse, that
+is the fastest way back — no restart, and no waiting on another calibration:</p>
+<div class="highlight"><pre><span></span><code>cp<span class="w"> </span>quantify.device.yml.prev<span class="w"> </span>quantify.device.yml
+</code></pre></div>
+<p>A failed calibration writes nothing at all, so a <code>.prev</code> older than the last run
+means the last run failed.</p>
+<h2 id="taking-a-qpu-out-of-service">Taking a QPU out of service</h2>
+<p>Two levers, both settable from the QPU Registry tab:</p>
+<ul>
+<li><strong>Switched off</strong> (<code>POST /api/op/qpu/toggle</code>, <code>enabled: false</code>) — out of service. No
+  jobs, no calibration.</li>
+<li><strong>Maintenance</strong> (<code>POST /api/op/qpu/maintenance</code>) — being worked on. No jobs, but a
+  calibration can still be dispatched, which is usually the point.</li>
+</ul>
+<p>Either way a queued job waits rather than failing, and a new submission is refused
+with the reason. A QPU being calibrated stops taking jobs on its own.</p>
+<p>Drivers are told, so a tuner stops its own drift checks under maintenance. That part
+is cooperative; the server's gate is what actually holds jobs back.</p>
+<h2 id="what-takes-effect-without-a-restart">What takes effect without a restart</h2>
+<p>The device config is re-read when it changes on disk — by the <code>process</code> driver before
+each job, by a tuner at the start of each calibration. So a calibration, a restored
+<code>.prev</code>, or parameters worked out by hand all reach a running driver by the file
+appearing where it reads. No signal to send, nothing to restart.</p>
+<p>Two things still need one:</p>
+<ul>
+<li><strong>A new element.</strong> Adding a qubit or an edge is structural, not calibration. The
+  driver logs the names it did not recognise and carries on with the rest.</li>
+<li><strong>The hardware config.</strong> It builds the instrument coordinator and the Cluster, so
+  applying a new one means redialling the rack — and a failed reconnect leaves the
+  driver with no coordinator and no way back, the old one already closed. The device
+  config can fall back to memory; this cannot. A driver logs <code>Restart it to pick the
+  new one up</code> once per change, so at least it is not silent.</li>
+</ul>
+<p>A config that will not parse never replaces a working one. The device config keeps
+what it has and the job proceeds; a bad <code>calibration.yml</code> fails the calibration
+instead, because that file decides <em>which routines run</em>.</p>
+<p><strong>Retention does not apply to calibration reports.</strong> <code>calibration_results</code> is its
+own collection, not part of the <code>events</code> log, so <code>eventsRetention</code> leaves it
+alone. Reports are rare and small in number; if they ever need pruning it is a
+separate decision, made deliberately.</p>
+<p><strong>A skipped node is not a failed one.</strong> Several routines write parameters only a
+<code>CalibratedTransmon</code> element carries — the EF chain and the two readout operating
+points — and on a chip whose elements are <code>BasicTransmonElement</code> they <em>decline</em>
+rather than fail. The report comes back <code>success</code> with those nodes absent. That is
+the intended reading: the chip calibrated everything its device file has room for.
+To opt a qubit into the rest, point its <code>element_type.path</code> at
+<code>CalibratedTransmon</code>; the <a href="../tuners/">tuner reference</a> lists which node needs which
+submodule.</p>
+<p><strong>The coupler bias is set outside the schedule.</strong> <code>coupler_anticrossing</code> walks a DC
+current through the coupler, and no schedule can express that — it goes over qcodes,
+to an S4g in an SPI rack (<code>-o spi_rack_address=</code>, and <code>bias.source: spi</code> on the
+edge) or to a baseband output on the cluster (<code>bias.source: qcm</code>). Without a source
+that can actually hold a current the node <strong>fails</strong>, deliberately — an edge
+declaring a bias nothing can deliver is a misconfiguration, and a sweep against
+something that applies nothing returns the same frequency at every point and would
+fit a confident crossing out of a flat line. The node restores the previous current
+when it finishes, including on failure.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p><strong>The <code>events</code> table keeps growing.</strong> Confirm <code>eventsRetention &gt; 0</code> and that the
+retention engine logged <code>[Retention] Engine started</code>. If retention is long
+relative to event volume, growth up to the steady-state size is expected — the
+count should plateau once the oldest events start aging out.</p>
+<p><strong>A driver's readings are missing from the dashboard.</strong> Check the server log for
+<code>rate limit exceeded</code> lines; the driver may be emitting faster than
+<code>eventRateLimit</code>. Raise the limit or slow the driver's <code>every()</code> interval. Also
+confirm the event type has a registered handler — unknown types are logged and
+dropped by design.</p>
+<p><strong>Pruning deleted too much / too little.</strong> <code>eventsRetention</code> is the only lever;
+it takes effect on the next <code>eventsPruneInterval</code> tick without a restart only if
+supplied via config reload — otherwise restart the server after changing it.</p>
+<p><strong>A calibration is stuck in <code>running</code>.</strong> The request is released when its report
+arrives, so a request that never leaves <code>running</code> means the tuner died mid-run —
+check the driver's journal. Nothing was written to the device file (a failed run
+does not write), so the QPU is unaffected. Set the row's status to <code>failed</code> in
+the admin UI to let the next calibration through.</p>
+<p><strong>The tuner will not start: "calibration config not found".</strong> Deliberate.
+<code>-o calibration_config=</code> must point at a real file, because a tuner with nothing
+to run would otherwise report success having measured nothing.</p>
+<p><strong>Only <code>coupler_anticrossing</code> failed: "no source that can actually hold a parking
+current".</strong> The rack did not open. The reason is in the driver's journal — the
+resolution is logged where it fails — and it is almost always a missing
+<code>-o spi_rack_address=</code>, couplers disagreeing about <code>bias.source</code>, or <code>qcm</code> on a
+node with no cluster. Everything else in the run is unaffected; the coupler is left
+at the current it started from.</p>
+<p><strong>Every routine failed with a fit error.</strong> Expected against a dummy cluster,
+which returns no real data — the fits refuse rather than writing zeros to the
+device. Against real hardware it means the sweep ranges in <code>calibration.yml</code> do
+not bracket the feature being measured.</p>
+<h2 id="verify">Verify</h2>
+<div class="highlight"><pre><span></span><code>make test-go                               # config, index, prune, rate-limit tests
+make test-e2e-driver EXECUTOR=mock            # the driver framework end to end
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

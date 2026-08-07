@@ -1,0 +1,2849 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/rfcs/0005-calibration-graph-completion/">
+      
+      
+        <link rel="prev" href="../0004-calibration-tuners/">
+      
+      
+        <link rel="next" href="../../changelog/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>0005 Calibration Graph Completion - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rfc-0005-calibration-graph-completion" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              0005 Calibration Graph Completion
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../driver/python/" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../driver/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-background-the-reference-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Background: the reference pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Background: the reference pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#provenance-and-licensing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance and licensing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-gap-concretely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The gap, concretely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-target-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The target graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-node-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Node inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-check-versus-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Check versus calibrate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Check versus calibrate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-asymmetry-that-makes-it-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The asymmetry that makes it safe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-simulator-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Simulator capabilities
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-testing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Testing strategy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-what-we-deliberately-do-not-take-from-the-reference-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. What we deliberately do not take from the reference pipelines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-how-the-graph-was-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. How the graph was built
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. How the graph was built">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-the-graph-on-a-chip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the graph on a chip
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-what-shipped-and-what-did-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. What shipped, and what did not
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-idea" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The idea
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-background-the-reference-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Background: the reference pipelines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Background: the reference pipelines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#provenance-and-licensing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Provenance and licensing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-gap-concretely" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The gap, concretely
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-the-target-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. The target graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-node-inventory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Node inventory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-check-versus-calibrate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Check versus calibrate
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Check versus calibrate">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-asymmetry-that-makes-it-safe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The asymmetry that makes it safe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-simulator-capabilities" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Simulator capabilities
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-testing-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Testing strategy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-what-we-deliberately-do-not-take-from-the-reference-pipelines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        11. What we deliberately do not take from the reference pipelines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-how-the-graph-was-built" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. How the graph was built
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="12. How the graph was built">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#running-the-graph-on-a-chip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the graph on a chip
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-open-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Open questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-what-shipped-and-what-did-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        14. What shipped, and what did not
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rfc-0005-calibration-graph-completion">RFC 0005 — Calibration Graph Completion</h1>
+<ul>
+<li><strong>Status:</strong> Implemented</li>
+<li><strong>Author:</strong> Martin Ahindura</li>
+<li><strong>Created:</strong> 2026-07-31</li>
+<li><strong>Depends on:</strong> RFC 0004 (calibrate operation, tuners, routines, the DAG walk)</li>
+<li><strong>Touches:</strong> <code>qpi-driver</code> (Python only — no new operation, no new event type, no
+  server or SDK change)</li>
+</ul>
+<h2 id="1-the-idea">1. The idea</h2>
+<p>RFC 0004 built the machinery and sixteen routines. The machinery is right; the
+graph is not finished. Three things say so, and none of them is a matter of taste:</p>
+<p><strong>The device file has parameters nothing produces.</strong> <code>measure.acq_rotation</code> and
+<code>measure.acq_threshold</code> decide the bit of every <code>meas_level=2</code> shot — the default
+job path — and no routine writes them. The reference <code>quantify.device.yml</code> in this
+repo does not carry them at all, so the executor falls back to <code>0.0</code>/<code>0.0</code> and
+discriminates on <code>Re(z) &gt; 0</code> with no rotation. There is no reason a readout chain
+puts the two clouds either side of that line. The same holds for
+<code>measure.integration_time</code>, <code>measure.pulse_duration</code>, <code>measure.acq_delay</code> and
+<code>clock_freqs.f12</code>.</p>
+<p><strong>The hardware config is provisioned for a larger pipeline than the tuner can
+fill.</strong> <code>qpi-driver/py/quantify.hardware.json</code> declares, per qubit, clocks named
+<code>01</code>, <code>12</code>, <code>ro</code>, <code>ro1</code>, <code>ro2</code>, <code>ro_2st_opt</code> and <code>ro_3st_opt</code>. The tuner produces
+three of those seven. The other four are the state-resolved readout calibration and
+the EF subspace, so a chip wired to that config expects them to exist.</p>
+<p><strong>The readout chain cannot all live at the root.</strong> Measuring the resonance with the
+qubit in <code>|1⟩</code> needs a calibrated π pulse, so proper readout calibration <em>depends
+on</em> Rabi, which depends on coarse readout. RFC 0004's graph puts readout entirely
+above the qubit chain, so it can only ever do the coarse half. This is a topology
+error, not a missing experiment, and it is why the missing nodes cannot simply be
+appended.</p>
+<p>This RFC completes the graph, and adds the one piece of machinery both reference
+pipelines lack: a <strong>check</strong> form per node, so staleness is measured rather than
+remembered.</p>
+<h2 id="2-vocabulary">2. Vocabulary</h2>
+<p>Extends RFC 0004 §2.</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Check</strong></td>
+<td>A cheap measurement answering "is this parameter still right?" without re-deriving it. Distinct from the routine's <code>calibrate</code> form, which sweeps.</td>
+</tr>
+<tr>
+<td><strong>Diagnose</strong></td>
+<td>The recursion that decides how far <em>up</em> the graph to re-calibrate when a check fails (Kelly et al.).</td>
+</tr>
+<tr>
+<td><strong>Coarse pass</strong></td>
+<td>Readout calibration possible with no qubit control: find the resonators, pick a working power.</td>
+</tr>
+<tr>
+<td><strong>State-resolved pass</strong></td>
+<td>Readout calibration that needs a π pulse: the resonance per qubit state, the optimal drive point between them, and the discriminator.</td>
+</tr>
+<tr>
+<td><strong>EF subspace</strong></td>
+<td>The <code>\|1⟩</code>–<code>\|2⟩</code> transition and its own amplitude, frequency and DRAG parameters. Needed for leakage-aware three-state readout.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="3-background-the-reference-pipelines">3. Background: the reference pipelines</h2>
+<p>Two prior implementations target this hardware stack, and both are worth reading
+for their <strong>node inventory</strong> — hard-won domain knowledge — and not for their
+software structure (§11).</p>
+<ul>
+<li><a href="https://github.com/tergite/tergite-autocalibration"><code>tergite-autocalibration</code></a> —
+  the full pipeline, 32 nodes, <code>GRAPH_DEPENDENCIES</code> in <code>lib/utils/graph.py</code>.</li>
+<li><a href="https://github.com/tergite/tergite-tuner"><code>tergite-tuner</code></a> — a trimmed
+  reimplementation of the same graph for <em>recalibration only</em>, with
+  <code>DEFAULT_NODE_DAG_EDGES</code> in <code>lib/nodes/__init__.py</code>. It omits the coupler bias
+  currents, which is the boundary of what recalibration alone can fix.</li>
+</ul>
+<h3 id="provenance-and-licensing">Provenance and licensing</h3>
+<p>Both are <strong>Apache License 2.0</strong>, © Chalmers Next Labs and the named contributors in
+their file headers. qpi is <strong>MIT</strong>. The two are not interchangeable, so the boundary
+matters and is recorded here rather than left to be reconstructed later.</p>
+<p><strong>What this RFC takes: facts, not code.</strong> The node names, the dependency edges, the
+calibrated parameter names, and the observation that neither package implements a
+check/calibrate split. Those describe a physical calibration order and an interface;
+they are not expression, and nothing has been copied. §11 lists the parts of their
+<em>design</em> qpi deliberately rejects, which is the opposite of borrowing.</p>
+<p><strong>If any implementation is ever ported</strong>, the rule is not "rewrite the header":</p>
+<ul>
+<li>Apache 2.0 is not relicensable as MIT. A ported file stays under Apache 2.0, keeps
+  its copyright notice and license reference, and must state that it was modified.</li>
+<li>qpi would need a third-party notices file — the tergite repos use <code>CREDITS.md</code>;
+  qpi has none today — and <code>LICENSE</code> would need to say that some files are Apache
+  2.0. Apache 2.0 also carries a patent grant and termination clause MIT does not.</li>
+<li>Accepting Apache-2.0 code into an MIT project is a <strong>maintainer's decision</strong>, not
+  an implementer's. It should be made deliberately, once, and written down.</li>
+</ul>
+<p>Their own tree shows the correct pattern: the two-qubit Clifford utilities under
+<code>tqg_randomized_benchmarking/utils/</code> are vendored from the DiCarlo lab (© 2016
+QuTech, Delft) under MIT, with the upstream header preserved verbatim inside an
+otherwise Apache-2.0 repository.</p>
+<p>The one place qpi and they could plausibly have converged is randomized
+benchmarking, and they have not: <code>qpi_driver/tuners/utils/clifford.py</code> builds the
+24-element group by exact matrix composition and derives each recovery gate, with no
+lookup tables and no borrowed code. Two of the nodes below — <code>cz_rb</code>-equivalents —
+are the next place that temptation will arise, so the check above is worth repeating
+at that point.</p>
+<p>Their graphs agree, and both confirm the straddle:</p>
+<div class="highlight"><pre><span></span><code>n_rabi_oscillations → resonator_spectroscopy_1
+                    → ro_frequency_two_state_optimization
+                    → ro_amplitude_two_state_optimization
+</code></pre></div>
+<p>Readout amplitude is calibrated <strong>there</strong>, against discrimination fidelity — not by
+punchout. <code>punchout</code> sits in <code>EXCLUDED_NODES</code> in autocalibration, marked standalone.
+RFC 0004 makes punchout the producer of <code>measure.pulse_amp</code>, which is the weaker
+choice; §4 records the decision.</p>
+<p>They also calibrate a number RFC 0004 hardcodes. <code>spec:spec_ampl_optimal</code> is the
+<em>spectroscopy drive amplitude</em>, found by a node
+(<code>qubit_bring_up_spectroscopy</code>). RFC 0004 §11 records that qpi's 1% default is a
+signal-to-noise of about five and that the full-DAG test was passing on that
+margin; the reference pipelines treat it as a calibrated parameter, and they are
+right.</p>
+<p><strong>Neither implements check-vs-calibrate.</strong> Both persist a <code>calibrated</code> /
+<code>not_calibrated</code> flag — autocalibration in redis via
+<code>_check_calibration_status_redis</code>, and qpi's <code>RECALIBRATION_ROOTS =
+("qubit_spectroscopy",)</code> is the same idea with the boundary hardcoded instead of
+stored. Kelly et al., <a href="https://arxiv.org/abs/1803.03226"><em>Physical qubit calibration on a directed acyclic
+graph</em></a> (arXiv:1803.03226) is the citable
+formalism for doing better: per-node <code>check_data</code> and <code>check_state</code>, and a
+<code>diagnose</code> recursion that walks up only as far as the evidence requires. This is
+the part reviewers will press on hardest, because it is the difference between a
+graph and a script.</p>
+<h2 id="4-decisions">4. Decisions</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Resolution</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>New operation or event type?</td>
+<td><strong>No.</strong> <code>calibrate</code> already carries this. Python driver only.</td>
+</tr>
+<tr>
+<td>Routine interface</td>
+<td><strong>Unchanged.</strong> <code>build_schedule</code> / <code>analyse</code> / <code>apply</code> absorbs every new node. If a node does not fit, that is a finding to record, not a reason to add a second interface.</td>
+</tr>
+<tr>
+<td>Where parameters live</td>
+<td><strong>Unchanged</strong> — dotted paths on the real <code>QuantumDevice</code>, written to <code>quantify.device.yml</code> through the verified write-back. No key–value store. §11.</td>
+</tr>
+<tr>
+<td>Readout amplitude producer</td>
+<td>Move from <code>resonator_punchout</code> to <code>readout_amplitude_two_state</code>, which optimises it against assignment fidelity. Punchout keeps <code>clock_freqs.readout</code> and becomes a <strong>check</strong> node for the dressed regime.</td>
+</tr>
+<tr>
+<td>Spectroscopy drive amplitude</td>
+<td>Becomes a calibrated parameter (<code>spec.amplitude</code>), measured by <code>qubit_spectroscopy</code> itself as a second sweep axis rather than by a node of its own — <strong>revised during implementation, see below</strong>.</td>
+</tr>
+<tr>
+<td>EF subspace</td>
+<td>In scope. It is seven nodes and the only route to leakage-aware readout, which the hardware config already expects.</td>
+</tr>
+<tr>
+<td>Coupler bias current</td>
+<td>In scope. <code>bias.parking_current</code> is carried, validated and applied today, and set by hand.</td>
+</tr>
+<tr>
+<td>Check / diagnose</td>
+<td>In scope, and first — it needs no new physics and it changes what every other node must provide.</td>
+</tr>
+<tr>
+<td>Crosstalk</td>
+<td><strong>Out of scope.</strong> Largest, most deferrable, and nothing in the device file depends on it yet.</td>
+</tr>
+<tr>
+<td>Mixer calibration</td>
+<td><strong>Out of scope.</strong> RF modules; out-of-band like the SPI rack.</td>
+</tr>
+<tr>
+<td>Code from the reference pipelines</td>
+<td><strong>None.</strong> Facts and interface names only; they are Apache 2.0 and qpi is MIT. Porting any implementation needs a maintainer decision first — §3, <em>Provenance and licensing</em>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="5-the-gap-concretely">5. The gap, concretely</h2>
+<p>Every readout and qubit parameter the executor or a later routine consumes, and
+what produces it today.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Consumed by</th>
+<th>Produced today</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clock_freqs.readout</code></td>
+<td>every schedule</td>
+<td>✅ <code>resonator_spectroscopy</code>, corrected by <code>resonator_punchout</code></td>
+</tr>
+<tr>
+<td><code>clock_freqs.f01</code></td>
+<td>every drive</td>
+<td>✅ <code>qubit_spectroscopy</code> → <code>ramsey</code></td>
+</tr>
+<tr>
+<td><code>clock_freqs.f12</code></td>
+<td>EF drive, 3-state readout</td>
+<td>❌ nothing — hardcoded in the fixture, 134 MHz from the simulated transmon</td>
+</tr>
+<tr>
+<td><code>clock_freqs.readout_1</code> / <code>_2</code></td>
+<td>readout optimisation</td>
+<td>❌ nothing</td>
+</tr>
+<tr>
+<td><code>clock_freqs.readout_2state_opt</code> / <code>_3state_opt</code></td>
+<td>optimal readout</td>
+<td>❌ nothing</td>
+</tr>
+<tr>
+<td><code>measure.pulse_amp</code></td>
+<td>every readout</td>
+<td>⚠️ <code>resonator_punchout</code> — dressed-regime edge, not fidelity</td>
+</tr>
+<tr>
+<td><code>measure.acq_rotation</code></td>
+<td><strong>every <code>meas_level=2</code> shot</strong></td>
+<td>❌ nothing; absent from a working chip's config → <code>0.0</code></td>
+</tr>
+<tr>
+<td><code>measure.acq_threshold</code></td>
+<td><strong>every <code>meas_level=2</code> shot</strong></td>
+<td>❌ nothing; absent from a working chip's config → <code>0.0</code></td>
+</tr>
+<tr>
+<td><code>measure.integration_time</code></td>
+<td>every acquisition</td>
+<td>❌ hand-set (3.6 µs)</td>
+</tr>
+<tr>
+<td><code>measure.pulse_duration</code></td>
+<td>every readout</td>
+<td>❌ hand-set (3.8 µs)</td>
+</tr>
+<tr>
+<td><code>measure.acq_delay</code></td>
+<td>every acquisition</td>
+<td>❌ hand-set (200 ns)</td>
+</tr>
+<tr>
+<td><code>rxy.amp180</code>, <code>rxy.motzoi</code></td>
+<td>every gate</td>
+<td>✅ <code>rabi</code>/<code>fine_amplitude</code>, <code>drag</code></td>
+</tr>
+<tr>
+<td><code>r12.ef_amp180</code>, <code>r12.ef_motzoi</code></td>
+<td>EF gates</td>
+<td>❌ nothing</td>
+</tr>
+<tr>
+<td><code>spec.amplitude</code></td>
+<td><code>qubit_spectroscopy</code> itself</td>
+<td>❌ hardcoded default</td>
+</tr>
+<tr>
+<td><code>cz.square_amp</code>, <code>cz.square_duration</code>, phase corrections</td>
+<td>every CZ</td>
+<td>✅ <code>cz_chevron</code>, <code>conditional_phase</code></td>
+</tr>
+<tr>
+<td><code>bias.parking_current</code></td>
+<td>applied at driver startup</td>
+<td>❌ hand-set</td>
+</tr>
+</tbody>
+</table>
+<p>Two of these are worse than "missing": the discriminator pair silently defaults,
+and <code>f12</code> is silently wrong. A missing parameter that raises is a nuisance; one
+that defaults is a wrong answer with no symptom.</p>
+<h2 id="6-the-target-graph">6. The target graph</h2>
+<blockquote>
+<p>This is the plan. The graph as built differs in four places, all recorded in
+§14 — read that for what actually runs.</p>
+</blockquote>
+<pre class="mermaid"><code>graph TD
+    subgraph coarse["Readout — coarse pass"]
+        TOF["time_of_flight"] --&gt; RS["resonator_spectroscopy"]
+        RS --&gt; PO["resonator_punchout"]
+        RS --&gt; RR["resonator_relaxation"]
+    end
+    PO --&gt; QS["qubit_spectroscopy"]
+    QS --&gt; RABI["rabi"] --&gt; RAM["ramsey"] --&gt; DRAG["drag"] --&gt; FA["fine_amplitude"]
+    RAM --&gt; T1["t1"] --&gt; T2["t2_echo"]
+    FA --&gt; AXY["allxy"]
+    subgraph resolved["Readout — state-resolved pass"]
+        FA --&gt; RS1["resonator_spectroscopy_excited"]
+        RS1 --&gt; RF2["readout_frequency_two_state"]
+        RF2 --&gt; RA2["readout_amplitude_two_state"]
+        RA2 --&gt; RFID["readout_fidelity"]
+    end
+    subgraph ef["EF subspace"]
+        RS1 --&gt; F12["f12_spectroscopy"] --&gt; R12["rabi_12"] --&gt; RAM12["ramsey_12"]
+        RAM12 --&gt; D12["drag_12"] --&gt; FA12["fine_amplitude_12"]
+        FA12 --&gt; RS2["resonator_spectroscopy_second_excited"]
+        RS2 --&gt; RF3["readout_frequency_three_state"]
+        RF3 --&gt; RA3["readout_amplitude_three_state"] --&gt; TSD["three_state_discrimination"]
+    end
+    RA2 --&gt; RB["rb"]
+    subgraph coupler["Coupler"]
+        RA2 --&gt; RSC["resonator_spectroscopy_vs_bias"]
+        RSC --&gt; QSC["qubit_spectroscopy_vs_bias"] --&gt; CAX["coupler_anticrossing"]
+        CAX --&gt; CZP["cz_parametrization"] --&gt; CZC["cz_chevron"]
+        CZC --&gt; CP["conditional_phase"] --&gt; IRB["interleaved_rb"]
+    end</code></pre>
+<p><code>flux_spectroscopy</code> is subsumed by <code>qubit_spectroscopy_vs_bias</code>, which measures the
+same arc against a swept coupler bias rather than a pulsed flux offset. Keeping both
+would be two names for one experiment.</p>
+<h2 id="7-node-inventory">7. Node inventory</h2>
+<p>Sixteen existing nodes keep their names, dependencies and written parameters except
+where §4 says otherwise. The new ones, in dependency order, with the simulator
+capability each requires — because a node the simulator cannot pose is a node we
+cannot claim. Names and written parameters moved during implementation; §14 is the
+inventory as built.</p>
+<table>
+<thead>
+<tr>
+<th>Node</th>
+<th>Writes</th>
+<th>Simulator needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>time_of_flight</code></td>
+<td><code>measure.acq_delay</code></td>
+<td>✅ a propagation delay before the acquisition window</td>
+</tr>
+<tr>
+<td><code>resonator_relaxation</code></td>
+<td>— (reports the linewidth)</td>
+<td>✅ the ring-up, already present in <code>_trace</code></td>
+</tr>
+<tr>
+<td><code>qubit_spectroscopy</code> (2nd axis)</td>
+<td><code>spec.amplitude</code></td>
+<td>nothing new; the line power-broadens already</td>
+</tr>
+<tr>
+<td><code>readout_discrimination</code></td>
+<td><code>measure.acq_rotation</code>, <code>measure.acq_threshold</code></td>
+<td>✅ the dispersive pull, plus a chain rotation so <code>0</code>/<code>0</code> is not right by construction</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy_excited</code></td>
+<td><code>clock_freqs.readout_1</code></td>
+<td>✅ <strong>the dispersive pull</strong> — resonance per qubit state</td>
+</tr>
+<tr>
+<td><code>readout_frequency_two_state</code></td>
+<td><code>clock_freqs.readout_2state_opt</code></td>
+<td>the pull, plus separation as a function of drive frequency</td>
+</tr>
+<tr>
+<td><code>readout_amplitude_two_state</code></td>
+<td><code>measure.pulse_amp</code>, <code>measure.acq_rotation</code>, <code>measure.acq_threshold</code></td>
+<td>✅ blob positions derived from the response, <strong>scaled by the drive amplitude</strong> so more power buys more signal and punch-through is a real cost rather than the only one</td>
+</tr>
+<tr>
+<td><code>readout_fidelity</code></td>
+<td>— (characterisation)</td>
+<td>assignment errors from the overlap of the two distributions</td>
+</tr>
+<tr>
+<td><code>f12_spectroscopy</code></td>
+<td><code>clock_freqs.f12</code></td>
+<td>✅ the <code>.12</code> clock driven; the three-level ladder was already real</td>
+</tr>
+<tr>
+<td><code>rabi_12</code>, <code>ramsey_12</code>, <code>drag_12</code>, <code>fine_amplitude_12</code></td>
+<td><code>r12.ef_amp180</code>, <code>clock_freqs.f12</code>, <code>r12.ef_motzoi</code></td>
+<td>drive on the <code>.12</code> clock; leakage to <code>|3⟩</code> bounded or a fourth level</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy_second_excited</code></td>
+<td><code>clock_freqs.readout_2</code></td>
+<td>a <strong>second</strong> dispersive shift, for <code>|2⟩</code></td>
+</tr>
+<tr>
+<td><code>readout_frequency_three_state</code>, <code>readout_amplitude_three_state</code>, <code>three_state_discrimination</code></td>
+<td><code>clock_freqs.readout_3state_opt</code>, <code>measure_3state.*</code></td>
+<td>three resolvable clouds, so leakage is a third outcome rather than "not <code>|0⟩</code>"</td>
+</tr>
+<tr>
+<td><code>resonator_spectroscopy_vs_bias</code></td>
+<td>coupler arc via the resonator</td>
+<td>resonator frequency responding to coupler bias</td>
+</tr>
+<tr>
+<td><code>qubit_spectroscopy_vs_bias</code></td>
+<td>coupler arc via the qubit</td>
+<td>qubit frequency responding to coupler bias</td>
+</tr>
+<tr>
+<td><code>coupler_anticrossing</code></td>
+<td><code>bias.parking_current</code></td>
+<td><strong>a coupler with its own frequency</strong>, not just an exchange rate</td>
+</tr>
+<tr>
+<td><code>cz_parametrization</code></td>
+<td>CZ operating-point candidates</td>
+<td>the above; replaces two of RFC 0004 §7's chosen constants with measured ones</td>
+</tr>
+</tbody>
+</table>
+<p>The bottom four are where RFC 0004 §7's honesty caveat bites hardest: <code>G_MHZ</code>,
+<code>FLUX_CURVATURE_GHZ</code>, <code>SIDEBAND_GAP_GHZ</code>, <code>STARK_SHIFT_MHZ</code> and <code>STARK_ASYMMETRY</code>
+are chosen numbers, and a coupler-bias node is exactly the experiment that would
+measure two of them. Until the coupler has a frequency of its own, a
+<code>coupler_anticrossing</code> result reads as "the routine recovers the parking point of a
+plausible coupler".</p>
+<h2 id="8-check-versus-calibrate">8. Check versus calibrate</h2>
+<p>Every routine gains an optional <code>check</code> alongside <code>calibrate</code>. The contract:</p>
+<ul>
+<li><code>check</code> runs a <strong>short</strong> schedule and returns a boolean plus a measured margin.
+  It may not write parameters.</li>
+<li><code>check</code> is allowed to be absent. A node without one is always treated as stale,
+  which is today's behaviour, so this is additive.</li>
+<li><code>diagnose(node)</code> walks: if a node's check passes, stop; if it fails, check its
+  dependencies, and recalibrate the shallowest node whose own dependencies all pass.</li>
+</ul>
+<p>Two consequences worth stating in advance:</p>
+<p><code>RECALIBRATION_ROOTS</code> becomes a fallback rather than the answer, under the name
+<code>RECALIBRATION_SEEDS</code>. It existed because there was no way to ask whether the
+readout is still good, so the answer was hardcoded to "assume it is". With a check
+on <code>resonator_spectroscopy</code> the graph can decide, and a readout drift stops being
+invisible. It does not disappear outright — with no checks anywhere, blame stops at
+the seed, which reproduces RFC 0004's behaviour exactly and is what makes the whole
+change additive.</p>
+<p>Checks make the drift interval cheaper, not just smarter. RFC 0004's drift check
+runs benchmarks and infers; a per-node check measures the parameter, so a failure
+names the node instead of the qubit.</p>
+<h3 id="the-asymmetry-that-makes-it-safe">The asymmetry that makes it safe</h3>
+<p><em>Unknown is not failure.</em> A node with no check, or whose check raised, is unknown,
+and <code>diagnose</code> may not blame it. Without that rule every diagnose would walk to the
+root — since most nodes have no check — and a partial recalibration would cost more
+than a full one.</p>
+<p>The rule has a price, and it is worth naming because it was paid immediately: an
+unevaluable check reports <strong>nothing, forever, in silence</strong>. The first version of
+<code>resonator_spectroscopy</code>'s check read its tolerance from
+<code>measure.readout_linewidth</code>, a path no transmon element has, so <code>read_path</code> raised
+<code>ParameterError</code> every time and the check was dead on arrival with no failing test.
+The guard is a tier-2 test requiring every check schedule to <em>build and compile</em>
+against a real device, since building is where a check reads what it is judging.</p>
+<p>That also settles where the linewidth comes from: a constant with a config override,
+because <code>fit_resonator_spectroscopy</code> measures a linewidth and nothing stores it —
+neither scheduler's transmon has a field for one. §13 asks whether to add one.</p>
+<h2 id="9-simulator-capabilities">9. Simulator capabilities</h2>
+<p>RFC 0004 §7 sets the bar: a routine we cannot pose to the simulator is a routine we
+cannot claim works. Completing the graph therefore needs the simulator extended
+first, in this order.</p>
+<ol>
+<li><strong>Dispersive readout.</strong> Resonance per qubit state (<code>|0⟩</code>, <code>|1⟩</code>, <code>|2⟩</code>), and blob
+   positions derived from that response rather than the two hand-placed constants
+   <code>GROUND_IQ</code>/<code>EXCITED_IQ</code>. Those were chosen to straddle <code>Re = 0</code>, which makes the
+   discriminator's right answer <code>0/0</code> <em>by construction</em> — so a discriminator routine
+   tested against them would rediscover a number we planted. A readout-chain rotation
+   and offset is part of this, for the same reason.</li>
+<li><strong>A propagation delay</strong>, so <code>time_of_flight</code> has something to find.</li>
+<li><strong>The <code>.12</code> clock</strong>, so the EF chain can be driven. The three-level ladder and
+   its leakage are already real; only the clock plumbing is missing.</li>
+<li><strong>A coupler with a frequency</strong>, biased by a current, so the flux arcs and the
+   parking point are measurements rather than constants.</li>
+</ol>
+<p>Items 1 and 4 are the substance. Item 1 reverses a claim RFC 0004 §7 currently
+makes — that a dispersive model is unnecessary — and the reversal is correct: it was
+unnecessary only because the routines that need it were absent.</p>
+<h2 id="10-testing-strategy">10. Testing strategy</h2>
+<p>Extends RFC 0004 §7 rather than replacing it. Three additions:</p>
+<ul>
+<li><strong>The full-DAG loop test grows with the graph.</strong> <code>test_calibration_loop.py</code>
+  already requires the report to come back <code>success</code> having skipped <em>no</em> routine.
+  That assertion is what makes a new node's absence a failure, so it stays as an
+  equality and every new node joins it.</li>
+<li><strong>Every new parameter needs a consumer in the test.</strong> A node that writes a value
+  nothing later reads proves nothing. <code>acq_rotation</code>/<code>acq_threshold</code> are the model
+  here: the test should calibrate them on a chip whose blobs are <em>not</em> at <code>0/0</code> and
+  then require <code>meas_level=2</code> counts to be right — which fails today.</li>
+<li><strong><code>diagnose</code> gets tier-1 tests.</strong> It is graph logic, so it belongs with
+  <code>test_calibration_dag.py</code> and needs no simulator: a fabricated graph with scripted
+  check outcomes, asserting which nodes were recalibrated.</li>
+</ul>
+<h2 id="11-what-we-deliberately-do-not-take-from-the-reference-pipelines">11. What we deliberately do not take from the reference pipelines</h2>
+<p>Recorded because the temptation is real and the reason is not obvious from reading
+them: both packages optimise for physics throughput, and qpi optimises for a
+calibration a <code>process</code> driver can trust. Where they differ, qpi's choice is
+deliberate.</p>
+<ul>
+<li><strong>A key–value store as the parameter store.</strong> Both write redis fields like
+  <code>"clock_freqs:readout"</code> — strings, unvalidated, with the device object
+  reconstructed from them afterwards. qpi writes dotted paths onto the real
+  <code>QuantumDevice</code> and persists <em>that</em>, so a wrong name raises at the write instead
+  of surviving as a key nobody reads. This is what caught <code>cz.amp</code>,
+  <code>cz.phase_correction</code> and <code>rxy.motzoi</code>-under-qblox (RFC 0004 §11); a string store
+  would have accepted all three.</li>
+<li><strong>The measurement / analysis / node triple.</strong> Three files and three classes per
+  node. qpi's one <code>CalibrationRoutine</code> with <code>build_schedule</code>, <code>analyse</code> and <code>apply</code>
+  holds the same content where a reader can see it at once, and the DAG needs no
+  factory to assemble it.</li>
+<li><strong>Class discovery by AST crawling.</strong> <code>NodeFactory</code> walks the package looking for
+  <code>BaseNode</code> subclasses and maps snake_case names to them. qpi's <code>all_routines()</code> is
+  an explicit list; a node that is not in it does not exist, which is the property
+  you want when a missing node means an uncalibrated chip.</li>
+<li><strong>Split sample spaces.</strong> <code>schedule_samplespace</code> versus <code>external_samplespace</code>
+  exists because some sweeps set instrument state between acquisitions. qpi has one
+  case of this (the coupler bias) and should handle it explicitly in the routine
+  rather than as a second sweep mechanism for every node.</li>
+</ul>
+<p>Where qpi is already ahead and must stay so: the write-back is verified by reading
+the candidate file back before it replaces anything, keeps the previous file as
+<code>.prev</code>, and treats a fit outside its own sweep as a failure rather than a
+parameter. Every node added here inherits that for free.</p>
+<h2 id="12-how-the-graph-was-built">12. How the graph was built</h2>
+<p>In this order, so that each step was independently mergeable and the risky physics
+came after the machinery. §14 records where the result diverged from §6 and §7.</p>
+<ol>
+<li><strong>Check / calibrate / diagnose.</strong> <code>CheckOutcome</code> plus the optional
+   <code>build_check_schedule</code>/<code>analyse_check</code> pair on every routine;
+   <code>CalibrationDAG.check</code> and <code>.diagnose</code>; <code>recalibrate</code> now asks rather than
+   assumes. Checks implemented for <code>resonator_spectroscopy</code> — three points across
+   the line, so a readout drift is visible for the first time — and for <code>rabi</code>,
+   which amplifies the error over five pulses because a single pi pulse is second
+   order in its own error and cannot be told apart from a gain change. Tier-1 tests
+   for the recursion over a fabricated graph; a tier-2 test that every check
+   schedule compiles.</li>
+<li><strong>The cheap missing writers</strong>, of which the third turned out not to be a node.</li>
+<li><code>time_of_flight</code> → <code>measure.acq_delay</code>. Opens the window <em>with</em> the readout
+     pulse so the dead time lands inside a raw trace, and recovers 148 ns against a
+     true 148 on the simulated chip.</li>
+<li><code>resonator_relaxation</code> reports the resonator linewidth — which nothing else
+     measures — and deliberately does <em>not</em> write <code>measure.integration_time</code>. The
+     ring-up is a floor on that, not an optimum: the optimum trades signal-to-noise
+     against relaxation during the window, which needs phase 4's discrimination
+     fidelity. Three time constants would have cut the fixture's 1 µs window to
+     240 ns on a criterion that never mentions noise.</li>
+<li>
+<p><code>spec.amplitude</code>, and not as a separate node. Two things changed on contact
+     with the problem.</p>
+<p>The blocker went first. There was nowhere to put the value — the transmon
+ element has <code>clock_freqs</code>, <code>measure</code>, <code>ports</code>, <code>pulse_compensation</code>, <code>reset</code> and
+ <code>rxy</code>, and none of them holds a spectroscopy drive amplitude. <code>CalibratedTransmon</code>
+ is that home, one per scheduler, selected by <code>element_type.path</code> exactly as
+ <code>FluxTunableCoupler</code> already is. It is opt-in: a config that keeps
+ <code>BasicTransmonElement</code> still calibrates, and <code>spectroscopy_amplitude_path</code>
+ returns <code>None</code> so the routine measures the power, uses it, and does not persist
+ it.</p>
+<p>Then the separate node turned out to be impossible, not merely optional.
+ Choosing a spectroscopy power means comparing how clearly each power shows the
+ line — so it needs a line, which is what <code>qubit_spectroscopy</code> produces. Ordering
+ it before means guessing; ordering it after means the guess is already written to
+ <code>clock_freqs.f01</code>. It is one measurement of two quantities, the way
+ <code>resonator_punchout</code> is, and the graph is a node shorter for it.</p>
+<p>The criterion is not the reference pipelines'. They take the <strong>tallest</strong> peak,
+ which is reliably the most power-broadened one — the bound on their answer is the
+ hardcoded sweep range, not the criterion. This takes the best
+ contrast-over-residual-scatter among rows that are not broader than twice the
+ narrowest, so broadening is <em>detected</em>. One trap, found by the full-DAG test: a
+ row with no visible line still fits — narrowly, tidily, to the noise between two
+ setpoints — and being narrowest it became the reference every real row was then
+ rejected against. Rows fitting a line narrower than the sweep's own step are
+ dropped before selection, the same criterion <code>_require_resolved_line</code> applies to
+ the winner.
+3. <strong>Dispersive readout in the simulator</strong>, extended later to
+   three levels — see the end of this entry. Each level pulls the
+   resonance to <code>bare + chi(1-2n)</code>, so the levels return different <em>complex</em>
+   responses and the IQ clouds are derived rather than placed — <code>GROUND_IQ</code> and
+   <code>EXCITED_IQ</code> are gone. Through an amplifier chain (gain 3.6, phase 35°) they land
+   at 3.60, 0.665 and 0.337 in magnitude: a monotone ladder, 14σ separation, and both
+   real parts positive so the defaults of <code>0</code>/<code>0</code> assign every shot as <code>|1⟩</code>. It did
+   not land with only simulator tests — see below.</p>
+</li>
+</ol>
+<p><strong>The acquisition now reports every level, not two.</strong> The clouds were per level
+   from the start; the sampler was not, and a <code>|2&gt;</code> shot came back on <code>|0&gt;</code>'s
+   cloud. <code>_Acquisition</code> carries a population vector, <code>_blobs</code> indexes the cloud by
+   the level drawn, <code>_averaged</code> and <code>_trace</code> weight every level, and the joint-outcome
+   path returns levels rather than booleans so an entangled register keeps its
+   correlations. Thresholded acquisition still returns one bit — the <em>instrument</em> is
+   two-outcome however many levels the chip has.</p>
+<p>The draw is ordered <code>|1&gt;</code> first, then <code>|0&gt;</code>, then the rest. That looks arbitrary
+   and is not: it consumes the same uniforms as the <code>rng.random(n) &lt; P(excited)</code> it
+   replaces, so a chip with no population above <code>|1&gt;</code> draws exactly what it drew
+   before. Every existing expectation — pi pulse amplitudes, coherence times, gate
+   fidelities — was measured against that stream, and reordering it would have moved
+   all of them at once, leaving no way to tell a physics regression from a reshuffle.
+   A test asserts the two agree shot for shot.</p>
+<p><strong>It exposed one number that had been resting on the bug.</strong> <code>f12_spectroscopy</code>
+   drove at 3% of full scale, and that default was tuned when <code>|2&gt;</code> was reported at
+   <code>|0&gt;</code>'s cloud: a 5% population transfer swung the signal across the whole readout
+   axis and the line looked strong. Read correctly, <code>|1&gt;</code> and <code>|2&gt;</code> sit close
+   together at a 0-1 readout point and the same transfer is a 5% wiggle — enough to
+   put the fitted centre 7.4 MHz out and fail its own test. At 10% the contrast is 26%
+   and the fit lands within a megahertz. The routine was never right; it was being
+   flattered.
+4. <strong>The state-resolved readout pass</strong>, in three nodes rather than the four planned.
+   - <code>readout_discrimination</code>: Prepares <code>|0⟩</code>/<code>|1⟩</code> single-shot, fits the
+     rotation as the direction between cloud centres and the threshold as the
+     spread-weighted midpoint, and reports the assignment fidelity from the same
+     shots — 0.994 on the simulated chip. <strong>This is what makes <code>meas_level=2</code>
+     calibrated.</strong> <code>readout_fidelity</code> is folded in rather than being its own node:
+     splitting them would measure the same two clouds twice.
+   - <code>resonator_spectroscopy_excited</code>: Prepares
+     <code>|1&gt;</code> and sweeps the readout clock, reporting where that resonance sits and so
+     the dispersive shift itself — the number the whole readout rests on, and one
+     nothing else measures. It writes nothing, deliberately: the frequency that best
+     separates the states is not derivable from the two resonances, since it depends
+     on how the two Lorentzians overlap.
+   - <code>readout_operating_point</code>: as one node rather than the planned
+     <code>readout_frequency_two_state</code> and <code>readout_amplitude_two_state</code>, and only after
+     both of those were written, run against the full DAG, and backed out. What
+     follows is why, kept because the numbers are the argument.</p>
+<pre><code> The deferral note used to say they write a clock nothing reads. The real
+ obstacle is sharper: **optimising the readout operating point for discrimination
+ moves it away from the point that maximises magnitude contrast, and every
+ calibration routine reads magnitude** through `signal_of`. The discriminator
+ uses the complex separation between the clouds, most of which is *phase* once
+ the drive is off resonance; a magnitude-only reducer sees none of that. At the
+ midpoint between the two resonances the complex separation is still 0.81 and the
+ magnitude contrast is exactly zero.
+
+ Measured on the simulated chip, with the frequency node writing
+ `clock_freqs.readout`: complex separation rose from 0.968 to 0.993, a gain of
+ 2.6%, while magnitude contrast fell from 0.750 to 0.645, a loss of 14%. That is
+ a bad trade made on behalf of every node downstream, and it was not theoretical
+ — the CZ chevron's answer moved from 110 ns to 100 ns, past its own 5% tolerance,
+ because the crossing it looks for had lost contrast.
+
+ Amplitude is not the problem and was measured too: raising the readout power
+ helps *both* criteria, because the returned field grows linearly while
+ punch-through only bends it, so scaled magnitude contrast climbs from 2.9 to 7.2
+ across the bracket. A refinement of punchout's power is legitimate. What it
+ cannot do alone is leave `clock_freqs.readout` behind — refining 0.45 to 0.5175
+ walks the resonance 183 kHz, which is punchout's own lesson repeating.
+
+ Extending the executor to carry that turned up a defect of its own, now fixed:
+ both read the rotation and threshold from whichever element had them first and
+ applied that one pair to **every** qubit in the circuit. Invisible while nothing
+ measured them — an uncalibrated chip is zero everywhere — and wrong from the
+ moment `readout_discrimination` wrote real ones. With the collapse in place,
+ `x q[0]` on a calibrated pair reads the untouched q1 as `1` on all 400 shots.
+ Fixing it needed the simulated chip to stop being one qubit copied three times:
+ with a single `readout_phase_deg` every qubit came out with the same line to four
+ decimal places, so the first test written for this passed with the bug reinstated.
+
+ So the readout needs **two operating points, not one compromise**, which is what
+ `measure_2state` on `CalibratedTransmon` now carries: a frequency, an amplitude,
+ and the line fitted there. `resonator_spectroscopy` and `resonator_punchout` keep
+ `clock_freqs.readout` and `measure.pulse_amp` for everything that reads a
+ magnitude; the executors use `measure_2state` for `meas_level=2` alone. Levels 0
+ and 1 are untouched, since a point chosen for phase separation degrades exactly
+ the measurement that wants the signal.
+
+ One node over both axes rather than the two planned. The resonance moves with
+ power, so choosing a frequency and then a power leaves the frequency stale — 183
+ kHz here, a tenth of a linewidth — which is the mistake `resonator_punchout`
+ already exists to not make. Frequency and power are one operating point.
+
+ The frequency is applied by moving the `{qubit}.ro` clock rather than through
+ `Measure`: the measure operation's clock is fixed in the device config, so this
+ is a schedule-level override and not a second clock resource. It is the same
+ mechanism every calibration routine already uses to sweep a readout, and the same
+ one the EF subspace's `ro2`/`ro_3st_opt` will need.
+
+ **What it is worth on this chip, honestly.** The frequency optimum sits about
+ 200 kHz off the resonance — a tenth of a linewidth — so the frequency axis
+ contributes almost nothing here, and the node earns its place through the
+ amplitude, where signal grows linearly with drive while punch-through only bends
+ it and there is a real interior optimum. The frequency is swept alongside because
+ it cannot be chosen separately, not because it moves far. A chip with asymmetric
+ chains or unequal linewidths would pull it further; this simulator does not model
+ that, and the RFC should not claim more than it can show. A first attempt at a
+ test here asserted the two points must differ by 100 kHz and failed at exactly
+ 0.0 — an 8 MHz span over five points steps 2 MHz, so the grid could not resolve
+ the offset it was looking for.
+
+ One instrument constraint surfaced, and is now a named bound with an error that
+ explains it: every appended bin takes a sequencer register and a Q1 sequencer has
+ 64, so a single-shot sweep is capped at 32 acquisitions. Past it the qblox
+ backend dies inside its register allocator with a bare `IndexError`.
+ `resonator_punchout` sweeps a far larger grid unaffected because it averages;
+ this cannot, since the width of each cloud is the measurement.
+</code></pre>
+<ol>
+<li><strong>The EF subspace.</strong> Mostly done — the leakage measurement it exists for is in.</li>
+<li><code>f12_spectroscopy</code> → <code>clock_freqs.f12</code>: The <code>.12</code> clock is driven in
+     the simulator now — its own rotating frame, detuning on <code>|2⟩</code>, <code>|0⟩</code> a spectator —
+     and the routine recovers 4.9304 GHz against a true 4.9312, with an anharmonicity
+     of −283.7 MHz against −282.9. It depends on <code>rabi</code>, because the transition starts
+     from <code>|1⟩</code>.</li>
+<li>
+<p><code>rabi_12</code> → <code>r12.ef_amp180</code>: Prepares <code>|1&gt;</code>, sweeps a raw pulse on
+     the <code>.12</code> clock, and fits the oscillation into <code>|2&gt;</code>. A raw pulse because
+     neither scheduler has an EF gate — the device config's operations are built for
+     <code>rxy</code> on <code>.01</code> — so the routine assembles clock, port and envelope itself.</p>
+<p>It reads out on the two-state chain and can, because <code>|2&gt;</code> has its own place in
+ the IQ plane: the pull is <code>chi(1-2n)</code>, so the levels form a ladder and a
+ magnitude sees the population move. That is what lets this come <em>before</em>
+ three-state readout instead of after — the discriminator needs a calibrated EF
+ pulse to prepare <code>|2&gt;</code> at all.</p>
+<p><strong>A simulator limitation worth stating.</strong> It recovers the same amplitude <code>rabi</code>
+ does, not the <code>1/sqrt(2)</code> a chip would give, because the simulator folds the
+ 1-2 matrix element into the subspace operator rather than taking the ladder's
+ <code>sqrt(2)</code>. So the EF chain can be tested for wiring — right clock, right port,
+ right envelope — but not for the ladder's own scaling.
+   - <code>three_state_operating_point</code>, <code>three_state_discrimination</code>: <strong>written, run, and
+ backed out — the simulator's readout cannot report a third outcome.</strong> Worth
+ recording in full, because the blocker is not where §9 said it was.</p>
+<p>Both were built and both were correct as far as they could be. The three-state
+ point is real and large: sweeping frequency and amplitude, the closest of the
+ three clouds reaches <strong>39 sigma</strong> where the two-state point leaves <code>|1&gt;</code> and
+ <code>|2&gt;</code> <strong>2.95 sigma</strong> apart — off resonance both return almost nothing and
+ collapse together, so a point tuned for <code>|0&gt;</code> against <code>|1&gt;</code> genuinely cannot
+ resolve the ladder. The amplitude wants to run to full scale: the separation does
+ peak and fall as punch-through collapses all three, but it peaks near <em>twice</em>
+ full scale, so within what an instrument can play more is always better.</p>
+<p>What stopped it was one level down. The dynamics are three-level and correct —
+ traced through the coordinator, <code>X</code> then an EF pi pulse leaves 98.5% of the
+ population in <code>|2&gt;</code> — but the <em>acquisition</em> was two-outcome: <code>_cloud_pair</code>
+ returned two clouds and <code>_blobs</code> mixed them by a single <code>excited_population</code>, so
+ a <code>|2&gt;</code> population was sampled as one of the other two. The clouds were already
+ derived per level, which is why this looked ready; the sampler was not.</p>
+<p><strong>Both are now in</strong>, unchanged from the versions the revert removed — the code was
+ right, the model underneath was not. <code>three_state_operating_point</code> writes
+ <code>measure_3state</code>, and <code>three_state_discrimination</code> classifies at that point by
+ nearest centre and reports the leakage. On the simulated chip the three states
+ assign at better than 90% and the two readout points are measurably different,
+ which is the premise for carrying both. See phase 3 for what the fix cost.
+   - <code>fine_amplitude_12</code> → <code>r12.ef_amp180</code>: A pi/2 pre-rotation then n EF pi
+ pulses, so a per-pulse error grows linearly against a readout noise that does
+ not — the residual <code>rabi_12</code> cannot see, because a single pi pulse is second
+ order in its own error. It refines to under 0.05 rad per pulse on both qubits.</p>
+<p>It is the first node to <em>depend</em> on <code>three_state_operating_point</code> for its
+ contrast rather than for a classifier. Its two references are <code>|1&gt;</code> and <code>|2&gt;</code>,
+ which at a 0-1 readout are all but on top of each other; at the three-state point
+ they are 14 sigma apart in magnitude alone. The three-state point turns out to be
+ what makes the whole EF chain measurable, not just the leakage number.
+   - <code>drag_12</code> → <code>r12.ef_motzoi</code>: it finds a real interior optimum:
+ −0.043 against a swept span of 0.2, a fifth of the way out and nowhere near
+ either edge. <strong>Negative</strong>, where the 0-1 optimum is positive, and that sign is
+ the physics rather than a convention — DRAG cancels leakage into the
+ <em>neighbouring</em> level, which for an 0-1 pulse is <code>|2&gt;</code> above it and for an EF
+ pulse is <code>|0&gt;</code> below.</p>
+<p>It needed a DRAG-shaped pulse on the <code>.12</code> clock, which neither compat layer
+ exported. That pulse is reached through a new <code>SchedulerBackend.drag_pulse</code>
+ rather than a bound class, because the two schedulers disagree about the argument
+ names <em>and</em> the units — <code>G_amp</code>/<code>D_amp</code> as a ratio against
+ <code>amplitude</code>/<code>beta</code> in seconds, the same divergence <code>drag_span</code> already exists
+ for. It also carries a phase, which <code>SquarePulse</code> does not, and that absence is
+ why an EF Ramsey could not be built out of phase advances.</p>
+<p>Kept for the record, since it was blocked twice over:</p>
+<p>First, an EF pulse has no envelope at all: <code>_drive_ef</code> propagates a <em>constant</em>
+ Hamiltonian, where the <code>.01</code> path builds one from <code>_envelope_of(pulse)</code> and
+ steps it through <code>_propagate_shaped</code>. There is nothing for a DRAG coefficient to
+ shape.</p>
+<p>Second — and this is the one that would survive fixing the first — DRAG suppresses
+ leakage into a <em>neighbouring</em> level, and in this model the EF drive has no
+ neighbour to leak to. <code>_drive_ef</code> couples <code>|1&gt;</code> to <code>|2&gt;</code> and treats <code>|0&gt;</code> as
+ a spectator, and there is no <code>|3&gt;</code> in a three-level ladder. So even with an
+ envelope, sweeping <code>r12.ef_motzoi</code> would move nothing: the optimum would be zero
+ by construction rather than by measurement.</p>
+<p>Writing it needs a genuinely three-level driven Hamiltonian on the EF clock — the
+ off-resonant <code>0-1</code> excitation and its Stark shift, which <code>_drive_ef</code>'s own
+ docstring already names as what it leaves out.
+   - <strong>The EF drive is now an ordinary drive on the full ladder</strong>, in the same frame
+ as everything else, offset from it by where its clock sits. It was a two-level
+ <code>|1&gt;</code>-<code>|2&gt;</code> subspace in a rotating frame of its own, and that one choice was
+ behind all three of the blockers recorded below. Stepping it costs the price a
+ shaped pulse already pays; at the anharmonicity the offset is under six cycles
+ across a 20 ns pulse and the population converges by 40 steps.</p>
+<p>Three things changed, each measured:</p>
+<ul>
+<li><strong>One frame.</strong> An EF Ramsey at a 20 MHz artificial detuning now shows a ~60 ns
+   fringe. Before, the phase between two EF pi/2 pulses ran at the whole
+   anharmonicity — a 3.5 ns period, aliased to noise on any usable delay grid.</li>
+<li><strong>The ladder's <code>sqrt(2)</code>.</strong> An EF pi lands at <code>amp180 / sqrt(2)</code> because the
+   1-2 matrix element is the operator's now rather than folded into it. <code>rabi_12</code>
+   measures 0.1476 against 0.1430 for a perfect ladder, the few per cent being
+   relaxation during the pulse.</li>
+<li><strong>Something to leak into.</strong> An EF pulse off-resonantly excites 0-1 at about 2.6%,
+   where <code>|0&gt;</code> used to be a spectator. That is what a DRAG quadrature cancels,
+   so <code>drag_12</code> now has a curve to fit instead of a flat line.</li>
+</ul>
+<p><code>ramsey_12</code> and <code>drag_12</code> are both written on top of this.
+   - <code>ramsey_12</code> → <code>clock_freqs.f12</code>: accurate to a couple of kilohertz.
+ It detunes the clock rather than phase-advancing the second pi/2, which is the
+ opposite of what <code>ramsey</code> does one rung down and is not a preference: a
+ <code>ShiftClockPhase</code> on the <code>.12</code> clock produced no fringe at all — the fitted
+ detuning came back at minus the artificial one whatever f12 was set to.</p>
+<p><strong>It also found that the three-state point was too coarse.</strong> Three frequencies
+ stepped 3 MHz against a 2 MHz linewidth is enough to classify three states and
+ not enough for anything <em>measured</em> at that point: <code>ramsey_12</code> reads <code>|1&gt;</code>
+ against <code>|2&gt;</code>, and on the coarse point its f12 came back a megahertz out —
+ no better than the spectroscopy it exists to refine — where a properly placed
+ point gives kilohertz. The grid is now five frequencies by two amplitudes, the
+ axes chosen by which one the criterion actually varies on.
+   - <code>ramsey_12</code>, on the frame mismatch that blocked it (resolved above). The EF pulses are applied
+ in <code>_drive_ef</code>'s own rotating frame, with the detuning carried on <code>|2&gt;</code>, but a
+ free evolution between them runs under <code>_drift</code> — the <em>0-1</em> drive frame, where the
+ <code>|1&gt;</code>-<code>|2&gt;</code> splitting is the whole anharmonicity. So the phase between two EF
+ pi/2 pulses accumulates at ~283 MHz rather than at the EF detuning: sweeping the
+ delay on a 1 ns grid swings <code>P(|2&gt;)</code> from 0.008 to 0.978, aliasing a 3.5 ns
+ period. A Ramsey there would measure the mismatch between two frames, not the
+ transition.</p>
+<p>Fixing it means the EF drive and the idles agreeing on one frame — either
+ <code>_drive_ef</code> working in the 0-1 frame the rest of the simulator uses, or the
+ register tracking an EF detuning that <code>_drift</code> honours. Both are real changes to
+ how the coordinator keeps time, and neither is a routine.
+   - <code>readout_frequency_three_state</code>, <code>readout_amplitude_three_state</code>: <strong>superseded</strong>
+ by <code>three_state_operating_point</code>, which sweeps both axes at once for the reason
+ <code>readout_operating_point</code> does: the resonance walks with power, so choosing them
+ in sequence leaves the first stale. They need <code>r12.ef_amp180</code>, <code>r12.ef_motzoi</code>,
+ <code>clock_freqs.readout_2</code>, <code>clock_freqs.readout_3state_opt</code> and a <code>measure_3state</code>
+ submodule. <code>CalibratedTransmon</code> is where those go — <code>r12</code> and <code>measure_2state</code>
+ are already there — and the three-state readout point can follow <code>measure_2state</code>
+ exactly, including the executor's clock override, which is now a mechanism rather
+ than a plan.
+6. <strong>The coupler.</strong>
+   - <code>cz_spectroscopy</code> → <code>clock_freqs.cz</code>: A parametric CZ modulates the
+ coupler and a sideband bridges <code>|11&gt;</code>-<code>|02&gt;</code>; amplitude sets how fast the
+ exchange runs, <em>frequency</em> sets whether it runs at all, so a drive off the
+ transition is a gate that compiles, plays and does nothing. Nothing measured it.
+ The device model already keeps <code>clock_freqs.cz</code> — where the drive is played —
+ apart from <code>clock_freqs.sideband_gap</code> — the transition it means to bridge —
+ precisely so a mistuned drive is detectable; this is what detects it.</p>
+<p>It needed a <strong>routine-level applicability hook</strong>, <code>CalibrationRoutine.applies_to</code>.
+ A <code>CompositeSquareEdge</code> drives its CZ with a baseband flux pulse and has no drive
+ frequency at all: running this on one is not a failure to report, it is a question
+ that does not arise. The DAG filters targets by it, and the full-DAG test now
+ computes its expectation the same way rather than asserting every routine runs on
+ every edge — which was never true and would have become a list to edit.</p>
+<p><strong>The fixture could not play the coupler it declared.</strong> <code>q1_q2:fl</code> was wired to
+ a baseband QCM output, which tops out at ±500 MHz against a 3.9 GHz sideband, and
+ the edge carried no <code>clock_freqs.cz</code> at all — so its parametric CZ was inert and
+ nothing noticed, because no test drove it. It is now on an RF module with an LO,
+ and declares a drive 50 MHz off its own sideband gap for the routine to correct.</p>
+<p><strong>Covered end to end</strong>, in its own loop test rather than by widening the full-DAG
+ fixture — giving that one <code>q1_q2</code> would mean calibrating q2 as well. The
+ two-qubit fixture ships a coupler mistuned by 50 MHz and the routine moves the
+ drive onto the gap.</p>
+<p>Writing that test found <strong>a simulator defect the routine had been sitting on</strong>.
+ The qblox backend emits a long flux pulse as a <em>held DC offset</em> plus a short
+ tail, and the branch replaying the held part dropped the drive frequency: a
+ 100 ns coupler drive ran as 96 ns at zero — infinitely detuned — plus 4 ns at
+ the real frequency. Harmless for a baseband CZ, whose resonance is the flux
+ amplitude; fatal for a parametric one, which is nothing without its frequency.
+ The parametric CZ had therefore never worked in simulation, and nothing said so
+ because nothing drove it.
+   - <strong>A coupler frequency in the simulator: done.</strong> <code>TunableCoupler</code> sits above both
+ qubits at its flux sweet spot, tunes down quadratically with parking current, and
+ pushes every qubit it touches by <code>g^2/(f_q - f_c)</code>. The push is what makes the
+ bias measurable: it had been carried, validated and applied since RFC 0004 with
+ nothing in the simulator responding to it, so a routine could have written any
+ current at all and no measurement would have contradicted it. Measured from zero
+ bias rather than from nothing, which is what leaves every existing fixture alone.
+   - <code>coupler_anticrossing</code> → <code>bias.parking_current</code>: it is the node
+ that finally broke the routine interface — deliberately, and on the terms §11
+ asked for.</p>
+<p>A coupler's bias is not a pulse. It is a DC current held for as long as the fridge
+ is cold, delivered out of band over qcodes through an SPI rack or a cluster
+ output, and <strong>neither mechanism can be scheduled</strong> — the QCM path sets an output
+ offset over qcodes too, so "put it in the schedule" is not available even for the
+ coupler wired inside the cluster. A routine sweeping it must set instrument state,
+ run a schedule, read it, and repeat.</p>
+<p>§4 said the routine interface stays unchanged; §11 said this one case should be
+ "handled explicitly in the routine". Those were in tension and the tension is
+ resolved toward §11: <code>CalibrationRoutine.measure</code> lets <em>one</em> routine take over its
+ own acquisition loop, rather than giving every node a second sweep axis it does
+ not need. Exactly one routine overrides it, tier 2 skips those routines because
+ there is no single schedule to compile, and the loop suite covers it where a
+ simulated rack can hold a current.</p>
+<p>It writes a parking current derived from the crossing by a stated fraction rather
+ than the crossing itself, and says so: a coupler is parked <em>away</em> from its qubits
+ and how far is a choice about residual coupling against CZ reach, not a
+ measurement. Calling the fraction measured would be dressing up a decision.</p>
+<p>It also puts the coupler back. A sweep that left the chip at whatever current it
+ tried last would corrupt every routine after it — which the test asserts, because
+ a first version of that test left the shared fixture parked at 1.9 mA and broke
+ the CZ tests downstream.
+   - <code>cz_parametrization</code> → <code>cz.square_amp</code>, <code>cz.square_duration</code>: it is
+ <code>cz_chevron</code>'s counterpart rather than a variant of it. The two gates are resonant
+ in different variables: a DC-flux CZ is brought onto the crossing by <em>amplitude</em>,
+ so it needs a 2D chevron; a parametric one is brought there by <em>frequency</em>, which
+ <code>cz_spectroscopy</code> has already found, leaving amplitude to set only how fast the
+ exchange runs. So there is no chevron — the population simply oscillates in
+ duration, linearly faster with drive, and measuring that slope is what makes the
+ gate predictable.</p>
+<p>It recovers <code>PARAMETRIC_RATE_MHZ</code> from the simulator to within a few per cent,
+ which is the constant it exists to replace. The conversion carries a factor of
+ four rather than two, and that is written down rather than folded in: the
+ exchange term carries the rate undivided, so the population oscillates at twice
+ it. A chip calibrated in another convention differs by exactly that factor.</p>
+</li>
+</ol>
+<h3 id="running-the-graph-on-a-chip">Running the graph on a chip</h3>
+<p>The simulator is a test harness. What the graph has to do is calibrate hardware, and
+two things stood between it and that:</p>
+<p><strong>The coupler bias had no rack.</strong> <code>coupler_anticrossing</code> asks for something that can
+hold a DC current, and the tuner only ever handed it a simulated one — so on real
+hardware the node declined and the graph was permanently one node short of complete.
+Both tuners now resolve a real source, an S4g over SPI or a baseband output inside the
+cluster, through the same <code>resolve_bias_source</code> the executor uses, and release it on
+close.</p>
+<p>That resolution asks with <code>require_current=False</code>, and the difference matters.
+<em>Parking</em> only needs a rack when there is a current to hold, so the executor opens one
+only if an edge declares a non-zero <code>parking_current</code>. <em>Calibrating</em> is the opposite
+case: an uncalibrated chip has zero everywhere, and zero is precisely when the current
+has to be measured. Requiring one to open the rack would mean the bias could never be
+calibrated on a chip that had not been calibrated.</p>
+<p>And a source that cannot touch the chip is refused outright. <code>RecordingBias</code> applies
+nothing, so a sweep against it returns the same qubit frequency at every point, the
+response is flat, and the fit reports a crossing with complete confidence — a number
+written to the device that no instrument produced. <code>BiasSource.holds_current</code> is what
+separates a rack from a notebook, and the routine checks it.</p>
+<p><strong>Half the graph raised on a stock element.</strong> The EF chain and the two readout
+operating points need submodules only a <code>CalibratedTransmon</code> carries, and they <em>raised</em>
+on a <code>BasicTransmonElement</code> — which is what a device file written before this RFC uses,
+and what a real chip is most likely running. Six failures in a report for parameters the
+element was never going to have is indistinguishable from six broken routines, and it is
+the first thing a chip owner sees. They now decline through <code>applies_to</code>, so such a chip
+calibrates everything it can and comes back <code>success</code>. The tuner README lists which node
+needs which submodule.</p>
+<h2 id="13-open-questions">13. Open questions</h2>
+<ul>
+<li><strong>Does <code>resonator_punchout</code> survive as a calibrate node at all?</strong> <strong>Decided:
+  it becomes a check node.</strong> It now has one, and the check is a different experiment
+  rather than a cheaper sweep — necessarily, because the question is not "where is
+  the resonance" but "is the power still below the crossover", and that is about how
+  the resonance <em>responds</em> to power. Two short scans, at the configured power and at
+  half of it: in the dressed regime the line does not move, above it the line walks.</li>
+</ul>
+<p>It still <strong>produces</strong> <code>measure.pulse_amp</code> on a first bring-up, because nothing else
+  does. The decision's precondition did not survive contact: <code>readout_amplitude_two_state</code>
+  was merged into <code>readout_operating_point</code>, which writes <code>measure_2state</code> — the
+  <em>discriminated</em> readout point — and deliberately not the calibration one. Making
+  punchout check-only needs a producer for the calibration amplitude first, and there
+  is not one. Recorded rather than forced.
+- <strong>Is <code>readout_fidelity</code> a node or a report field?</strong> <strong>Decided: a node</strong>, and a
+  benchmark. The argument that lost was mine — that splitting it from
+  <code>readout_discrimination</code> measures the same two clouds twice, which is true and is
+  the cost. The argument that wins is that <strong>only a node participates in drift
+  monitoring</strong>: a benchmark is what a drift check runs and what queues a
+  recalibration, while a number buried in another routine's parameters is read by
+  nobody. Readout fidelity is precisely the quantity that degrades quietly — every
+  gate fidelity measured on top of it inherits the error — so it is the last one that
+  should be invisible to monitoring. <code>readout_discrimination</code> still reports its own
+  fidelity from the shots it already has, which says whether the line it just fitted
+  is any good; the node is the standing measurement of whether it still is.
+- <strong>Where does the three-state discriminator live in the device file?</strong>
+  <strong>Settled by <code>CalibratedTransmon</code>.</strong> A custom element per scheduler, opted into by
+  <code>element_type.path</code> like <code>FluxTunableCoupler</code>, carrying whatever submodules the
+  graph needs — <code>spec</code> first, and <code>measure_2state_opt</code> / <code>measure_3state_opt</code> as
+  sibling submodules when phase 5 needs them. The constraint it has to keep meeting:
+  every routine reads the path through a resolver (<code>spectroscopy_amplitude_path</code>,
+  <code>drag_parameter_name</code>) so a config on <code>BasicTransmonElement</code> still calibrates as
+  far as its own parameters allow, rather than failing to load.
+- <strong>Should the DAG refuse an edge whose qubits are not targeted?</strong> <strong>Decided:
+  yes, at startup.</strong> <code>CalibrationConfig.validate_targets</code> rejects it before anything
+  runs. The wrong answer here is not an exception but a calibrated-<em>looking</em> gate: a
+  chevron over an uncalibrated qubit still fits a curve and still writes an amplitude
+  and a duration, and startup is the only cheap moment to catch that.</p>
+<p>It changed <code>recalibrate</code> too, and correctly. Narrowing to a drifted qubit used to
+  carry in the edges touching it while leaving their far ends alone — which is the
+  configuration the guard forbids. A partial recalibration that keeps an edge now
+  keeps both its ends, which is the smallest honest unit of work.</p>
+<h2 id="14-what-shipped-and-what-did-not">14. What shipped, and what did not</h2>
+<p>The graph is thirty-three nodes. Everything §5 called missing is measured, and the
+device file has a producer for every parameter it carries. What follows is where the
+built graph differs from §6 and §7, because a plan read after the fact is only useful
+if its divergences are written down.</p>
+<div class="highlight"><pre><span></span><code>resonator_spectroscopy → { time_of_flight, resonator_relaxation }
+resonator_spectroscopy → resonator_punchout → qubit_spectroscopy → rabi
+
+rabi → resonator_spectroscopy_excited
+rabi → readout_operating_point → readout_discrimination → readout_fidelity
+rabi → ramsey → drag → { allxy, fine_amplitude → { rb, allxy_check } }
+rabi → { t1, t2_echo }
+
+rabi → f12_spectroscopy → rabi_12 → resonator_spectroscopy_second_excited
+{ rabi_12, readout_operating_point } → three_state_operating_point
+three_state_operating_point → { ramsey_12 → drag_12,
+                                fine_amplitude_12,
+                                three_state_discrimination }
+
+qubit_spectroscopy → flux_spectroscopy
+rabi → coupler_anticrossing
+rabi → cz_spectroscopy → cz_parametrization
+{ rb, flux_spectroscopy } → cz_chevron → conditional_phase → interleaved_rb
+</code></pre></div>
+<p><strong>Frequency and amplitude are one node, not two.</strong> §6 has
+<code>readout_frequency_two_state → readout_amplitude_two_state</code>, and the same pair again
+for three-state. They are <code>readout_operating_point</code> and <code>three_state_operating_point</code>,
+each sweeping both axes at once, because the resonance <em>moves with power</em>: choosing a
+frequency and then a power leaves the frequency stale by 183 kHz on the simulated
+chip — a tenth of a linewidth, and exactly the mistake <code>resonator_punchout</code> already
+exists to avoid. Two nodes in sequence would have encoded that mistake in the graph.</p>
+<p><strong>The state-resolved pass hangs off <code>rabi</code>, not <code>fine_amplitude</code>.</strong> All it needs is a
+π pulse good enough to prepare <code>|1&gt;</code>; waiting for the refined one would put the entire
+readout chain behind DRAG for no measurement it uses.</p>
+<p><strong><code>clock_freqs.readout_1</code> and <code>readout_2</code> are not written.</strong>
+<code>resonator_spectroscopy_excited</code> and <code>resonator_spectroscopy_second_excited</code> report
+the resonance per state and write nothing, because nothing reads a per-state readout
+clock: the operating points are chosen by <em>separation</em>, which depends on how the
+Lorentzians overlap rather than on where their centres sit. The second is a
+characterisation of the ladder itself — that the pull really goes as <code>chi(1-2n)</code> —
+which three-state readout rests on and nothing else checked.</p>
+<p><strong>The coupler is measured through one node, not three.</strong> §6 planned
+<code>resonator_spectroscopy_vs_bias → qubit_spectroscopy_vs_bias → coupler_anticrossing</code>.
+<code>coupler_anticrossing</code> does the qubit-versus-bias sweep itself, in its own measurement
+loop, because a DC bias cannot be scheduled — so the sweep is an acquisition loop with
+instrument writes in it rather than a schedule, and splitting it across nodes would
+mean setting and re-setting the same rack from three places. <code>flux_spectroscopy</code> was
+therefore <strong>not</strong> subsumed, as §6 said it would be: it measures a pulsed flux arc,
+which is a different instrument path and still the only thing <code>cz_chevron</code> depends on.</p>
+<p><strong><code>cz_spectroscopy</code> was not in the plan.</strong> §7 gave <code>cz_parametrization</code> "CZ operating
+point candidates" and left the drive frequency implicit. Frequency decides whether a
+parametric gate runs at all, amplitude only how fast — so they are two experiments,
+and the second is meaningless before the first.</p>
+<p><strong>Not built.</strong> Three things, deliberately:</p>
+<ul>
+<li><strong>Three-state assignment in the job path.</strong> <code>three_state_discrimination</code> measures
+  leakage and writes nothing. Returning three outcomes from a measurement is an API
+  question — <code>meas_level</code>, the counts schema, every client — and not a calibration
+  one.</li>
+<li><strong><code>measure.integration_time</code>.</strong> §5 lists it as unproduced and it still is;
+  <code>resonator_relaxation</code> measures a floor on the window rather than an optimum (§12).</li>
+<li><strong>Two of the simulator's chosen constants.</strong> §7 predicted the coupler nodes would
+  replace <code>G_MHZ</code>, <code>FLUX_CURVATURE_GHZ</code>, <code>SIDEBAND_GAP_GHZ</code>, <code>STARK_SHIFT_MHZ</code> and
+  <code>STARK_ASYMMETRY</code> with measured numbers. <code>cz_parametrization</code> recovers the exchange
+  rate and an edge can declare its own <code>clock_freqs.sideband_gap</code>; the rest are still
+  chosen. A two-qubit result reads as "against a plausible coupler".</li>
+</ul>
+<p><strong>And the verification that matters is still outstanding.</strong> Every number in this RFC
+was measured against a simulator. The graph is now wired for hardware — a real bias
+rack, nodes that decline on an element with nowhere to put their result — but wired
+for it is not run against it. RFC 0004 §9's manual verification is what remains.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

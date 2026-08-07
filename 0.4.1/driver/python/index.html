@@ -1,0 +1,2536 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://sopherapps.github.io/qpi/0.4.1/driver/python/">
+      
+      
+        <link rel="prev" href="../../theming/">
+      
+      
+        <link rel="next" href="../python_api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Overview - QPI Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#qpi-driver-python-sdk" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="QPI Documentation" class="md-header__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            QPI Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../theming/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Dashboard Theming
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Drivers
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../clients/python/" class="md-tabs__link">
+          
+  
+  
+  Clients
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../rfcs/" class="md-tabs__link">
+          
+  
+  
+  RFCs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../changelog/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Changelog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="QPI Documentation" class="md-nav__button md-logo" aria-label="QPI Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    QPI Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sopherapps/qpi" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    sopherapps/qpi
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Drivers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Drivers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Driver
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Driver
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Install">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#base-package-mock-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Base package (mock executor)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-cli-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With CLI support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-qiskit-aer-simulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Qiskit Aer simulator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-quantifyqblox-hardware-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Quantify/Qblox hardware support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-calibration-tuner-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Calibration Tuner support
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        systemd Service (Linux)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="systemd Service (Linux)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-systemd-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual systemd Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-device-of-your-own" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a device of your own
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding a device of your own">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-reuse-a-driver-the-sdk-ships-with-your-part-plugged-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Reuse a driver the SDK ships, with your part plugged in
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-write-a-device-from-scratch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Write a device from scratch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-a-qpu-write-an-executor-not-a-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. A QPU: write an executor, not a driver
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-your-device-to-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting your device to --device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-things-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two things worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executor-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executor Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tuner-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuner Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clients
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clients
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python Client
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python Client
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/python_api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/go/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Go Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../clients/javascript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JavaScript Client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RFCs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    RFCs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0001-driver-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0001 Driver Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0002-dashboard-theming/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0002 Dashboard Theming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0003-driver-extensibility/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0003 Driver Extensibility
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0004-calibration-tuners/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0004 Calibration Tuners
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rfcs/0005-calibration-graph-completion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    0005 Calibration Graph Completion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Install">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#base-package-mock-executor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Base package (mock executor)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-cli-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With CLI support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-qiskit-aer-simulator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Qiskit Aer simulator
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-quantifyqblox-hardware-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Quantify/Qblox hardware support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#with-calibration-tuner-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        With Calibration Tuner support
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cli" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#systemd-service-linux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        systemd Service (Linux)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="systemd Service (Linux)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#manual-systemd-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual systemd Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python API
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#adding-a-device-of-your-own" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a device of your own
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Adding a device of your own">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-reuse-a-driver-the-sdk-ships-with-your-part-plugged-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Reuse a driver the SDK ships, with your part plugged in
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-write-a-device-from-scratch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Write a device from scratch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-a-qpu-write-an-executor-not-a-driver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. A QPU: write an executor, not a driver
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#getting-your-device-to-device" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting your device to --device
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#two-things-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two things worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executor-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executor Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tuner-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tuner Backends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#license" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        License
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="qpi-driver-python-sdk">qpi-driver (Python SDK)</h1>
+<p>The Python SDK for building <a href="https://github.com/sopherapps/qpi">QPI</a> drivers — the
+external processes that exchange typed events with QPI-UI (RFC 0001). It mirrors
+the Go SDK (<code>qpi-driver/go</code>) and the TypeScript SDK (<code>qpi-driver/js</code>): the
+same event envelope, the same <code>drivers/connect</code> handshake, and TLS with a <em>pinned</em>
+root CA — the driver fetches the server's root certificate and refuses it unless
+its SHA-256 matches the <code>--ca-fingerprint</code> the operator was handed out of band.</p>
+<blockquote>
+<p><strong>Upgrading from a pre-RFC-0003 release?</strong> The CLI grammar and some SDK APIs
+changed, and every removal is listed with its replacement in the
+<a href="https://github.com/sopherapps/qpi/blob/main/CHANGELOG.md">change log</a>.
+<strong>What this SDK ships:</strong> five QPU backends — <code>mock</code>, <code>presto</code> (a stub),
+<code>qiskit_aer</code>, <code>quantify</code>, <code>qblox</code> — one cryostat monitor, <code>bluefors_gen1</code>, and two calibration
+tuners, <code>quantify_tuner</code> and <code>qblox_tuner</code>. It is the only SDK of the three that can
+run a QPU or a tuner at all, and the only one where a device can be added without
+recompiling or rebundling.</p>
+</blockquote>
+<p>Two words appear throughout, and the difference between them is the whole of how a
+driver is described:</p>
+<ul>
+<li>An <strong>operation</strong> is what a driver <em>does</em>, and it is a contract with the server:
+  <code>process</code> runs jobs pushed to it and returns results (a QPU); <code>monitor</code> reports
+  readings upward on its own schedule (a cryostat, say); <code>calibrate</code> executes
+  calibration routines to track parameter drift (a tuner). QPI-UI must have a handler
+  for each, so there are exactly these three.</li>
+<li>A <strong>device</strong> is the particular backend implementing an operation —
+  <code>qblox</code> is a <code>process</code> device. Anyone can add one; that is what "Adding a
+  device of your own" below is about.</li>
+</ul>
+<p>A driver is one operation running on one device.</p>
+<h2 id="install">Install</h2>
+<h3 id="base-package-mock-executor">Base package (mock executor)</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>qpi-driver
+</code></pre></div>
+<h3 id="with-cli-support">With CLI support</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[cli]&quot;</span>
+</code></pre></div>
+<h3 id="with-qiskit-aer-simulator">With Qiskit Aer simulator</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[aer]&quot;</span>
+</code></pre></div>
+<h3 id="with-quantifyqblox-hardware-support">With Quantify/Qblox hardware support</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[quantify]&quot;</span>
+</code></pre></div>
+<h3 id="with-calibration-tuner-support">With Calibration Tuner support</h3>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[quantify_tuner]&quot;</span>
+<span class="c1"># or</span>
+pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[qblox_tuner]&quot;</span>
+</code></pre></div>
+<p>Requires <strong>Python ≥ 3.12, &lt; 3.13</strong>.</p>
+<hr />
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="cli">CLI</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Connect a mock QPU to the server</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--qpi-addr<span class="w"> </span>http://localhost:8090<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--token<span class="w"> </span>&lt;qpu-access-token&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--ca-fingerprint<span class="w"> </span>&lt;fingerprint&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--device<span class="w"> </span>mock<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-o<span class="w"> </span><span class="nv">data_dir</span><span class="o">=</span>./data
+</code></pre></div>
+<p>Environment variables are also supported for the universal flags:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">QPI_ADDR</span><span class="o">=</span>http://localhost:8090
+<span class="nb">export</span><span class="w"> </span><span class="nv">QPI_ACCESS_TOKEN</span><span class="o">=</span>&lt;token&gt;
+<span class="nb">export</span><span class="w"> </span><span class="nv">QPI_CA_FINGERPRINT</span><span class="o">=</span>&lt;fingerprint&gt;
+<span class="nb">export</span><span class="w"> </span><span class="nv">QPI_DEVICE</span><span class="o">=</span>mock
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process
+</code></pre></div>
+<h3 id="systemd-service-linux">systemd Service (Linux)</h3>
+<p>To run <code>qpi-driver</code> persistently on a Linux machine in the background, you can use <code>systemd</code>. </p>
+<p>We have provided a standalone interactive bash installer that automates the entire process (installing <code>uv</code>, installing the <code>qpi-driver</code> tool, prompting for your tokens/addresses, and registering the systemd service):</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Run the interactive systemd installer script directly via curl</span>
+sudo<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+<p>Alternatively, you can run the installer non-interactively by specifying all environment variables:
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_DRIVER_VERSION</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_TOKEN</span><span class="o">=</span><span class="s2">&quot;&lt;your-qpi-access-token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_ADDR</span><span class="o">=</span><span class="s2">&quot;http://127.0.0.1:8090&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">CA_FINGERPRINT</span><span class="o">=</span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">SERVICE_NAME</span><span class="o">=</span><span class="s2">&quot;rigetti-aspen-1&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">OPERATION</span><span class="o">=</span><span class="s2">&quot;process&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">DEVICE</span><span class="o">=</span><span class="s2">&quot;qblox&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>bash
+</code></pre></div></p>
+<p>A tuner is installed the same way — <code>OPERATION="calibrate"</code> and <code>DEVICE="quantify_tuner"</code>
+or <code>"qblox_tuner"</code> — and needs nothing else set:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://raw.githubusercontent.com/sopherapps/qpi/main/qpi-driver/py/install-systemd.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_TOKEN</span><span class="o">=</span><span class="s2">&quot;&lt;the-tuner&#39;s-access-token&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">QPI_ADDR</span><span class="o">=</span><span class="s2">&quot;http://127.0.0.1:8090&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">CA_FINGERPRINT</span><span class="o">=</span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">SERVICE_NAME</span><span class="o">=</span><span class="s2">&quot;rigetti-aspen-1-tuner&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">OPERATION</span><span class="o">=</span><span class="s2">&quot;calibrate&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="nv">DEVICE</span><span class="o">=</span><span class="s2">&quot;quantify_tuner&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>bash
+</code></pre></div>
+<p>Everything a driver reads or writes lives in one directory, <code>/var/qpi-driver/&lt;service-name&gt;</code>,
+which the installer creates and hands over as <code>QPI_DATA_DIR</code>. The config files it points
+the driver at default to that directory too — <code>quantify.device.yml</code>,
+<code>quantify.hardware.json</code>, and for a tuner <code>calibration.yml</code> — so putting them there is
+the whole of the configuration, and <code>DRIVER_OPTIONS</code> stays empty. Override any of them
+with <code>QPI_DATA_DIR</code>, <code>QPI_QUANTIFY_DEVICE_CONFIG</code>, <code>QPI_QUANTIFY_HARDWARE_CONFIG</code> or
+<code>QPI_CALIBRATION_CONFIG</code>; <code>DRIVER_OPTIONS</code> is for a device's <em>own</em> settings, such as a
+cryostat monitor's <code>channels</code>.</p>
+<p>A tuner and the QPU beside it should be given the same <code>quantify.device.yml</code>: that file
+is how the calibration one writes reaches the jobs the other runs. Point both
+<code>SERVICE_NAME</code>s at one directory with <code>QPI_DATA_DIR</code>, or set
+<code>QPI_QUANTIFY_DEVICE_CONFIG</code> on each.</p>
+<h4 id="manual-systemd-installation">Manual systemd Installation</h4>
+<p>If you prefer to configure it manually, follow these steps:</p>
+<ol>
+<li>
+<p><strong>Install <code>uv</code></strong> (a fast Python package installer):
+   <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+<span class="nb">source</span><span class="w"> </span><span class="nv">$HOME</span>/.local/bin/env
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Install <code>qpi-driver</code> as a tool</strong>:
+   Make sure to specify the correct extras (e.g. <code>[cli,qblox]</code>, <code>[cli,aer]</code>):
+   <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;qpi-driver[cli,qblox]&quot;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Create the systemd unit file</strong>:
+   Replace the placeholder <code>&lt;values&gt;</code> with your actual configuration.
+   <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;cat &gt; /etc/systemd/system/rigetti-aspen-1.qpi-driver.service &lt;&lt;EOF</span>
+<span class="s1">[Unit]</span>
+<span class="s1">Description=QPI Driver Service (rigetti-aspen-1)</span>
+<span class="s1">After=network.target</span>
+
+<span class="s1">[Service]</span>
+<span class="s1">Type=simple</span>
+
+<span class="s1">Environment=&quot;QPI_ACCESS_TOKEN=&lt;your-qpi-access-token&gt;&quot;</span>
+<span class="s1">Environment=&quot;QPI_CA_FILE=/var/qpi-driver/rigetti-aspen-1/qpi.ca.pem&quot;</span>
+<span class="s1">Environment=&quot;QPI_DATA_DIR=/var/qpi-driver/rigetti-aspen-1&quot;</span>
+<span class="s1">Environment=PYTHONUNBUFFERED=1</span>
+
+<span class="s1">ExecStart=/home/&lt;user&gt;/.local/bin/qpi-driver start --operation process \</span>
+<span class="s1">        --ca-fingerprint &lt;your-fingerprint&gt; \</span>
+<span class="s1">        --qpi-addr &lt;your-qpi-server-address&gt; \</span>
+<span class="s1">        --device &quot;qblox&quot; \</span>
+<span class="s1">        -o quantify_device_config=/var/qpi-driver/rigetti-aspen-1/quantify.device.yml \</span>
+<span class="s1">        -o quantify_hardware_config=/var/qpi-driver/rigetti-aspen-1/quantify.hardware.json</span>
+
+<span class="s1">Restart=on-failure</span>
+<span class="s1">User=&lt;user&gt;</span>
+
+<span class="s1">StandardOutput=journal</span>
+<span class="s1">StandardError=journal</span>
+<span class="s1">SyslogIdentifier=rigetti-aspen-1.qpi-driver</span>
+
+<span class="s1">[Install]</span>
+<span class="s1">WantedBy=multi-user.target</span>
+<span class="s1">EOF&#39;</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Start and enable the service</strong>:
+   <div class="highlight"><pre><span></span><code>sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
+sudo<span class="w"> </span>systemctl<span class="w"> </span><span class="nb">enable</span><span class="w"> </span>rigetti-aspen-1.qpi-driver.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>start<span class="w"> </span>rigetti-aspen-1.qpi-driver.service
+sudo<span class="w"> </span>systemctl<span class="w"> </span>status<span class="w"> </span>rigetti-aspen-1.qpi-driver.service
+</code></pre></div></p>
+</li>
+</ol>
+<h3 id="python-api">Python API</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver</span><span class="w"> </span><span class="kn">import</span> <span class="n">QpuDriver</span>
+
+<span class="n">QpuDriver</span><span class="p">(</span>
+    <span class="n">qpi_addr</span><span class="o">=</span><span class="s2">&quot;http://localhost:8090&quot;</span><span class="p">,</span>
+    <span class="n">token</span><span class="o">=</span><span class="s2">&quot;&lt;qpu-access-token&gt;&quot;</span><span class="p">,</span>
+    <span class="n">ca_fingerprint</span><span class="o">=</span><span class="s2">&quot;&lt;fingerprint&gt;&quot;</span><span class="p">,</span>
+    <span class="n">executor</span><span class="o">=</span><span class="s2">&quot;mock&quot;</span><span class="p">,</span>
+    <span class="n">data_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./data&quot;</span><span class="p">),</span>
+<span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</code></pre></div>
+<h2 id="adding-a-device-of-your-own">Adding a device of your own</h2>
+<p>A <strong>device</strong> is the thing <code>--device</code> names. To this SDK it is three fields — a name,
+an operation, and a <em>builder</em>: a function the CLI calls to construct your driver from
+the <code>-o</code> options and the connection settings. The builder returns the driver rather
+than running it; the CLI calls <code>.run()</code> afterwards.</p>
+<p>There are three shapes this takes. The first two apply to any SDK; the third is what
+makes writing a QPU in Python much less work than in Go or TypeScript.</p>
+<h3 id="1-reuse-a-driver-the-sdk-ships-with-your-part-plugged-in">1. Reuse a driver the SDK ships, with your part plugged in</h3>
+<p>The Bluefors Gen. 1 monitor already does most of what any cryostat monitor does: it
+polls on a timer, tolerates one channel failing without losing the rest of the tick,
+and emits a <code>CryostatReading</code> event. The only part specific to Gen. 1 is the HTTP call
+that reads one channel. So it takes that part as an argument — a <code>ChannelReader</code> — and
+a monitor for Bluefors Gen. 2, whose control software has a different API, supplies its
+own and gets the rest for nothing.</p>
+<p>Nothing is subclassed. The reusable driver holds the replaceable part as a value, which
+is the same arrangement <code>QpuDriver</code> uses for executors (see 3 below).</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver</span><span class="w"> </span><span class="kn">import</span> <span class="n">DeviceSpec</span><span class="p">,</span> <span class="n">Operation</span><span class="p">,</span> <span class="n">register</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver.builtins.bluefors_gen1</span><span class="w"> </span><span class="kn">import</span> <span class="n">BlueforsGen1Driver</span><span class="p">,</span> <span class="n">parse_channels</span>
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">gen2_reader</span><span class="p">(</span><span class="n">base_url</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">api_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reads one channel from Gen. 2 Control Software, which has its own HTTP API.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="n">channel</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">resp</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/api/v2/values/</span><span class="si">{</span><span class="n">channel</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Authorization&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Bearer </span><span class="si">{</span><span class="n">api_key</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">},</span>
+                <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">resp</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="n">resp</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="nb">float</span><span class="p">(</span><span class="n">body</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]),</span> <span class="s2">&quot;unit&quot;</span><span class="p">:</span> <span class="n">unit</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="n">body</span><span class="p">[</span><span class="s2">&quot;state&quot;</span><span class="p">]}</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="c1"># Never raise: one unreadable channel must not lose the whole tick. An</span>
+            <span class="c1"># ERROR reading is how the driver knows to carry on with the others.</span>
+            <span class="n">log</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;failed to read channel </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">channel</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">:</span> <span class="n">unit</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">}</span>
+
+    <span class="k">return</span> <span class="n">read</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">build_gen2</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">options</span><span class="p">,</span> <span class="o">**</span><span class="n">transport</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BlueforsGen1Driver</span><span class="p">:</span>
+    <span class="c1"># Reading an option is what makes it an option of this device. The second</span>
+    <span class="c1"># argument is the value used when -o does not mention it.</span>
+    <span class="k">return</span> <span class="n">BlueforsGen1Driver</span><span class="p">(</span>
+        <span class="n">channels</span><span class="o">=</span><span class="n">parse_channels</span><span class="p">(</span><span class="n">options</span><span class="o">.</span><span class="n">require</span><span class="p">(</span><span class="s2">&quot;channels&quot;</span><span class="p">,</span> <span class="s2">&quot;gen2.temperature:K&quot;</span><span class="p">)),</span>
+        <span class="n">poll_interval</span><span class="o">=</span><span class="n">options</span><span class="o">.</span><span class="n">get_float</span><span class="p">(</span><span class="s2">&quot;poll_interval&quot;</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
+        <span class="n">read_channel</span><span class="o">=</span><span class="n">gen2_reader</span><span class="p">(</span>
+            <span class="n">options</span><span class="o">.</span><span class="n">get_str</span><span class="p">(</span><span class="s2">&quot;base_url&quot;</span><span class="p">,</span> <span class="s2">&quot;http://127.0.0.1:49099&quot;</span><span class="p">),</span>
+            <span class="n">options</span><span class="o">.</span><span class="n">get_str</span><span class="p">(</span><span class="s2">&quot;api_key&quot;</span><span class="p">),</span>
+        <span class="p">),</span>
+        <span class="o">**</span><span class="n">transport</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="n">BLUEFORS_GEN2</span> <span class="o">=</span> <span class="n">DeviceSpec</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;bluefors_gen2&quot;</span><span class="p">,</span> <span class="n">operation</span><span class="o">=</span><span class="n">Operation</span><span class="o">.</span><span class="n">MONITOR</span><span class="p">,</span> <span class="n">build</span><span class="o">=</span><span class="n">build_gen2</span>
+<span class="p">)</span>
+<span class="n">register</span><span class="p">(</span><span class="n">BLUEFORS_GEN2</span><span class="p">)</span>
+</code></pre></div>
+<p><code>options.require</code> is for the one kind of option nothing can invent a value for — which
+channels a given cryostat exposes depends on how its mappers are configured, so there
+is no sensible default and omitting it is an error rather than a guess. <code>**transport</code>
+is the connection settings (<code>qpi_addr</code>, <code>token</code>, <code>ca_fingerprint</code>, <code>ca_file_path</code>,
+<code>recv_timeout_ms</code>); a builder that has nothing to say about them passes them straight
+through.</p>
+<h3 id="2-write-a-device-from-scratch">2. Write a device from scratch</h3>
+<p>When nothing shipped is close, subclass <code>QpiDriver</code> — the SDK's own base class, which
+owns the connection and the event loop. There are two things to fill in: <code>handle_event</code>,
+called for every event the server pushes to this driver, and whatever you schedule with
+<code>every()</code> to report upward on a timer.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver</span><span class="w"> </span><span class="kn">import</span> <span class="n">DeviceSpec</span><span class="p">,</span> <span class="n">Event</span><span class="p">,</span> <span class="n">EventType</span><span class="p">,</span> <span class="n">Operation</span><span class="p">,</span> <span class="n">QpiDriver</span><span class="p">,</span> <span class="n">register</span>
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ThermometerDriver</span><span class="p">(</span><span class="n">QpiDriver</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">probes</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="n">interval</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">5.0</span><span class="p">,</span> <span class="o">**</span><span class="n">transport</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">**</span><span class="n">transport</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">probes</span> <span class="o">=</span> <span class="n">probes</span>
+        <span class="c1"># Runs every `interval` seconds once the driver is connected, not before.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">every</span><span class="p">(</span><span class="n">interval</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_report</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">handle_event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;A monitor is told nothing and asked nothing: it only reports.</span>
+
+<span class="sd">        Log and drop, so an event sent here by mistake is visible rather than</span>
+<span class="sd">        silently swallowed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;not a QPU; dropping </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">type</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_report</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">readings</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="sa">f</span><span class="s2">&quot;probe.</span><span class="si">{</span><span class="n">probe</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mf">4.2</span><span class="p">,</span> <span class="s2">&quot;unit&quot;</span><span class="p">:</span> <span class="s2">&quot;K&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;OK&quot;</span><span class="p">}</span>
+            <span class="k">for</span> <span class="n">probe</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">probes</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span>
+            <span class="n">Event</span><span class="p">(</span>
+                <span class="nb">type</span><span class="o">=</span><span class="n">EventType</span><span class="o">.</span><span class="n">CRYOSTAT_READING</span><span class="p">,</span>
+                <span class="n">driver</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">payload</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;readings&quot;</span><span class="p">:</span> <span class="n">readings</span><span class="p">},</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">build_thermometer</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">options</span><span class="p">,</span> <span class="o">**</span><span class="n">transport</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ThermometerDriver</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">ThermometerDriver</span><span class="p">(</span>
+        <span class="n">probes</span><span class="o">=</span><span class="n">options</span><span class="o">.</span><span class="n">get_int</span><span class="p">(</span><span class="s2">&quot;probes&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span>
+        <span class="n">interval</span><span class="o">=</span><span class="n">options</span><span class="o">.</span><span class="n">get_float</span><span class="p">(</span><span class="s2">&quot;interval&quot;</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">),</span>
+        <span class="o">**</span><span class="n">transport</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
+<span class="n">THERMOMETER</span> <span class="o">=</span> <span class="n">DeviceSpec</span><span class="p">(</span>
+    <span class="n">name</span><span class="o">=</span><span class="s2">&quot;thermometer&quot;</span><span class="p">,</span> <span class="n">operation</span><span class="o">=</span><span class="n">Operation</span><span class="o">.</span><span class="n">MONITOR</span><span class="p">,</span> <span class="n">build</span><span class="o">=</span><span class="n">build_thermometer</span>
+<span class="p">)</span>
+<span class="n">register</span><span class="p">(</span><span class="n">THERMOMETER</span><span class="p">)</span>
+</code></pre></div>
+<p>The <strong>operation</strong> you choose is not free: it is a contract the server implements, so it
+has to be one QPI-UI already has a handler for. <code>Operation.MONITOR</code> means "reports
+readings upward on its own schedule"; <code>Operation.PROCESS</code> means "runs jobs pushed to it
+and returns results" — and for that one, this SDK does the work for you:</p>
+<h3 id="3-a-qpu-write-an-executor-not-a-driver">3. A QPU: write an executor, not a driver</h3>
+<p>For <code>process</code> you never write a driver at all. Every <code>process</code> device is the one
+built-in <code>QpuDriver</code> holding a different <strong>executor</strong>, which is the same arrangement as
+1 above — and the reason it is worth knowing is that <code>QpuDriver</code> is not a small thing
+to reimplement: it runs jobs in a worker subprocess so a crashing backend cannot take
+down the receive loop, pumps results back on a thread, and turns each one into a
+<code>JobResult</code> event.</p>
+<p><code>Executor</code> asks for two methods. <code>execute()</code> runs the job on your hardware and returns
+an <code>xr.Dataset</code>; <code>process_result()</code> turns that into the Qiskit-shaped counts QPI-UI
+stores.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xarray</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xr</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver</span><span class="w"> </span><span class="kn">import</span> <span class="n">Executor</span><span class="p">,</span> <span class="n">JobPayload</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">qpi_driver.builtins.qpu</span><span class="w"> </span><span class="kn">import</span> <span class="n">device_spec</span>
+
+
+<span class="k">class</span><span class="w"> </span><span class="nc">QuantumXExecutor</span><span class="p">(</span><span class="n">Executor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;quantum_x&quot;</span><span class="p">,</span> <span class="n">qubit_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span> <span class="o">**</span><span class="n">options</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">qubit_count</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">qubit_count</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">execute</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">payload</span><span class="p">:</span> <span class="n">JobPayload</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">:</span>
+        <span class="c1"># Your QPU-specific execution logic; here every shot reads as the ground state.</span>
+        <span class="n">memory</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">full</span><span class="p">(</span><span class="n">payload</span><span class="o">.</span><span class="n">shots</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">qubit_count</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">({</span><span class="s2">&quot;memory&quot;</span><span class="p">:</span> <span class="p">(</span><span class="s2">&quot;shot&quot;</span><span class="p">,</span> <span class="n">memory</span><span class="p">)},</span> <span class="n">attrs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;shots&quot;</span><span class="p">:</span> <span class="n">payload</span><span class="o">.</span><span class="n">shots</span><span class="p">})</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_result</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dataset</span><span class="p">:</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+        <span class="n">states</span><span class="p">,</span> <span class="n">counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">unique</span><span class="p">(</span><span class="n">dataset</span><span class="p">[</span><span class="s2">&quot;memory&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">return_counts</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;job_id&quot;</span><span class="p">:</span> <span class="n">job_id</span><span class="p">,</span>
+            <span class="s2">&quot;counts&quot;</span><span class="p">:</span> <span class="p">{</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">):</span> <span class="nb">int</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span><span class="p">,</span> <span class="n">c</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">states</span><span class="p">,</span> <span class="n">counts</span><span class="p">)},</span>
+        <span class="p">}</span>
+
+
+<span class="c1"># `device_spec` writes the spec for you: the name --device will use, bound to the</span>
+<span class="c1"># built-in QPU driver holding your executor. `pass_through=True` hands the executor&#39;s</span>
+<span class="c1"># constructor the -o keys the SDK knows nothing about, like qubit_count.</span>
+<span class="n">QUANTUM_X</span> <span class="o">=</span> <span class="n">device_spec</span><span class="p">(</span><span class="s2">&quot;quantum_x&quot;</span><span class="p">,</span> <span class="n">executor</span><span class="o">=</span><span class="n">QuantumXExecutor</span><span class="p">,</span> <span class="n">pass_through</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p>You can also skip the spec entirely and hold the executor yourself:
+<code>QpuDriver(executor=QuantumXExecutor(qubit_count=4)).run()</code>. Reach for that when you
+are driving the SDK from your own Python and want no CLI; reach for a device when
+anything else — a systemd unit, the dashboard's generated command — has to <em>launch</em> it.</p>
+<h3 id="getting-your-device-to-device">Getting your device to <code>--device</code></h3>
+<p>Three routes, and all three end in the same registry.</p>
+<p><strong>Register it at import</strong> — <code>register(SPEC)</code>, as 1 and 2 above do. This only works if
+your code runs before the CLI parses arguments, so it is for a program of your own that
+calls into the SDK.</p>
+<p><strong>Ship it as an installable distribution</strong>, which is the route for a device meant to be
+deployed. Advertise the spec under the <code>qpi_driver.devices</code> entry-point group in your
+own <code>pyproject.toml</code> — this is the whole of the packaging:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[project.entry-points.</span><span class="s2">&quot;qpi_driver.devices&quot;</span><span class="k">]</span>
+<span class="n">quantum_x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mylab_devices:QUANTUM_X&quot;</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>.<span class="w">    </span><span class="c1"># your distribution, depending on qpi-driver[cli]</span>
+qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>quantum_x<span class="w"> </span>-o<span class="w"> </span><span class="nv">qubit_count</span><span class="o">=</span><span class="m">4</span><span class="w"> </span>...
+</code></pre></div>
+<p><code>quantum_x</code> is now indistinguishable from a built-in: <code>qpi-driver devices</code> lists it and
+<code>--device</code> accepts it, with nothing changed in the SDK. An entry point that will not
+import, or that resolves to something other than a <code>DeviceSpec</code>, is logged and skipped —
+one broken third-party package cannot stop the CLI from starting.</p>
+<p><strong>Or name it by import path</strong>, with nothing to install and nothing to register:</p>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>process<span class="w"> </span>--device<span class="w"> </span>mylab_devices:QuantumXExecutor<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-o<span class="w"> </span><span class="nv">qubit_count</span><span class="o">=</span><span class="m">4</span><span class="w"> </span>...
+</code></pre></div>
+<p><code>module.attr</code> works as well as <code>module:attr</code>. What the imported object has to be is
+whatever a device means for that operation: for <code>process</code> an <code>Executor</code> subclass or
+instance, for <code>monitor</code> a builder. Either also accepts a <code>DeviceSpec</code>, which is how it
+gets a name of its own instead of being known by the path that imported it.</p>
+<p>An executor named this way is handed every <code>-o</code> key the SDK does not read itself, as
+the string it was typed as — so <code>qubit_count</code> arrives as <code>"4"</code> and a typo in it reaches
+your constructor rather than being reported. Use this route to try a device out, and an
+entry point to deploy one.</p>
+<p><a href="https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/examples/custom_device/"><code>examples/custom_device/</code></a>
+is route 3 worked all the way through, as two files you can run.</p>
+<p>There is no separate mechanism for "a whole custom driver". An operation is a contract
+QPI-UI implements server-side, so a custom driver is always a custom device of an
+existing operation (RFC 0003 §6, §13.4).</p>
+<h3 id="two-things-worth-knowing">Two things worth knowing</h3>
+<ul>
+<li><strong>A builder returns a driver; it does not run one.</strong> <code>.run()</code> is what connects and
+  starts the timers, and the CLI is what calls it. That is what lets a device be
+  constructed and asserted on in a test with no server anywhere.</li>
+<li><strong>Reading an option is what declares it.</strong> There is no list of a device's options in
+  this SDK — <code>Options</code> records which keys your builder asked for, and <code>qpi-driver start</code>
+  reports any <code>-o</code> key that nothing asked for, then exits 1 without connecting. If your
+  device passes options on to something the SDK has never seen, call
+  <code>options.remaining()</code> to take everything not yet read, which counts as reading it.</li>
+</ul>
+<p>Nothing here describes your device <em>to QPI-UI</em>. Registering a driver in the dashboard
+is where a device is named, configured and documented; this SDK's job is to run the one
+it is told to run (RFC 0003 §9).</p>
+<p>The TypeScript SDK has the same import-path route with a different separator —
+<code>--device ./dist/my-device.js#MyExport</code> — because <code>:</code> is a URL scheme separator in a
+JavaScript module specifier. The Go SDK has no import-path route at all: Go resolves
+imports at compile time, so a device there is registered in your own <code>main</code>.</p>
+<hr />
+<h2 id="executor-backends">Executor Backends</h2>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Description</th>
+<th>Extra</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mock</code></td>
+<td>Qiskit BasicSimulator, needs no hardware</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>qiskit_aer</code></td>
+<td>Qiskit Aer simulator</td>
+<td><code>[aer]</code></td>
+</tr>
+<tr>
+<td><code>quantify</code></td>
+<td>Quantify-scheduler + Qblox instruments</td>
+<td><code>[quantify]</code></td>
+</tr>
+<tr>
+<td><code>qblox</code></td>
+<td>Qblox scheduler (legacy)</td>
+<td><code>[qblox]</code></td>
+</tr>
+<tr>
+<td><code>presto</code></td>
+<td>Presto control system (not yet implemented)</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>The one <code>monitor</code> device is <code>bluefors_gen1</code>, a cryostat monitor for Bluefors Control
+Software Gen. 1, shipped by <code>[bluefors_gen1]</code>.</p>
+<h2 id="tuner-backends">Tuner Backends</h2>
+<p>The <code>calibrate</code> devices run calibration experiments against a chip, fit the results, and
+write the fitted parameters back to the device YAML the <code>process</code> driver reads.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Description</th>
+<th>Extra</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>quantify_tuner</code></td>
+<td>Calibration through quantify-scheduler</td>
+<td><code>[quantify_tuner]</code></td>
+</tr>
+<tr>
+<td><code>qblox_tuner</code></td>
+<td>Calibration through qblox-scheduler</td>
+<td><code>[qblox_tuner]</code></td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>qpi-driver<span class="w"> </span>start<span class="w"> </span>--operation<span class="w"> </span>calibrate<span class="w"> </span>--device<span class="w"> </span>quantify_tuner<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--data-dir<span class="w"> </span>./bin/data<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">calibration_config</span><span class="o">=</span>./calibration.yml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">quantify_device_config</span><span class="o">=</span>./quantify.device.yml<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-o<span class="w"> </span><span class="nv">quantify_hardware_config</span><span class="o">=</span>./quantify.hardware.json
+</code></pre></div>
+<p>Installed as a service, none of that is typed: the installer puts all three files under
+<code>/var/qpi-driver/&lt;service-name&gt;</code> and passes it as <code>QPI_DATA_DIR</code>.</p>
+<p><code>calibration_config</code> is the only option a tuner cannot start without: it says which
+routines run and over what. A calibration with nothing to run would report success
+having measured nothing, so its absence is a startup error rather than a default.</p>
+<p>Add <code>-o drift_check_interval=1800</code> and the tuner benchmarks on its own schedule,
+recalibrating the qubits whose fidelity has fallen below <code>fidelity_threshold</code> (or
+<code>fidelity_2q_threshold</code>, for an edge). A recalibration re-runs what the routines'
+<em>checks</em> blame rather than a fixed list, so a run in which nothing has drifted
+measures that and stops.</p>
+<p>On a chip with tunable couplers, <code>-o spi_rack_address=&lt;port&gt;</code> gives
+<code>coupler_anticrossing</code> the S4g rack it sets the DC parking bias through — the one
+quantity no schedule can express.</p>
+<p>Both tuners run the same routines: the two schedulers share a gate vocabulary, so the
+experiments are written once and a backend supplies only the schedule class and a way to
+run one. See the
+<a href="https://github.com/sopherapps/qpi/blob/main/qpi-driver/py/qpi_driver/tuners/README.md">Calibration Tuners reference</a>
+for the routine graph, the <code>calibration.yml</code> format, how the device file is written back,
+and how to add a tuner of your own.</p>
+<hr />
+<h2 id="architecture">Architecture</h2>
+<p>This is the <code>process</code> operation's architecture — a QPU driver. A <code>monitor</code> needs
+none of it: it has no worker, because it runs no jobs, and just polls on a timer.
+A <code>calibrate</code> driver has the same shape as a QPU — a worker subprocess and a result
+pump — because a calibration is as capable of hanging or crashing as a job, and rather
+more likely to, since it runs for hours rather than seconds.</p>
+<p>Execution happens in a <em>subprocess</em> so a heavy or crashing executor can never block
+or take down the receive loop. Results come back over a queue and are emitted by a
+<em>thread</em> in the main process, which is all that is needed to drain a queue.</p>
+<ul>
+<li><strong>Main process</strong>: the NNG PULL receive loop, plus the result-pump thread that emits
+  <code>JobResult</code> events on the PUSH socket.</li>
+<li><strong>Worker subprocess</strong> (<code>qpu.job_worker</code>): resolves the executor once, then runs
+  queued jobs until told to stop.</li>
+</ul>
+<div class="highlight"><pre><span></span><code>┌─────────────┐     NNG PUSH      ┌──────────────────────────────┐
+│   Server    │ ────────────────&gt; │ Main process                 │
+│  Dispatcher │                   │  · PULL receive loop         │
+└─────────────┘                   │  · result-pump thread ──┐    │
+       ▲                          └───────────┬─────────────│────┘
+       │ NNG PUSH                             │             │
+       │ (JobResult)                 job queue│             │result queue
+       └──────────────────────────────────────│─────────────┘
+                                              ▼             ▲
+                                   ┌──────────────────────────────┐
+                                   │ Worker subprocess            │
+                                   │  · resolve_executor()        │
+                                   │  · executor.execute(job)     │
+                                   └──────────────────────────────┘
+</code></pre></div>
+<hr />
+<h2 id="cli-reference">CLI Reference</h2>
+<p>A driver is run with one verb, <code>start</code>: <code>--operation</code> says what it does — <code>process</code>
+(a QPU), <code>monitor</code> (e.g. a cryostat) or <code>calibrate</code> (a tuner) — and <code>--device</code> which
+backend within it. The options below are the same for every device; a device's own
+settings are passed as repeatable <code>-o key=value</code>.</p>
+<div class="highlight"><pre><span></span><code>qpi-driver start --operation process|monitor|calibrate [OPTIONS]
+
+Universal options:
+      --operation TEXT    What the driver does: process | monitor | calibrate [env: QPI_OPERATION]
+  -a, --qpi-addr TEXT     QPI server URL [env: QPI_ADDR]
+  -t, --token TEXT        Access token identifying the driver [env: QPI_ACCESS_TOKEN]
+  -d, --device TEXT       Backend within the operation, e.g. mock, qblox, bluefors_gen1 [env: QPI_DEVICE]
+  -o, --option KEY=VALUE  A setting of the chosen device, repeatable
+  --ca-file PATH          Path to the CA root certificate [env: QPI_CA_FILE]
+  --ca-fingerprint TEXT   Fingerprint pinning the CA root certificate [env: QPI_CA_FINGERPRINT]
+  --data-dir PATH         Directory the driver writes its data under [env: QPI_DATA_DIR]
+  --recv-timeout-ms INT   How long the receive loop blocks per attempt, in ms [env: QPI_RECV_TIMEOUT_MS]
+  --help                  Show this message and exit.
+</code></pre></div>
+<p><code>--data-dir</code> is universal rather than a device's <code>-o data_dir=</code> because a systemd
+install has one answer for it — <code>/var/qpi-driver/&lt;service-name&gt;</code> — and every device
+that writes anything wants it there. <code>-o data_dir=</code> still wins where a unit file sets
+it, so one written before the flag existed keeps working.</p>
+<p>There is no default device: QPI-UI generates the command that launches a driver, and
+that command always names one.</p>
+<p>Each device decides for itself which <code>-o</code> keys it understands, simply by reading them
+— there is no list of them anywhere in this package. The list an operator needs lives
+in QPI-UI: registering a driver in the dashboard presents the chosen device's options
+as a form, and generates the <code>qpi-driver start …</code> command with the values filled in.
+Copy that command into the unit file. Keeping a second list here would only give the
+two something to disagree about (RFC 0003 §9).</p>
+<p>If you pass an <code>-o</code> key the device turns out not to read, <code>qpi-driver start</code> says so
+and exits 1 — before it opens any connection to the server:</p>
+<div class="highlight"><pre><span></span><code>Error: unknown option &#39;data_dirr&#39; for process device &#39;mock&#39;.
+</code></pre></div>
+<p>It has to wait until the device has been constructed to know that, since being read is
+the only evidence a key means anything. Nothing is lost by waiting: constructing a
+device touches no network, so the check still happens before the driver is running.
+Reporting it at all is the point — a mistyped option in a unit file used to be ignored,
+which meant a driver silently running on a default nobody chose.</p>
+<p>What the SDK <em>can</em> answer is which devices this particular install has — after
+<code>pip install</code>ing a distribution of them, or writing one:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Names only, by operation</span>
+qpi-driver<span class="w"> </span>devices
+
+<span class="c1"># Just one operation</span>
+qpi-driver<span class="w"> </span>devices<span class="w"> </span>--operation<span class="w"> </span>monitor
+</code></pre></div>
+<hr />
+<h2 id="documentation">Documentation</h2>
+<ul>
+<li><a href="https://github.com/sopherapps/qpi">Main QPI Repository</a></li>
+<li><a href="https://pypi.org/project/qpi-driver/">PyPI Project Page</a></li>
+</ul>
+<hr />
+<h2 id="license">License</h2>
+<p>MIT — see the <a href="https://github.com/sopherapps/qpi/blob/main/LICENSE">main repository</a> for details.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
