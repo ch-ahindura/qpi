@@ -26,6 +26,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   `InstrumentCoordinator.components` holds component *names*, so reading `.instrument`
   off them found nothing and `coupler_anticrossing` could not open a bias source inside
   the cluster.
+- `qpi-driver/py`: `ramsey` rounds its delays to the 1 ns grid, as `ramsey_12` already
+  did. Its default sweep steps 249.9 ns and the node never compiled.
 
 ### Changed
 

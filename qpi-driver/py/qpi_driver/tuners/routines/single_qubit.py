@@ -16,6 +16,7 @@ from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
+    grid_duration,
     linear_setpoints,
     setpoints_of,
 )
@@ -194,7 +195,16 @@ class Ramsey(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._delays = setpoints_of(config, "delays", linear_setpoints(4e-9, 10e-6, 41))
+        # On the grid, as `ramsey_12` does: the default 41 points from 4 ns to 10 us
+        # step 249.9 ns, and a delay that is not a whole number of nanoseconds does
+        # not compile. Gridded here rather than on the way into the schedule because
+        # `analyse` fits against these same numbers.
+        self._delays = [
+            grid_duration(delay)
+            for delay in setpoints_of(
+                config, "delays", linear_setpoints(4e-9, 10e-6, 41)
+            )
+        ]
         self._detuning = float(config.get("artificial_detuning", 1e6))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
