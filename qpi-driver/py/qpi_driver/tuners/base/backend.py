@@ -11,12 +11,20 @@ routine composes, and it knows how to turn a finished schedule into a dataset.
 Everything backend-specific lives behind it.
 """
 
+import logging
+import math
 from abc import ABC, abstractmethod
 from typing import Any
 
 import xarray as xr
 
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S
+
+log = logging.getLogger(__name__)
+
+#: The instrument's own timeout resolution. quantify floors the wait to whole
+#: minutes, so an allowance that is not a multiple of 60 waits the multiple below it.
+_TIMEOUT_GRID_S = 60.0
 
 
 class SchedulerBackend(ABC):
@@ -107,6 +115,47 @@ class SchedulerBackend(ABC):
         acquisition loop — which sees a `RoutineConfig` and not the ceiling — waits
         as long as every other routine rather than a shorter time of its own.
         """
+
+    #: What the last `run` was actually prepared to wait for, in seconds — see
+    #: `allow`. Zero until a backend records one, which is how a backend that cannot
+    #: know its schedule's duration leaves the DAG's own check at the configured
+    #: ceiling, exactly as before this existed.
+    last_allowance_s: float = 0.0
+
+    def allow(self, timeout_s: float, expected_s: float | None) -> float:
+        """The wait to give the instruments for a schedule expected to take *expected_s*.
+
+        The ceiling exists so a sequencer that never stops cannot hang the worker for
+        the life of the driver. A sweep whose *pulses* outlast it is not that: killing
+        it makes ``routine_timeout_s`` a limit on how large an experiment may be, and
+        the routine fails for being big rather than for being stuck. So the schedule's
+        own duration raises the ceiling, and never lowers it.
+
+        This is not an unbounded wait. The number is arithmetic on the compiled
+        schedule, so a routine allowed an hour is a routine whose shots and setpoints
+        ask for an hour of pulses — visible in the warning, and fixed in the config
+        rather than by waiting less. A hang still ends at the allowance.
+
+        Rounded up to the whole minute the instrument floors to, plus one for upload
+        and arming: passing 130s exactly would floor to two minutes and time out
+        10 seconds early, which is the same failure with a subtler cause.
+        """
+        allowance = float(timeout_s)
+        if expected_s and expected_s > 0:
+            needed = math.ceil(expected_s / _TIMEOUT_GRID_S) * _TIMEOUT_GRID_S
+            needed += _TIMEOUT_GRID_S
+            if needed > allowance:
+                log.warning(
+                    "schedule needs %.1fs of pulses, more than the %.0fs ceiling; "
+                    "waiting %.0fs. Lower 'shots' or the number of setpoints to bring "
+                    "it under routine_timeout_s",
+                    expected_s,
+                    allowance,
+                    needed,
+                )
+                allowance = needed
+        self.last_allowance_s = allowance
+        return allowance
 
     def idle(self, schedule: Any, duration: float) -> None:
         """Append an idle of *duration* seconds — the delay every T1/T2 sweep needs.

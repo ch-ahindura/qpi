@@ -7,8 +7,31 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- `qpi-driver/py`: a quantify routine logs how long its schedule should take before
+  running it, and its Q1ASM at debug level. A timeout previously gave no way to tell a
+  schedule that needed longer from one that was stuck.
+- `qpi-driver/py`: a timed-out quantify routine names the module and sequencer that did
+  not stop, its state and its flags. qblox-instruments raises with a bare sequencer
+  index, so the operator could not tell which of twelve modules had hung.
+
+### Fixed
+
+- `qpi-driver/py`: a quantify tuner or executor stops the cluster after every run,
+  including a failed one. Only `stop` clears `sync_en` on the modules a schedule did
+  not use, so one left in the sync network by an earlier routine hung every later one
+  on `wait_sync`, at any `routine_timeout_s`.
+- `qpi-driver/py`: the quantify tuner finds its cluster again.
+  `InstrumentCoordinator.components` holds component *names*, so reading `.instrument`
+  off them found nothing and `coupler_anticrossing` could not open a bias source inside
+  the cluster.
+
 ### Changed
 
+- `qpi-driver/py`: a schedule whose pulses outlast `routine_timeout_s` raises its own
+  wait rather than failing, and says so. The ceiling bounds a sequencer that never
+  stops; a 59 s punchout under a 30 s ceiling was failing for being large.
 - `repo`: Cleaned up and refactored `Makefile`.
 - `repo`: Cleaned up `.github/workflows/ci.yml`.
 - `qpi-driver/py`: Optimized `test-py-loop` execution speed with

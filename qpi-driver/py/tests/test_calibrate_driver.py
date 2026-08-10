@@ -931,6 +931,10 @@ class TestSavingRawData:
 
 
 class _RecordingCoordinator:
+    def __init__(self, hangs=False):
+        self._hangs = hangs
+        self.stopped = 0
+
     def prepare(self, compiled):
         pass
 
@@ -939,13 +943,43 @@ class _RecordingCoordinator:
 
     def wait_done(self, timeout_sec):
         self.timeout_sec = timeout_sec
+        if self._hangs:
+            raise TimeoutError(
+                "Sequencer 0 did not stop in timeout period of 5 minutes"
+            )
 
     def retrieve_acquisition(self):
         return "dataset"
 
+    def stop(self):
+        self.stopped += 1
+
+    def components(self):
+        return []
+
 
 def _passthrough_compiler():
     return type("Compiler", (), {"compile": staticmethod(lambda schedule: schedule)})()
+
+
+class _TimedSchedule:
+    """A compiled schedule that knows how long its pulses take."""
+
+    name = "sweep"
+
+    def __init__(self, duration_s):
+        self._duration_s = duration_s
+
+    def get_schedule_duration(self):
+        return self._duration_s
+
+
+def _compiler_of(duration_s):
+    return type(
+        "Compiler",
+        (),
+        {"compile": staticmethod(lambda schedule: _TimedSchedule(duration_s))},
+    )()
 
 
 class TestRoutineTimeoutBoundsTheWait:
@@ -990,3 +1024,95 @@ class TestRoutineTimeoutBoundsTheWait:
         QbloxBackend(agent).run("schedule")
 
         assert agent.kwargs["timeout"] == DEFAULT_ROUTINE_TIMEOUT_S
+
+
+class TestEveryRunReleasesTheSyncNetwork:
+    """Only `stop` clears `sync_en` on the modules a schedule did not use.
+
+    `prepare` reaches the modules in the program and no others, so a module left in
+    the cluster's sync network by an earlier node never arrives at `wait_sync` and
+    every sequencer that does waits on it until the timeout — at any
+    `routine_timeout_s`. The run that most needs stopping is the one that failed.
+    """
+
+    def test_the_quantify_backend_stops_after_a_good_run(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_passthrough_compiler(), coordinator).run("schedule")
+
+        assert coordinator.stopped == 1
+
+    def test_the_quantify_backend_stops_after_a_timeout(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator(hangs=True)
+        with pytest.raises(TimeoutError):
+            QuantifyBackend(_passthrough_compiler(), coordinator).run("schedule")
+
+        assert coordinator.stopped == 1
+
+    def test_a_timeout_says_what_the_sequencers_were_doing(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator(hangs=True)
+        with pytest.raises(TimeoutError, match="did not stop.*sequencer"):
+            QuantifyBackend(_passthrough_compiler(), coordinator).run("schedule")
+
+
+class TestALongScheduleRaisesItsOwnCeiling:
+    """`routine_timeout_s` bounds being *stuck*, not how large an experiment may be.
+
+    A sweep whose pulses genuinely outlast the ceiling would otherwise fail for being
+    big, and no ceiling an operator picks can be right for every routine — a punchout
+    is 250x a time-of-flight on the same chip. The schedule's own duration therefore
+    raises the wait, and never lowers it.
+    """
+
+    def test_a_schedule_longer_than_the_ceiling_gets_the_time_it_needs(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_compiler_of(1200.0), coordinator).run(
+            "schedule", timeout_s=300
+        )
+
+        # Twenty whole minutes of pulses, plus one for upload and arming.
+        assert coordinator.timeout_sec == 1260
+
+    def test_the_allowance_survives_the_instrument_flooring_it_to_minutes(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_compiler_of(130.0), coordinator).run("schedule", timeout_s=60)
+
+        # Passing 130 as-is would floor to two minutes and stop 10s short of the
+        # schedule, which is the same failure with a subtler cause.
+        assert coordinator.timeout_sec // 60 * 60 >= 130
+
+    def test_a_short_schedule_never_lowers_the_ceiling(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        QuantifyBackend(_compiler_of(10.6), coordinator).run("schedule", timeout_s=300)
+
+        assert coordinator.timeout_sec == 300
+
+    def test_the_dag_judges_the_routine_by_what_the_backend_allowed(self):
+        """Otherwise the long wait happens and the data is discarded anyway."""
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        backend = QuantifyBackend(_compiler_of(1200.0), _RecordingCoordinator())
+        backend.run("schedule", timeout_s=300)
+
+        assert backend.last_allowance_s == 1260
+
+    def test_a_backend_that_cannot_measure_its_schedule_leaves_the_ceiling_alone(self):
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        coordinator = _RecordingCoordinator()
+        backend = QuantifyBackend(_passthrough_compiler(), coordinator)
+        backend.run("schedule", timeout_s=300)
+
+        assert coordinator.timeout_sec == 300
+        assert backend.last_allowance_s == 300

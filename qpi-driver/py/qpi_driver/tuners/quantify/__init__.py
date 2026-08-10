@@ -39,6 +39,10 @@ from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S
 
 log = logging.getLogger(__name__)
 
+#: Sequencer states a timeout report says nothing about. Neither is waiting on
+#: anything, and this chip has twelve modules of six sequencers to stay quiet about.
+_QUIET_STATES = frozenset({"IDLE", "STOPPED"})
+
 
 class QuantifyBackend(SchedulerBackend):
     """quantify-scheduler's operations, and its compile/prepare/retrieve cycle."""
@@ -88,14 +92,35 @@ class QuantifyBackend(SchedulerBackend):
         self, schedule: Any, timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
     ) -> xr.Dataset:
         compiled = self._compiler.compile(schedule)
-        # FIXME: Try to log the compiled schedule to see how wrong it could be
-        # log.info(compiled.to_json())
-        self._instrument_coordinator.prepare(compiled)
-        self._instrument_coordinator.start()
-        # Floored to whole minutes downstream with a minimum of one, so a ceiling
-        # that is not a multiple of 60 waits no longer than the multiple below it.
-        self._instrument_coordinator.wait_done(timeout_sec=int(timeout_s))
-        return self._instrument_coordinator.retrieve_acquisition()
+        expected_s = _expected_duration(compiled)
+        allowance_s = self.allow(timeout_s, expected_s)
+        _log_program(compiled, expected_s, allowance_s)
+        try:
+            self._instrument_coordinator.prepare(compiled)
+            self._instrument_coordinator.start()
+            # Floored to whole minutes downstream with a minimum of one, which is why
+            # `allow` rounds up to a whole minute before handing the number over.
+            self._instrument_coordinator.wait_done(timeout_sec=int(allowance_s))
+            return self._instrument_coordinator.retrieve_acquisition()
+        except TimeoutError as exc:
+            # qblox-instruments raises with a sequencer index and nothing else — not
+            # the module it is on, not the state it is stuck in, and not its flags.
+            raise TimeoutError(
+                f"{exc} {_sequencer_report(self._instrument_coordinator, compiled)}"
+            ) from exc
+        finally:
+            # `stop` is what clears `sync_en` on the modules this schedule did not
+            # use, and `prepare` only reaches the ones it did (quantify's own
+            # `disable_sync`: "Prevent hanging on next run if instrument is not
+            # used"). A module left in the cluster's sync network by an earlier
+            # routine never arrives at `wait_sync`, and every sequencer that does
+            # waits for it for as long as it is given — so skipping this on the way
+            # out of a failure turns one bad routine into every later one timing out,
+            # at any `routine_timeout_s`.
+            try:
+                self._instrument_coordinator.stop()
+            except Exception:  # noqa: BLE001 - must not mask the run's own error
+                log.exception("could not stop the instruments; the next node may hang")
 
 
 class QuantifyTuner(Tuner):
@@ -237,13 +262,8 @@ class QuantifyTuner(Tuner):
 
     def _cluster(self):
         """The Cluster behind the instrument coordinator, if there is one."""
-        for component in getattr(
-            self._instrument_coordinator, "components", lambda: []
-        )():
-            instrument = getattr(component, "instrument", None)
-            if type(instrument).__name__ == "Cluster":
-                return instrument
-        return None
+        clusters = _clusters(self._instrument_coordinator)
+        return clusters[0] if clusters else None
 
     def _release_bias(self) -> None:
         """Let go of the rack, if one was opened. Best-effort, like every step
@@ -285,3 +305,108 @@ class QuantifyTuner(Tuner):
                 shutdown()
             except Exception:  # noqa: BLE001 - shutdown is best-effort
                 log.debug("could not run %s", shutdown)
+
+
+def _expected_duration(compiled: Any) -> float | None:
+    """How long *compiled*'s pulses take, repetitions included.
+
+    ``None`` when the schedule will not say, which leaves the wait at the configured
+    ceiling rather than guessing at one.
+    """
+    try:
+        return float(compiled.get_schedule_duration())
+    except Exception:  # noqa: BLE001 - a schedule that will not measure itself
+        return None
+
+
+def _log_program(compiled: Any, expected_s: float | None, allowance_s: float) -> None:
+    """Announce how long *compiled* should take against what it is allowed, and at
+    debug what it plays.
+
+    The two numbers together tell the two meanings of a timeout apart: a schedule of
+    eleven seconds that does not finish in five minutes is stuck, and no ceiling will
+    help it.
+    """
+    log.info(
+        "%s: %s of pulses, %ds allowed",
+        getattr(compiled, "name", "schedule"),
+        f"{expected_s:.1f}s" if expected_s is not None else "an unknown duration",
+        int(allowance_s),
+    )
+    if not log.isEnabledFor(logging.DEBUG):
+        return
+    with suppress(Exception):
+        for instrument, program in compiled.compiled_instructions.items():
+            for module, options in program.items():
+                for name, settings in (options.get("sequencers") or {}).items():
+                    log.debug(
+                        "%s %s %s Q1ASM:\n%s",
+                        instrument,
+                        module,
+                        name,
+                        settings["sequence"]["program"],
+                    )
+
+
+def _sequencer_report(coordinator: Any, compiled: Any) -> str:
+    """Every sequencer worth naming once a wait has timed out, and why it is named.
+
+    Silent about the sequencers that are simply stopped: on this chip the report
+    would otherwise be twelve modules of six.
+    """
+    instructions = getattr(compiled, "compiled_instructions", None) or {}
+    notes: list[str] = []
+    for cluster in _clusters(coordinator):
+        in_program = set(instructions.get(cluster.name, {}))
+        for module in getattr(cluster, "modules", []):
+            try:
+                if not module.present():
+                    continue
+                sequencers = range(len(module.sequencers))
+            except Exception:  # noqa: BLE001 - a module that will not answer is news
+                notes.append(f"{module.name} could not be read")
+                continue
+            notes += [
+                note
+                for index in sequencers
+                if (note := _sequencer_note(module, index, module.name in in_program))
+            ]
+    return "; ".join(notes) if notes else "no sequencer had anything to report"
+
+
+def _sequencer_note(module: Any, index: int, is_in_program: bool) -> str | None:
+    """What sequencer *index* is doing, if it is something an operator needs to know."""
+    with suppress(Exception):
+        status = module.get_sequencer_status(index, timeout=0)
+        if module.sequencers[index].sync_en() and not is_in_program:
+            return (
+                f"{module.name} seq{index} is in the cluster's sync network but not "
+                "in this schedule, so it never reaches wait_sync and every sequencer "
+                "that does waits for it"
+            )
+        flags = [flag.name for flag in (*status.warn_flags, *status.err_flags)]
+        if status.state.name not in _QUIET_STATES or flags:
+            suffix = f" {flags}" if flags else ""
+            return f"{module.name} seq{index} {status.state.name}{suffix}"
+    return None
+
+
+def _clusters(coordinator: Any) -> list[Any]:
+    """The Cluster instruments behind *coordinator*.
+
+    ``components`` is a qcodes parameter holding component *names*, so each one has
+    to be looked up before its instrument can be reached — reading ``.instrument``
+    off the names themselves finds nothing, forever, in silence.
+    """
+    try:
+        names = list(coordinator.components())
+    except Exception:  # noqa: BLE001 - a coordinator that will not answer has none
+        return []
+
+    clusters = []
+    for name in names:
+        with suppress(Exception):
+            instrument = coordinator.get_component(name).instrument
+            if type(instrument).__name__ == "Cluster":
+                clusters.append(instrument)
+    return clusters

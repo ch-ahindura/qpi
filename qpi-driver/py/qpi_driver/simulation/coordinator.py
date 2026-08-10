@@ -380,6 +380,11 @@ class SimulatedCoordinator:
     def wait_done(self, timeout_sec: int = 10) -> None:
         """Nothing to wait for — the work happened in :meth:`start`."""
 
+    def stop(self) -> None:
+        """Nothing to stop. Present because every caller stops the coordinator after
+        a run, and a simulated one that cannot be stopped makes them special-case it.
+        """
+
     def retrieve_acquisition(self) -> xr.Dataset:
         return self._to_dataset(self._acquisitions)
 

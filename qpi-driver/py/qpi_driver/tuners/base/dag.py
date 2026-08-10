@@ -444,11 +444,12 @@ class CalibrationDAG:
                     timeout_s=config.routine_timeout_s,
                 )
                 elapsed = time.monotonic() - started
-                if elapsed > config.routine_timeout_s:
-                    raise RoutineError(
-                        f"exceeded routine_timeout_s ({config.routine_timeout_s}s) "
-                        f"after {elapsed:.1f}s"
-                    )
+                # The ceiling still bounds the whole loop rather than each acquisition
+                # in it, so a routine of many long schedules can exceed this. Raised by
+                # the last one's allowance, which is the most that is knowable here.
+                allowed = max(config.routine_timeout_s, backend.last_allowance_s)
+                if elapsed > allowed:
+                    raise _over_budget(elapsed, allowed, config.routine_timeout_s)
                 fit = params.pop("fit", None)
                 routine.apply(device, target, params)
                 report.add_routine(
@@ -469,11 +470,13 @@ class CalibrationDAG:
             # end one.
             dataset = backend.run(schedule, timeout_s=config.routine_timeout_s)
             elapsed = time.monotonic() - started
-            if elapsed > config.routine_timeout_s:
-                raise RoutineError(
-                    f"exceeded routine_timeout_s ({config.routine_timeout_s}s) "
-                    f"after {elapsed:.1f}s"
-                )
+            # Against what the backend was prepared to wait for, not against the
+            # configured ceiling: a schedule whose pulses outlast it raises its own
+            # allowance (see `SchedulerBackend.allow`), and judging the result by the
+            # ceiling instead would wait the longer time and then discard the data.
+            allowed = max(config.routine_timeout_s, backend.last_allowance_s)
+            if elapsed > allowed:
+                raise _over_budget(elapsed, allowed, config.routine_timeout_s)
 
             params = routine.analyse(dataset, target, device, routine_config)
             # Lifted out before `apply` and before the benchmark's `raw_data` is
@@ -500,6 +503,19 @@ class CalibrationDAG:
             log.exception("routine %s failed on %s", routine.name, target)
             report.errors.append(f"{routine.name}[{target}]: {exc}")
             return False
+
+
+def _over_budget(elapsed: float, allowed: float, configured: float) -> RoutineError:
+    """Both numbers: the one that was enforced, and the one an operator can change.
+
+    They differ when the schedule's own pulses raised the ceiling — see
+    `SchedulerBackend.allow` — and an error naming only the setting would then be
+    telling the operator to change a number that was not the limit.
+    """
+    return RoutineError(
+        f"exceeded the {allowed:.0f}s allowed after {elapsed:.1f}s "
+        f"(routine_timeout_s is {configured:.0f}s)"
+    )
 
 
 def utc_timestamp() -> str:

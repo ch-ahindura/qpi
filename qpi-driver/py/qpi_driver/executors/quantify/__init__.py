@@ -371,10 +371,22 @@ class QuantifyExecutor(Executor):
 
         compiled_sched = self._compiler.compile(schedule=schedule)
 
-        self._instrument_coordinator.prepare(compiled_sched)
-        self._instrument_coordinator.start()
-        self._instrument_coordinator.wait_done(timeout_sec=self._acquisition_timeout)
-        dataset = self._instrument_coordinator.retrieve_acquisition()
+        try:
+            self._instrument_coordinator.prepare(compiled_sched)
+            self._instrument_coordinator.start()
+            self._instrument_coordinator.wait_done(
+                timeout_sec=self._acquisition_timeout
+            )
+            dataset = self._instrument_coordinator.retrieve_acquisition()
+        finally:
+            # Clears `sync_en` on the modules this circuit did not use, which
+            # `prepare` never reaches. One left in the cluster's sync network never
+            # arrives at `wait_sync`, and the next circuit that touches fewer qubits
+            # waits on it until its own timeout — see the tuner's `run`.
+            try:
+                self._instrument_coordinator.stop()
+            except Exception:  # noqa: BLE001 - must not mask the job's own error
+                log.exception("could not stop the instruments; the next job may hang")
         dataset.attrs.update(
             {
                 "shots": shots,
