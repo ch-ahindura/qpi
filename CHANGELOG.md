@@ -28,6 +28,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   the cluster.
 - `qpi-driver/py`: `ramsey` rounds its delays to the 1 ns grid, as `ramsey_12` already
   did. Its default sweep steps 249.9 ns and the node never compiled.
+- `qpi-driver/py`: `flux_spectroscopy` and `cz_chevron` decline a chip whose flux
+  reaches the couplers rather than the qubits, instead of failing with
+  `KeyError: 'q0:fl was not found in the connectivity.'`. `cz_chevron` was missing the
+  architecture test both its parametric counterparts already make.
 
 ### Changed
 

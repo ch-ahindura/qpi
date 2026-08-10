@@ -183,6 +183,28 @@ def spectroscopy_amplitude_path(element: Any, transition: str = "01") -> str | N
     return f"spec.{name}" if hasattr(element.spec, name) else None
 
 
+def has_flux_port(device: Any, name: str) -> bool:
+    """Whether the wiring routes a flux line to *name* — a qubit or an edge.
+
+    The question a chip's architecture answers. On flux-tunable *qubits* every qubit
+    has a ``q<n>:fl`` and a CZ is a baseband pulse pushing one onto the crossing; on a
+    flux-tunable *coupler* the flux goes to the coupler instead, the qubits have no
+    line of their own, and the CZ is a microwave tone on ``q<n>_q<m>:fl``.
+
+    A routine that plays flux on a port the connectivity does not carry fails deep in
+    the compiler with ``KeyError: 'q0:fl was not found in the connectivity.'``, naming
+    neither the routine nor the reason. Asked here it is not a failure at all — the
+    routine describes the other kind of chip, and declines.
+
+    True when the wiring cannot be read, so an unrecognised config leaves a routine
+    running and failing as it did rather than being silently skipped.
+    """
+    try:
+        return f"{name}:fl" in device.hardware_config().connectivity.graph
+    except Exception:  # noqa: BLE001 - unreadable wiring is not a declined routine
+        return True
+
+
 def construction_args(component: Any) -> list[str]:
     """The positional arguments *component*'s class is rebuilt from.
 

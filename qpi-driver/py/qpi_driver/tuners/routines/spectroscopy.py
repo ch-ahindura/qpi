@@ -12,6 +12,7 @@ import xarray as xr
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import (
+    has_flux_port,
     read_path,
     spectroscopy_amplitude_path,
     write_path,
@@ -813,11 +814,21 @@ class F12Spectroscopy(CalibrationRoutine):
 
 
 class FluxSpectroscopy(CalibrationRoutine):
-    """Map coupler frequency against flux bias — the input to a CZ."""
+    """Map a qubit's frequency against its own flux bias — the input to a DC-flux CZ."""
 
     name = "flux_spectroscopy"
     depends_on = ("qubit_spectroscopy",)
     updates = ()
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to a qubit the wiring carries a flux line to.
+
+        This sweeps *this qubit's* flux and watches its own frequency move, which a
+        chip whose flux reaches only the couplers cannot do — and has no need to,
+        since its CZ is found in frequency by `cz_spectroscopy` rather than in
+        amplitude by `cz_chevron`, the node this one feeds.
+        """
+        return has_flux_port(device, target)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

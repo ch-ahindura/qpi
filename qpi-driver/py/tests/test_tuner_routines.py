@@ -403,6 +403,74 @@ def test_the_two_qubit_routines_write_parameters_the_edge_actually_has(tuner_nam
     assert read_path(edge, f"cz.{child_name}") == pytest.approx(-34.0)
 
 
+@pytest.fixture
+def wired_device():
+    """The fixture chip as a real device, with its wiring attached.
+
+    Its own rather than the module-scoped tuner's, for the reason the neighbours
+    below give: an earlier test in this file calls `Instrument.close_all()`, and
+    `has_flux_port` reads the connectivity back off the device.
+    """
+    if not IS_QUANTIFY_INSTALLED:
+        pytest.skip("quantify-scheduler is not installed")
+    from qpi_driver.compat.quantify import Instrument
+    from qpi_driver.executors.quantify.config import (
+        load_quantify_hardware_config,
+        load_quantum_device,
+    )
+
+    Instrument.close_all()
+    device = load_quantum_device(name="wired", config=FIXTURES / "quantify.device.yml")
+    device.hardware_config(
+        load_quantify_hardware_config(FIXTURES / "quantify.hardware.json")
+    )
+    return device
+
+
+class TestTheFluxRoutinesFollowTheWiring:
+    """Which routines apply is a property of where the flux line goes.
+
+    The fixture carries both architectures on one chip: ``q0``/``q1`` have their own
+    ``:fl`` and join through the DC-flux ``q0_q1``, while ``q2`` has none and joins
+    ``q1`` through the parametric coupler ``q1_q2``. A routine that plays flux on a
+    port the connectivity does not carry fails deep in the compiler with a `KeyError`
+    naming neither the routine nor the reason, so it has to be asked beforehand.
+    """
+
+    def test_a_qubit_flux_line_is_seen_and_a_missing_one_is_not(self, wired_device):
+        from qpi_driver.tuners.base.device import has_flux_port
+
+        assert has_flux_port(wired_device, "q0")
+        assert not has_flux_port(wired_device, "q2")
+        assert has_flux_port(wired_device, "q1_q2")
+
+    def test_flux_spectroscopy_declines_a_qubit_with_no_flux_line(self, wired_device):
+        assert routine("flux_spectroscopy").applies_to(wired_device, "q0")
+        assert not routine("flux_spectroscopy").applies_to(wired_device, "q2")
+
+    def test_cz_chevron_declines_a_parametric_edge(self, wired_device):
+        """Its counterpart there is `cz_parametrization`, which sweeps frequency."""
+        assert routine("cz_chevron").applies_to(wired_device, "q0_q1")
+        assert not routine("cz_chevron").applies_to(wired_device, "q1_q2")
+
+    def test_the_two_cz_calibrations_never_both_apply(self, wired_device):
+        """One edge, one gate: whichever of the pair describes it, not both."""
+        for edge in ("q0_q1", "q1_q2"):
+            chevron = routine("cz_chevron").applies_to(wired_device, edge)
+            parametric = routine("cz_parametrization").applies_to(wired_device, edge)
+            assert chevron != parametric, edge
+
+    def test_conditional_phase_still_applies_where_cz_chevron_declines(
+        self, wired_device
+    ):
+        """It depends on `cz_chevron`, and `depends_on` only orders the walk.
+
+        A parametric chip calibrates its CZ through `cz_parametrization` instead, and
+        the phase correction is measured the same way either way.
+        """
+        assert routine("conditional_phase").applies_to(wired_device, "q1_q2")
+
+
 @pytest.mark.parametrize("tuner_name", ["quantify", "qblox"])
 def test_spectroscopy_still_applies_to_an_element_with_no_spec_submodule(tuner_name):
     """`spec.amplitude` is opt-in, so a plain transmon must still calibrate.

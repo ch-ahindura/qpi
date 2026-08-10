@@ -12,6 +12,7 @@ import xarray as xr
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
 from qpi_driver.tuners.base.device import (
+    has_flux_port,
     phase_correction_names,
     read_path,
     write_path,
@@ -480,6 +481,20 @@ class CZChevron(CalibrationRoutine):
     depends_on = ("rb", "flux_spectroscopy")
     targets = "edges"
     updates = ("cz.square_amp", "cz.square_duration")
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only to an edge whose CZ *is* a flux pulse — the inverse of the test
+        `cz_spectroscopy` and `cz_parametrization` make, and it was missing.
+
+        This pushes the control qubit onto the crossing with a baseband pulse on that
+        qubit's own ``q<n>:fl``. A flux-tunable coupler has no such line — the flux
+        reaches the coupler instead — so on that chip the sweep cannot be built at
+        all, and `cz_parametrization` is the counterpart that calibrates its gate.
+        """
+        control, _child = qubits_of(target)
+        return parametric_edge(device, target) is None and has_flux_port(
+            device, control
+        )
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
