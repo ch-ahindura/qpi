@@ -33,6 +33,7 @@ quantify.config.yml
 quantify.device.yml
 quantify.config.yaml
 quantify.device.yaml
+calibration.yml
 !**/fixtures/**.json
 !**/fixtures/**.yaml
 !**/fixtures/**.yml

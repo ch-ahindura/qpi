@@ -9,6 +9,23 @@ from .core import FitError, align, fit_summary, require_in_range, require_positi
 
 log = logging.getLogger(__name__)
 
+#: How much deeper an RB decay must be than the scatter it was fitted through before
+#: its fidelity is worth reporting.
+#:
+#: Only ``r`` is bounded by the fit — see :func:`fit_rb_decay` — so on data with no
+#: decay in it the least-squares solution is free to run away, and it does. Three
+#: consecutive runs of a chip whose readout sat off resonance gave ratios of 0.8, 2.5
+#: and 2.4, and reported 0.99999, 0.941 and 0.586 with identical confidence: the first
+#: reached ``A = 629`` against a signal spanning one, which is an exponential
+#: degenerated into a straight line, with ``r`` no longer the depolarising parameter
+#: the fidelity formula assumes.
+#:
+#: Three rather than something larger because it has to admit a decay that has not
+#: reached its asymptote, which is the case `fit_rb_decay`'s own docstring exists to
+#: protect. A real measurement clears it by an order of magnitude: the simulated chip
+#: at sixty circuits a depth sits near 25, and 0.2% noise near 130.
+MIN_DECAY_TO_SCATTER = 3.0
+
 
 def exponential_decay(
     t: np.ndarray | float, amplitude: float, tau: float, offset: float
@@ -119,6 +136,23 @@ def fit_rb_decay(
     decay = float(popt[1])
     if not 0.0 < decay <= 1.0:
         raise FitError(f"RB decay parameter {decay:.6g} is outside (0, 1]")
+
+    # The decay has to be deeper than the scatter it was drawn through, or the
+    # fidelity is a number read off the noise. Compared as a span rather than by the
+    # sign of the amplitude: the `rb` routine rescales its acquisition to [0, 1]
+    # without orienting it, so a chip whose readout brightens with excitation returns
+    # a rising survival, and that is a readout convention rather than a bad fit.
+    curve = rb_model(x, *popt)
+    span = float(np.max(curve) - np.min(curve))
+    scatter = float(np.sqrt(np.mean((y - curve) ** 2)))
+    if scatter > 0.0 and span < MIN_DECAY_TO_SCATTER * scatter:
+        raise FitError(
+            f"the fitted RB decay spans {span:.4g} against a residual scatter of "
+            f"{scatter:.4g} — {span / scatter:.1f}x, below the {MIN_DECAY_TO_SCATTER:.0f}x "
+            f"a resolved decay clears — so there is no decay here to take a fidelity "
+            f"from. Average more circuits per depth, or extend the depths until it is "
+            f"visible above the noise"
+        )
 
     dimension = 2**n_qubits
     error_per_gate = (1.0 - decay) * (dimension - 1) / dimension

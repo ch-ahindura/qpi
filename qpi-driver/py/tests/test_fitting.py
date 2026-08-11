@@ -203,6 +203,42 @@ class TestExponentialFits:
         with pytest.raises(FitError):
             fit_rb_decay(depths, np.array([np.nan, np.nan, np.nan, np.nan]))
 
+    #: Survival, as the `rb` routine hands it over — averaged per depth and rescaled to
+    #: [0, 1] — from three consecutive runs of a chip whose readout sat a megahertz off
+    #: its resonator. Non-monotonic noise, every one of them, and the fit reported
+    #: 0.99999, 0.941 and 0.586 with the same confidence it reports a real decay.
+    NOISE_FROM_A_DEAD_READOUT = (
+        (0.9999970, [0.0, 1.0, 0.5416, 0.6842, 0.7982, 0.4872, 0.3045]),
+        (0.9410470, [0.0, 0.5284, 0.0078, 0.3377, 0.8942, 1.0, 0.4301]),
+        (0.5858176, [0.0, 0.5013, 0.8732, 0.2509, 1.0, 0.2796, 0.7702]),
+    )
+
+    @pytest.mark.parametrize("reported,survival", NOISE_FROM_A_DEAD_READOUT)
+    def test_rb_refuses_a_decay_it_cannot_see_above_the_noise(self, reported, survival):
+        """A confident number from noise is the one answer worse than no answer.
+
+        These went unremarked through five calibration runs and into the drift check,
+        which compares them against a threshold. `reported` is what each one used to
+        return, and is here to say what the guard is worth rather than to be asserted.
+        """
+        depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
+        with pytest.raises(FitError, match="no decay here"):
+            fit_rb_decay(depths, np.asarray(survival))
+
+    def test_rb_still_accepts_a_decay_that_has_not_reached_its_asymptote(self):
+        """The case the guard must not catch — see the rescaled-signal test above.
+
+        A chip good enough that depth 64 has used only six percent of its decay is the
+        chip most worth benchmarking, and its span-to-scatter is large precisely
+        because the decay is clean rather than because it is deep.
+        """
+        depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
+        survival = 0.5 * 0.999**depths + 0.5
+        rescaled = (survival - survival.min()) / (survival.max() - survival.min())
+
+        fitted = fit_rb_decay(depths, rescaled + _noise(len(depths), 0.01))
+        assert fitted["fidelity"] == pytest.approx(1.0 - (1.0 - 0.999) / 2, abs=0.002)
+
 
 def _power_sweep(
     frequencies: np.ndarray, centre: float, widths_and_depths: list[tuple[float, float]]
