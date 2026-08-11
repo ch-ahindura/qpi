@@ -22,6 +22,7 @@ from qpi_driver.tuners.base.routines import (
     CheckOutcome,
     RoutineError,
     grid_duration,
+    require_resolved_line,
     linear_setpoints,
     setpoints_of,
 )
@@ -37,20 +38,6 @@ from qpi_driver.tuners.fitting import (
 #: Full scale. The elements validate the same bound on `spec.amplitude`; past it a
 #: waveform clips and the schedule will not compile.
 MAX_SPECTROSCOPY_AMPLITUDE = 1.0
-
-#: How far a fitted line must stand above the residual scatter before its centre
-#: counts as a frequency — see `_require_resolved_line`.
-#:
-#: Three above the noise, from the spread of what has actually been measured. The
-#: simulated chip returns 127 and lands within 2.5 kHz of the true f01. On hardware the
-#: one `qubit_spectroscopy` whose answer reproduced across runs came back at 3.55; the
-#: two that did not came back at 1.56, taken through a starved readout, and 1.32,
-#: which was 5 MHz out and overwrote f01 with it.
-#:
-#: The asymmetry is what sets it rather than the gap: a refused fit leaves the last
-#: good frequency in place and says why, while an accepted one overwrites it and
-#: breaks every node downstream.
-MIN_LINE_SNR = 3.0
 
 
 def _frequency_sweep(
@@ -71,53 +58,6 @@ def _frequency_sweep(
     span = float(config.get("span", default_span))
     points = int(config.get("points", 51))
     return linear_setpoints(centre - span / 2, centre + span / 2, points)
-
-
-def _require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> None:
-    """Refuse a line the sweep could not have seen, or that is not above the noise.
-
-    Two ways a Lorentzian fit reports a confident centre for a line that was never
-    measured, and the centre is written straight to the device as f01 or the readout
-    frequency, so both have to be refused rather than reported.
-
-    **Too narrow for the sweep.** A line narrower than the spacing between setpoints
-    did not appear in the data; whatever the fit converged on came from noise between
-    the points. Seen in practice: narrowing the line to 63 kHz while the sweep still
-    stepped 5 MHz made the routine report a frequency 377 MHz from the qubit, with a
-    tidy fit and no complaint.
-
-    **Too shallow to believe.** The opposite shape, and the one the width test cannot
-    catch: a *broad* fit through flat data. Measured on a chip whose readout had gone
-    off resonance, `qubit_spectroscopy` returned a 1.53 MHz line at snr 1.32 — cleared
-    the width test by a factor of eleven — 5 MHz from the two runs either side of it,
-    from data flat to 0.7%. It wrote that to f01, which put `ramsey_12`'s detuning
-    1.5 MHz out and cost the run.
-
-    Raises:
-        RoutineError: naming the number that failed and what to change, since a
-            too-narrow line wants a finer sweep and a too-shallow one wants more
-            shots or a drive amplitude that shows the transition.
-    """
-    snr = float(fitted.get("snr", float("inf")))
-    if snr < MIN_LINE_SNR:
-        raise RoutineError(
-            f"the fitted line stands only {snr:.2f}x above the residual scatter, "
-            f"below the {MIN_LINE_SNR:g}x a measured line clears, so its centre is "
-            "not a frequency — average more shots, or drive at an amplitude where "
-            "the transition actually appears"
-        )
-
-    if len(frequencies) < 2:
-        return
-    step = abs(frequencies[1] - frequencies[0])
-    linewidth = float(fitted["linewidth"])
-    if linewidth < step:
-        raise RoutineError(
-            f"fitted linewidth {linewidth:.4g} Hz is narrower than the "
-            f"{step:.4g} Hz spacing of the sweep, so the line was never "
-            "measured — the fit is of the noise between setpoints. Scan the "
-            "same span with more points, or narrow the span."
-        )
 
 
 def _current_clock(device: Any, target: str, clock: str) -> float:
@@ -311,7 +251,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         # It had no guard: a 72% dip confined to one 400 kHz bin was fitted as a
         # 2379 Hz linewidth at Q = 2.9 million, and the centre it wrote was 47 kHz
         # off the deepest sample it had actually measured.
-        _require_resolved_line(fitted, self._frequencies)
+        require_resolved_line(fitted, self._frequencies)
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -625,16 +565,27 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        require_resolved_line(fitted, self._frequencies)
         excited = fitted["readout_frequency"]
         ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
         return {
             "readout_frequency_excited": excited,
+            # What the shift was measured against, reported because it is not measured
+            # here: it is whatever the device currently holds, which `resonator_spectroscopy`
+            # writes and anything pinning the config can override. Differencing against a
+            # stale value reports a dispersive shift that is really the distance to the
+            # stale value — seen at 186 kHz on a chip whose true shift was under 1 kHz.
+            "readout_frequency_ground": ground,
             # Half the gap, signed: chi is negative for a transmon below its
             # resonator. The sign is worth keeping — it says which side of the bare
             # resonance the dressed one sits, which is how a mis-assigned resonator
             # shows up.
             "dispersive_shift": 0.5 * (excited - ground),
             "linewidth": fitted["linewidth"],
+            # The spectrum itself, so the shift can be read off two overlaid curves
+            # rather than inferred from two fitted centres. When chi is a fraction of a
+            # linewidth the centres are the least reliable way to see it.
+            "fit": fitted["fit"],
         }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -741,7 +692,7 @@ class QubitSpectroscopy(CalibrationRoutine):
             )
         rows = signal[:expected].reshape(len(self._amplitudes), columns)
         fitted = fit_spectroscopy_power(self._amplitudes, self._frequencies, rows)
-        _require_resolved_line(fitted, self._frequencies)
+        require_resolved_line(fitted, self._frequencies)
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -834,7 +785,7 @@ class F12Spectroscopy(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
-        _require_resolved_line(fitted, self._frequencies)
+        require_resolved_line(fitted, self._frequencies)
         return {
             "clock_freq_12": fitted["clock_freq_01"],
             "linewidth": fitted["linewidth"],

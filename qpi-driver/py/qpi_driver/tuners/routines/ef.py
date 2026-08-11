@@ -28,6 +28,7 @@ from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
     grid_duration,
+    require_resolved_line,
     linear_setpoints,
     setpoints_of,
 )
@@ -433,15 +434,19 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        require_resolved_line(fitted, self._frequencies)
         second = fitted["readout_frequency"]
         ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
         return {
             "readout_frequency_second_excited": second,
+            # See `resonator_spectroscopy_excited`: the reference is not measured here.
+            "readout_frequency_ground": ground,
             # Quarter of the gap, because |0> sits at +chi and |2> at -3chi: four
             # dispersive shifts apart. Equal to the shift the excited-state sweep
             # reports if the ladder is linear, and that equality is the measurement.
             "dispersive_shift": 0.25 * (second - ground),
             "linewidth": fitted["linewidth"],
+            "fit": fitted["fit"],
         }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

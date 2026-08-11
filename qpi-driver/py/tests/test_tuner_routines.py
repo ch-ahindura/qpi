@@ -526,31 +526,31 @@ class TestALineHasToBeAboveTheNoise:
 
     @pytest.mark.parametrize("snr,accepted", MEASURED_SNR)
     def test_it_accepts_only_the_fit_that_reproduced(self, snr, accepted):
-        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+        from qpi_driver.tuners.base.routines import require_resolved_line
 
         # 200 kHz line on a 133 kHz grid: wide enough that only the snr decides.
         fitted = {"linewidth": 200e3, "snr": snr}
         frequencies = [4.7e9 + 133e3 * i for i in range(3)]
         if accepted:
-            _require_resolved_line(fitted, frequencies)  # noqa: B018 - no raise is it
+            require_resolved_line(fitted, frequencies)  # noqa: B018 - no raise is it
         else:
             with pytest.raises(RoutineError, match="above the residual scatter"):
-                _require_resolved_line(fitted, frequencies)
+                require_resolved_line(fitted, frequencies)
 
     def test_a_line_narrower_than_the_sweep_is_still_refused(self):
         """The original check, and the opposite shape: sharp fit, coarse sweep."""
-        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+        from qpi_driver.tuners.base.routines import require_resolved_line
 
         with pytest.raises(RoutineError, match="narrower than"):
-            _require_resolved_line(
+            require_resolved_line(
                 {"linewidth": 2379.0, "snr": 50.0},
                 [6.827e9 + 400e3 * i for i in range(3)],
             )
 
     def test_a_fit_that_reports_no_snr_is_judged_on_width_alone(self):
         """Every fit forwards it now, but the guard must not start refusing on absence."""
-        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+        from qpi_driver.tuners.base.routines import require_resolved_line
 
-        _require_resolved_line(  # noqa: B018 - no raise is the assertion
+        require_resolved_line(  # noqa: B018 - no raise is the assertion
             {"linewidth": 200e3}, [4.7e9 + 133e3 * i for i in range(3)]
         )

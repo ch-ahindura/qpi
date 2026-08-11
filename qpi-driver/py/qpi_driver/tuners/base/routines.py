@@ -250,3 +250,65 @@ def grid_duration(seconds: float) -> float:
     sample. Both are correct measurements and neither is a playable time.
     """
     return round(float(seconds) / GRID_NS) * GRID_NS
+
+
+#: How far a fitted line must stand above the residual scatter before its centre
+#: counts as a frequency — see `require_resolved_line`.
+#:
+#: Three above the noise, from the spread of what has actually been measured. The
+#: simulated chip returns 127 and lands within 2.5 kHz of the true f01. On hardware the
+#: one `qubit_spectroscopy` whose answer reproduced across runs came back at 3.55; the
+#: two that did not came back at 1.56, taken through a starved readout, and 1.32,
+#: which was 5 MHz out and overwrote f01 with it.
+#:
+#: The asymmetry is what sets it rather than the gap: a refused fit leaves the last
+#: good frequency in place and says why, while an accepted one overwrites it and
+#: breaks every node downstream.
+MIN_LINE_SNR = 3.0
+
+
+def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> None:
+    """Refuse a line the sweep could not have seen, or that is not above the noise.
+
+    Two ways a Lorentzian fit reports a confident centre for a line that was never
+    measured, and the centre is written straight to the device as f01 or the readout
+    frequency, so both have to be refused rather than reported.
+
+    **Too narrow for the sweep.** A line narrower than the spacing between setpoints
+    did not appear in the data; whatever the fit converged on came from noise between
+    the points. Seen in practice: narrowing the line to 63 kHz while the sweep still
+    stepped 5 MHz made the routine report a frequency 377 MHz from the qubit, with a
+    tidy fit and no complaint.
+
+    **Too shallow to believe.** The opposite shape, and the one the width test cannot
+    catch: a *broad* fit through flat data. Measured on a chip whose readout had gone
+    off resonance, `qubit_spectroscopy` returned a 1.53 MHz line at snr 1.32 — cleared
+    the width test by a factor of eleven — 5 MHz from the two runs either side of it,
+    from data flat to 0.7%. It wrote that to f01, which put `ramsey_12`'s detuning
+    1.5 MHz out and cost the run.
+
+    Raises:
+        RoutineError: naming the number that failed and what to change, since a
+            too-narrow line wants a finer sweep and a too-shallow one wants more
+            shots or a drive amplitude that shows the transition.
+    """
+    snr = float(fitted.get("snr", float("inf")))
+    if snr < MIN_LINE_SNR:
+        raise RoutineError(
+            f"the fitted line stands only {snr:.2f}x above the residual scatter, "
+            f"below the {MIN_LINE_SNR:g}x a measured line clears, so its centre is "
+            "not a frequency — average more shots, or drive at an amplitude where "
+            "the transition actually appears"
+        )
+
+    if len(frequencies) < 2:
+        return
+    step = abs(frequencies[1] - frequencies[0])
+    linewidth = float(fitted["linewidth"])
+    if linewidth < step:
+        raise RoutineError(
+            f"fitted linewidth {linewidth:.4g} Hz is narrower than the "
+            f"{step:.4g} Hz spacing of the sweep, so the line was never "
+            "measured — the fit is of the noise between setpoints. Scan the "
+            "same span with more points, or narrow the span."
+        )

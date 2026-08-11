@@ -31,6 +31,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: the spectroscopy roots refuse a line no more than 3x above the
   residual scatter, and `resonator_spectroscopy` is guarded at all. A 1.53 MHz fit at
   snr 1.32 wrote an f01 5 MHz out, which put `ramsey_12` 1.5 MHz off and cost the run.
+- `qpi-driver/py`: the two excited-state resonator sweeps are guarded too, and report
+  the ground frequency they differenced against plus their own spectrum. A stale
+  reference had them reporting a 186 kHz dispersive shift on a chip whose real shift
+  was under 1 kHz.
 - `qpi-driver/py`: `rb` and `interleaved_rb` refuse a decay no deeper than the scatter
   it was fitted through. Three consecutive runs reported 0.99999, 0.941 and 0.586 from
   non-monotonic noise, and the drift check compared them against a threshold.
