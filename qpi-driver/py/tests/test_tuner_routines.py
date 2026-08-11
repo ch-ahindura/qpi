@@ -16,6 +16,7 @@ import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
+from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -506,3 +507,50 @@ def test_spectroscopy_still_applies_to_an_element_with_no_spec_submodule(tuner_n
         _OneElement(), "q0", {"clock_freq_01": 5.01e9, "drive_amplitude": 0.02}
     )
     assert read_path(plain, "clock_freqs.f01") == pytest.approx(5.01e9)
+
+
+class TestALineHasToBeAboveTheNoise:
+    """`_require_resolved_line` judges the fit, not only the sweep that produced it.
+
+    Both spectroscopy roots write a frequency straight to the device — f01, and the
+    readout frequency every other node then reads at — so a Lorentzian centre drawn
+    through noise does not merely produce a bad report, it overwrites the last good
+    value and breaks the nodes after it. Twice on hardware, costing a run each time.
+    """
+
+    #: What the chip actually returned. The first reproduced across runs; the second was
+    #: taken through a starved readout; the third was 5 MHz from both of its neighbours,
+    #: from data flat to 0.7%, and overwrote f01 with it — which put `ramsey_12`'s
+    #: detuning 1.5 MHz out. The simulated chip, for scale, returns 127.
+    MEASURED_SNR = ((3.55, True), (1.56, False), (1.32, False))
+
+    @pytest.mark.parametrize("snr,accepted", MEASURED_SNR)
+    def test_it_accepts_only_the_fit_that_reproduced(self, snr, accepted):
+        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+
+        # 200 kHz line on a 133 kHz grid: wide enough that only the snr decides.
+        fitted = {"linewidth": 200e3, "snr": snr}
+        frequencies = [4.7e9 + 133e3 * i for i in range(3)]
+        if accepted:
+            _require_resolved_line(fitted, frequencies)  # noqa: B018 - no raise is it
+        else:
+            with pytest.raises(RoutineError, match="above the residual scatter"):
+                _require_resolved_line(fitted, frequencies)
+
+    def test_a_line_narrower_than_the_sweep_is_still_refused(self):
+        """The original check, and the opposite shape: sharp fit, coarse sweep."""
+        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+
+        with pytest.raises(RoutineError, match="narrower than"):
+            _require_resolved_line(
+                {"linewidth": 2379.0, "snr": 50.0},
+                [6.827e9 + 400e3 * i for i in range(3)],
+            )
+
+    def test_a_fit_that_reports_no_snr_is_judged_on_width_alone(self):
+        """Every fit forwards it now, but the guard must not start refusing on absence."""
+        from qpi_driver.tuners.routines.spectroscopy import _require_resolved_line
+
+        _require_resolved_line(  # noqa: B018 - no raise is the assertion
+            {"linewidth": 200e3}, [4.7e9 + 133e3 * i for i in range(3)]
+        )

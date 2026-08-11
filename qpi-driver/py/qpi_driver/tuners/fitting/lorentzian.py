@@ -91,12 +91,17 @@ def _fit_lorentzian(
 def fit_resonator_spectroscopy(
     frequencies: np.ndarray, signal: np.ndarray
 ) -> dict[str, float]:
-    """Fit a resonator scan. Returns ``{'readout_frequency', 'linewidth', ...}``."""
+    """Fit a resonator scan. Returns ``{'readout_frequency', 'linewidth', 'snr', ...}``."""
     fitted = _fit_lorentzian(frequencies, signal, what="resonator spectroscopy")
     return {
         "readout_frequency": fitted["frequency"],
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
+        # Forwarded because a caller cannot judge the fit without it — see
+        # `_require_resolved_line`. `fit_spectroscopy_power` has always chosen between
+        # drive powers on it; a single-row fit needs it to say whether there is a line
+        # at all, as opposed to a Lorentzian drawn through noise.
+        "snr": fitted["snr"],
         "fit": fitted["fit"],
     }
 
@@ -104,12 +109,13 @@ def fit_resonator_spectroscopy(
 def fit_qubit_spectroscopy(
     frequencies: np.ndarray, signal: np.ndarray
 ) -> dict[str, float]:
-    """Fit a two-tone scan. Returns ``{'clock_freq_01', 'linewidth', ...}``."""
+    """Fit a two-tone scan. Returns ``{'clock_freq_01', 'linewidth', 'snr', ...}``."""
     fitted = _fit_lorentzian(frequencies, signal, what="qubit spectroscopy")
     return {
         "clock_freq_01": fitted["frequency"],
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
+        "snr": fitted["snr"],
         "fit": fitted["fit"],
     }
 

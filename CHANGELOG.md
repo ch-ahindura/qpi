@@ -28,6 +28,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   the cluster.
 - `qpi-driver/py`: `ramsey` rounds its delays to the 1 ns grid, as `ramsey_12` already
   did. Its default sweep steps 249.9 ns and the node never compiled.
+- `qpi-driver/py`: the spectroscopy roots refuse a line no more than 3x above the
+  residual scatter, and `resonator_spectroscopy` is guarded at all. A 1.53 MHz fit at
+  snr 1.32 wrote an f01 5 MHz out, which put `ramsey_12` 1.5 MHz off and cost the run.
 - `qpi-driver/py`: `rb` and `interleaved_rb` refuse a decay no deeper than the scatter
   it was fitted through. Three consecutive runs reported 0.99999, 0.941 and 0.586 from
   non-monotonic noise, and the drift check compared them against a threshold.
