@@ -35,6 +35,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   the ground frequency they differenced against plus their own spectrum. A stale
   reference had them reporting a 186 kHz dispersive shift on a chip whose real shift
   was under 1 kHz.
+- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_12` refuse a demodulated sweep
+  far past the bound their own model sets, rather than writing the `amp180` it implies.
+  A readout that was not resolving the qubit gave a sweep reaching 144 where one is the
+  maximum, and the slope through it set the amplitude every X pulse used.
 - `qpi-driver/py`: `rb` and `interleaved_rb` refuse a decay no deeper than the scatter
   it was fitted through. Three consecutive runs reported 0.99999, 0.941 and 0.586 from
   non-monotonic noise, and the drift check compared them against a threshold.

@@ -676,3 +676,44 @@ class TestTheFitSummary:
         depths = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0])
         survival = 0.9 * np.power(0.99, depths) + 0.05
         assert fit_rb_decay(depths, survival)["fit"]["x_scale"] == "log"
+
+
+class TestFineAmplitudeNeedsRealContrast:
+    """`amp180` is the amplitude every X pulse uses, so this fit must not guess it.
+
+    The demodulated sweep is ``sin(n*delta)`` — bounded at one. It is reached by
+    dividing by the measured |0>-|1> contrast, so when the readout is not resolving the
+    qubit the divisor collapses, the quotient explodes, and the slope through it is
+    fitted from noise. Twice on hardware, the second time writing an `amp180` that
+    broke every node after it.
+    """
+
+    #: Peak |demodulated| from the two hardware runs, and from the simulated chip for
+    #: scale. The sim spans 0.108 to 0.659 across the loop suite.
+    def _sweep(self, reach):
+        counts = np.arange(1, 26, dtype=float)
+        rng = np.random.default_rng(4)
+        return counts, reach * rng.uniform(-1.0, 1.0, counts.size)
+
+    @pytest.mark.parametrize("reach", [8.9, 144.3])
+    def test_it_refuses_a_sweep_past_its_own_bound(self, reach):
+        counts, demodulated = self._sweep(reach)
+        # Reconstruct what the routine hands over: signal = centre + demodulated*(c/2)*(-1)^n
+        contrast, centre = 2.0, 0.5
+        signal = centre + demodulated * (contrast / 2) * np.power(-1.0, counts)
+        with pytest.raises(FitError, match="not resolving the qubit"):
+            fit_fine_amplitude(
+                counts, signal, 0.03, centre - contrast / 2, centre + contrast / 2
+            )
+
+    def test_it_accepts_the_range_the_simulated_chip_reaches(self):
+        """0.66 is the worst the sim shows, and a refinement's slope is small by design."""
+        counts = np.arange(1, 26, dtype=float)
+        delta = 0.02
+        demodulated = np.sin(counts * delta)
+        contrast, centre = 2.0, 0.5
+        signal = centre + demodulated * (contrast / 2) * np.power(-1.0, counts)
+        fitted = fit_fine_amplitude(
+            counts, signal, 0.03, centre - contrast / 2, centre + contrast / 2
+        )
+        assert fitted["error_per_pulse"] == pytest.approx(delta, rel=0.1)

@@ -163,6 +163,14 @@ def fit_drag(betas: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     }
 
 
+#: How far past its own bound the demodulated fine-amplitude sweep may reach before
+#: the contrast it was normalised by counts as no contrast at all — see
+#: :func:`fit_fine_amplitude`. Three, against a model bound of one: the simulated chip
+#: reaches 0.66 at worst, and the two hardware runs that wrote a wrong amp180 reached
+#: 8.9 and 144.3.
+MAX_DEMODULATED = 3.0
+
+
 def fit_fine_amplitude(
     repetitions: np.ndarray,
     signal: np.ndarray,
@@ -208,6 +216,22 @@ def fit_fine_amplitude(
         )
     centre = (float(excited) + float(ground)) / 2
     demodulated = ((y - centre) / (contrast / 2)) * np.power(-1.0, counts)
+
+    # `demodulated` is sin(n*delta), so the model bounds it at one. Far outside that
+    # and the contrast it was divided by was not the |0>-|1> contrast: the two
+    # reference points came back nearly equal, the quotient blows up, and the slope
+    # through it is fitted from noise — then written to `amp180`, the amplitude every
+    # X pulse afterwards uses. The simulated chip stays under 0.66; a chip whose
+    # readout had gone off resonance returned 8.9, and 144.3 on the run that wrote a
+    # wrong amp180 and broke everything downstream of it.
+    reach = float(np.max(np.abs(demodulated)))
+    if reach > MAX_DEMODULATED:
+        raise FitError(
+            f"the demodulated sweep reaches {reach:.3g}, past the {MAX_DEMODULATED:g} a "
+            f"signal bounded at one can plausibly show — the |0>-|1> contrast it was "
+            f"normalised by ({contrast:.4g}) is not resolving the qubit, so the slope "
+            f"is noise and the amplitude it implies is not a calibration"
+        )
 
     # Slope through the origin: the offset is fixed by the model, so fitting one
     # would let a baseline shift masquerade as a rotation error.
