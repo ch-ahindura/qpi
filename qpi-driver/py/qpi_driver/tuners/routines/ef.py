@@ -24,6 +24,7 @@ import xarray as xr
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import read_path, write_path
+from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
@@ -164,8 +165,21 @@ class Rabi12(CalibrationRoutine):
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         element = device.get_element(target)
+        # Half scale, and deliberately *not* full scale the way `rabi` now is. The bound
+        # here is the model rather than the hardware: `_drive_ef` neglects the
+        # off-resonant 0-1 term, and `f12_spectroscopy` records that half a pi pulse is
+        # already where that starts to matter. Sweeping to 1.0 samples a regime the
+        # cosine this fit assumes does not describe, and it showed: the fitted ef pi
+        # moved to 0.1577 against 0.1429 for a sqrt(2) ladder, and `ramsey_12`'s fringe
+        # fell to 2.8x its scatter against the 3x its guard allows.
+        #
+        # So the ef ceiling is physics-bounded (RFC 0007 §5) and lower than full scale.
+        # `full_scale` is still the ceiling on the ceiling, for an element that declares
+        # something tighter still.
         self._amplitudes = setpoints_of(
-            config, "amplitudes", linear_setpoints(0.0, 0.5, 41)
+            config,
+            "amplitudes",
+            linear_setpoints(0.0, min(0.5, full_scale(element, f"{EF}.ef_amp180")), 41),
         )
         self._duration = ef_duration(element, config)
         schedule = backend.new_schedule(

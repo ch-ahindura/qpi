@@ -9,6 +9,8 @@ search for a line can ask how wide the search may be, rather than being told.
 import logging
 from typing import Any
 
+from qpi_driver.tuners.base.device import _walk
+
 log = logging.getLogger(__name__)
 
 #: Held back from each end of a band, in Hz. Clamping to the limit exactly puts a
@@ -59,3 +61,36 @@ def clamp_to_band(
     if band is None:
         return (low, high)
     return (max(low, band[0]), min(high, band[1]))
+
+
+#: What a waveform may reach before it clips, in the schedulers' own amplitude units.
+#: A hardware fact rather than a device one: the DAC has a full-scale output and a pulse
+#: asking past it is not a louder pulse, it is a distorted one.
+FULL_SCALE = 1.0
+
+
+def full_scale(element: Any, dotted: str) -> float:
+    """The largest amplitude *dotted* may be swept to on *element*.
+
+    :data:`FULL_SCALE` unless the element says something tighter. Both bounds are real
+    and neither implies the other, so the smaller wins:
+
+    - the hardware's, because a waveform past full scale clips;
+    - the element's own validator, where it has one worth having.
+
+    Worth knowing which is which. `spec.amplitude` and `r12.ef_amp180` on a
+    `CalibratedTransmon` validate ``[0, 1]``, so for those the two agree. But quantify's
+    `BasicTransmonElement` validates ``rxy.amp180`` in ``[-10, 10]`` — a sanity range, not
+    a drive bound — so *nothing on the element stops a pi pulse being set to 5*, and the
+    only reason a sweep stops at full scale is this function. An earlier RFC draft claimed
+    the element bounded it at one; it does not.
+    """
+    try:
+        owner, name = _walk(element, dotted)
+        validator = getattr(getattr(owner, "parameters", {}).get(name), "vals", None)
+        declared = getattr(validator, "_max_value", None)
+    except Exception:  # noqa: BLE001 - an element that will not say is not a bound of zero
+        declared = None
+    if declared is None:
+        return FULL_SCALE
+    return min(float(declared), FULL_SCALE)

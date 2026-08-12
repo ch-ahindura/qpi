@@ -12,6 +12,7 @@ import xarray as xr
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
+from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -71,8 +72,23 @@ class Rabi(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
+        # To full scale, not to half of it. A sweep stopping at 0.5 cannot find a pi
+        # pulse above it, and `require_in_range` will not say so — it checks the fitted
+        # value lies *inside* the swept range, which is the opposite test. Measured on a
+        # chip whose own working calibration used 0.5683: every Rabi run came back flat,
+        # and the amplitude it wrote left X rotating five degrees.
+        #
+        # 81 points, not 41: doubling the range keeps the *step* rather than the count,
+        # because the step is what the fit needs and the range is only where to look. At
+        # 41 the simulated chip's Rabi still lands within 1.6%, but `rabi_12`'s pi is
+        # smaller and the same halving put it 10.3% off a sqrt(2) ladder — outside what
+        # the loop suite allows, and rightly.
         self._amplitudes = setpoints_of(
-            config, "amplitudes", linear_setpoints(0.0, 0.5, 41)
+            config,
+            "amplitudes",
+            linear_setpoints(
+                0.0, full_scale(device.get_element(target), "rxy.amp180"), 81
+            ),
         )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))

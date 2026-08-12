@@ -30,6 +30,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: `rabi` sweeps drive amplitude to full scale rather than to half of it,
+  so a pi pulse above 0.5 can be found. `require_in_range` cannot catch one that is
+  missing for being too large, since it checks the fitted value lies *inside* the swept
+  range, and a chip whose own calibration used 0.5683 returned a flat Rabi every run.
 - `qpi-driver/py`: `qubit_spectroscopy` sizes the sweep that confirms a searched-out line
   from the width the search measured, rather than reusing the operator's span. That span
   said where to look, and once the search has answered it is spent — re-centring a

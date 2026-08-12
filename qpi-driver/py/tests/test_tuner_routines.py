@@ -696,3 +696,38 @@ def test_a_routine_declares_every_parameter_it_reads(own_quantify_tuner, monkeyp
         f"{name} reads {sorted(paths)} without declaring it"
         for name, paths in sorted(undeclared.items())
     )
+
+
+def test_a_rabi_sweep_reaches_full_scale(own_quantify_tuner):
+    """A pi pulse above the top of the sweep cannot be found, and nothing says so.
+
+    `require_in_range` checks the fitted amplitude lies *inside* the swept range, which is
+    the opposite test — it passes a value that is wrong for being too small and cannot
+    fire on one that is missing for being too large. The August 2026 chip's own working
+    calibration used `amp180 = 0.5683` against a sweep that stopped at 0.5, so every Rabi
+    run came back flat and the amplitude it wrote left X rotating five degrees.
+
+    And the element does not bound this: quantify validates `rxy.amp180` in [-10, 10], a
+    sanity range rather than a drive bound. Full scale is a hardware fact — a waveform
+    past it clips — so `full_scale` is the only thing that stops the sweep.
+
+    `rabi_12` is deliberately not held to this. Its ceiling is the *model*, not the
+    hardware: `_drive_ef` neglects the off-resonant 0-1 term, and sweeping the EF drive to
+    full scale moved its fitted pi off a sqrt(2) ladder and cost `ramsey_12` its fringe.
+    """
+    from qpi_driver.tuners.base.limits import FULL_SCALE
+
+    for name, path in (("rabi", "rxy.amp180"),):
+        node = routine(name)
+        # The *default* sweep, not `SMALL_SWEEPS`' override — the default is the claim.
+        node.build_schedule(
+            "q0",
+            own_quantify_tuner.device,
+            RoutineConfig(params={}),
+            own_quantify_tuner.backend,
+        )
+        assert max(node._amplitudes) == pytest.approx(FULL_SCALE), (
+            f"{name} stops at {max(node._amplitudes)}, so it cannot find a pi pulse "
+            f"above that — and {path} has no element bound that would"
+        )
+        assert min(node._amplitudes) == pytest.approx(0.0)
