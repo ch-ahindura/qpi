@@ -85,7 +85,7 @@ class Tuner(ABC):
     def __init__(self, name: str, **kwargs: Any) -> None:
         self.name = name
         self._watched_device_config: ConfigFile | None = None
-        self._device_config_path = None
+        self.__path = None
         #: Where to report progress, set per calibration by the worker that owns the
         #: queue it reports through. An attribute rather than an argument to the
         #: three entry points below, so a tuner that overrides one of them keeps
