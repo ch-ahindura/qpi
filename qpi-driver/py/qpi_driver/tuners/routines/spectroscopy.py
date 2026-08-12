@@ -16,6 +16,8 @@ from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.limits import addressable_band, clamp_to_band
 from qpi_driver.tuners.base.device import (
     has_flux_port,
+    measured_linewidth,
+    resonator_linewidth_path,
     read_path,
     spectroscopy_amplitude_path,
     write_path,
@@ -290,7 +292,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
 
     name = "resonator_spectroscopy"
     depends_on = ()
-    updates = ("clock_freqs.readout",)
+    updates = ("clock_freqs.readout", "resonator.linewidth")
     reads = ("clock_freqs.readout",)
 
     def build_schedule(
@@ -327,14 +329,18 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
-        write_path(
-            device.get_element(target),
-            "clock_freqs.readout",
-            params["readout_frequency"],
-        )
+        element = device.get_element(target)
+        write_path(element, "clock_freqs.readout", params["readout_frequency"])
+        # The linewidth too, when the element has somewhere for it. Three nodes size
+        # their own sweeps from it and used to guess (RFC 0005 §13); this is the node
+        # that measures it, and it was throwing it away. Opt-in like every other
+        # `CalibratedTransmon` field: a plain `BasicTransmonElement` has no
+        # ``resonator`` submodule, and those chips keep the old constant.
+        if resonator_linewidth_path(element):
+            write_path(element, "resonator.linewidth", params["linewidth"])
 
-    #: The readout linewidth the check judges an offset against, in Hz, and how
-    #: much of it the configured frequency may sit away from the peak.
+    #: The readout linewidth a check falls back to when the element cannot store one,
+    #: in Hz, and how much of it the configured frequency may sit away from the peak.
     #:
     #: A constant with a config override rather than a value read from the device,
     #: because there *is* no device field for it: `fit_resonator_spectroscopy`
@@ -365,7 +371,9 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         # One linewidth either side. Wider and the parabola stops describing the
         # top of the line; narrower and readout noise dominates the difference
         # between the three points.
-        span = float(config.get("check_span", 0.0)) or 2.0 * self._linewidth(config)
+        span = float(config.get("check_span", 0.0)) or 2.0 * self._linewidth(
+            config, device, target
+        )
         centre = _current_clock(device, target, "readout")
         self._check_frequencies = [centre - span / 2, centre, centre + span / 2]
         self._check_span = span
@@ -407,7 +415,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         shift = 0.5 * (low - high) / denominator
         offset = abs(float(shift) * step)
 
-        linewidth = self._linewidth(config)
+        linewidth = self._linewidth(config, device, target)
         fraction = float(
             config.get("check_max_offset_linewidths", self.CHECK_MAX_OFFSET_LINEWIDTHS)
         )
@@ -421,9 +429,16 @@ class ResonatorSpectroscopy(CalibrationRoutine):
             ),
         )
 
-    def _linewidth(self, config: RoutineConfig) -> float:
-        """The linewidth this check's probe spacing and tolerance scale with, in Hz."""
-        return float(config.get("check_linewidth", self.CHECK_LINEWIDTH_HZ))
+    def _linewidth(self, config: RoutineConfig, device: Any, target: str) -> float:
+        """The linewidth this check's probe spacing and tolerance scale with, in Hz.
+
+        Measured, where this node has had somewhere to record it; an operator's
+        ``check_linewidth`` still wins, and the constant is only reached on an element
+        with no ``resonator`` submodule.
+        """
+        if "check_linewidth" in config:
+            return float(config["check_linewidth"])
+        return measured_linewidth(device.get_element(target), self.CHECK_LINEWIDTH_HZ)
 
 
 class ResonatorPunchout(CalibrationRoutine):
@@ -530,7 +545,7 @@ class ResonatorPunchout(CalibrationRoutine):
         self._check_powers = [power, power / 2.0]
         centre = _current_clock(device, target, "readout")
         span = float(config.get("check_span", 0.0)) or 6.0 * self._check_linewidth(
-            config
+            config, device, target
         )
         points = int(config.get("check_points", 8))
         self._check_frequencies = linear_setpoints(
@@ -559,8 +574,13 @@ class ResonatorPunchout(CalibrationRoutine):
                 index += 1
         return schedule
 
-    def _check_linewidth(self, config: RoutineConfig) -> float:
-        return float(config.get("check_linewidth", self.CHECK_LINEWIDTH_HZ))
+    def _check_linewidth(
+        self, config: RoutineConfig, device: Any, target: str
+    ) -> float:
+        """As `ResonatorSpectroscopy._linewidth`: measured if recorded, else the constant."""
+        if "check_linewidth" in config:
+            return float(config["check_linewidth"])
+        return measured_linewidth(device.get_element(target), self.CHECK_LINEWIDTH_HZ)
 
     def analyse_check(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
@@ -578,7 +598,7 @@ class ResonatorPunchout(CalibrationRoutine):
             for row in range(2)
         ]
         walk = abs(resonances[0] - resonances[1])
-        allowed = self._check_linewidth(config) * float(
+        allowed = self._check_linewidth(config, device, target) * float(
             config.get("check_max_walk_linewidths", self.CHECK_MAX_WALK_LINEWIDTHS)
         )
         return CheckOutcome(

@@ -252,3 +252,33 @@ def _name_on(owner: Any, name: str) -> str:
 
 def _attr(owner: Any, name: str) -> Any:
     return getattr(owner, _name_on(owner, name))
+
+
+def resonator_linewidth_path(element: Any) -> str | None:
+    """``resonator.linewidth`` if this element has one, else ``None``.
+
+    The same opt-in shape as :func:`spectroscopy_amplitude_path`: a
+    `BasicTransmonElement` has nowhere to keep a measured linewidth, and a config using
+    one is not broken — the nodes that want it fall back to their own constant.
+    """
+    submodule = getattr(element, "resonator", None)
+    if submodule is None or not hasattr(submodule, "linewidth"):
+        return None
+    return "resonator.linewidth"
+
+
+def measured_linewidth(element: Any, fallback: float) -> float:
+    """What `resonator_spectroscopy` measured for this resonator, or *fallback*.
+
+    Zero counts as absent, which is the convention every `CalibratedTransmon` field
+    uses: it is the initial value, so "has a field for it" and "has measured it" are
+    different questions and only the second one may size a sweep.
+    """
+    path = resonator_linewidth_path(element)
+    if path is None:
+        return fallback
+    try:
+        value = read_path(element, path)
+    except Exception:  # noqa: BLE001 - an unreadable field is an unmeasured one
+        return fallback
+    return float(value) if value else fallback

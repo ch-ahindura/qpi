@@ -731,3 +731,38 @@ def test_a_rabi_sweep_reaches_full_scale(own_quantify_tuner):
             f"above that — and {path} has no element bound that would"
         )
         assert min(node._amplitudes) == pytest.approx(0.0)
+
+
+def test_the_resonator_keeps_the_linewidth_that_was_measured(own_quantify_tuner):
+    """`resonator_spectroscopy` measured a linewidth and used to throw it away.
+
+    Three nodes size their own sweeps from it and had to guess instead — a 2 MHz constant,
+    which on a chip whose resonator is 370 kHz wide put `readout_operating_point`'s outer
+    setpoints 2.7 linewidths off resonance, and it chose one of them (RFC 0007 §1). RFC
+    0005 §13 asked for the field; this is it.
+
+    Opt-in, like every other `CalibratedTransmon` addition: a plain `BasicTransmonElement`
+    has nowhere to keep it and those chips keep the constant. Zero means "not measured",
+    so having the field and having a value are different questions.
+    """
+    from qpi_driver.tuners.base.device import (
+        measured_linewidth,
+        read_path,
+        resonator_linewidth_path,
+        write_path,
+    )
+
+    element = own_quantify_tuner.device.get_element("q0")
+    assert resonator_linewidth_path(element) == "resonator.linewidth"
+
+    # Unmeasured, so a caller gets its own fallback rather than a zero-wide resonator.
+    write_path(element, "resonator.linewidth", 0.0)
+    assert measured_linewidth(element, 2e6) == pytest.approx(2e6)
+
+    routine("resonator_spectroscopy").apply(
+        own_quantify_tuner.device,
+        "q0",
+        {"readout_frequency": 7.1e9, "linewidth": 370e3},
+    )
+    assert read_path(element, "resonator.linewidth") == pytest.approx(370e3)
+    assert measured_linewidth(element, 2e6) == pytest.approx(370e3)

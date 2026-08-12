@@ -61,6 +61,32 @@ class SpectroscopySettings(InstrumentChannel):
             )
 
 
+class ResonatorSettings(InstrumentChannel):
+    """What `resonator_spectroscopy` measured about the resonator itself.
+
+    The linewidth is not a *calibration* — nothing is tuned to it — but three nodes need
+    it to size their own sweeps, and until this existed they used a 2 MHz constant. On a
+    chip whose resonator is 370 kHz wide that constant put `readout_operating_point`'s
+    outer setpoints 2.7 linewidths off resonance, and it chose one of them; readout had to
+    be hand-tuned to recover (RFC 0007 §1). The number was measured two nodes earlier and
+    thrown away, which is what this fixes — RFC 0005 §13 asked for it.
+
+    Zero means "not measured", and a routine reading it falls back to its own default
+    rather than sizing a sweep from nothing.
+    """
+
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
+
+        self.add_parameter(
+            "linewidth",
+            parameter_class=ManualParameter,
+            unit="Hz",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1e9, allow_nan=True),
+        )
+
+
 class TwoStateReadout(InstrumentChannel):
     """The readout operating point used for *discriminating*, as opposed to measuring.
 
@@ -192,6 +218,7 @@ class CalibratedTransmon(BasicTransmonElement):
     def __init__(self, name: str, **kwargs):
         super().__init__(name, **kwargs)
         self.add_submodule("spec", SpectroscopySettings(self, "spec"))
+        self.add_submodule("resonator", ResonatorSettings(self, "resonator"))
         self.add_submodule("measure_2state", TwoStateReadout(self, "measure_2state"))
         self.add_submodule("r12", EFDrive(self, "r12"))
         self.add_submodule("measure_3state", ThreeStateReadout(self, "measure_3state"))

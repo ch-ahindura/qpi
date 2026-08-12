@@ -30,6 +30,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: a `CalibratedTransmon` keeps the resonator linewidth
+  `resonator_spectroscopy` measured, and the two resonator checks judge against it
+  instead of a 2 MHz constant (RFC 0005 §13). On a chip whose resonator is 370 kHz wide
+  that constant was five times too wide, and nothing recorded the measured value.
 - `qpi-driver/py`: `rabi` sweeps drive amplitude to full scale rather than to half of it,
   so a pi pulse above 0.5 can be found. `require_in_range` cannot catch one that is
   missing for being too large, since it checks the fitted value lies *inside* the swept

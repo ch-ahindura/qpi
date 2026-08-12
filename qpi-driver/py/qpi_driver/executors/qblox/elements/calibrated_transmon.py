@@ -46,6 +46,17 @@ class SpectroscopySettings(SchedulerSubmodule):
     )
 
 
+class ResonatorSettings(SchedulerSubmodule):
+    """What `resonator_spectroscopy` measured about the resonator. See the quantify twin."""
+
+    linewidth: float = Parameter(
+        docstring="Resonator FWHM in Hz, as fitted. 0 if not measured.",
+        unit="Hz",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1e9, allow_nan=True),
+    )
+
+
 class TwoStateReadout(SchedulerSubmodule):
     """The readout operating point used for discriminating. See the quantify twin."""
 
@@ -121,6 +132,9 @@ class CalibratedTransmon(BasicTransmonElement):
     element_type: Literal["CalibratedTransmon"] = "CalibratedTransmon"
     spec: SpectroscopySettings = Field(
         default_factory=lambda: SpectroscopySettings(name="spec")
+    )
+    resonator: ResonatorSettings = Field(
+        default_factory=lambda: ResonatorSettings(name="resonator")
     )
     measure_2state: TwoStateReadout = Field(
         default_factory=lambda: TwoStateReadout(name="measure_2state")
