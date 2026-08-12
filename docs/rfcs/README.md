@@ -15,10 +15,11 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Implemented |
 | [0006](./0006-calibration-graph-in-the-dashboard.md) | The Calibration Graph in the Dashboard | Draft |
 | [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Draft |
+| [0008](./0008-parameter-provenance.md) | Parameter Provenance | Draft |
 
 RFCs 0004 and 0005 were written before the graph had run on a chip, and say so where it
-matters. RFC 0007 is the opposite case: it exists because of what running it on one
-found.
+matters. RFCs 0007 and 0008 are the opposite case: they exist because of what running it
+on one found. 0008 is the piece 0007 deferred — four things in 0007 wait on it.
 
 ## Conventions
 

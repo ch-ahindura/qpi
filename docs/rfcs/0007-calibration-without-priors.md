@@ -77,9 +77,8 @@ a search but is never required to make one possible.
 | Skipping blocked nodes | In scope, §11 — and on *parameters*, not on failed nodes. `depends_on` orders the walk and is not a data dependency: `cz_chevron` depends on two nodes that write nothing at all. Blocked nodes are **skipped with the blocker named**, never auto-failed. |
 | How `reads` is known | **Declared, and tested by derivation.** A node's read set is static, so it is stated like `updates`; a test instruments `read_path` and asserts the declaration covers what the code really reads. Runtime derivation cannot cover the two `measure` implementors, which have no schedule to inspect. §11. |
 | Reads inside `analyse` | **Hoisted into `build_schedule`** — six of them. A read after the acquisition is too late to be a prerequisite. §11. |
-| Where provenance lives | **A sidecar the driver owns**, next to the device file, keyed by target and dotted path — not in either config file. Metadata only, merged per key, safe to delete. The content already exists in `RoutineResult`; the sidecar is where a local lookup over it lives. §10. |
+| Provenance | **Deferred to RFC 0008**, which carries the design this RFC's review settled: a metadata sidecar the driver owns, beside the device file, keyed by target and dotted path. §10 says what deferring it costs. |
 | A skipped node's stale parameter | **Kept and marked**, not cleared. Clearing it would stop a chip that worked yesterday from running today. §11. |
-| A second store of *values* | **No.** Two sources of truth for what the chip is would need synchronising with the file the executor reads. A metadata sidecar is not this, and staging value commits does not fix what actually went wrong — §10. |
 | Mixer calibration | **Out of scope.** Out-of-band, as RFC 0005 had it. |
 | Crosstalk | **Out of scope**, unchanged from RFC 0005. |
 | Removing `span`/`points` from configs | In scope, and last. Deleting a knob before its derived default is proven would strand the operator. |
@@ -379,107 +378,32 @@ after the two classes that need no loop at all.
    operator's `calibration.yml`. A knob removed before its replacement is proven is a
    regression, which is why this is last.
 
-## 10. What this defers, and the shape it should take
+## 10. What this defers
 
-One thing, and it is provenance. Everything else this RFC once listed here has since
-been pulled into scope (the accept side of the guards is §6.2), so this section is the
-single deferral plus the design settled for it during review.
+One thing, and it is provenance. Everything else this RFC once listed here has since been
+pulled into scope — the accept side of the guards is §6.2.
 
-Status, so a reader is not misled by the detail below: the *problem* is unfixed by this
-RFC, and the *shape of the answer* is decided. None of it is built, and it wants its own
-RFC — the reasoning is recorded here because it was argued out here, not because it
-belongs to this RFC's implementation plan.
-
-**The problem: a prior is still indistinguishable from a measurement.** After this RFC
-the driver finds the qubit wherever it is, but nothing says whether `clock_freqs.f01` was
-measured by this driver or typed in from a design document. The August 2026 chip carried
+**A prior is still indistinguishable from a measurement.** After this RFC the driver finds
+the qubit wherever it is, but nothing says whether `clock_freqs.f01` was measured by this
+driver or typed in from a design document. The August 2026 chip carried
 `f01: 4735509751.238763` — nine significant figures, and the line was never there.
 
-Three things want that distinction: §2's definition of a prior, §11's "no trustworthy
-value", and §11's marking of what a skipped node did not confirm. Each has a weaker
-version that works without it, which is why this could be deferred at all: §11's ledger
-asks "did this walk produce it?" rather than "was this ever measured?".
+Three things here want that distinction: §2's definition of a prior, §11's "no
+trustworthy value", and §11's marking of what a skipped node did not confirm. A fourth is
+the pre-walk check §11 withdrew during phase 0, which cannot tell a hand-supplied
+parameter from a disabled producer without it.
 
-### 10.1 Where provenance goes
+Each has a weaker version that works without it, which is why this could be deferred at
+all: §11's ledger asks "did this walk produce it?" rather than "was this ever measured?".
+That is right for a bring-up and blind on a recalibration, which is the cost of the
+deferral and the reason it should not be deferred indefinitely.
 
-**Not `quantify.device.yml`:** that file's schema is not
-ours. It deserialises into a `QuantumDevice` whose parameters are qcodes parameters on
-real element classes, and quantify's models reject unknown keys — `output_att` validated
-against the wrong config class raised `extra_forbidden` during this RFC's own research.
-Provenance keys there mean either a parallel structure inside the file or a fork of
-someone else's format.
-
-**Not `calibration.yml` either**, for the reason §7 gives: it is hand-authored intent,
-mostly reasoning, and the driver writing into it destroys that or needs a
-comment-preserving round-trip to avoid doing so. It would also put the machine's output
-and the operator's input in one file, which is the thing that makes both harder to trust.
-
-**So it goes in a file the driver owns.** Neither config file is the right home, and that
-leaves a third: a structured sidecar the operator never edits, next to the device file
-rather than in the config space, keyed by `(target, dotted path)` and holding which
-routine last wrote that parameter, when, in which run, and the fit summary it came from.
-
-An earlier draft of this RFC declined "a second store", and that was too blunt. The
-objection is only sound against a second store of **values** — two sources of truth for
-what the chip is, needing synchronisation with the file the executor reads. A sidecar of
-*metadata about* values has none of that coupling: it never holds a number anything needs
-to run a circuit. Delete it and you learn nothing about provenance, which is exactly
-today's position — so its worst failure is a return to the status quo, and *not* a chip
-driven from a stale duplicate.
-
-Two properties to design for:
-
-- **Merge per key, not per file.** "Overwritten each run" read literally would erase the
-  provenance of every parameter a run did not touch, and a partial run touches few. Each
-  key is updated by the run that writes that parameter; the rest are left alone.
-- **Safe to delete, and safe to be absent.** A missing sidecar means every parameter is a
-  prior, which is conservative and correct rather than broken. Nothing may fail because it
-  is not there, or a fresh checkout could not calibrate.
-
-**And the content already exists — only the index is new.** `RoutineResult` carries
-`routine_name`, `target`, `parameters`, `timestamp`, `duration_s` and the `fit` the value
-came from, and `CalibrationReport` is already emitted as an event payload. So every
-parameter this driver has written is *already* recorded with when, by which node, and from
-what data. The sidecar is not a new source of that; it is where a *lookup* over it lives
-(parameter → the last run that measured it), so the question can be answered locally
-without a server round-trip on every node.
-
-Which makes the test for §2's "prior" exactly decidable with what exists: *is there a
-successful `RoutineResult` writing this parameter for this target?* If nothing has ever
-written `clock_freqs.f01` for q0, whatever the device file holds is a prior, whatever its
-precision. That works retroactively over report history, needs neither config file
-changed, and is a much smaller RFC than the device-file format change the earlier draft
-assumed. Still its own RFC, because indexing and querying run history is a persistence
-question rather than a calibration one — and because the sidecar's schema wants deciding
-alongside whatever else the driver comes to want a private store for.
-
-### 10.2 Why not stage the writes until the run succeeds
-
-Considered, and declined as posed. The problem underneath it is real though, so it is
-worth being precise about which part.
-
-The corruption on the August 2026 chip was not caused by writing too early. It was caused
-by writing a *wrong* value at all: `rabi` wrote `amp180 = 0.0158` and every later run
-inherited it. A staging store would have held that value for the length of the walk and
-then committed it, because the walk did not fail: `require_in_range` accepted 0.0158 and
-`rabi` reported success. Deferring the commit does not help when the producing node
-believes it succeeded, which is the case that actually happened. §6's guards are what
-address that, and did.
-
-Nor can the value be withheld from the *walk*: `rabi` needs the `f01` that
-`qubit_spectroscopy` just wrote, so downstream nodes read upstream results within the run
-by construction. The staging boundary can only ever be the file, not the device object.
-
-And an all-or-nothing file commit has a cost of its own. A run that measures the
-resonator and f01 correctly and then fails at `rabi` would discard two good measurements,
-so the next run starts from the same bad priors — on this chip, that is the difference
-between converging and not.
-
-What is worth taking from the idea is the per-parameter version, and it is the provenance
-field again: commit a parameter when the node that produced it succeeded *and* its guards
-passed, and mark what it was. That is a strictly finer boundary than a staging store, it
-does not need a second datastore to synchronise with the file the executor reads, and it
-subsumes the all-or-nothing case. It belongs in the provenance RFC.
+**RFC 0008** carries the design, which was argued out in review here: where provenance
+lives, why neither config file is its home, and why staging value commits does not address
+what actually went wrong. It also corrects a claim this section used to make — that the
+content already existed and only a lookup was missing. Reports leave the driver on a
+result queue and nothing persists them locally, so a sidecar is the driver's only copy,
+not an index over one.
 
 ## 11. Skipping what cannot succeed
 
@@ -607,11 +531,11 @@ shape of the RFC rather than just settling a detail.
 | `reads` declared or derived? | **Declared, with a test that derives** — reversing an earlier resolution in this table. A node's reads are static, so runtime derivation buys nothing a test does not, and it cannot cover the two `measure` implementors at all. §11. |
 | Hoist the `analyse`-time reads? | **Yes, six of them** (§11). A read after the acquisition cannot be a prerequisite, and it is a one-line move per routine. |
 | Does a skipped node keep its stale parameter? | **Keep and mark**, §11. Clearing it stops a chip that ran yesterday from running today. |
-| Put provenance in `calibration.yml` rather than the device file? | **Neither — a sidecar the driver owns** (§10). And the blanket "no second store" from the round before was too blunt: it is sound against a second store of *values*, not against metadata that never holds a number anything needs to run a circuit. |
+| Put provenance in `calibration.yml` rather than the device file? | **Neither — a sidecar the driver owns**, now RFC 0008 §5. And the blanket "no second store" from the round before was too blunt: it is sound against a second store of *values*, not against metadata that never holds a number anything needs to run a circuit. |
 | Report a disabled sole producer before the walk? | **Withdrawn during phase 0** (§11). Undecidable without §10's provenance: two read paths have no producer anywhere and are hand-supplied on every chip, so the rule fires on them every run. |
 | Where does the IF limit live? | **On `SchedulerBackend`, like `drag_span`** — but checked rather than assumed, and the two schedulers *agree*: `NCO_FREQ_LIMIT_STEPS / NCO_FREQ_STEPS_PER_HZ` is 500 MHz in quantify-scheduler 0.28 and qblox-scheduler 1.0.0b4 alike. That weakens the case for a property without removing it: the fact belongs to the backend either way, and no divergence is being modelled speculatively. |
 | Escalation in the DAG or in `measure`? | **In `measure`**, with the attempt count reported so the DAG and the report still see it. |
 | Does `resonator_punchout` come back? | **Yes.** Its amplitude grid stopping at 0.5 is a §5 hardware-bounded bug, so phase 3 fixes the reason it was switched off. It re-enables as part of that phase rather than separately, with the August 2026 chip as the test case. |
-| Stage writes in a separate store until the run succeeds? | **No**, §10 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
+| Stage writes in a separate store until the run succeeds? | **No**, now RFC 0008 §7 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
 | Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
 | Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
