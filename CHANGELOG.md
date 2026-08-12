@@ -81,6 +81,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   their summed allowance rather than the last one's. `qubit_spectroscopy`'s search is
   three acquisitions, and the last alone would fail a routine that never exceeded its
   allowance once.
+- `qpi-driver/py`: every routine reads the device before its acquisition rather than
+  after it (RFC 0007 §11). Six nodes read a parameter in `analyse`, which describes a
+  sweep that had already happened and is too late to check as a prerequisite.
 - `repo`: Cleaned up and refactored `Makefile`.
 - `repo`: Cleaned up `.github/workflows/ci.yml`.
 - `qpi-driver/py`: Optimized `test-py-loop` execution speed with

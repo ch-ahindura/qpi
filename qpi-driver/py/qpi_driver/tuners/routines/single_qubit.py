@@ -206,6 +206,10 @@ class Ramsey(CalibrationRoutine):
             )
         ]
         self._detuning = float(config.get("artificial_detuning", 1e6))
+        # The clock this run corrects, read before the acquisition rather than after it.
+        self._current_f01 = float(
+            read_path(device.get_element(target), "clock_freqs.f01")
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
@@ -230,8 +234,7 @@ class Ramsey(CalibrationRoutine):
         fitted = fit_ramsey(
             np.asarray(self._delays), signal_of(dataset), self._detuning
         )
-        current = float(read_path(device.get_element(target), "clock_freqs.f01"))
-        fitted["clock_freq_01"] = current - fitted["detuning"]
+        fitted["clock_freq_01"] = self._current_f01 - fitted["detuning"]
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -465,6 +468,12 @@ class FineAmplitude(CalibrationRoutine):
         self._repetitions = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
         ]
+        # The amplitude this run refines, read before the acquisition rather than after
+        # it — it is what every X below is played at, so reading it later described a
+        # sweep that had already happened.
+        self._current_amp180 = float(
+            read_path(device.get_element(target), "rxy.amp180")
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
@@ -510,11 +519,10 @@ class FineAmplitude(CalibrationRoutine):
                 f"(sweep plus two calibration points), got {signal.size}"
             )
 
-        current = float(read_path(device.get_element(target), "rxy.amp180"))
         return fit_fine_amplitude(
             np.asarray(self._repetitions, dtype=float),
             signal[:count],
-            current,
+            self._current_amp180,
             ground=float(signal[count]),
             excited=float(signal[count + 1]),
         )

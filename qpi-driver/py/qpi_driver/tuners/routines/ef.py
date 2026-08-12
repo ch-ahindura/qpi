@@ -402,7 +402,10 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         element = device.get_element(target)
         amplitude = _required_ef_amplitude(element, target)
         duration = ef_duration(element, config)
-        centre = float(read_path(element, "clock_freqs.readout"))
+        # The reference `analyse` differences against, read here rather than there: a
+        # prerequisite has to be readable before the acquisition to be one at all, and
+        # this sweep is already centred on the same value.
+        self._ground = centre = float(read_path(element, "clock_freqs.readout"))
         span = float(config.get("span", 20e6))
         points = int(config.get("points", 51))
         self._frequencies = setpoints_of(
@@ -436,7 +439,7 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         require_resolved_line(fitted, self._frequencies)
         second = fitted["readout_frequency"]
-        ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
+        ground = self._ground
         return {
             "readout_frequency_second_excited": second,
             # See `resonator_spectroscopy_excited`: the reference is not measured here.
@@ -596,6 +599,8 @@ class Ramsey12(CalibrationRoutine):
         # Half the pi amplitude is half the rotation, at fixed duration.
         self._half = _required_ef_amplitude(element, target) / 2.0
         self._duration = ef_duration(element, config)
+        # The clock this run corrects, read before the acquisition rather than after it.
+        self._current_f12 = float(read_path(element, "clock_freqs.f12"))
         # On the instrument's 1 ns grid. A linear sweep between two round numbers
         # generally is not — 41 points from 4 ns to 2 us step 49.9 ns — and the
         # compiler rejects a schedule whose operations do not land on it, some way
@@ -657,8 +662,7 @@ class Ramsey12(CalibrationRoutine):
         fitted = fit_ramsey(
             np.asarray(self._delays), signal_of(dataset), self._detuning
         )
-        current = float(read_path(device.get_element(target), "clock_freqs.f12"))
-        fitted["clock_freq_12"] = current - fitted["detuning"]
+        fitted["clock_freq_12"] = self._current_f12 - fitted["detuning"]
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

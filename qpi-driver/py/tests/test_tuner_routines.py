@@ -587,24 +587,19 @@ class TestExcitingTheQubitHasToMoveItsResonator:
         import numpy as np
 
         node = routine("resonator_spectroscopy_excited")
+        # What `build_schedule` records: the sweep, and the ground-state resonance the
+        # shift is measured against. Set directly because this test supplies the
+        # acquisition rather than running one, and `analyse` reads no device at all now.
         node._frequencies = [self.GROUND - 2e6 + 40e3 * i for i in range(101)]
+        node._ground = self.GROUND
         excited = self.GROUND - 2.0 * fraction * self.LINEWIDTH
         detuning = (np.asarray(node._frequencies) - excited) / (self.LINEWIDTH / 2)
         signal = 0.027 - 0.02 / (1.0 + detuning**2)
         signal += np.random.default_rng(0).normal(0.0, 2e-5, signal.size)
 
-        class _Device:
-            @staticmethod
-            def get_element(_name):
-                class _Element:
-                    class clock_freqs:
-                        readout = TestExcitingTheQubitHasToMoveItsResonator.GROUND
-
-                return _Element
-
         if accepted:
-            found = node.analyse(signal, "q0", _Device, RoutineConfig(params={}))
+            found = node.analyse(signal, "q0", None, RoutineConfig(params={}))
             assert found["dispersive_shift"] < 0
         else:
             with pytest.raises(RoutineError, match="not exciting this qubit"):
-                node.analyse(signal, "q0", _Device, RoutineConfig(params={}))
+                node.analyse(signal, "q0", None, RoutineConfig(params={}))

@@ -568,6 +568,9 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         self._frequencies = _frequency_sweep(
             config, device, target, "readout", default_span=20e6
         )
+        # The reference `analyse` differences against, read here rather than there: a
+        # prerequisite has to be readable before the acquisition to be one at all.
+        self._ground = _current_clock(device, target, "readout")
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
@@ -591,7 +594,7 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         require_resolved_line(fitted, self._frequencies)
         excited = fitted["readout_frequency"]
-        ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
+        ground = self._ground
         shift = 0.5 * (excited - ground)
         linewidth = float(fitted["linewidth"])
         # The one place the X gate is checked against a resonance instead of against
@@ -950,10 +953,14 @@ class F12Spectroscopy(CalibrationRoutine):
         # carries whatever was typed in, and scanning around that finds nothing. A
         # transmon's anharmonicity is a few hundred MHz and negative, so f01 - 300 MHz
         # is a far better prior than an unmeasured field.
+        # Read here rather than in `analyse`, where the anharmonicity was differenced
+        # against it: a prerequisite has to be readable before the acquisition to be one
+        # at all, and this sweep is already centred on it.
+        self._f01 = _current_clock(device, target, "f01")
         centre = config.get("centre_frequency")
         if centre is None:
             offset = float(config.get("anharmonicity_prior", -300e6))
-            centre = _current_clock(device, target, "f01") + offset
+            centre = self._f01 + offset
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
         self._frequencies = setpoints_of(
@@ -1014,8 +1021,7 @@ class F12Spectroscopy(CalibrationRoutine):
             # Reported because it is the number a reader wants and nothing else
             # measures it: the anharmonicity is f12 - f01, and it sets both the DRAG
             # optimum and where |02> sits for a CZ.
-            "anharmonicity": fitted["clock_freq_01"]
-            - _current_clock(device, target, "f01"),
+            "anharmonicity": fitted["clock_freq_01"] - self._f01,
         }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
