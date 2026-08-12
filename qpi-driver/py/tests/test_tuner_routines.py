@@ -766,3 +766,119 @@ def test_the_resonator_keeps_the_linewidth_that_was_measured(own_quantify_tuner)
     )
     assert read_path(element, "resonator.linewidth") == pytest.approx(370e3)
     assert measured_linewidth(element, 2e6) == pytest.approx(370e3)
+
+
+class TestSweepsSizedFromTheMeasuredLinewidth:
+    """RFC 0007 §5: a span derived from what was measured, not from a constant.
+
+    The constants were each right for one chip. A 2 MHz operating-point span is 0.6 of the
+    simulated chip's measured linewidth and 5.4 of a 370 kHz resonator's, and on the second
+    it put the outer setpoints off resonance altogether.
+    """
+
+    def _with_linewidth(self, tuner, linewidth):
+        from qpi_driver.tuners.base.device import write_path
+
+        write_path(tuner.device.get_element("q0"), "resonator.linewidth", linewidth)
+
+    def _span_of(self, node):
+        """The frequency span the node built, however it stored it.
+
+        The operating points keep `(frequency, amplitude)` pairs, since they sweep both;
+        the spectroscopy sweeps keep frequencies alone.
+        """
+        grid = getattr(node, "_frequencies", None)
+        if grid is None:
+            grid = [frequency for frequency, _amplitude in node._settings]
+        return max(grid) - min(grid)
+
+    @pytest.mark.parametrize("linewidth", (370e3, 3.31e6))
+    def test_the_operating_point_span_tracks_the_linewidth(
+        self, own_quantify_tuner, linewidth
+    ):
+        from qpi_driver.tuners.routines.readout import SPAN_IN_LINEWIDTHS
+
+        self._with_linewidth(own_quantify_tuner, linewidth)
+        node = routine("readout_operating_point")
+        node.build_schedule(
+            "q0",
+            own_quantify_tuner.device,
+            RoutineConfig(params={}),
+            own_quantify_tuner.backend,
+        )
+        assert self._span_of(node) == pytest.approx(
+            SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
+        )
+
+    @pytest.mark.parametrize("linewidth", (370e3, 3.31e6))
+    def test_the_excited_sweep_span_tracks_the_linewidth(
+        self, own_quantify_tuner, linewidth
+    ):
+        from qpi_driver.tuners.routines.spectroscopy import EXCITED_SPAN_IN_LINEWIDTHS
+
+        self._with_linewidth(own_quantify_tuner, linewidth)
+        node = routine("resonator_spectroscopy_excited")
+        node.build_schedule(
+            "q0",
+            own_quantify_tuner.device,
+            RoutineConfig(params={}),
+            own_quantify_tuner.backend,
+        )
+        assert self._span_of(node) == pytest.approx(
+            EXCITED_SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
+        )
+
+    def test_an_unmeasured_resonator_falls_back_rather_than_sweeping_nothing(
+        self, own_quantify_tuner
+    ):
+        """Zero means "not measured", and a zero-wide span would sweep one point."""
+        self._with_linewidth(own_quantify_tuner, 0.0)
+        node = routine("readout_operating_point")
+        node.build_schedule(
+            "q0",
+            own_quantify_tuner.device,
+            RoutineConfig(params={}),
+            own_quantify_tuner.backend,
+        )
+        assert self._span_of(node) > 0.0
+
+
+class TestAnAnharmonicityHasToBeATransmons:
+    """`f12_spectroscopy` is the only node that knows both frequencies, so it is the only
+    one that can say whether the line it found is the 1-2 transition or some other line.
+
+    The failure: a device file carried `f12 = 4.8e9` against an f01 near 4.7 GHz, so the
+    implied anharmonicity was *positive* on four of five qubits. Nothing objected.
+    """
+
+    def test_a_positive_prior_is_refused(self):
+        node = routine("f12_spectroscopy")
+
+        class _Device:
+            @staticmethod
+            def get_element(_name):
+                class _Element:
+                    class clock_freqs:
+                        f01 = 4.7e9
+
+                return _Element
+
+        with pytest.raises(RoutineError, match="not an anharmonicity a transmon has"):
+            node.build_schedule(
+                "q0",
+                _Device,
+                RoutineConfig(params={"anharmonicity_prior": 100e6}),
+                None,
+            )
+
+    @pytest.mark.parametrize("anharmonicity", (100e6, -20e6, -900e6))
+    def test_a_fitted_f12_on_the_wrong_line_is_refused(self, anharmonicity):
+        node = routine("f12_spectroscopy")
+        with pytest.raises(RoutineError, match="not a transmon's anharmonicity"):
+            node._require_transmon_anharmonicity(anharmonicity, "q0")
+
+    def test_a_real_anharmonicity_passes(self):
+        node = routine("f12_spectroscopy")
+        assert node._require_transmon_anharmonicity(-302.5e6, "q0") == pytest.approx(
+            -302.5e6
+        )

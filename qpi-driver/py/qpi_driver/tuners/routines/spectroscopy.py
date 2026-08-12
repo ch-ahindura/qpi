@@ -66,6 +66,25 @@ MIN_SEARCH_PEAK = 6.0
 #: Scales a median absolute deviation to the standard deviation of a normal.
 MAD_TO_SIGMA = 1.4826
 
+#: What a transmon's anharmonicity may be, in Hz, and it is negative — the 1-2 transition
+#: sits *below* the 0-1 one. The range is wide on purpose: fabricated transmons run from
+#: about 150 to 400 MHz, and the point is not to pin a chip down but to refuse a number
+#: that is not an anharmonicity at all.
+#:
+#: The failure it exists for: a device file carried `f12 = 4.8e9` as a placeholder against
+#: an f01 of about 4.7 GHz, so the implied anharmonicity was *positive* on four of five
+#: qubits. Nothing objected, `f12_spectroscopy` searched around a frequency no transmon
+#: has, and the EF chain spent several runs measuring nothing.
+ANHARMONICITY_RANGE_HZ = (-400e6, -150e6)
+
+#: How wide an excited-state resonator sweep is, as a multiple of the measured linewidth.
+#: Wider than a refinement because these have to *find* a resonance that has moved: the
+#: dispersive shift puts it up to a couple of linewidths away, and the sweep needs baseline
+#: either side of wherever it landed. The 20 MHz constant this replaces is 6.0 linewidths
+#: on the simulated chip and the 4 MHz an operator hand-set on a 370 kHz resonator is 10.8,
+#: so eight sits between the two chips that have been measured.
+EXCITED_SPAN_IN_LINEWIDTHS = 8.0
+
 
 #: The hardware-config key each device clock is driven through, for `addressable_band`.
 _PORT_CLOCKS = {
@@ -630,13 +649,20 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
     name = "resonator_spectroscopy_excited"
     depends_on = ("rabi",)
     updates = ()
-    reads = ("clock_freqs.readout",)
+    reads = ("clock_freqs.readout", "resonator.linewidth")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
+        element = device.get_element(target)
         self._frequencies = _frequency_sweep(
-            config, device, target, "readout", default_span=20e6, backend=backend
+            config,
+            device,
+            target,
+            "readout",
+            default_span=EXCITED_SPAN_IN_LINEWIDTHS
+            * measured_linewidth(element, 2.5e6),
+            backend=backend,
         )
         # The reference `analyse` differences against, read here rather than there: a
         # prerequisite has to be readable before the acquisition to be one at all.
@@ -1120,6 +1146,15 @@ class F12Spectroscopy(CalibrationRoutine):
         centre = config.get("centre_frequency")
         if centre is None:
             offset = float(config.get("anharmonicity_prior", -300e6))
+            low, high = ANHARMONICITY_RANGE_HZ
+            if not low <= offset <= high:
+                raise RoutineError(
+                    f"`anharmonicity_prior` is {offset / 1e6:.0f} MHz, which is not an "
+                    f"anharmonicity a transmon has — they run {low / 1e6:.0f} to "
+                    f"{high / 1e6:.0f} MHz and are negative, the 1-2 transition sitting "
+                    f"below the 0-1 one. Searching around f01 plus this would look where "
+                    f"no transition is"
+                )
             centre = self._f01 + offset
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
@@ -1181,8 +1216,30 @@ class F12Spectroscopy(CalibrationRoutine):
             # Reported because it is the number a reader wants and nothing else
             # measures it: the anharmonicity is f12 - f01, and it sets both the DRAG
             # optimum and where |02> sits for a CZ.
-            "anharmonicity": fitted["clock_freq_01"] - self._f01,
+            "anharmonicity": self._require_transmon_anharmonicity(
+                fitted["clock_freq_01"] - self._f01, target
+            ),
         }
+
+    @staticmethod
+    def _require_transmon_anharmonicity(anharmonicity: float, target: str) -> float:
+        """Refuse a fitted f12 whose distance from f01 is not a transmon's.
+
+        The line may be real and still be the wrong line: a two-photon transition, a
+        neighbour's, a spurious mode. What says which is the spacing, and this node is the
+        only one that knows both frequencies — see :data:`ANHARMONICITY_RANGE_HZ` for the
+        placeholder that made this necessary.
+        """
+        low, high = ANHARMONICITY_RANGE_HZ
+        if not low <= anharmonicity <= high:
+            raise RoutineError(
+                f"{target}'s fitted f12 sits {anharmonicity / 1e6:.1f} MHz from its f01, "
+                f"which is not a transmon's anharmonicity — they run {low / 1e6:.0f} to "
+                f"{high / 1e6:.0f} MHz and are negative. The line found is real but it is "
+                f"not the 1-2 transition: check that clock_freqs.f01 is right before "
+                f"trusting anything above it"
+            )
+        return float(anharmonicity)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(

@@ -30,6 +30,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: the two excited-state resonator sweeps size their spans from the
+  measured linewidth rather than a 20 MHz constant, which was 6 linewidths on one chip
+  and 54 on another.
+- `qpi-driver/py`: `f12_spectroscopy` refuses an anharmonicity that is not a transmon's,
+  in its prior and in what it fits. A device file carrying `f12 = 4.8e9` against an f01
+  near 4.7 GHz implied a *positive* anharmonicity on four of five qubits, and nothing
+  objected.
 - `qpi-driver/py`: `readout_operating_point` sizes its sweep from the measured resonator
   linewidth rather than a 2 MHz constant. That constant was 5.4 linewidths on a 370 kHz
   resonator, which put its outer setpoints off resonance altogether and it chose one.

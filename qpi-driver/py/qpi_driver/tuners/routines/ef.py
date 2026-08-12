@@ -23,7 +23,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import read_path, write_path
+from qpi_driver.tuners.base.device import (
+    measured_linewidth,
+    read_path,
+    write_path,
+)
 from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
@@ -42,6 +46,12 @@ from qpi_driver.tuners.fitting import (
     fit_three_state_discrimination,
     fit_three_state_operating_point,
     signal_of,
+)
+
+#: Shared with `resonator_spectroscopy_excited`: the same experiment one rung up wants
+#: the same window, and two constants that must agree are one written twice.
+from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
+    EXCITED_SPAN_IN_LINEWIDTHS,
 )
 
 #: Where a `CalibratedTransmon` keeps its EF pulse.
@@ -436,7 +446,12 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
     name = "resonator_spectroscopy_second_excited"
     depends_on = ("rabi_12",)
     updates = ()
-    reads = ("clock_freqs.readout", "r12.ef_amp180", "r12.ef_duration")
+    reads = (
+        "clock_freqs.readout",
+        "resonator.linewidth",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_ef_drive(device, target)
@@ -451,7 +466,15 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         # prerequisite has to be readable before the acquisition to be one at all, and
         # this sweep is already centred on the same value.
         self._ground = centre = float(read_path(element, "clock_freqs.readout"))
-        span = float(config.get("span", 20e6))
+        # From the measured linewidth, as `resonator_spectroscopy_excited` does and for the
+        # same reason: this has to find a resonance the ladder has moved, so it wants
+        # several linewidths rather than a refinement's fraction of one.
+        span = float(
+            config.get(
+                "span",
+                EXCITED_SPAN_IN_LINEWIDTHS * measured_linewidth(element, 2.5e6),
+            )
+        )
         points = int(config.get("points", 51))
         self._frequencies = setpoints_of(
             config,
