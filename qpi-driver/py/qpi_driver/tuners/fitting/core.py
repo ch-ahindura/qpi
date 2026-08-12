@@ -178,3 +178,55 @@ def _thinned(count: int) -> np.ndarray:
     if count <= MAX_FIT_POINTS:
         return np.arange(count)
     return np.unique(np.linspace(0, count - 1, MAX_FIT_POINTS).round().astype(int))
+
+
+#: How far a fitted curve must rise above the scatter it was drawn through before the
+#: parameter taken from it counts as measured — see :func:`require_resolved_curve`.
+#:
+#: Three, from the spread of what has been measured rather than from theory. On the
+#: simulated chip a Rabi sweep reaches 211, a Ramsey fringe 194, a T1 decay 117, and an
+#: RB decay 128; a T1 through 5% noise still reaches 20. The four hardware fits that
+#: wrote nonsense to the device reached 1.41 and 1.78 (Rabi), 0.83 (RB) and 0.47 (T1).
+#:
+#: The asymmetry sets it more than the gap does. A refused fit leaves the last good
+#: value in place and says why; an accepted one overwrites it, and on this chip a single
+#: flat Rabi sweep wrote an `amp180`36x too small and cost six runs before anything
+#: noticed.
+MIN_CURVE_TO_SCATTER = 3.0
+
+
+def require_resolved_curve(
+    y: np.ndarray,
+    curve: np.ndarray,
+    *,
+    what: str,
+    consequence: str,
+    factor: float = MIN_CURVE_TO_SCATTER,
+) -> None:
+    """Refuse a fit whose curve is no taller than the noise it was fitted through.
+
+    `curve_fit` always returns parameters. On data with no feature in it the ones it
+    returns are read off the noise, and every routine here writes its answer to the
+    device — so the failure is not a bad number in a report, it is a bad number in the
+    calibration that the next run then builds on.
+
+    Compared as a span rather than by any parameter's sign or magnitude: which way a
+    feature points depends on the acquisition, and a *small* fitted parameter is
+    sometimes exactly what success looks like — `fine_amplitude`'s slope, for one. What
+    is never right is a curve the data cannot distinguish from a flat line.
+
+    Raises:
+        FitError: naming both numbers, their ratio and *consequence*, since what to do
+            about it differs per fit — more averaging, a wider sweep, or a readout that
+            resolves the qubit at all.
+    """
+    scatter = float(np.sqrt(np.mean((np.asarray(y) - np.asarray(curve)) ** 2)))
+    if scatter <= 0.0:
+        return
+    span = float(np.max(curve) - np.min(curve))
+    if span < factor * scatter:
+        raise FitError(
+            f"the fitted {what} spans {span:.4g} against a residual scatter of "
+            f"{scatter:.4g} — {span / scatter:.1f}x, below the {factor:.0f}x a resolved "
+            f"{what} clears — so {consequence}"
+        )

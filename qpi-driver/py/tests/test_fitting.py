@@ -745,3 +745,35 @@ class TestRabiNeedsAVisibleOscillation:
         signal = signal + rng.normal(0.0, 5e-5, amplitudes.size)
         with pytest.raises(FitError, match="no pi amplitude"):
             fit_rabi(amplitudes, signal)
+
+
+class TestCoherenceAndRamseyNeedAVisibleCurve:
+    """Both write to the device — T1/T2 to the report a drift check reads, ramsey to f01.
+
+    `require_in_range` allows a time constant up to ten times the window, which lets a
+    fit through flat noise return a plausible-looking coherence time. This chip returned
+    T1 = 169 us from a *rising* curve inside a 100 us window, and a ramsey detuning of
+    173 kHz from a sweep with no fringe in it — which moved f01.
+    """
+
+    def test_a_coherence_fit_through_flat_noise_is_refused(self):
+        rng = np.random.default_rng(17)
+        delays = np.linspace(0.0, 100e-6, 41)
+        flat = 0.00815 + rng.normal(0.0, 9e-5, delays.size)
+        with pytest.raises(FitError, match="never seen in this window"):
+            fit_t1(delays, flat)
+
+    def test_a_real_decay_is_still_accepted_through_the_same_noise(self):
+        """5% noise on a decay that fits the window: 20x, well clear of the 3x floor."""
+        rng = np.random.default_rng(18)
+        delays = np.linspace(0.0, 100e-6, 41)
+        signal = exponential_decay(delays, 1.0, 30e-6, 0.05)
+        fitted = fit_t1(delays, signal + rng.normal(0.0, 0.05, delays.size))
+        assert fitted["t1"] == pytest.approx(30e-6, rel=0.3)
+
+    def test_a_ramsey_with_no_fringe_is_refused(self):
+        rng = np.random.default_rng(19)
+        delays = np.linspace(4e-9, 10e-6, 41)
+        flat = 0.00817 + rng.normal(0.0, 8e-5, delays.size)
+        with pytest.raises(FitError, match="no detuning to take from it"):
+            fit_ramsey(delays, flat, 1e6)

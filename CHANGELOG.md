@@ -45,6 +45,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   runs after it played an X pulse that rotated five degrees — leaving every 0-1
   measurement in the graph blind, and self-perpetuating, since a dead X gate guarantees
   the next Rabi sweep is flat.
+- `qpi-driver/py`: `t1`, `t2_echo` and `ramsey` refuse a curve no taller than the
+  scatter it was fitted through. `require_in_range` allowed a time constant ten times
+  the window, so a flat sweep returned T1 = 169 us from a rising curve, and a ramsey
+  with no fringe moved f01 by 173 kHz.
 - `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_12` refuse a demodulated sweep
   far past the bound their own model sets, rather than writing the `amp180` it implies.
   A readout that was not resolving the qubit gave a sweep reaching 144 where one is the
