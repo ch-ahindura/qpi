@@ -554,3 +554,50 @@ class TestALineHasToBeAboveTheNoise:
         require_resolved_line(  # noqa: B018 - no raise is the assertion
             {"linewidth": 200e3}, [4.7e9 + 133e3 * i for i in range(3)]
         )
+
+
+class TestExcitingTheQubitHasToMoveItsResonator:
+    """`resonator_spectroscopy_excited` is where a drive that reaches nothing shows up.
+
+    It writes no parameter, so a dead X gate left it reporting a dispersive shift of a
+    few hundred Hz and the calibration walking on. Everything after it — discrimination,
+    allxy, drag, rb — then measured an idle qubit and fitted its noise, which read as
+    several unrelated failures for six runs. The floor is on the shift *as a fraction of
+    the linewidth* because that ratio is what decides whether two states are resolvable
+    at all; neither number alone says anything.
+    """
+
+    LINEWIDTH = 370e3
+    GROUND = 6.827e9
+
+    #: Shift as a fraction of the linewidth. The first two are what the chip returned
+    #: with its f01 off by an anharmonicity — 1954 Hz and 591 Hz against ~375 kHz. The
+    #: third is the simulated chip, which the whole DAG calibrates through.
+    MEASURED = ((0.0052, False), (0.0016, False), (0.62, True))
+
+    @pytest.mark.parametrize("fraction,accepted", MEASURED)
+    def test_only_a_shift_readout_could_resolve_is_reported(self, fraction, accepted):
+        import numpy as np
+
+        node = routine("resonator_spectroscopy_excited")
+        node._frequencies = [self.GROUND - 2e6 + 40e3 * i for i in range(101)]
+        excited = self.GROUND - 2.0 * fraction * self.LINEWIDTH
+        detuning = (np.asarray(node._frequencies) - excited) / (self.LINEWIDTH / 2)
+        signal = 0.027 - 0.02 / (1.0 + detuning**2)
+        signal += np.random.default_rng(0).normal(0.0, 2e-5, signal.size)
+
+        class _Device:
+            @staticmethod
+            def get_element(_name):
+                class _Element:
+                    class clock_freqs:
+                        readout = TestExcitingTheQubitHasToMoveItsResonator.GROUND
+
+                return _Element
+
+        if accepted:
+            found = node.analyse(signal, "q0", _Device, RoutineConfig(params={}))
+            assert found["dispersive_shift"] < 0
+        else:
+            with pytest.raises(RoutineError, match="not exciting this qubit"):
+                node.analyse(signal, "q0", _Device, RoutineConfig(params={}))

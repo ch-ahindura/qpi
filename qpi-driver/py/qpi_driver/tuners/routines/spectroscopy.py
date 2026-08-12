@@ -39,6 +39,15 @@ from qpi_driver.tuners.fitting import (
 #: waveform clips and the schedule will not compile.
 MAX_SPECTROSCOPY_AMPLITUDE = 1.0
 
+#: Smallest dispersive shift worth calling one, as a fraction of the resonator
+#: linewidth. Below this the ground and excited Lorentzians overlap to within a
+#: twentieth of their own width, so no rotation or threshold separates the two
+#: clouds and readout is capped near chance whatever the discriminator does. The
+#: simulated chip measures 0.62 here; a chip whose X gate was off resonance
+#: measured 0.0005 to 0.005 across six runs, so the floor sits an order of
+#: magnitude clear of both.
+MIN_SHIFT_TO_LINEWIDTH = 0.05
+
 
 def _frequency_sweep(
     config: RoutineConfig, device: Any, target: str, clock: str, default_span: float
@@ -568,6 +577,22 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         require_resolved_line(fitted, self._frequencies)
         excited = fitted["readout_frequency"]
         ground = float(read_path(device.get_element(target), "clock_freqs.readout"))
+        shift = 0.5 * (excited - ground)
+        linewidth = float(fitted["linewidth"])
+        # The one place the X gate is checked against a resonance instead of against
+        # its own fit. A pulse driving nothing leaves the resonator where the ground
+        # state had it, and every node downstream — discrimination, allxy, drag, rb —
+        # then measures an idle qubit and fits its noise. Six runs of that read as six
+        # unrelated failures until this node was made to refuse.
+        if abs(shift) < MIN_SHIFT_TO_LINEWIDTH * linewidth:
+            raise RoutineError(
+                f"exciting {target} moved its resonator by {shift:.4g} Hz against a "
+                f"{linewidth:.4g} Hz linewidth — {abs(shift) / linewidth:.1%} of it, "
+                f"under the {MIN_SHIFT_TO_LINEWIDTH:.0%} two resolvable states clear. "
+                "The X gate is not exciting this qubit: check that clock_freqs.f01 is "
+                "the transition the drive line actually reaches, then that rxy.amp180 "
+                "is a pi pulse at it"
+            )
         return {
             "readout_frequency_excited": excited,
             # What the shift was measured against, reported because it is not measured
@@ -580,8 +605,8 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
             # resonator. The sign is worth keeping — it says which side of the bare
             # resonance the dressed one sits, which is how a mis-assigned resonator
             # shows up.
-            "dispersive_shift": 0.5 * (excited - ground),
-            "linewidth": fitted["linewidth"],
+            "dispersive_shift": shift,
+            "linewidth": linewidth,
             # The spectrum itself, so the shift can be read off two overlaid curves
             # rather than inferred from two fitted centres. When chi is a fraction of a
             # linewidth the centres are the least reliable way to see it.

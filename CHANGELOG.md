@@ -56,6 +56,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `rb` and `interleaved_rb` refuse a decay no deeper than the scatter
   it was fitted through. Three consecutive runs reported 0.99999, 0.941 and 0.586 from
   non-monotonic noise, and the drift check compared them against a threshold.
+- `qpi-driver/py`: `resonator_spectroscopy_excited` refuses a dispersive shift under 5%
+  of the resonator linewidth, which no readout can resolve. A chip whose `f01` sat an
+  anharmonicity away from its real transition reported 0.05% to 0.5% for six runs, while
+  every node after it fitted the noise of an idle qubit.
 - `qpi-driver/py`: `flux_spectroscopy` and `cz_chevron` decline a chip whose flux
   reaches the couplers rather than the qubits, instead of failing with
   `KeyError: 'q0:fl was not found in the connectivity.'`. `cz_chevron` was missing the
