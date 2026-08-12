@@ -70,8 +70,14 @@ a search but is never required to make one possible.
 | Where a bound comes from | Hardware config for instrument limits, upstream measurements for physical ones, escalation for the rest. New `tuners/base/limits.py`; the hardware config is already reachable from a routine via `device.hardware_config()`, as `has_flux_port` shows. |
 | Guards as signals | **Changed.** The six "your window is wrong" guards added in August 2026 raise prose. They gain a structured form the caller can act on, so the same detection drives a retry instead of a failure. §6. |
 | Routine interface | **Unchanged.** `measure` already absorbs a routine whose setpoints depend on an earlier acquisition — `qubit_spectroscopy` is the second implementor. No third interface. |
-| Wide sweeps and the instruction budget | In scope as a **constraint**, not a feature: a derived default must fit a sequencer. Chunking a band across several acquisitions is an open question, §12. |
+| A supplied range | **A suggestion, tried first, never required.** An operator's `span` becomes the first attempt and the derived bound the fallback — which is the same two-pass shape §6 already needs, not a second mechanism. A wrong hint costs one wasted sweep, not a failure. §7. |
+| Rewriting `calibration.yml` | **No.** A hint that keeps failing is reported, not edited away. That file is hand-authored intent — the August 2026 one is mostly reasoning — and `spec.amplitude` already shows what remembering a search hint costs. §7. |
+| Guards that wrongly *accept* | **In scope**, §6, moved in from "does not fix". Escalation only fires on a refusal, so a guard that accepts noise bypasses this whole RFC. It is the trigger condition, not a sequel. |
+| Wide sweeps and the instruction budget | In scope as a **constraint**. A derived default must fit a sequencer, and where a 2-D band does not, it is **chunked across acquisitions** with overlapping edges rather than refused. §5. |
 | Skipping blocked nodes | In scope, §11 — and on *parameters*, not on failed nodes. `depends_on` orders the walk and is not a data dependency: `cz_chevron` depends on two nodes that write nothing at all. Blocked nodes are **skipped with the blocker named**, never auto-failed. |
+| How `reads` is known | **Derived, not declared.** Build the schedule against an instrumented device, record the paths it read, then decide whether to run. A hand-written list can be wrong in exactly the way §11 exists to prevent. §11. |
+| A skipped node's stale parameter | **Kept and marked**, not cleared. Clearing it would stop a chip that worked yesterday from running today. §11. |
+| Staging writes outside the device file | **No second store.** The device file gains provenance; a parallel database would need synchronising with the file the executor actually reads. §10. |
 | Mixer calibration | **Out of scope.** Out-of-band, as RFC 0005 had it. |
 | Crosstalk | **Out of scope**, unchanged from RFC 0005. |
 | Removing `span`/`points` from configs | In scope, and last. Deleting a knob before its derived default is proven would strand the operator. |
@@ -154,7 +160,24 @@ August 2026 span-over-scatter guard rightly refuses it, and at T1 = 2 µs it is 
 the second point. This is the only class that needs a loop, and it is the interesting
 part of the design.
 
-## 6. Guards become signals
+### A derived range that will not fit is chunked, not refused
+
+A derived bound is not free. A 1 GHz band at 2 MHz steps is 501 acquisitions, about 6,500
+Q1ASM instructions against a ceiling empirically bracketed at 12,376-works /
+13,074-fails on the August 2026 cluster, so a 1-D band sweep fits. A 2-D sweep over the
+same band — a frequency band against five drive powers — does not.
+
+Where it does not fit, the sweep is **split across several acquisitions** rather than
+refused, because refusing puts the operator back to choosing a range by hand and that is
+the thing this RFC exists to stop. `measure` already runs a routine's own loop, and the
+allowance is already summed across it, so the machinery is in place.
+
+One constraint on the split, worth stating because it is easy to get wrong: **the chunks
+must overlap by at least one linewidth.** A line that lands exactly on a boundary is
+otherwise half in each chunk and resolved in neither, which is a spurious refusal that
+looks like a dead qubit.
+
+## 6. Guards, in both directions
 
 The six guards added in August 2026 all detect the same thing from different angles:
 *the window you swept cannot support the number you are about to write.*
@@ -168,10 +191,15 @@ The six guards added in August 2026 all detect the same thing from different ang
 | `MAX_DEMODULATED` | a fine-amplitude sweep far past its model's bound |
 | `require_in_range` | fitted value outside what was swept |
 
-Each is wired to a terminal failure. Several of them are more usefully read as
-instructions: *"the decay was never seen in this window"* is a request for longer
-delays, not a verdict on the chip. `require_in_range` firing on the high side is a
-request for more amplitude.
+Each is wired to a terminal failure. That is right when the chip is dead and wrong when
+the window is. And there is a second failure mode, on the other side of the same
+decision, which turns out to matter more.
+
+### 6.1 Refusals become retry signals
+
+Several of these are more usefully read as instructions: *"the decay was never seen in
+this window"* is a request for longer delays, not a verdict on the chip.
+`require_in_range` firing on the high side is a request for more amplitude.
 
 The proposal is a structured error the caller can act on:
 
@@ -200,14 +228,71 @@ Two properties this must keep, both learned the hard way:
   routine is judged on the sum of its allowances. So escalation cannot fail for being
   slow, only for being stuck. Nothing further is needed here.
 
-## 7. What the operator's config becomes
+### 6.2 Acceptances need a floor that scales
 
-Today, a working `calibration.yml` for a new chip carries a paragraph of reasoning per
-node and a hand-derived span for six of them, and every one of those numbers was found
-by a failed run. After this RFC it carries: which qubits, which edges, a timeout, and
-whatever the operator wants to *narrow* to save wall-clock on a chip they already know.
+Escalation only fires when a guard refuses. So a guard that *accepts* noise does not
+merely report one wrong number — it silently bypasses everything else in this RFC,
+because the widening never runs. This is the trigger condition for §6.1, which is why it
+belongs here rather than in a sequel.
 
-The test of that claim is stated in §8 and is not satisfiable by argument.
+It is not hypothetical. Measured on the simulated chip while writing this: a 61-point
+window of pure noise 250 MHz from the qubit produced a Lorentzian that cleared
+`MIN_LINE_SNR` and returned a confident frequency; a 101-point window did the same. The
+existing floor is a constant 3.0, and the tallest of *n* noise draws grows with *n* —
+about `sqrt(2 ln n)`, so 2.6 at 30 points and 3.4 at 300. A constant floor is therefore
+too tight at one end of the range and too loose at the other, and 3.0 is on the wrong
+side for every sweep worth calling wide.
+
+Two changes, both cheap:
+
+- **Scale the floor with the number of points.** `MIN_SEARCH_PEAK = 6.0` was already
+  chosen this way for the wide search, against a measured 115–126 on the line and
+  2.5–2.9 off it. `require_resolved_line` should use the same reasoning, not a constant.
+- **Require the line to reproduce.** `qubit_spectroscopy` already sweeps drive amplitude
+  and `fit_spectroscopy_power` already fits every row; today it picks the best row and
+  discards the rest. Requiring the chosen centre to agree with a second row to within a
+  linewidth costs nothing, since the data is already acquired, and noise does not
+  reproduce across powers. On the August 2026 chip this would have refused run one rather
+  than run six: its three rows fitted 782.7 kHz, 8.5 kHz and 28 kHz, which no real line
+  does.
+
+The second is the stronger test and the cheaper one, and it generalises: any node that
+already sweeps a second axis can ask its answer to survive that axis.
+
+## 7. What the operator's config becomes, and what it means
+
+Today a working `calibration.yml` for a new chip carries a paragraph of reasoning per
+node and a hand-derived span for six of them, and every one of those numbers was found by
+a failed run. After this RFC it carries which qubits, which edges, a timeout — and
+optionally a hint.
+
+**A supplied range is a suggestion, not a requirement.** It is tried first; if the guard
+refuses what it produced, the derived bound runs as the fallback. This is not a second
+mechanism: it is §6.1's escalation with the operator's window as the first attempt. The
+narrow-then-widen shape `qubit_spectroscopy` already has *is* this design, and reading it
+that way removes a distinction the earlier draft was carrying for nothing.
+
+So a good hint saves a wide sweep, and a wrong hint costs one wasted narrow sweep before
+the fallback — bounded, visible in the report, and never a failure. Which means an
+operator can guess freely, and that is the point: a hint that could break the run is not
+a hint, it is a requirement wearing a suggestion's clothes.
+
+**The config is not rewritten.** A tempting extension is to have the driver comment out
+or replace a hint it proved wrong, so later runs skip it. This RFC declines, for two
+reasons. `calibration.yml` is hand-authored intent — the August 2026 one is mostly
+*reasoning*, and a machine that edits it either destroys that or needs a comment-
+preserving YAML round-trip to avoid doing so. And remembering a search hint is a known
+failure on this codebase already: `spec.amplitude` latched at 0.16 in the *device* file
+and from then on `qubit_spectroscopy` only ever tried multiples of it, never reaching back
+to its own defaults, which is why the August 2026 config had to name amplitudes outright
+to break the latch. A self-updating hint is that bug with a wider blast radius.
+
+Report it instead. The run already produces a report; it can say *this hint was tried,
+fell back, and here is the range that worked* — the same information, in a place the
+operator chooses to act on. And if the derived default does its job, a hint that keeps
+failing is one nobody needs to keep.
+
+The test of all this is §8, and it is not satisfiable by argument.
 
 ## 8. Testing strategy
 
@@ -216,9 +301,9 @@ Three tiers as RFC 0004 §7 has them, plus one acceptance test that is the whole
 - **Tier 1.** `limits.py` against hand-written hardware configs: an LO at each end, a
   missing entry, an unreadable config. Every derived range asserted against the
   arithmetic, not against a recorded constant.
-- **Tier 2.** Every derived default compiles. A band-wide frequency sweep is hundreds of
-  setpoints, and the sequencer's instruction budget is the constraint that makes this
-  more than a formality (§12.1).
+- **Tier 2.** Every derived default compiles, and a chunked one compiles per chunk with
+  its edges overlapping. A band-wide frequency sweep is hundreds of setpoints, and the
+  sequencer's instruction budget is what makes this more than a formality (§5).
 - **Tier 3.** Per class: a simulated chip whose true value sits outside the *old*
   default and inside the derived one. The August 2026 work has two of these already
   (`test_a_configured_f01_hundreds_of_mhz_out_is_still_located`, and the refusal case).
@@ -239,27 +324,34 @@ noise, which is an argument for making it non-optional rather than `-m scqubits`
 In this order, so each step is independently mergeable and the escalation loop comes
 after the two classes that need no loop at all.
 
-0. **`reads`, and skipping on it** (§11). Declare what each routine consumes, block on an
+0. **`reads`, and skipping on it** (§11). Derive what each routine consumes, block on an
    unproduced parameter, report the blocker. Independent of everything below it, and it
    goes first because it is what makes the failures of the phases after it legible — a
    phase-2 regression on one node should show as one failure and a list of skips, not as
    a graph-wide puzzle. It also stands alone: worth landing even if nothing else here is.
-1. **`tuners/base/limits.py`.** `addressable_band(device, port_clock)` from the LO and
+1. **The accept side** (§6.2). Scale `require_resolved_line`'s floor with the number of
+   points, and require `qubit_spectroscopy`'s chosen centre to reproduce across a second
+   drive power. Before the derived ranges, not after: a guard that accepts noise means the
+   escalation those phases rely on never fires, so measuring their effect would be
+   measuring it through a broken detector. Also the cheapest phase here: the second test
+   needs no new acquisition, only rows `fit_spectroscopy_power` already fits and drops.
+2. **`tuners/base/limits.py`.** `addressable_band(device, port_clock)` from the LO and
    the backend's IF limit; `full_scale(element, path)` from the element's own validator.
    Tier-1 tests. No routine changes, so nothing can regress.
-2. **The hardware-bounded class.** Frequency sweeps default to a coarse pass over the
+3. **The hardware-bounded class.** Frequency sweeps default to a coarse pass over the
    addressable band, then the existing narrow sweep — the two-pass shape
-   `qubit_spectroscopy` already has, lifted into a shared helper. Amplitude sweeps go to
-   full scale. Finishes `qubit_spectroscopy`'s `search_span`, which is currently 600 MHz
+   `qubit_spectroscopy` already has, lifted into a shared helper, with a supplied `span`
+   as its first attempt (§7). Amplitude sweeps go to full scale. Chunking where a derived
+   grid does not fit. Finishes `qubit_spectroscopy`'s `search_span`, currently 600 MHz
    because the LO was not yet known to be readable from a routine.
-3. **The physics-bounded class.** The two operating points and both excited-state
+4. **The physics-bounded class.** The two operating points and both excited-state
    resonator sweeps take their span from the measured linewidth. `f12_spectroscopy`
    keeps its prior but bounds it to `[150, 400]` MHz. `drag` centres on the measured
-   anharmonicity. Cheapest phase, and it fixes a live readout bug.
-4. **Escalation.** `OutOfRange`, the retry helper, and the bounded attempt count. Wire
+   anharmonicity. Cheapest of the range phases, and it fixes a live readout bug.
+5. **Escalation.** `OutOfRange`, the retry helper, and the bounded attempt count. Wire
    `t1`, `t2_echo`, `ramsey`, `ramsey_12`, and the two CZ duration sweeps.
-5. **The acceptance test, then the knobs.** Land the test; then delete every `span` and
-   `points` that phases 2–4 made redundant, from the routines' defaults and from the
+6. **The acceptance test, then the knobs.** Land the test; then delete every `span` and
+   `points` that phases 3–5 made redundant, from the routines' defaults and from the
    operator's `calibration.yml`. A knob removed before its replacement is proven is a
    regression, which is why this is last.
 
@@ -273,14 +365,35 @@ line was never there. Provenance per parameter (which node wrote it, when, from 
 signal-to-noise) would make a stale value visible instead of merely wrong. It is a
 device-file format change and belongs in its own RFC.
 
-**A wrong window can still be *accepted*.** Escalation triggers when a guard refuses.
-Measured on the simulated chip while writing this: a 61-point window of pure noise
-produced a Lorentzian that cleared `MIN_LINE_SNR`, and a narrow sweep 250 MHz from the
-qubit returned a confident frequency. So a node can be confidently wrong rather than
-refusing, and no amount of widening helps, because widening never runs. Hardening the
-accept side — a signal-to-noise floor that scales with the number of points, or
-requiring a candidate to reproduce across two amplitudes — is the natural sequel, and
-is what would have caught this chip on run one rather than run six.
+Three things here are waiting on that one field: §2's definition of a prior, §11's "no
+trustworthy value", and §11's marking of what a skipped node did not confirm.
+
+**Why not stage the writes somewhere else until the run succeeds?** Considered, and
+declined as posed — but the problem underneath it is real, so it is worth being precise
+about which part.
+
+The corruption on the August 2026 chip was not caused by writing too early. It was caused
+by writing a *wrong* value at all: `rabi` wrote `amp180 = 0.0158` and every later run
+inherited it. A staging store would have held that value for the length of the walk and
+then committed it, because the walk did not fail: `require_in_range` accepted 0.0158 and
+`rabi` reported success. Deferring the commit does not help when the producing node
+believes it succeeded, which is the case that actually happened. §6's guards are what
+address that, and did.
+
+Nor can the value be withheld from the *walk*: `rabi` needs the `f01` that
+`qubit_spectroscopy` just wrote, so downstream nodes read upstream results within the run
+by construction. The staging boundary can only ever be the file, not the device object.
+
+And an all-or-nothing file commit has a cost of its own. A run that measures the
+resonator and f01 correctly and then fails at `rabi` would discard two good measurements,
+so the next run starts from the same bad priors — on this chip, that is the difference
+between converging and not.
+
+What is worth taking from the idea is the per-parameter version, and it is the provenance
+field again: commit a parameter when the node that produced it succeeded *and* its guards
+passed, and mark what it was. That is a strictly finer boundary than a staging store, it
+does not need a second datastore to synchronise with the file the executor reads, and it
+subsumes the all-or-nothing case. It belongs in the provenance RFC.
 
 ## 11. Skipping what cannot succeed
 
@@ -305,7 +418,7 @@ depend on their output, and some are still depended on in the walk order.
 
 **Disabled is not failed.** `qubit_spectroscopy` depends on `resonator_punchout`, which
 is switched off on the August 2026 chip because its amplitude grid never reaches
-punch-through (§12.4). `time_of_flight` is off too. Under naive propagation, disabling
+punch-through (§12.3). `time_of_flight` is off too. Under naive propagation, disabling
 either would skip the entire graph beneath it — which is to say, everything.
 
 **A refiner is not a producer.** Seven parameters have two writers, where the first
@@ -327,8 +440,20 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
 
 **The proposal: block on an unsatisfied parameter, not on a failed node.**
 
-- Routines gain a `reads` declaration, the counterpart of the `updates` they already
-  have. That makes the data dependencies explicit and separable from walk order.
+- Routines gain a `reads` set, the counterpart of the `updates` they already have, which
+  makes the data dependencies explicit and separable from walk order. **Derived, not
+  hand-declared:** `read_path` is already the single way a routine touches the device, so
+  building the schedule against an instrumented device records exactly what that node
+  needs. A hand-written list can omit a path the routine really reads, which is this
+  section's own bug moved one level up and made invisible.
+
+  The order this implies is *build, inspect, then decide*: build the schedule (cheap, no
+  instrument), see what it read, block if any of it is untrustworthy, otherwise run.
+  Caveat to settle in implementation: a few nodes also read in `analyse` — for instance
+  `resonator_spectroscopy_excited` reads `clock_freqs.readout` there to difference against
+  — and those reads happen after the acquisition, too late to block on. Either they are
+  hoisted into `build_schedule`, or the first walk is treated as the discovery run and the
+  derived set cached.
 - A node is blocked when a parameter it reads has no trustworthy value — not produced
   in this walk, and no measured prior. A failed *refiner* leaves the value trustworthy,
   so nothing behind it is blocked.
@@ -338,6 +463,10 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
 - Blocked nodes are recorded as **skipped, with the blocker named** — not failed.
   Auto-failing would replace six misleading failures with six fabricated ones, and would
   feed the drift check a history of failures that never happened.
+- A skipped node's parameter is **kept and marked, not cleared.** Clearing it would mean a
+  chip that ran jobs yesterday cannot run today because one node was blocked, which is a
+  worse outcome than running on a value this walk did not confirm — provided the report
+  says which values were not confirmed. That proviso is §10's provenance field.
 
 `diagnose` already walks `depends_on` to blame the deepest failing ancestor rather than
 the symptom (RFC 0005 §8), so the traversal exists and the calibrate path can borrow its
@@ -353,31 +482,41 @@ report is the same six-way puzzle that motivated this RFC.
 
 ## 12. Open questions
 
-1. **Instruction budget versus band-wide sweeps.** A 1 GHz band at 2 MHz steps is 501
-   acquisitions, ~6,500 Q1ASM instructions against an empirically bracketed
-   12,376-works / 13,074-fails ceiling on this cluster. That fits. A 2-D sweep over the
-   same band does not. Chunk across acquisitions inside `measure`, or refuse and say
-   which axis to narrow?
-2. **Where the IF limit lives.** ±500 MHz is Qblox. `drag_span` is already a
+1. **Where the IF limit lives.** ±500 MHz is Qblox. `drag_span` is already a
    `SchedulerBackend` property for exactly this reason — the two schedulers' DRAG
    parameters are different quantities — so `if_limit` probably belongs there too. Worth
    confirming against qblox-scheduler before assuming symmetry.
-3. **Escalation in the DAG or in `measure`?** In `measure` keeps the DAG simple and the
+2. **Escalation in the DAG or in `measure`?** In `measure` keeps the DAG simple and the
    retry close to the physics. In the DAG makes the attempt budget uniform and visible
    in the report. Leaning `measure`, with the attempt count reported.
-4. **Does `resonator_punchout` come back?** It is disabled on the August 2026 chip
+3. **Does `resonator_punchout` come back?** It is disabled on the August 2026 chip
    because its amplitude grid never reached punch-through, which is a range bug of
    exactly this kind. Phase 2 may simply fix it.
-5. **What "high fidelity" means in the acceptance test.** A threshold low enough that
+4. **What "high fidelity" means in the acceptance test.** A threshold low enough that
    the simulated chip's own gate error dominates is a weak test; one too high pins the
    test to simulator tuning. Perhaps assert against the simulator's injected error
    rather than a constant, as `test_rb_recovers_a_known_gate_error` does.
-6. **Does `reads` get derived or declared?** Declared is explicit and can be wrong in a
-   way nothing detects — a routine that reads a parameter it did not declare is exactly
-   the bug §11 exists to prevent, reintroduced one level up. Deriving it from the paths a
-   routine actually touches would need the device access to go through something
-   observable, which `read_path` already is. Worth a look before hand-writing 33 lists.
-7. **Does a skipped node keep its stale parameter, or clear it?** Keeping it means the
-   chip runs jobs on a value this walk could not confirm; clearing it means a chip that
-   worked yesterday will not run today. Probably keep and mark, which is §10's provenance
-   again — the same missing field answers both.
+5. **How wide a chunked 2-D sweep is allowed to get.** §5 chunks rather than refuses, and
+   the sequencer stops being the binding limit once it does — wall-clock takes over. A
+   band-wide sweep against five drive powers at 1024 shots is tens of minutes, which is
+   fine for a bring-up and not for a drift check. Probably a per-node cap that a bring-up
+   raises, but that is a knob, and this RFC is about removing those.
+6. **Whether `reads` needs `analyse`-time reads hoisted.** §11 derives the set at build
+   time, and a handful of nodes read the device in `analyse` instead, which is too late to
+   block on. Hoisting them is a small mechanical change to maybe four routines; caching a
+   discovery run is less work and less honest. Decide when the four are counted.
+
+## 13. Resolved during review
+
+Recorded because the reasoning is worth keeping, and because two of these changed the
+shape of the RFC rather than just settling a detail.
+
+| Question | Resolution |
+|---|---|
+| Chunk a too-wide derived sweep, or refuse it? | **Chunk**, §5. Refusing hands range-picking back to the operator, which is the thing being removed. Chunks overlap by a linewidth so a line on a boundary is not lost in both. |
+| Harden the *accept* side here, or in a sequel? | **Here**, §6.2. It is not a parallel concern: escalation only fires on a refusal, so a guard that accepts noise bypasses the entire RFC. It is the trigger condition. |
+| `reads` declared or derived? | **Derived** from `read_path`, §11. A hand-written list can omit a path the routine really reads — this section's own bug, one level up and invisible. |
+| Does a skipped node keep its stale parameter? | **Keep and mark**, §11. Clearing it stops a chip that ran yesterday from running today. |
+| Stage writes in a separate store until the run succeeds? | **No**, §10 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
+| Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
+| Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
