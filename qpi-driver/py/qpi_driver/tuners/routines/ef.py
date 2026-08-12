@@ -154,6 +154,7 @@ class Rabi12(CalibrationRoutine):
     name = "rabi_12"
     depends_on = ("f12_spectroscopy",)
     updates = (f"{EF}.ef_amp180",)
+    reads = ("r12.ef_duration",)
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element with somewhere to keep an EF pulse."""
@@ -249,6 +250,12 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
     name = "three_state_operating_point"
     depends_on = ("rabi_12", "readout_operating_point")
     updates = (f"{THREE_STATE}.frequency", f"{THREE_STATE}.pulse_amp")
+    reads = (
+        "clock_freqs.readout",
+        "measure.pulse_amp",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     #: Two, not three. The register budget buys ten settings and they are better
     #: spent on frequency: the amplitude runs to the top of whatever range it is
@@ -392,6 +399,7 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
     name = "resonator_spectroscopy_second_excited"
     depends_on = ("rabi_12",)
     updates = ()
+    reads = ("clock_freqs.readout", "r12.ef_amp180", "r12.ef_duration")
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_ef_drive(device, target)
@@ -478,6 +486,12 @@ class FineAmplitude12(CalibrationRoutine):
     name = "fine_amplitude_12"
     depends_on = ("three_state_operating_point",)
     updates = (f"{EF}.ef_amp180",)
+    reads = (
+        "measure_3state.frequency",
+        "measure_3state.pulse_amp",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_three_state_readout(device, target)
@@ -588,6 +602,13 @@ class Ramsey12(CalibrationRoutine):
     name = "ramsey_12"
     depends_on = ("three_state_operating_point",)
     updates = ("clock_freqs.f12",)
+    reads = (
+        "clock_freqs.f12",
+        "measure_3state.frequency",
+        "measure_3state.pulse_amp",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_three_state_readout(device, target)
@@ -692,6 +713,12 @@ class Drag12(CalibrationRoutine):
     name = "drag_12"
     depends_on = ("ramsey_12",)
     updates = (f"{EF}.ef_motzoi",)
+    reads = (
+        "measure_3state.frequency",
+        "measure_3state.pulse_amp",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_three_state_readout(device, target)
@@ -781,6 +808,12 @@ class ThreeStateDiscrimination(CalibrationRoutine):
     name = "three_state_discrimination"
     depends_on = ("three_state_operating_point",)
     updates = ()
+    reads = (
+        "measure_3state.frequency",
+        "measure_3state.pulse_amp",
+        "r12.ef_amp180",
+        "r12.ef_duration",
+    )
 
     #: Prepared states, in the order the confusion matrix indexes them.
     STATES = (0, 1, 2)

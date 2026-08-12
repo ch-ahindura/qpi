@@ -603,3 +603,75 @@ class TestExcitingTheQubitHasToMoveItsResonator:
         else:
             with pytest.raises(RoutineError, match="not exciting this qubit"):
                 node.analyse(signal, "q0", None, RoutineConfig(params={}))
+
+
+@pytest.fixture
+def own_quantify_tuner(tmp_path):
+    """A tuner of this test's own, for the reason its neighbours give.
+
+    An earlier test in this file calls `Instrument.close_all()`, which invalidates the
+    module-scoped tuner's device — and this test walks every routine, so it needs one
+    that is readable whatever ran before it.
+    """
+    if not IS_QUANTIFY_INSTALLED:
+        pytest.skip("quantify-scheduler is not installed")
+    from qpi_driver.compat.quantify import Instrument
+    from qpi_driver.tuners.quantify import QuantifyTuner
+
+    Instrument.close_all()
+    device = tmp_path / "quantify.device.yml"
+    device.write_bytes((FIXTURES / "quantify.device.yml").read_bytes())
+    tuner = QuantifyTuner(
+        quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+        quantify_device_config=device,
+        is_dummy=True,
+    )
+    yield tuner
+    tuner.close()
+
+
+def test_a_routine_declares_every_parameter_it_reads(own_quantify_tuner, monkeypatch):
+    """`reads` is hand-written, so something has to check it against the code.
+
+    RFC 0007 §11 has the DAG decline a node whose input was never produced, and that
+    decision is made from `reads` *before* the node runs — so a declaration missing a
+    path lets exactly the node this is meant to protect run on an uncalibrated chip.
+    Declared rather than derived at run time because the set is static and because the
+    two `measure` implementors have no schedule to inspect first; this test is what
+    keeps the declaration honest, by instrumenting the single function every device read
+    goes through and comparing what was actually asked for.
+
+    A declaration may be *wider* than what one build reads — `qubit_spectroscopy` reads
+    `spec.amplitude` only on an element that has one — so this asserts coverage, not
+    equality.
+    """
+    from qpi_driver.tuners.base import device as device_mod
+    from qpi_driver.tuners.routines import ef, readout, single_qubit, spectroscopy
+    from qpi_driver.tuners.routines import two_qubit
+
+    recorded: set[str] = set()
+    original = device_mod.read_path
+
+    def recording(component, dotted):
+        recorded.add(dotted)
+        return original(component, dotted)
+
+    # Every module that imported `read_path` into its own namespace, plus the module
+    # that defines it — patching only the latter would miss every routine.
+    for module in (device_mod, ef, readout, single_qubit, spectroscopy, two_qubit):
+        if hasattr(module, "read_path"):
+            monkeypatch.setattr(module, "read_path", recording)
+
+    undeclared: dict[str, set[str]] = {}
+    for name in ROUTINE_NAMES:
+        node = routine(name)
+        recorded.clear()
+        _build(node, own_quantify_tuner)
+        missing = recorded - set(node.reads)
+        if missing:
+            undeclared[name] = missing
+
+    assert not undeclared, "\n".join(
+        f"{name} reads {sorted(paths)} without declaring it"
+        for name, paths in sorted(undeclared.items())
+    )

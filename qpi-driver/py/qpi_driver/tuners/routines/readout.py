@@ -72,6 +72,7 @@ class ReadoutOperatingPoint(CalibrationRoutine):
     name = "readout_operating_point"
     depends_on = ("rabi",)
     updates = (f"{TWO_STATE}.frequency", f"{TWO_STATE}.pulse_amp")
+    reads = ("clock_freqs.readout", "measure.pulse_amp")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element that can keep a discriminated readout point.
@@ -193,6 +194,7 @@ class ReadoutDiscrimination(CalibrationRoutine):
     name = "readout_discrimination"
     depends_on = ("readout_operating_point",)
     updates = ("measure.acq_rotation", "measure.acq_threshold")
+    reads = ("measure_2state.frequency", "measure_2state.pulse_amp")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -336,6 +338,7 @@ class ReadoutFidelity(CalibrationRoutine):
     depends_on = ("readout_discrimination",)
     updates = ()
     benchmark = True
+    reads = ("measure_2state.frequency", "measure_2state.pulse_amp")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

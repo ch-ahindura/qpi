@@ -98,6 +98,12 @@ class CouplerAnticrossing(CalibrationRoutine):
     depends_on = ("rabi",)
     targets = "edges"
     updates = ("bias.parking_current",)
+    #: Its own edge's only. `measure` also reads the *parent qubit's*
+    #: ``clock_freqs.f01`` to centre each probe sweep, which a path on this routine's
+    #: own target cannot name — `depends_on = ("rabi",)` is what orders that, and this
+    #: is the one read in the graph that the notation does not reach. Declared by hand
+    #: because this routine builds no schedule for the derivation test to instrument.
+    reads = ("bias.parking_current",)
 
     #: Where to park, as a fraction of the crossing current. Well below it: the push
     #: at 60% of the crossing is a couple of megahertz where at 97% it is tens, and
@@ -273,6 +279,7 @@ class CZSpectroscopy(CalibrationRoutine):
     depends_on = ("rabi",)
     targets = "edges"
     updates = ("clock_freqs.cz",)
+    reads = ("clock_freqs.cz", "cz.square_amp")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an edge whose CZ is a drive rather than a flux pulse."""
@@ -384,6 +391,7 @@ class CZParametrization(CalibrationRoutine):
     depends_on = ("cz_spectroscopy",)
     targets = "edges"
     updates = ("cz.square_amp", "cz.square_duration")
+    reads = ("clock_freqs.cz", "cz.square_amp")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an edge whose CZ is a drive — the same test `cz_spectroscopy` makes."""

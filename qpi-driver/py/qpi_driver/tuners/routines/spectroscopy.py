@@ -174,6 +174,7 @@ class TimeOfFlight(_ReadoutTraceRoutine):
     # Hence the dependency: find the resonator, then time the flight to it.
     depends_on = ("resonator_spectroscopy",)
     updates = ("measure.acq_delay",)
+    reads = ("measure.acq_delay", "measure.integration_time")
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         # On the grid, because the fit reports an arrival to a fraction of a sample
@@ -211,6 +212,7 @@ class ResonatorRelaxation(_ReadoutTraceRoutine):
     name = "resonator_relaxation"
     depends_on = ("resonator_spectroscopy",)
     updates = ()
+    reads = ("measure.acq_delay", "measure.integration_time")
 
 
 def _trace_of(dataset: Any) -> Any:
@@ -244,6 +246,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
     name = "resonator_spectroscopy"
     depends_on = ()
     updates = ("clock_freqs.readout",)
+    reads = ("clock_freqs.readout",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -395,6 +398,7 @@ class ResonatorPunchout(CalibrationRoutine):
     name = "resonator_punchout"
     depends_on = ("resonator_spectroscopy",)
     updates = ("measure.pulse_amp", "clock_freqs.readout")
+    reads = ("clock_freqs.readout",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -561,6 +565,7 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
     name = "resonator_spectroscopy_excited"
     depends_on = ("rabi",)
     updates = ()
+    reads = ("clock_freqs.readout",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -655,6 +660,7 @@ class QubitSpectroscopy(CalibrationRoutine):
     name = "qubit_spectroscopy"
     depends_on = ("resonator_spectroscopy", "resonator_punchout")
     updates = ("clock_freqs.f01", "spec.amplitude")
+    reads = ("clock_freqs.f01", "spec.amplitude")
 
     #: Drive powers to compare, as a fraction of full scale. Wide, because on a first
     #: bring-up nothing yet says which end of it the chip wants.
@@ -944,6 +950,7 @@ class F12Spectroscopy(CalibrationRoutine):
     name = "f12_spectroscopy"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f12",)
+    reads = ("clock_freqs.f01",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1036,6 +1043,7 @@ class FluxSpectroscopy(CalibrationRoutine):
     name = "flux_spectroscopy"
     depends_on = ("qubit_spectroscopy",)
     updates = ()
+    reads = ("clock_freqs.f01",)
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to a qubit the wiring carries a flux line to.

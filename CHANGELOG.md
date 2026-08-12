@@ -84,6 +84,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: every routine reads the device before its acquisition rather than
   after it (RFC 0007 §11). Six nodes read a parameter in `analyse`, which describes a
   sweep that had already happened and is too late to check as a prerequisite.
+- `qpi-driver/py`: a routine declares the device parameters it `reads`, the counterpart
+  of the `updates` it already declared (RFC 0007 §11). A test derives the true set from
+  an instrumented `read_path` and fails a declaration that is short of it.
 - `repo`: Cleaned up and refactored `Makefile`.
 - `repo`: Cleaned up `.github/workflows/ci.yml`.
 - `qpi-driver/py`: Optimized `test-py-loop` execution speed with

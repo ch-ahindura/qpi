@@ -66,6 +66,15 @@ class CalibrationRoutine(ABC):
         updates: Device parameters this routine writes. Empty means it measures
             without calibrating — true of a benchmark, and also of a
             characterisation like T1 that reports a number nothing is tuned from.
+        reads: Device parameters this routine needs in order to measure anything,
+            as dotted paths on its own target. The counterpart of ``updates``, and
+            what lets the DAG decline to run a node whose input was never produced
+            instead of letting it measure an uncalibrated chip and fit the noise
+            (RFC 0007 §11). Declared rather than derived at run time because the
+            set is static, and because the two routines that override
+            :meth:`measure` have no schedule to inspect beforehand;
+            ``test_a_routine_declares_every_parameter_it_reads`` derives it from
+            an instrumented `read_path` and fails if a declaration is short.
         benchmark: Whether this routine's output is a gate fidelity. Declared
             rather than inferred from an empty ``updates``: T1 writes nothing
             either, and recording it as a benchmark would put a ``None``
@@ -76,6 +85,7 @@ class CalibrationRoutine(ABC):
     depends_on: tuple[str, ...] = ()
     targets: Literal["qubits", "edges"] = "qubits"
     updates: tuple[str, ...] = ()
+    reads: tuple[str, ...] = ()
     benchmark: bool = False
 
     @abstractmethod

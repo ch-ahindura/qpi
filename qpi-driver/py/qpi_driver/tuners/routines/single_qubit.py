@@ -191,6 +191,7 @@ class Ramsey(CalibrationRoutine):
     name = "ramsey"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f01",)
+    reads = ("clock_freqs.f01",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -461,6 +462,7 @@ class FineAmplitude(CalibrationRoutine):
     name = "fine_amplitude"
     depends_on = ("drag",)
     updates = ("rxy.amp180",)
+    reads = ("rxy.amp180",)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
