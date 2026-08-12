@@ -348,10 +348,10 @@ after the two classes that need no loop at all.
    skips rather than a graph-wide puzzle. It also stood alone, which is why it went in
    ahead of the rest.
 
-   Landed in three commits — the hoists, the declarations and their derivation test, then
-   the ledger the walk blocks on. Two corrections against what §11 predicted: the pre-walk
-   config check was withdrawn as unwritable without provenance, and the one read the
-   notation cannot express turned out to be `coupler_anticrossing`'s of its *parent
+   Landed in three commits: the hoists, the declarations and their derivation test, then
+   the ledger the walk blocks on. Two corrections against what §11 predicted — the
+   pre-walk config check was withdrawn as unwritable without provenance, and the one read
+   the notation cannot express turned out to be `coupler_anticrossing`'s of its *parent
    qubit's* `f01`. Twenty-three of thirty-three routines read a device parameter at all.
 1. **The accept side** (§6.2). Scale `require_resolved_line`'s floor with the number of
    points, and require `qubit_spectroscopy`'s chosen centre to reproduce across a second
@@ -379,27 +379,40 @@ after the two classes that need no loop at all.
    operator's `calibration.yml`. A knob removed before its replacement is proven is a
    regression, which is why this is last.
 
-## 10. What this does not fix
+## 10. What this defers, and the shape it should take
 
-**A prior is still indistinguishable from a measurement.** After this RFC the driver
-finds the qubit wherever it is, but nothing says whether `clock_freqs.f01` was measured
-by this driver or typed in from a design document. The August 2026 chip carried
+One thing, and it is provenance. Everything else this RFC once listed here has since
+been pulled into scope (the accept side of the guards is §6.2), so this section is the
+single deferral plus the design settled for it during review.
+
+Status, so a reader is not misled by the detail below: the *problem* is unfixed by this
+RFC, and the *shape of the answer* is decided. None of it is built, and it wants its own
+RFC — the reasoning is recorded here because it was argued out here, not because it
+belongs to this RFC's implementation plan.
+
+**The problem: a prior is still indistinguishable from a measurement.** After this RFC
+the driver finds the qubit wherever it is, but nothing says whether `clock_freqs.f01` was
+measured by this driver or typed in from a design document. The August 2026 chip carried
 `f01: 4735509751.238763` — nine significant figures, and the line was never there.
 
-Three things here want that distinction: §2's definition of a prior, §11's "no
-trustworthy value", and §11's marking of what a skipped node did not confirm.
+Three things want that distinction: §2's definition of a prior, §11's "no trustworthy
+value", and §11's marking of what a skipped node did not confirm. Each has a weaker
+version that works without it, which is why this could be deferred at all: §11's ledger
+asks "did this walk produce it?" rather than "was this ever measured?".
 
-**Where provenance should not go.** Not `quantify.device.yml`: that file's schema is not
+### 10.1 Where provenance goes
+
+**Not `quantify.device.yml`:** that file's schema is not
 ours. It deserialises into a `QuantumDevice` whose parameters are qcodes parameters on
 real element classes, and quantify's models reject unknown keys — `output_att` validated
 against the wrong config class raised `extra_forbidden` during this RFC's own research.
 Provenance keys there mean either a parallel structure inside the file or a fork of
 someone else's format.
 
-Not `calibration.yml` either, for the reason §7 gives: it is hand-authored intent, mostly
-reasoning, and the driver writing into it destroys that or needs a comment-preserving
-round-trip to avoid doing so. It would also put the machine's output and the operator's
-input in one file, which is the thing that makes both harder to trust.
+**Not `calibration.yml` either**, for the reason §7 gives: it is hand-authored intent,
+mostly reasoning, and the driver writing into it destroys that or needs a
+comment-preserving round-trip to avoid doing so. It would also put the machine's output
+and the operator's input in one file, which is the thing that makes both harder to trust.
 
 **So it goes in a file the driver owns.** Neither config file is the right home, and that
 leaves a third: a structured sidecar the operator never edits, next to the device file
@@ -440,9 +453,10 @@ assumed. Still its own RFC, because indexing and querying run history is a persi
 question rather than a calibration one — and because the sidecar's schema wants deciding
 alongside whatever else the driver comes to want a private store for.
 
-**Why not stage the writes somewhere else until the run succeeds?** Considered, and
-declined as posed — but the problem underneath it is real, so it is worth being precise
-about which part.
+### 10.2 Why not stage the writes until the run succeeds
+
+Considered, and declined as posed. The problem underneath it is real though, so it is
+worth being precise about which part.
 
 The corruption on the August 2026 chip was not caused by writing too early. It was caused
 by writing a *wrong* value at all: `rabi` wrote `amp180 = 0.0158` and every later run
