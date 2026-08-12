@@ -122,6 +122,17 @@ class SchedulerBackend(ABC):
     #: ceiling, exactly as before this existed.
     last_allowance_s: float = 0.0
 
+    #: The same, summed over every `run` since :meth:`start_accounting`. A routine that
+    #: overrides `measure` runs several schedules under one ceiling, and the last one's
+    #: allowance says nothing about what the ones before it were owed — a wide search
+    #: followed by two narrow sweeps is three waits, and bounding the loop by the third
+    #: alone fails a routine that was inside its allowance at every step.
+    total_allowance_s: float = 0.0
+
+    def start_accounting(self) -> None:
+        """Begin a fresh allowance total, for one routine on one target."""
+        self.total_allowance_s = 0.0
+
     def allow(self, timeout_s: float, expected_s: float | None) -> float:
         """The wait to give the instruments for a schedule expected to take *expected_s*.
 
@@ -155,6 +166,7 @@ class SchedulerBackend(ABC):
                 )
                 allowance = needed
         self.last_allowance_s = allowance
+        self.total_allowance_s += allowance
         return allowance
 
     def idle(self, schedule: Any, duration: float) -> None:

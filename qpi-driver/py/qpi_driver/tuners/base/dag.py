@@ -430,6 +430,7 @@ class CalibrationDAG:
     ) -> bool:
         """Run one routine over one target, recording the outcome. True if it worked."""
         started = time.monotonic()
+        backend.start_accounting()
         try:
             if routine.measures_itself:
                 # A routine whose acquisitions cannot be one schedule — DC state set
@@ -445,10 +446,12 @@ class CalibrationDAG:
                     timeout_s=config.routine_timeout_s,
                 )
                 elapsed = time.monotonic() - started
-                # The ceiling still bounds the whole loop rather than each acquisition
-                # in it, so a routine of many long schedules can exceed this. Raised by
-                # the last one's allowance, which is the most that is knowable here.
-                allowed = max(config.routine_timeout_s, backend.last_allowance_s)
+                # Against the *sum* of what each acquisition was owed, since the ceiling
+                # bounds the whole loop. Judging a three-schedule search by the last
+                # schedule's allowance alone would fail a routine that never exceeded its
+                # allowance once — the exact failure `allow` exists to prevent, moved one
+                # level out.
+                allowed = max(config.routine_timeout_s, backend.total_allowance_s)
                 if elapsed > allowed:
                     raise _over_budget(elapsed, allowed, config.routine_timeout_s)
                 fit = params.pop("fit", None)
@@ -474,8 +477,10 @@ class CalibrationDAG:
             # Against what the backend was prepared to wait for, not against the
             # configured ceiling: a schedule whose pulses outlast it raises its own
             # allowance (see `SchedulerBackend.allow`), and judging the result by the
-            # ceiling instead would wait the longer time and then discard the data.
-            allowed = max(config.routine_timeout_s, backend.last_allowance_s)
+            # ceiling instead would wait the longer time and then discard the data. The
+            # total and the last are the same number on this path, which runs one
+            # schedule; it is the total so that both paths read the same way.
+            allowed = max(config.routine_timeout_s, backend.total_allowance_s)
             if elapsed > allowed:
                 raise _over_budget(elapsed, allowed, config.routine_timeout_s)
 

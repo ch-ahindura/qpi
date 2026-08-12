@@ -1107,6 +1107,33 @@ class TestALongScheduleRaisesItsOwnCeiling:
 
         assert backend.last_allowance_s == 1260
 
+    def test_several_acquisitions_under_one_ceiling_are_judged_on_their_sum(self):
+        """A routine overriding `measure` runs more than one schedule under one ceiling.
+
+        `qubit_spectroscopy` widens to a search and then re-sweeps, so it is three waits.
+        Bounding that by the last schedule's allowance would fail a routine that never
+        exceeded its allowance once — `allow`'s own failure, moved one level out.
+        """
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        backend = QuantifyBackend(_compiler_of(1200.0), _RecordingCoordinator())
+        backend.start_accounting()
+        backend.run("search", timeout_s=300)
+        backend.run("narrow", timeout_s=300)
+
+        assert backend.last_allowance_s == 1260
+        assert backend.total_allowance_s == 2520
+
+    def test_accounting_starts_again_for_each_routine(self):
+        """Or a long early node would raise the ceiling for every node after it."""
+        from qpi_driver.tuners.quantify import QuantifyBackend
+
+        backend = QuantifyBackend(_compiler_of(1200.0), _RecordingCoordinator())
+        backend.run("schedule", timeout_s=300)
+        backend.start_accounting()
+
+        assert backend.total_allowance_s == 0.0
+
     def test_a_backend_that_cannot_measure_its_schedule_leaves_the_ceiling_alone(self):
         from qpi_driver.tuners.quantify import QuantifyBackend
 

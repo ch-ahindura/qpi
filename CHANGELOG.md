@@ -77,6 +77,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a schedule whose pulses outlast `routine_timeout_s` raises its own
   wait rather than failing, and says so. The ceiling bounds a sequencer that never
   stops; a 59 s punchout under a 30 s ceiling was failing for being large.
+- `qpi-driver/py`: a routine running several schedules under one ceiling is judged on
+  their summed allowance rather than the last one's. `qubit_spectroscopy`'s search is
+  three acquisitions, and the last alone would fail a routine that never exceeded its
+  allowance once.
 - `repo`: Cleaned up and refactored `Makefile`.
 - `repo`: Cleaned up `.github/workflows/ci.yml`.
 - `qpi-driver/py`: Optimized `test-py-loop` execution speed with
