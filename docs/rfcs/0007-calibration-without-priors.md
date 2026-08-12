@@ -70,7 +70,8 @@ a search but is never required to make one possible.
 | Where a bound comes from | Hardware config for instrument limits, upstream measurements for physical ones, escalation for the rest. New `tuners/base/limits.py`; the hardware config is already reachable from a routine via `device.hardware_config()`, as `has_flux_port` shows. |
 | Guards as signals | **Changed.** The six "your window is wrong" guards added in August 2026 raise prose. They gain a structured form the caller can act on, so the same detection drives a retry instead of a failure. §6. |
 | Routine interface | **Unchanged.** `measure` already absorbs a routine whose setpoints depend on an earlier acquisition — `qubit_spectroscopy` is the second implementor. No third interface. |
-| Wide sweeps and the instruction budget | In scope as a **constraint**, not a feature: a derived default must fit a sequencer. Chunking a band across several acquisitions is an open question, §11. |
+| Wide sweeps and the instruction budget | In scope as a **constraint**, not a feature: a derived default must fit a sequencer. Chunking a band across several acquisitions is an open question, §12. |
+| Skipping blocked nodes | In scope, §11 — and on *parameters*, not on failed nodes. `depends_on` orders the walk and is not a data dependency: `cz_chevron` depends on two nodes that write nothing at all. Blocked nodes are **skipped with the blocker named**, never auto-failed. |
 | Mixer calibration | **Out of scope.** Out-of-band, as RFC 0005 had it. |
 | Crosstalk | **Out of scope**, unchanged from RFC 0005. |
 | Removing `span`/`points` from configs | In scope, and last. Deleting a knob before its derived default is proven would strand the operator. |
@@ -217,7 +218,7 @@ Three tiers as RFC 0004 §7 has them, plus one acceptance test that is the whole
   arithmetic, not against a recorded constant.
 - **Tier 2.** Every derived default compiles. A band-wide frequency sweep is hundreds of
   setpoints, and the sequencer's instruction budget is the constraint that makes this
-  more than a formality (§11).
+  more than a formality (§12.1).
 - **Tier 3.** Per class: a simulated chip whose true value sits outside the *old*
   default and inside the derived one. The August 2026 work has two of these already
   (`test_a_configured_f01_hundreds_of_mhz_out_is_still_located`, and the refusal case).
@@ -238,6 +239,11 @@ noise, which is an argument for making it non-optional rather than `-m scqubits`
 In this order, so each step is independently mergeable and the escalation loop comes
 after the two classes that need no loop at all.
 
+0. **`reads`, and skipping on it** (§11). Declare what each routine consumes, block on an
+   unproduced parameter, report the blocker. Independent of everything below it, and it
+   goes first because it is what makes the failures of the phases after it legible — a
+   phase-2 regression on one node should show as one failure and a list of skips, not as
+   a graph-wide puzzle. It also stands alone: worth landing even if nothing else here is.
 1. **`tuners/base/limits.py`.** `addressable_band(device, port_clock)` from the LO and
    the backend's IF limit; `full_scale(element, path)` from the element's own validator.
    Tier-1 tests. No routine changes, so nothing can regress.
@@ -276,7 +282,76 @@ accept side — a signal-to-noise floor that scales with the number of points, o
 requiring a candidate to reproduce across two amplitudes — is the natural sequel, and
 is what would have caught this chip on run one rather than run six.
 
-## 11. Open questions
+## 11. Skipping what cannot succeed
+
+A node whose prerequisite was never produced cannot measure anything, and running it
+anyway is how one failure became six. The August 2026 chip is the worked example:
+`qubit_spectroscopy` failed, and `rabi`, `resonator_spectroscopy_excited`,
+`readout_discrimination`, `allxy`, `drag` and `readout_fidelity` all then measured a
+qubit still in `|0⟩` and reported confident numbers from its noise. Six failures with
+six different-looking causes, none of them naming the one that mattered. Before the
+August 2026 guards existed those nodes did not even fail — they wrote the noise to the
+device file, and the next run inherited it.
+
+So this is worth doing, and the wall-clock saving is the smaller half of the benefit.
+The mechanism matters, though, because the obvious one — *if a node fails, skip its
+dependents* — is wrong on this graph in three separate ways.
+
+**`depends_on` is not a data dependency.** It orders the walk. `cz_chevron` depends on
+`rb` and `flux_spectroscopy`, and *neither writes a parameter* — both have empty
+`updates`. Blocking two-qubit calibration because a benchmark came out low would be
+plainly wrong. Twelve of the thirty-three nodes write nothing at all, so nothing can
+depend on their output, and some are still depended on in the walk order.
+
+**Disabled is not failed.** `qubit_spectroscopy` depends on `resonator_punchout`, which
+is switched off on the August 2026 chip because its amplitude grid never reaches
+punch-through (§12.4). `time_of_flight` is off too. Under naive propagation, disabling
+either would skip the entire graph beneath it — which is to say, everything.
+
+**A refiner is not a producer.** Seven parameters have two writers, where the first
+produces and the second refines:
+
+| Parameter | Produced by | Refined by |
+|---|---|---|
+| `clock_freqs.readout` | `resonator_spectroscopy` | `resonator_punchout` |
+| `clock_freqs.f01` | `qubit_spectroscopy` | `ramsey` |
+| `clock_freqs.f12` | `f12_spectroscopy` | `ramsey_12` |
+| `rxy.amp180` | `rabi` | `fine_amplitude` |
+| `r12.ef_amp180` | `rabi_12` | `fine_amplitude_12` |
+| `cz.square_amp`, `cz.square_duration` | `cz_parametrization` | `cz_chevron` |
+
+`drag` depends on `ramsey`, but `ramsey` only refines an `f01` that
+`qubit_spectroscopy` already produced. If `ramsey` fails, `f01` keeps a measured value
+and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
+`allxy_check` behind it. Node-level propagation would skip five nodes for nothing.
+
+**The proposal: block on an unsatisfied parameter, not on a failed node.**
+
+- Routines gain a `reads` declaration, the counterpart of the `updates` they already
+  have. That makes the data dependencies explicit and separable from walk order.
+- A node is blocked when a parameter it reads has no trustworthy value — not produced
+  in this walk, and no measured prior. A failed *refiner* leaves the value trustworthy,
+  so nothing behind it is blocked.
+- A disabled node that is the only producer of a parameter something reads is a **config
+  error reported before the walk starts**, not a cascade discovered during it. That is
+  strictly more useful than either running or skipping.
+- Blocked nodes are recorded as **skipped, with the blocker named** — not failed.
+  Auto-failing would replace six misleading failures with six fabricated ones, and would
+  feed the drift check a history of failures that never happened.
+
+`diagnose` already walks `depends_on` to blame the deepest failing ancestor rather than
+the symptom (RFC 0005 §8), so the traversal exists and the calibrate path can borrow its
+shape.
+
+This section depends on §10's provenance problem for the *fully* correct version: "no
+measured prior" is not decidable today, because a design value and a measurement look
+identical in the device file. A useful version needs less — on a first calibration,
+"produced in this walk" is sufficient, and that is exactly the case this RFC is about.
+It is also what makes §8's acceptance test readable: on a chip known only from its
+design document the first walk will have failures, and without skip-propagation its
+report is the same six-way puzzle that motivated this RFC.
+
+## 12. Open questions
 
 1. **Instruction budget versus band-wide sweeps.** A 1 GHz band at 2 MHz steps is 501
    acquisitions, ~6,500 Q1ASM instructions against an empirically bracketed
@@ -297,3 +372,12 @@ is what would have caught this chip on run one rather than run six.
    the simulated chip's own gate error dominates is a weak test; one too high pins the
    test to simulator tuning. Perhaps assert against the simulator's injected error
    rather than a constant, as `test_rb_recovers_a_known_gate_error` does.
+6. **Does `reads` get derived or declared?** Declared is explicit and can be wrong in a
+   way nothing detects — a routine that reads a parameter it did not declare is exactly
+   the bug §11 exists to prevent, reintroduced one level up. Deriving it from the paths a
+   routine actually touches would need the device access to go through something
+   observable, which `read_path` already is. Worth a look before hand-writing 33 lists.
+7. **Does a skipped node keep its stale parameter, or clear it?** Keeping it means the
+   chip runs jobs on a value this walk could not confirm; clearing it means a chip that
+   worked yesterday will not run today. Probably keep and mark, which is §10's provenance
+   again — the same missing field answers both.
