@@ -352,12 +352,23 @@ after the two classes that need no loop at all.
    pre-walk config check was withdrawn as unwritable without provenance, and the one read
    the notation cannot express turned out to be `coupler_anticrossing`'s of its *parent
    qubit's* `f01`. Twenty-three of thirty-three routines read a device parameter at all.
-1. **The accept side** (§6.2). Scale `require_resolved_line`'s floor with the number of
-   points, and require `qubit_spectroscopy`'s chosen centre to reproduce across a second
-   drive power. Before the derived ranges, not after: a guard that accepts noise means the
-   escalation those phases rely on never fires, so measuring their effect would be
-   measuring it through a broken detector. Also the cheapest phase here: the second test
-   needs no new acquisition, only rows `fit_spectroscopy_power` already fits and drops.
+1. **The accept side** (§6.2) — **built, and parked on the branch
+   `wip/rfc0007-accept-side-and-band` rather than merged.** Not as planned: scaling the
+   signal-to-noise floor with the point
+   count cannot work at any setting, because ``snr`` divides a fitted parameter by the
+   residual, and 16% to 55% of pure-noise fits cleared the old 3.0 floor with a tail into
+   the thousands. What works is the fitted curve's travel over its residual scatter —
+   noise maxes at 4.2 over 1800 trials, a real line reaches 93 to 139 — so the guard
+   judges that at a floor of 5.0. Reproducing a centre across drive powers turned out
+   not to apply on the chip that motivated it, since only one row survives the linewidth
+   test there.
+
+   It is parked because it correctly refuses what the loop fixture had been passing on,
+   and that suite cannot judge the fix until §14 is done. Before the derived ranges, not
+   after: a guard that accepts noise means the escalation those phases rely on never
+   fires, so measuring their effect would be measuring it through a broken detector.
+   Also the cheapest phase here: the second test needs no new acquisition, only rows
+   `fit_spectroscopy_power` already fits and drops.
 2. **`tuners/base/limits.py`.** `addressable_band(device, port_clock)` from the LO and
    the backend's IF limit; `full_scale(element, path)` from the element's own validator.
    Tier-1 tests. No routine changes, so nothing can regress.
@@ -539,3 +550,41 @@ shape of the RFC rather than just settling a detail.
 | Stage writes in a separate store until the run succeeds? | **No**, now RFC 0008 §7 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
 | Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
 | Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
+## 14. The simulator cannot fail a wrong f01, and phase 3 needs it to
+
+Found while building phase 1, and it blocks §8's acceptance test rather than merely
+inconveniencing it. Recorded here because it is not visible from the code without
+being pointed at.
+
+**The suites cannot detect a wrong `clock_freqs.f01`.** `test_calibration_loop.py`'s
+fixture device claims 5.0 GHz against a simulated qubit at 5.2142 GHz — 214 MHz out —
+and that suite was green. It was green because `qubit_spectroscopy` returned a *broad
+noise fit* that cleared both the old signal-to-noise floor and the linewidth test, and
+because nothing downstream cares: `SimulatedBackend._acquire_rabi` passes only
+amplitudes to the simulator, and `rabi`, `ramsey`, `t1` and `t2` all build their
+Hamiltonian with no detuning at all.
+
+**The physics is already there; four call sites pass zero.**
+`TransmonSimulator._anharmonic_hamiltonian(detuning_ghz=0.0)` is the drive-frame
+Hamiltonian and carries a ``delta * number`` term. Of its call sites, only spectroscopy
+(``transmon.py:431``) passes a detuning; the gate paths at 299, 318, 368 and 395 take the
+default. So a drive 302 MHz off resonance rotates the simulated qubit exactly as well as
+one on resonance, which is the one thing this month's hardware failure turned on.
+
+One wrinkle worth knowing before starting: `SimulatedBackend` answers from the
+*schedule*, and a schedule does not carry a gate's clock frequency — only
+`SetClockFrequency` sweeps do. `SimulatedTuner` holds both the device and the simulator,
+so it is the natural place to set the detuning from ``configured f01 - true f01`` before
+each run.
+
+**Why this comes before phase 3.** The acceptance test in §8 asserts that a chip known
+only from its design document calibrates. Against a simulator whose gates ignore
+detuning, that test passes with `f01` arbitrarily wrong, which makes it a test of the
+search's plumbing rather than of the outcome. Worse, the loop fixture is now red in a way
+that has **three** possible fixes — clamp the sweep, change the fixture, or widen the
+span — and two of them restore the blind spot. The suite cannot say which is right until
+a wrong `f01` fails on its own.
+
+Expect it to surface more. Phase 1 turned one suite red by refusing something that had
+been quietly accepted; making the simulator stricter is the same move one level down, so
+it is a "find out how deep it goes" job rather than a fixed-size one.
