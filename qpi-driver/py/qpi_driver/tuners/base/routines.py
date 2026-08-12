@@ -267,19 +267,27 @@ def grid_duration(seconds: float) -> float:
     return round(float(seconds) / GRID_NS) * GRID_NS
 
 
-#: How far a fitted line must stand above the residual scatter before its centre
-#: counts as a frequency — see `require_resolved_line`.
+#: How far a fitted line's *curve* must travel, against the scatter left around it,
+#: before its centre counts as a frequency — the ``reach`` a Lorentzian fit reports.
 #:
-#: Three above the noise, from the spread of what has actually been measured. The
-#: simulated chip returns 127 and lands within 2.5 kHz of the true f01. On hardware the
-#: one `qubit_spectroscopy` whose answer reproduced across runs came back at 3.55; the
-#: two that did not came back at 1.56, taken through a starved readout, and 1.32,
-#: which was 5 MHz out and overwrote f01 with it.
+#: Five, from 1800 fits of pure noise that had already cleared the linewidth test below.
+#: Their reach had a 99th percentile of 3.4 to 3.6 and a maximum of 4.2, at sweeps from
+#: 51 to 301 points. A real line is nowhere near: 93 on this chip's resonator, and 104
+#: to 139 on the simulated qubit at spans from 4 MHz to 600 MHz. So five refuses every
+#: noise fit measured and passes every line measured by a factor of nineteen.
 #:
-#: The asymmetry is what sets it rather than the gap: a refused fit leaves the last
-#: good frequency in place and says why, while an accepted one overwrites it and
+#: This replaced a floor of 3.0 on ``snr``, which cannot do the job at any setting.
+#: ``snr`` divides a *fitted parameter* by the residual, so an optimiser handed noise
+#: can return whatever it likes — over those same 1800 fits its 99th percentile was 570
+#: to 2700 and its maximum 7048, and **16% to 55% of them cleared 3.0**. No rescaling
+#: separates a distribution with that tail from a real line at 127. ``snr`` is still
+#: what ranks one drive power against another, which is a comparison rather than a
+#: threshold, and is sound.
+#:
+#: The asymmetry is what sets the number rather than the gap: a refused fit leaves the
+#: last good frequency in place and says why, while an accepted one overwrites it and
 #: breaks every node downstream.
-MIN_LINE_SNR = 3.0
+MIN_LINE_REACH = 5.0
 
 
 def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> None:
@@ -297,21 +305,27 @@ def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> N
 
     **Too shallow to believe.** The opposite shape, and the one the width test cannot
     catch: a *broad* fit through flat data. Measured on a chip whose readout had gone
-    off resonance, `qubit_spectroscopy` returned a 1.53 MHz line at snr 1.32 — cleared
-    the width test by a factor of eleven — 5 MHz from the two runs either side of it,
-    from data flat to 0.7%. It wrote that to f01, which put `ramsey_12`'s detuning
-    1.5 MHz out and cost the run.
+    off resonance, `qubit_spectroscopy` returned a 1.53 MHz line — clearing the width
+    test by a factor of eleven — 5 MHz from the two runs either side of it, from data
+    flat to 0.7%. It wrote that to f01, which put `ramsey_12`'s detuning 1.5 MHz out and
+    cost the run.
+
+    Judged on the fitted curve's own travel rather than on ``snr``; see
+    :data:`MIN_LINE_REACH` for why, and for the 1800 noise fits that decided it. The two
+    tests are complementary and both are needed: the width test catches a fit that
+    latched onto one bin, which reach cannot, because such a fit has a large span and
+    tiny residuals. Reach catches the broad shallow fit, which the width test cannot.
 
     Raises:
         RoutineError: naming the number that failed and what to change, since a
             too-narrow line wants a finer sweep and a too-shallow one wants more
             shots or a drive amplitude that shows the transition.
     """
-    snr = float(fitted.get("snr", float("inf")))
-    if snr < MIN_LINE_SNR:
+    reach = float(fitted.get("reach", float("inf")))
+    if reach < MIN_LINE_REACH:
         raise RoutineError(
-            f"the fitted line stands only {snr:.2f}x above the residual scatter, "
-            f"below the {MIN_LINE_SNR:g}x a measured line clears, so its centre is "
+            f"the fitted line travels only {reach:.2f}x the scatter left around it, "
+            f"below the {MIN_LINE_REACH:g}x a measured line clears, so its centre is "
             "not a frequency — average more shots, or drive at an amplitude where "
             "the transition actually appears"
         )

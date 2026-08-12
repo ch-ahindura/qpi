@@ -48,6 +48,15 @@ class SchedulerBackend(ABC):
     #: not so much room that the straight line the fit assumes stops holding.
     drag_span: float
 
+    #: How far either side of its local oscillator a port can be driven, in Hz. A
+    #: property of the instrument family rather than of the scheduler, but it belongs
+    #: here for the same reason `drag_span` does: it is the backend that knows what its
+    #: hardware reaches. Both schedulers agree at 500 MHz — quantify-scheduler's and
+    #: qblox-scheduler's ``NCO_FREQ_LIMIT_STEPS / NCO_FREQ_STEPS_PER_HZ`` are both
+    #: ``2e9 / 4`` — so no divergence is being modelled speculatively; the hook exists
+    #: so a non-Qblox backend has somewhere to disagree.
+    if_limit_hz: float = 500e6
+
     #: Scheduler operation classes, bound by the subclass. Named as the
     #: schedulers name them so routines stay readable.
     Schedule: Any

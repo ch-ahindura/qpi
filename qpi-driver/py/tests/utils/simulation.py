@@ -201,6 +201,9 @@ class RecordingBackend:
 
     name = "simulated"
     drag_parameter = "motzoi"
+    #: What `addressable_band` multiplies out to a reachable range. Qblox's, since the
+    #: simulated chip stands in for one.
+    if_limit_hz = 500e6
 
     Schedule = _Schedule
     Reset = _operation("Reset")

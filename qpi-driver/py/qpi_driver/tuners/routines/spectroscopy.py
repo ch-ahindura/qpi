@@ -13,6 +13,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.tuners.base.limits import addressable_band, clamp_to_band
 from qpi_driver.tuners.base.device import (
     has_flux_port,
     read_path,
@@ -64,14 +65,35 @@ MIN_SEARCH_PEAK = 6.0
 MAD_TO_SIGMA = 1.4826
 
 
+#: The hardware-config key each device clock is driven through, for `addressable_band`.
+_PORT_CLOCKS = {
+    "readout": "{target}:res-{target}.ro",
+    "f01": "{target}:mw-{target}.01",
+    "f12": "{target}:mw-{target}.12",
+}
+
+
 def _frequency_sweep(
-    config: RoutineConfig, device: Any, target: str, clock: str, default_span: float
+    config: RoutineConfig,
+    device: Any,
+    target: str,
+    clock: str,
+    default_span: float,
+    backend: SchedulerBackend | None = None,
 ) -> list[float]:
     """The frequencies to scan, either given outright or as a span about the current one.
 
     A span is the useful form for a recalibration — the frequency has drifted a
     little, so scan around where it was — while an explicit range is what a
     first bring-up needs, when there is no trustworthy current value.
+
+    Trimmed to what the port can be driven at, when *backend* says how far that reaches.
+    A span is symmetric about a frequency and the LO is not at its centre, so a wide one
+    runs off the end of the module's range — and asking for the part outside fails
+    compilation with `Attempting to set NCO frequency` naming neither the routine nor the
+    setpoint. Explicit ``frequencies`` are left alone: an operator listing setpoints
+    outright has said what they want, and silently dropping some would be worse than the
+    compiler's complaint.
     """
     if "frequencies" in config:
         return setpoints_of(config, "frequencies", [])
@@ -81,7 +103,30 @@ def _frequency_sweep(
         centre = _current_clock(device, target, clock)
     span = float(config.get("span", default_span))
     points = int(config.get("points", 51))
-    return linear_setpoints(centre - span / 2, centre + span / 2, points)
+
+    low, high = centre - span / 2, centre + span / 2
+    if backend is not None and clock in _PORT_CLOCKS:
+        port_clock = _PORT_CLOCKS[clock].format(target=target)
+        band = addressable_band(device, port_clock, backend.if_limit_hz)
+        trimmed = clamp_to_band(low, high, band)
+        if trimmed != (low, high):
+            log.info(
+                "%s.%s sweep trimmed from %.0f-%.0f Hz to the %.0f-%.0f Hz the port "
+                "can reach",
+                target,
+                clock,
+                low,
+                high,
+                *trimmed,
+            )
+        low, high = trimmed
+        if high <= low:
+            raise RoutineError(
+                f"{target}.{clock} is configured at {centre:.0f} Hz, outside everything "
+                f"its port can reach — no sweep around it is addressable, and the LO has "
+                f"to move, which is a hardware-config change"
+            )
+    return linear_setpoints(low, high, points)
 
 
 def _current_clock(device: Any, target: str, clock: str) -> float:
@@ -252,7 +297,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         self._frequencies = _frequency_sweep(
-            config, device, target, "readout", default_span=20e6
+            config, device, target, "readout", default_span=20e6, backend=backend
         )
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
@@ -407,7 +452,7 @@ class ResonatorPunchout(CalibrationRoutine):
             config, "amplitudes", linear_setpoints(0.01, 0.5, 11)
         )
         self._frequencies = _frequency_sweep(
-            config, device, target, "readout", default_span=20e6
+            config, device, target, "readout", default_span=20e6, backend=backend
         )
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
@@ -571,7 +616,7 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         self._frequencies = _frequency_sweep(
-            config, device, target, "readout", default_span=20e6
+            config, device, target, "readout", default_span=20e6, backend=backend
         )
         # The reference `analyse` differences against, read here rather than there: a
         # prerequisite has to be readable before the acquisition to be one at all.
@@ -695,6 +740,22 @@ class QubitSpectroscopy(CalibrationRoutine):
     #: frequencies is 1505 acquisitions — past what a sequencer will assemble.
     SEARCH_AMPLITUDE = 0.08
 
+    #: How wide the sweep that *confirms* a searched-out line should be, in multiples of
+    #: the search's own step, and over how many points.
+    #:
+    #: The operator's ``span`` cannot be reused for it. A span is a statement about
+    #: *where the line might be*, and once the search has located it that statement is
+    #: spent — worse, a config whose span was wide precisely because it did not know
+    #: where to look then confirms on a grid far too coarse to resolve anything. The loop
+    #: fixture is the case: it sweeps 600 MHz over 61 points to find a qubit 214 MHz from
+    #: its config, and re-centring that same grid steps 10 MHz across a line about as
+    #: wide, which `require_resolved_line` refuses for the right reason.
+    #:
+    #: Four search steps wide over 41 points puts the step an order of magnitude inside
+    #: the search's, which is the resolution the search deliberately did not have.
+    CONFIRM_SPAN_IN_STEPS = 4.0
+    CONFIRM_POINTS = 41
+
     def measure(
         self,
         target: str,
@@ -738,12 +799,25 @@ class QubitSpectroscopy(CalibrationRoutine):
             )
 
         found = self._search(target, device, config, backend, timeout_s)
-        widened = RoutineConfig(
+        # A confirming grid of this routine's own choosing, not the operator's — see
+        # `CONFIRM_SPAN_IN_STEPS`. Their span said where to look, and the search has
+        # answered that; reusing it would confirm on the coarse grid that failed.
+        step = float(config.get("search_span", self.SEARCH_SPAN)) / max(
+            int(config.get("search_points", self.SEARCH_POINTS)) - 1, 1
+        )
+        confirming = RoutineConfig(
             enabled=config.enabled,
-            params={**config.params, "centre_frequency": found},
+            params={
+                **config.params,
+                "centre_frequency": found,
+                "span": float(
+                    config.get("confirm_span", self.CONFIRM_SPAN_IN_STEPS * step)
+                ),
+                "points": int(config.get("confirm_points", self.CONFIRM_POINTS)),
+            },
         )
         try:
-            return self._sweep(target, device, widened, backend, timeout_s)
+            return self._sweep(target, device, confirming, backend, timeout_s)
         except (RoutineError, FitError) as exc:
             raise RoutineError(
                 f"the widened search put {target}'s strongest line at {found:.0f} Hz, "
@@ -774,10 +848,31 @@ class QubitSpectroscopy(CalibrationRoutine):
     ) -> float:
         """Where the strongest line in a wide window is, to point the narrow sweep at."""
         span = float(config.get("search_span", self.SEARCH_SPAN))
-        points = int(config.get("search_points", self.SEARCH_POINTS))
         amplitude = float(config.get("search_amp", self.SEARCH_AMPLITUDE))
         centre = _current_clock(device, target, "f01")
-        frequencies = linear_setpoints(centre - span / 2, centre + span / 2, points)
+
+        # Trimmed to what the port can actually be driven at. A span centred on the
+        # configured f01 is not centred on the LO, so half of it can fall outside the
+        # module's reach while the other half is fine — and asking for the outside half
+        # does not fail the sweep politely, it fails compilation with `Attempting to set
+        # NCO frequency` and no mention of which routine or which setpoint. Trimming
+        # keeps the reachable part, which is where the qubit has to be anyway: outside
+        # the band there is no experiment to run.
+        band = addressable_band(device, f"{target}:mw-{target}.01", backend.if_limit_hz)
+        low, high = clamp_to_band(centre - span / 2, centre + span / 2, band)
+        if high <= low:
+            raise RoutineError(
+                f"{target}'s configured f01 of {centre:.0f} Hz is outside everything its "
+                f"drive port can reach ({band[0]:.0f} to {band[1]:.0f} Hz), so no search "
+                "can find it — the LO has to move, which is a hardware-config change"
+            )
+
+        # The grid keeps its step rather than its point count, so trimming the span makes
+        # the search cheaper instead of finer: a step chosen to sit inside a broadened
+        # line has to stay that way whatever the band leaves.
+        step = span / max(int(config.get("search_points", self.SEARCH_POINTS)) - 1, 1)
+        points = max(int(round((high - low) / step)) + 1, 2)
+        frequencies = linear_setpoints(low, high, points)
 
         # Fewer shots than the narrow pass, because this only has to see a peak rather
         # than measure its centre — and because a wide grid is already many acquisitions
@@ -796,9 +891,9 @@ class QubitSpectroscopy(CalibrationRoutine):
         # Fitting one here was tried and is wrong twice over. A line on a 2 MHz grid is
         # narrower than a step, so there is nothing for a lineshape to be fitted *to*;
         # and an optimiser handed 301 points of noise returns a confident centre with a
-        # signal-to-noise of 3, which cleared `MIN_LINE_SNR` in this simulator and would
-        # have sent the narrow pass to an arbitrary frequency. Measured: a real line
-        # reaches 115-126 by the ratio below, and pure noise 2.5-2.9.
+        # signal-to-noise of 3, which cleared the floor this simulator then had and
+        # would have sent the narrow pass to an arbitrary frequency. Measured: a real
+        # line reaches 115-126 by the ratio below, and pure noise 2.5-2.9.
         #
         # A bin index cannot be pulled off the grid by a fit, and half a step of
         # precision is all this pass owes — the narrow sweep is what measures f01.
@@ -840,7 +935,9 @@ class QubitSpectroscopy(CalibrationRoutine):
     ) -> Any:
         return self._probe_schedule(
             target,
-            _frequency_sweep(config, device, target, "f01", default_span=40e6),
+            _frequency_sweep(
+                config, device, target, "f01", default_span=40e6, backend=backend
+            ),
             self._drive_amplitudes(config, device, target),
             backend,
             int(config.get("shots", 1024)),
@@ -1062,7 +1159,7 @@ class FluxSpectroscopy(CalibrationRoutine):
             config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11)
         )
         self._frequencies = _frequency_sweep(
-            config, device, target, "f01", default_span=100e6
+            config, device, target, "f01", default_span=100e6, backend=backend
         )
         clock = f"{target}.01"
         duration = float(config.get("flux_duration", 200e-9))

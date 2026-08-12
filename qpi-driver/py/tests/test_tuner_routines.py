@@ -517,7 +517,7 @@ def test_spectroscopy_still_applies_to_an_element_with_no_spec_submodule(tuner_n
 
 
 class TestALineHasToBeAboveTheNoise:
-    """`_require_resolved_line` judges the fit, not only the sweep that produced it.
+    """`require_resolved_line` judges the fit, not only the sweep that produced it.
 
     Both spectroscopy roots write a frequency straight to the device — f01, and the
     readout frequency every other node then reads at — so a Lorentzian centre drawn
@@ -525,36 +525,57 @@ class TestALineHasToBeAboveTheNoise:
     value and breaks the nodes after it. Twice on hardware, costing a run each time.
     """
 
-    #: What the chip actually returned. The first reproduced across runs; the second was
-    #: taken through a starved readout; the third was 5 MHz from both of its neighbours,
-    #: from data flat to 0.7%, and overwrote f01 with it — which put `ramsey_12`'s
-    #: detuning 1.5 MHz out. The simulated chip, for scale, returns 127.
-    MEASURED_SNR = ((3.55, True), (1.56, False), (1.32, False))
+    #: Reach — the fitted curve's travel over the scatter left around it. The refused
+    #: values are the worst of 1800 fits of *pure noise* that had already cleared the
+    #: linewidth test; their 99th percentile was 3.4 to 3.6 and their maximum 4.2. The
+    #: accepted ones are real lines: 93 on the August 2026 chip's resonator, and 104 to
+    #: 139 on the simulated qubit at spans from 4 MHz to 600 MHz.
+    MEASURED_REACH = ((4.2, False), (3.5, False), (93.0, True), (127.0, True))
 
-    @pytest.mark.parametrize("snr,accepted", MEASURED_SNR)
-    def test_it_accepts_only_the_fit_that_reproduced(self, snr, accepted):
+    @pytest.mark.parametrize("reach,accepted", MEASURED_REACH)
+    def test_it_accepts_only_a_curve_that_went_somewhere(self, reach, accepted):
         from qpi_driver.tuners.base.routines import require_resolved_line
 
-        # 200 kHz line on a 133 kHz grid: wide enough that only the snr decides.
-        fitted = {"linewidth": 200e3, "snr": snr}
+        # 200 kHz line on a 133 kHz grid: wide enough that only the reach decides.
+        fitted = {"linewidth": 200e3, "reach": reach}
         frequencies = [4.7e9 + 133e3 * i for i in range(3)]
         if accepted:
             require_resolved_line(fitted, frequencies)  # noqa: B018 - no raise is it
         else:
-            with pytest.raises(RoutineError, match="above the residual scatter"):
+            with pytest.raises(RoutineError, match="the scatter left around it"):
                 require_resolved_line(fitted, frequencies)
 
+    def test_signal_to_noise_is_no_longer_what_decides(self):
+        """It cannot be. `snr` divides a fitted parameter by the residual.
+
+        Over the same 1800 noise fits its 99th percentile was 570 to 2700 and its
+        maximum 7048, and 16% to 55% of them cleared the 3.0 floor this used to apply —
+        so an optimiser handed noise could always talk its way past. It still ranks one
+        drive power against another, which is a comparison and not a threshold.
+        """
+        from qpi_driver.tuners.base.routines import require_resolved_line
+
+        frequencies = [4.7e9 + 133e3 * i for i in range(3)]
+        with pytest.raises(RoutineError, match="the scatter left around it"):
+            require_resolved_line(
+                {"linewidth": 200e3, "snr": 7048.0, "reach": 2.0}, frequencies
+            )
+
     def test_a_line_narrower_than_the_sweep_is_still_refused(self):
-        """The original check, and the opposite shape: sharp fit, coarse sweep."""
+        """The original check, and the opposite shape: sharp fit, coarse sweep.
+
+        Reach cannot catch this one — a fit that latched onto a single bin has a large
+        span and tiny residuals, so it scores well. The two tests are complementary.
+        """
         from qpi_driver.tuners.base.routines import require_resolved_line
 
         with pytest.raises(RoutineError, match="narrower than"):
             require_resolved_line(
-                {"linewidth": 2379.0, "snr": 50.0},
+                {"linewidth": 2379.0, "reach": 500.0},
                 [6.827e9 + 400e3 * i for i in range(3)],
             )
 
-    def test_a_fit_that_reports_no_snr_is_judged_on_width_alone(self):
+    def test_a_fit_that_reports_no_reach_is_judged_on_width_alone(self):
         """Every fit forwards it now, but the guard must not start refusing on absence."""
         from qpi_driver.tuners.base.routines import require_resolved_line
 

@@ -73,11 +73,23 @@ def _fit_lorentzian(
         "linewidth": linewidth,
         "amplitude": float(amplitude),
         "quality_factor": centre / linewidth if linewidth else float("inf"),
-        # Contrast over residual scatter — how believable this peak is, as opposed
-        # to how tall it is. `fit_spectroscopy_power` chooses between drive powers
-        # on it, which a bare height cannot do: height rises with power right
-        # through the point where the line stops being a measurement of anything.
+        # Contrast over residual scatter, for *choosing between* drive powers — which a
+        # bare height cannot do, since height rises with power right through the point
+        # where the line stops being a measurement of anything.
+        #
+        # Deliberately not an absolute test of whether there is a line at all; that is
+        # `reach`. ``amplitude`` is a free parameter, so an optimiser handed noise can
+        # report any ratio it likes: across 1800 pure-noise fits that cleared the
+        # linewidth test, this had a 99th percentile of 570 to 2700 and a maximum of 7048.
         "snr": abs(float(amplitude)) / max(float(np.sqrt(residual / x.size)), 1e-18),
+        # How far the fitted *curve* actually travels across the sweep, over the scatter
+        # left around it. Bounded on noise where `snr` is not, because the numerator is
+        # the curve's realised span rather than a fitted parameter — an optimiser cannot
+        # inflate it without the residuals growing to match. Measured on those same 1800
+        # noise fits: 99th percentile 3.4 to 3.6, maximum 4.2. A real line reaches 93 on
+        # this chip's resonator and 104 to 139 on the simulated qubit, at spans from
+        # 4 MHz to 600 MHz.
+        "reach": _curve_reach(y, lorentzian(x, amplitude, centre, width, offset)),
         "fit": fit_summary(
             x,
             y,
@@ -97,11 +109,11 @@ def fit_resonator_spectroscopy(
         "readout_frequency": fitted["frequency"],
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
-        # Forwarded because a caller cannot judge the fit without it — see
-        # `_require_resolved_line`. `fit_spectroscopy_power` has always chosen between
-        # drive powers on it; a single-row fit needs it to say whether there is a line
-        # at all, as opposed to a Lorentzian drawn through noise.
+        # Both forwarded because a caller cannot judge the fit without them, and they
+        # answer different questions — see `require_resolved_line`. `snr` ranks drive
+        # powers against each other; `reach` says whether there is a line at all.
         "snr": fitted["snr"],
+        "reach": fitted["reach"],
         "fit": fitted["fit"],
     }
 
@@ -116,6 +128,7 @@ def fit_qubit_spectroscopy(
         "linewidth": fitted["linewidth"],
         "quality_factor": fitted["quality_factor"],
         "snr": fitted["snr"],
+        "reach": fitted["reach"],
         "fit": fitted["fit"],
     }
 
@@ -204,6 +217,7 @@ def fit_spectroscopy_power(
         "linewidth": fit["linewidth"],
         "quality_factor": fit["quality_factor"],
         "snr": fit["snr"],
+        "reach": fit["reach"],
         # The chosen row only. A summary per power would be a picture of the power
         # sweep, and the answer came from one row of it.
         "fit": fit["fit"],
@@ -250,3 +264,17 @@ def fit_punchout(powers: np.ndarray, frequencies: np.ndarray) -> dict[str, float
         "dressed_frequency": dressed,
         "bare_frequency": bare,
     }
+
+
+def _curve_reach(signal: np.ndarray, curve: np.ndarray) -> float:
+    """A fitted curve's span over the scatter left around it.
+
+    The same quantity `require_resolved_curve` judges for a Rabi or a decay, computed
+    here so a Lorentzian carries it too. Infinite when nothing is left over, which is a
+    synthetic fit rather than a measurement and is left for the caller to allow.
+    """
+    scatter = float(np.sqrt(np.mean((np.asarray(signal) - np.asarray(curve)) ** 2)))
+    span = float(np.max(curve) - np.min(curve))
+    if scatter <= 0.0:
+        return float("inf")
+    return span / scatter
