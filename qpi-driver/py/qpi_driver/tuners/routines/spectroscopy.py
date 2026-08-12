@@ -740,21 +740,39 @@ class QubitSpectroscopy(CalibrationRoutine):
     #: frequencies is 1505 acquisitions — past what a sequencer will assemble.
     SEARCH_AMPLITUDE = 0.08
 
-    #: How wide the sweep that *confirms* a searched-out line should be, in multiples of
-    #: the search's own step, and over how many points.
+    #: How wide the sweep that *confirms* a searched-out line should be, as a multiple of
+    #: the width the search measured, and over how many points.
     #:
-    #: The operator's ``span`` cannot be reused for it. A span is a statement about
-    #: *where the line might be*, and once the search has located it that statement is
-    #: spent — worse, a config whose span was wide precisely because it did not know
-    #: where to look then confirms on a grid far too coarse to resolve anything. The loop
-    #: fixture is the case: it sweeps 600 MHz over 61 points to find a qubit 214 MHz from
-    #: its config, and re-centring that same grid steps 10 MHz across a line about as
-    #: wide, which `require_resolved_line` refuses for the right reason.
+    #: The operator's ``span`` cannot be reused for it. A span says *where the line might
+    #: be*, and once the search has located it that statement is spent — worse, a config
+    #: whose span was wide precisely because it did not know where to look then confirms
+    #: on a grid far too coarse to resolve anything. The loop fixture is the case: it
+    #: sweeps 600 MHz over 61 points to find a qubit 214 MHz from its config, and
+    #: re-centring that same grid steps 10 MHz across a line about as wide.
     #:
-    #: Four search steps wide over 41 points puts the step an order of magnitude inside
-    #: the search's, which is the resolution the search deliberately did not have.
-    CONFIRM_SPAN_IN_STEPS = 4.0
+    #: Nor is a fixed window right, because the line's width is set by the drive
+    #: amplitude the confirming sweep is itself choosing. Measured on the simulated chip
+    #: against a line about 140 MHz wide at the strongest drive, by window:
+    #:
+    #:     20 MHz   refused, nothing clears the floor
+    #:     40 MHz   reach 5.0, exactly at the floor, f01 1.62 MHz out
+    #:    100 MHz   reach 60.7, f01 0.88 MHz out
+    #:    200 MHz   reach 83.5, f01 1.17 MHz out
+    #:    400 MHz   reach 31.5, f01 0.97 MHz out
+    #:
+    #: So a little over one width is the sweet spot: enough baseline either side to
+    #: measure the line against, without diluting it across a window it does not fill.
+    #: 1.5 is that, and it is derived rather than guessed — an earlier four-search-steps
+    #: constant landed on 40 MHz here, which is the row that passes by nothing at all.
+    CONFIRM_SPAN_IN_WIDTHS = 1.5
     CONFIRM_POINTS = 41
+
+    #: Floors and ceilings the derived span, for the two ends the search cannot resolve.
+    #: A line narrower than one search step reads as one step wide, and 1.5 steps is too
+    #: tight to fit anything; a line as wide as the search itself leaves no baseline. Four
+    #: steps is the same floor the earlier constant used, kept for the narrow end where it
+    #: was never the problem.
+    CONFIRM_MIN_SPAN_IN_STEPS = 4.0
 
     def measure(
         self,
@@ -798,20 +816,14 @@ class QubitSpectroscopy(CalibrationRoutine):
                 float(config.get("search_span", self.SEARCH_SPAN)) / 1e6,
             )
 
-        found = self._search(target, device, config, backend, timeout_s)
-        # A confirming grid of this routine's own choosing, not the operator's — see
-        # `CONFIRM_SPAN_IN_STEPS`. Their span said where to look, and the search has
-        # answered that; reusing it would confirm on the coarse grid that failed.
-        step = float(config.get("search_span", self.SEARCH_SPAN)) / max(
-            int(config.get("search_points", self.SEARCH_POINTS)) - 1, 1
-        )
+        found, width = self._search(target, device, config, backend, timeout_s)
         confirming = RoutineConfig(
             enabled=config.enabled,
             params={
                 **config.params,
                 "centre_frequency": found,
                 "span": float(
-                    config.get("confirm_span", self.CONFIRM_SPAN_IN_STEPS * step)
+                    config.get("confirm_span", self._confirm_span(config, width))
                 ),
                 "points": int(config.get("confirm_points", self.CONFIRM_POINTS)),
             },
@@ -845,8 +857,13 @@ class QubitSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
-    ) -> float:
-        """Where the strongest line in a wide window is, to point the narrow sweep at."""
+    ) -> tuple[float, float]:
+        """Where the strongest line in a wide window is, and roughly how wide.
+
+        The width is what sizes the sweep that confirms it — see
+        `CONFIRM_SPAN_IN_WIDTHS`. Returned rather than stored because it is only ever
+        used by the caller that asked for the search.
+        """
         span = float(config.get("search_span", self.SEARCH_SPAN))
         amplitude = float(config.get("search_amp", self.SEARCH_AMPLITUDE))
         centre = _current_clock(device, target, "f01")
@@ -919,16 +936,35 @@ class QubitSpectroscopy(CalibrationRoutine):
             )
 
         found = float(frequencies[int(np.argmax(deviation))])
+        # How wide the line is, counted rather than fitted: the bins standing at least
+        # half the peak above the baseline are its full width at half maximum, to the
+        # resolution of the grid. Crude on purpose — a fit here is what the comment above
+        # rules out — and it only has to size the sweep that follows, not measure anything.
+        step = frequencies[1] - frequencies[0] if len(frequencies) > 1 else 0.0
+        width = float(np.count_nonzero(deviation >= peak / 2.0)) * abs(step)
         log.info(
             "%s: %s's strongest line is at %.0f Hz, %.0f MHz from the configured f01, "
-            "%.1fx over the scatter",
+            "%.1fx over the scatter, about %.0f MHz wide",
             self.name,
             target,
             found,
             (found - centre) / 1e6,
             reach,
+            width / 1e6,
         )
-        return found
+        return found, width
+
+    def _confirm_span(self, config: RoutineConfig, width: float) -> float:
+        """How wide to sweep to confirm a line the search measured as *width* across."""
+        span = float(config.get("search_span", self.SEARCH_SPAN))
+        step = span / max(int(config.get("search_points", self.SEARCH_POINTS)) - 1, 1)
+        return min(
+            max(
+                self.CONFIRM_SPAN_IN_WIDTHS * width,
+                self.CONFIRM_MIN_SPAN_IN_STEPS * step,
+            ),
+            span,
+        )
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

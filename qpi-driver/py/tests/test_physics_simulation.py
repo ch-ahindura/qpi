@@ -227,13 +227,16 @@ class TestSpectroscopy:
         true_f01 = chip.f01 * GHZ
         write_path(device.get_element("q0"), "clock_freqs.f01", true_f01 - 250e6)
 
-        found = node._search(
+        found, width = node._search(
             "q0", device, RoutineConfig(params={}), SimulatedBackend(chip), 300.0
         )
 
         # Within a step of the 2 MHz grid. Locating is all this pass owes; the narrow
         # sweep it points at is what has to land on the line.
         assert found == pytest.approx(true_f01, abs=2e6)
+        # And roughly how wide, which is what sizes that narrow sweep. Counted in bins, so
+        # one step is the floor for a line the search grid cannot resolve.
+        assert width >= 2e6
 
     def test_a_search_that_finds_nothing_says_so_rather_than_fitting_noise(
         self, simulator

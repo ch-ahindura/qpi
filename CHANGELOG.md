@@ -30,6 +30,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: `qubit_spectroscopy` sizes the sweep that confirms a searched-out line
+  from the width the search measured, rather than reusing the operator's span. That span
+  said where to look, and once the search has answered it is spent — re-centring a
+  600 MHz window steps 10 MHz across a line about as wide.
 - `qpi-driver/py`: every spectroscopy sweep is trimmed to the frequencies its port can
   actually be driven at — its LO plus or minus the module's intermediate-frequency
   limit. Asking outside it failed compilation with `Attempting to set NCO frequency`,
