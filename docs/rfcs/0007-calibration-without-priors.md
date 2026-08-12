@@ -352,26 +352,45 @@ after the two classes that need no loop at all.
    pre-walk config check was withdrawn as unwritable without provenance, and the one read
    the notation cannot express turned out to be `coupler_anticrossing`'s of its *parent
    qubit's* `f01`. Twenty-three of thirty-three routines read a device parameter at all.
-1. **The accept side** (§6.2) — **built, and parked on the branch
-   `wip/rfc0007-accept-side-and-band` rather than merged.** Not as planned: scaling the
-   signal-to-noise floor with the point
-   count cannot work at any setting, because ``snr`` divides a fitted parameter by the
-   residual, and 16% to 55% of pure-noise fits cleared the old 3.0 floor with a tail into
-   the thousands. What works is the fitted curve's travel over its residual scatter —
-   noise maxes at 4.2 over 1800 trials, a real line reaches 93 to 139 — so the guard
-   judges that at a floor of 5.0. Reproducing a centre across drive powers turned out
-   not to apply on the chip that motivated it, since only one row survives the linewidth
-   test there.
+1. **The accept side** (§6.2) — **done and merged.** Not as planned: scaling the
+   signal-to-noise floor with the point count cannot work at any setting, because ``snr``
+   divides a fitted parameter by the residual, and 16% to 55% of pure-noise fits cleared
+   the old 3.0 floor with a tail into the thousands. What works is the fitted curve's
+   travel over its residual scatter — noise maxes at 4.2 over 1800 trials, a real line
+   reaches 93 to 139 — so the guard judges that at a floor of 5.0. `snr` keeps the one
+   job it can do, ranking one drive power against another.
 
-   It is parked because it correctly refuses what the loop fixture had been passing on,
-   and that suite cannot judge the fix until §14 is done. Before the derived ranges, not
-   after: a guard that accepts noise means the escalation those phases rely on never
-   fires, so measuring their effect would be measuring it through a broken detector.
-   Also the cheapest phase here: the second test needs no new acquisition, only rows
-   `fit_spectroscopy_power` already fits and drops.
-2. **`tuners/base/limits.py`.** `addressable_band(device, port_clock)` from the LO and
-   the backend's IF limit; `full_scale(element, path)` from the element's own validator.
-   Tier-1 tests. No routine changes, so nothing can regress.
+   Reproducing a centre across drive powers, the other half of what §6.2 proposed, turned
+   out not to apply on the chip that motivated it: only one row there survives the
+   linewidth test, so there is nothing to reproduce against.
+
+   Before the derived ranges, not after, and that ordering paid twice. It exposed §14's
+   detuning gap, and then two pieces of §5's physics-bounded class that no amount of
+   phase-2 work would have reached. Both landed with it rather than waiting for phase 4:
+
+   - **Only a power that shows a line may set the broadening reference.**
+     `fit_spectroscopy_power` judged each row against its narrowest, and a row that
+     converged, cleared the sweep step and still showed nothing *was* the narrowest — so
+     `MAX_BROADENING` rejected every row that did show the line. The eligibility rule is
+     `MIN_LINE_REACH`, which moved to `fitting/core.py`.
+   - **The sweep that confirms a searched-out line is sized from the width the search
+     measured**, not from the operator's span and not from a constant. The line's width is
+     set by the drive amplitude that same sweep is choosing, so a fixed window is wrong
+     for some power: 20 MHz refused outright, 40 MHz passed at a reach of exactly 5.0
+     against a floor of 5.0, 100 to 400 MHz reached 31 to 84. `_search` now reports how
+     wide as well as where, counted in bins rather than fitted.
+
+   Together these take `test_calibration_loop.py` from 28 fixture errors to green, with
+   f01 recovered 0.42 MHz from the truth at a reach of 27.
+2. **`tuners/base/limits.py`** — **done and merged**, and it grew a second job.
+   `addressable_band(device, port_clock, if_limit_hz)` from the LO and the backend's IF
+   limit, which is 500 MHz and identical in both schedulers. Every frequency sweep and
+   the widening search trim to it, because a span symmetric about a configured frequency
+   is not symmetric about the LO — and the part outside fails compilation with
+   `Attempting to set NCO frequency`, naming neither routine nor setpoint. Two bugs found
+   here: two call sites never threaded the backend, and clamping to the edge exactly put a
+   setpoint *on* the limit for the NCO's quarter-hertz rounding to push outside.
+   `full_scale(element, path)` is still to do, with the amplitude sweeps in phase 3.
 3. **The hardware-bounded class.** Frequency sweeps default to a coarse pass over the
    addressable band, then the existing narrow sweep — the two-pass shape
    `qubit_spectroscopy` already has, lifted into a shared helper, with a supplied `span`
