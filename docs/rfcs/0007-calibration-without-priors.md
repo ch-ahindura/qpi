@@ -75,7 +75,9 @@ a search but is never required to make one possible.
 | Guards that wrongly *accept* | **In scope**, §6, moved in from "does not fix". Escalation only fires on a refusal, so a guard that accepts noise bypasses this whole RFC. It is the trigger condition, not a sequel. |
 | Wide sweeps and the instruction budget | In scope as a **constraint**. A derived default must fit a sequencer, and where a 2-D band does not, it is **chunked across acquisitions** with overlapping edges rather than refused. §5. |
 | Skipping blocked nodes | In scope, §11 — and on *parameters*, not on failed nodes. `depends_on` orders the walk and is not a data dependency: `cz_chevron` depends on two nodes that write nothing at all. Blocked nodes are **skipped with the blocker named**, never auto-failed. |
-| How `reads` is known | **Derived, not declared.** Build the schedule against an instrumented device, record the paths it read, then decide whether to run. A hand-written list can be wrong in exactly the way §11 exists to prevent. §11. |
+| How `reads` is known | **Declared, and tested by derivation.** A node's read set is static, so it is stated like `updates`; a test instruments `read_path` and asserts the declaration covers what the code really reads. Runtime derivation cannot cover the two `measure` implementors, which have no schedule to inspect. §11. |
+| Reads inside `analyse` | **Hoisted into `build_schedule`** — six of them. A read after the acquisition is too late to be a prerequisite. §11. |
+| Where provenance lives | **Nowhere new.** `RoutineResult` already records which node wrote what, when, and from which fit. What is missing is an index over run history, not a field in either config file. §10. |
 | A skipped node's stale parameter | **Kept and marked**, not cleared. Clearing it would stop a chip that worked yesterday from running today. §11. |
 | Staging writes outside the device file | **No second store.** The device file gains provenance; a parallel database would need synchronising with the file the executor actually reads. §10. |
 | Mixer calibration | **Out of scope.** Out-of-band, as RFC 0005 had it. |
@@ -176,6 +178,14 @@ One constraint on the split, worth stating because it is easy to get wrong: **th
 must overlap by at least one linewidth.** A line that lands exactly on a boundary is
 otherwise half in each chunk and resolved in neither, which is a spurious refusal that
 looks like a dead qubit.
+
+Chunking moves the binding limit from the sequencer to wall-clock — a band against five
+drive powers at 1024 shots is tens of minutes, fine for a bring-up and not for a drift
+check. So each node carries **a cap on total acquisitions, with a default**, and chunks up
+to it. That is a knob, and it is deliberately a different kind from the ones this RFC
+removes: a resource budget needs no knowledge of the chip, where a range needs to know
+roughly where the answer is. `routine_timeout_s` is already exactly this kind of knob, and
+nobody has to know a qubit's frequency to set it.
 
 ## 6. Guards, in both directions
 
@@ -324,11 +334,12 @@ noise, which is an argument for making it non-optional rather than `-m scqubits`
 In this order, so each step is independently mergeable and the escalation loop comes
 after the two classes that need no loop at all.
 
-0. **`reads`, and skipping on it** (§11). Derive what each routine consumes, block on an
-   unproduced parameter, report the blocker. Independent of everything below it, and it
-   goes first because it is what makes the failures of the phases after it legible — a
-   phase-2 regression on one node should show as one failure and a list of skips, not as
-   a graph-wide puzzle. It also stands alone: worth landing even if nothing else here is.
+0. **`reads`, and skipping on it** (§11). Declare what each routine consumes with a test
+   that derives it, hoist the six `analyse`-time reads, block on an unproduced parameter,
+   report the blocker. Independent of everything below it, and it goes first because it
+   makes the failures of the phases after it legible: a regression in one node should show
+   as one failure and a list of skips, not as a graph-wide puzzle. It also stands alone —
+   worth landing even if nothing else here is.
 1. **The accept side** (§6.2). Scale `require_resolved_line`'s floor with the number of
    points, and require `qubit_spectroscopy`'s chosen centre to reproduce across a second
    drive power. Before the derived ranges, not after: a guard that accepts noise means the
@@ -358,15 +369,39 @@ after the two classes that need no loop at all.
 ## 10. What this does not fix
 
 **A prior is still indistinguishable from a measurement.** After this RFC the driver
-finds the qubit wherever it is, but the device file still cannot say whether
-`clock_freqs.f01` was measured by this driver or typed in from a design document. The
-August 2026 chip carried `f01: 4735509751.238763` — nine significant figures, and the
-line was never there. Provenance per parameter (which node wrote it, when, from what
-signal-to-noise) would make a stale value visible instead of merely wrong. It is a
-device-file format change and belongs in its own RFC.
+finds the qubit wherever it is, but nothing says whether `clock_freqs.f01` was measured
+by this driver or typed in from a design document. The August 2026 chip carried
+`f01: 4735509751.238763` — nine significant figures, and the line was never there.
 
-Three things here are waiting on that one field: §2's definition of a prior, §11's "no
+Three things here want that distinction: §2's definition of a prior, §11's "no
 trustworthy value", and §11's marking of what a skipped node did not confirm.
+
+**Where provenance should not go.** Not `quantify.device.yml`: that file's schema is not
+ours. It deserialises into a `QuantumDevice` whose parameters are qcodes parameters on
+real element classes, and quantify's models reject unknown keys — `output_att` validated
+against the wrong config class raised `extra_forbidden` during this RFC's own research.
+Provenance keys there mean either a parallel structure inside the file or a fork of
+someone else's format.
+
+Not `calibration.yml` either, for the reason §7 gives: it is hand-authored intent, mostly
+reasoning, and the driver writing into it destroys that or needs a comment-preserving
+round-trip to avoid doing so. It would also put the machine's output and the operator's
+input in one file, which is the thing that makes both harder to trust.
+
+**And it probably needs no new format at all.** `RoutineResult` already carries
+`routine_name`, `target`, `parameters`, `timestamp`, `duration_s` and the `fit` the value
+came from, and `CalibrationReport` is already emitted as an event payload. So every
+parameter this driver has ever written is *already* recorded with when, by which node, and
+from what data. What is missing is not a field but a **lookup**: parameter → the last
+run that successfully measured it.
+
+Which makes the test for §2's "prior" exactly decidable with what exists — *is there a
+successful `RoutineResult` writing this parameter for this target?* If no report has ever
+written `clock_freqs.f01` for q0, whatever the device file holds is a prior, whatever its
+precision. That works retroactively over report history, needs neither config file
+changed, and is a much smaller RFC than the device-file format change the earlier draft
+assumed. It is still its own RFC, because indexing and querying run history is a
+persistence question rather than a calibration one.
 
 **Why not stage the writes somewhere else until the run succeeds?** Considered, and
 declined as posed — but the problem underneath it is real, so it is worth being precise
@@ -441,19 +476,33 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
 **The proposal: block on an unsatisfied parameter, not on a failed node.**
 
 - Routines gain a `reads` set, the counterpart of the `updates` they already have, which
-  makes the data dependencies explicit and separable from walk order. **Derived, not
-  hand-declared:** `read_path` is already the single way a routine touches the device, so
-  building the schedule against an instrumented device records exactly what that node
-  needs. A hand-written list can omit a path the routine really reads, which is this
-  section's own bug moved one level up and made invisible.
+  makes the data dependencies explicit and separable from walk order. **Declared, and
+  tested by derivation.** A node's read set is static — which paths it needs is fixed at
+  authoring time, only the values are dynamic — so it can simply be stated, the way
+  `updates` already is. The objection to declaring is that a list can drift from what the
+  code really reads, and that is answered by a test rather than by a mechanism:
+  `read_path` is the single way a routine touches the device, so instrumenting it during
+  a build-and-analyse over the simulated chip derives the true set and asserts the
+  declaration covers it.
 
-  The order this implies is *build, inspect, then decide*: build the schedule (cheap, no
-  instrument), see what it read, block if any of it is untrustworthy, otherwise run.
-  Caveat to settle in implementation: a few nodes also read in `analyse` — for instance
-  `resonator_spectroscopy_excited` reads `clock_freqs.readout` there to difference against
-  — and those reads happen after the acquisition, too late to block on. Either they are
-  hoisted into `build_schedule`, or the first walk is treated as the discovery run and the
-  derived set cached.
+  Declaring rather than deriving at runtime matters for one concrete reason. The two
+  routines that override `measure` — `coupler_anticrossing` and `qubit_spectroscopy` —
+  own their whole acquisition loop, so there is no `build_schedule` to inspect before
+  deciding whether to run them. A derived-at-runtime set cannot cover those two at all;
+  a declared one covers every node uniformly.
+
+  This supersedes the previous resolution, which was derive-at-runtime via
+  *build, inspect, decide*. What changed it: a node knows its reads before it runs, so the
+  runtime machinery buys nothing a test does not, and it fails exactly where the interface
+  is least uniform.
+- **Six reads move out of `analyse`.** `ef.py:439`, `ef.py:660`, `single_qubit.py:233`,
+  `single_qubit.py:513`, `spectroscopy.py:594` and `spectroscopy.py:1018` read the device
+  after their acquisition — `resonator_spectroscopy_excited` reads `clock_freqs.readout`
+  there to difference against, `ramsey` reads the `f01` it is about to correct. Each is a
+  one-line hoist into `build_schedule`, stored on the instance as the setpoints already
+  are, and each removes a read that happens too late to be a prerequisite. Worth doing
+  regardless of this section: a value read before the sweep and a value read after it are
+  the same number today only because nothing writes in between.
 - A node is blocked when a parameter it reads has no trustworthy value — not produced
   in this walk, and no measured prior. A failed *refiner* leaves the value trustworthy,
   so nothing behind it is blocked.
@@ -472,13 +521,12 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
 the symptom (RFC 0005 §8), so the traversal exists and the calibrate path can borrow its
 shape.
 
-This section depends on §10's provenance problem for the *fully* correct version: "no
-measured prior" is not decidable today, because a design value and a measurement look
-identical in the device file. A useful version needs less — on a first calibration,
-"produced in this walk" is sufficient, and that is exactly the case this RFC is about.
-It is also what makes §8's acceptance test readable: on a chip known only from its
-design document the first walk will have failures, and without skip-propagation its
-report is the same six-way puzzle that motivated this RFC.
+The *fully* correct version of "no trustworthy value" wants §10's provenance, since a
+design value and a measurement are indistinguishable in the device file. A useful version
+needs less: on a first calibration, "produced in this walk" is sufficient, and that is
+exactly the case this RFC is about. It is also what makes §8's acceptance test readable:
+on a chip known only from its design document the first walk will have failures, and
+without skip-propagation its report is the same six-way puzzle that motivated this RFC.
 
 ## 12. Open questions
 
@@ -491,32 +539,26 @@ report is the same six-way puzzle that motivated this RFC.
    in the report. Leaning `measure`, with the attempt count reported.
 3. **Does `resonator_punchout` come back?** It is disabled on the August 2026 chip
    because its amplitude grid never reached punch-through, which is a range bug of
-   exactly this kind. Phase 2 may simply fix it.
+   exactly this kind. Phase 3 may simply fix it.
 4. **What "high fidelity" means in the acceptance test.** A threshold low enough that
    the simulated chip's own gate error dominates is a weak test; one too high pins the
    test to simulator tuning. Perhaps assert against the simulator's injected error
    rather than a constant, as `test_rb_recovers_a_known_gate_error` does.
-5. **How wide a chunked 2-D sweep is allowed to get.** §5 chunks rather than refuses, and
-   the sequencer stops being the binding limit once it does — wall-clock takes over. A
-   band-wide sweep against five drive powers at 1024 shots is tens of minutes, which is
-   fine for a bring-up and not for a drift check. Probably a per-node cap that a bring-up
-   raises, but that is a knob, and this RFC is about removing those.
-6. **Whether `reads` needs `analyse`-time reads hoisted.** §11 derives the set at build
-   time, and a handful of nodes read the device in `analyse` instead, which is too late to
-   block on. Hoisting them is a small mechanical change to maybe four routines; caching a
-   discovery run is less work and less honest. Decide when the four are counted.
 
 ## 13. Resolved during review
 
-Recorded because the reasoning is worth keeping, and because two of these changed the
+Recorded because the reasoning is worth keeping, and because several of these changed the
 shape of the RFC rather than just settling a detail.
 
 | Question | Resolution |
 |---|---|
 | Chunk a too-wide derived sweep, or refuse it? | **Chunk**, §5. Refusing hands range-picking back to the operator, which is the thing being removed. Chunks overlap by a linewidth so a line on a boundary is not lost in both. |
+| How wide is a chunked sweep allowed to get? | **A per-node cap on acquisitions, with a default** (§5). A resource budget is not the kind of knob this RFC removes: it needs no knowledge of the chip, which is exactly what distinguishes it from a range. `routine_timeout_s` is already this. |
 | Harden the *accept* side here, or in a sequel? | **Here**, §6.2. It is not a parallel concern: escalation only fires on a refusal, so a guard that accepts noise bypasses the entire RFC. It is the trigger condition. |
-| `reads` declared or derived? | **Derived** from `read_path`, §11. A hand-written list can omit a path the routine really reads — this section's own bug, one level up and invisible. |
+| `reads` declared or derived? | **Declared, with a test that derives** — reversing an earlier resolution in this table. A node's reads are static, so runtime derivation buys nothing a test does not, and it cannot cover the two `measure` implementors at all. §11. |
+| Hoist the `analyse`-time reads? | **Yes, six of them** (§11). A read after the acquisition cannot be a prerequisite, and it is a one-line move per routine. |
 | Does a skipped node keep its stale parameter? | **Keep and mark**, §11. Clearing it stops a chip that ran yesterday from running today. |
+| Put provenance in `calibration.yml` rather than the device file? | **Neither** (§10). `RoutineResult` already records node, time and fit for every parameter ever written, so what is missing is an index over run history — a much smaller change than either file's format, and it makes "is this a prior?" exactly decidable today. |
 | Stage writes in a separate store until the run succeeds? | **No**, §10 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
 | Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
 | Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
