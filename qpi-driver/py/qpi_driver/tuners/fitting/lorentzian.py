@@ -5,7 +5,14 @@ import logging
 import numpy as np
 from scipy.optimize import curve_fit
 
-from .core import FitError, align, fit_summary, require_in_range, require_positive
+from .core import (
+    MIN_LINE_REACH,
+    FitError,
+    align,
+    fit_summary,
+    require_in_range,
+    require_positive,
+)
 
 log = logging.getLogger(__name__)
 
@@ -152,13 +159,19 @@ def fit_spectroscopy_power(
     that same row, because a centre fitted at a power that is not the chosen one is a
     measurement of a different line.
 
-    Rows that do not fit, and rows whose fitted line is narrower than the sweep's own
-    step, are dropped before any of that. At the bottom of a power sweep there is often
-    no visible line, and `curve_fit` will still return one: a tidy, confident, very
-    narrow peak fitted to the noise between two setpoints. Such a row is not merely a
-    poor candidate, it is the *narrowest* one, so leaving it in makes it the reference
-    every real row is then rejected against — which is how a 600 MHz sweep came back
-    with a 12.9 kHz line and no answer at all.
+    Three filters run before any of that, and they exist because the *reference* is what
+    goes wrong. At the bottom of a power sweep there is often no visible line, and
+    `curve_fit` will still return one: a tidy, confident, very narrow peak fitted to the
+    noise between two setpoints. Such a row is not merely a poor candidate, it is the
+    narrowest, so leaving it in makes it the yardstick every real row is then rejected
+    against — which is how a 600 MHz sweep came back with a 12.9 kHz line and no answer
+    at all.
+
+    So a row is dropped if it did not converge, if its line is narrower than the sweep's
+    own step, or if it does not clear :data:`MIN_LINE_REACH`. Only what survives all three
+    may be the reference. The third was needed because the first two let through a row
+    that converges and clears the step while still showing nothing; see the comment at
+    the filter for the measurement.
 
     Returns ``{'clock_freq_01', 'drive_amplitude', 'linewidth', 'snr', ...}``.
     """
@@ -196,10 +209,35 @@ def fit_spectroscopy_power(
             + "; ".join(skipped)
         )
 
-    narrowest = min(fit["linewidth"] for _power, fit in fits)
+    # Only a row that shows a line may *be* the reference the others are judged against.
+    #
+    # This is the third time the reference has been wrong, and the first two fixes were
+    # both too weak. Dropping rows that did not converge was not enough; dropping rows
+    # narrower than the sweep step was not either. What remains is a row that clears the
+    # step, converges, and still shows nothing — and because it is a weak row it is the
+    # *narrowest*, so `MAX_BROADENING` then rejects every row that does show the line.
+    #
+    # Measured on the simulated chip at a 40 MHz window: rows at drive 0.005 and 0.010
+    # fitted 0.01 MHz and were dropped by the step, 0.020 fitted 3.11 MHz at a reach of
+    # 2.6, and 0.040 and 0.080 fitted 91 MHz and 198 MHz at reaches of 3.6 and 17. The
+    # 3.11 MHz row became `narrowest`, its 2x bound rejected both real rows, and the
+    # answer came from the one row with no line in it. Widening the window does not fix
+    # it — at 200 MHz a 6.24 MHz row took the same role and rejected three good ones.
+    credible = [(power, fit) for power, fit in fits if fit["reach"] >= MIN_LINE_REACH]
+    if not credible:
+        raise FitError(
+            "no drive power in the sweep showed a line above its own scatter — the "
+            "strongest reached "
+            f"{max(fit['reach'] for _power, fit in fits):.2f}x against the "
+            f"{MIN_LINE_REACH:g}x a measured line clears. Either the sweep does not "
+            "bracket the transition, or none of these powers drives it hard enough to "
+            "see"
+        )
+
+    narrowest = min(fit["linewidth"] for _power, fit in credible)
     resolved = [
         (power, fit)
-        for power, fit in fits
+        for power, fit in credible
         if fit["linewidth"] <= MAX_BROADENING * narrowest
     ]
     # `narrowest` is one of its own rows, so this is never empty.

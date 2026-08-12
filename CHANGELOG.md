@@ -22,6 +22,18 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   detuning, so a wrong `clock_freqs.f01` costs a calibration its contrast. They built
   their Hamiltonian on resonance whatever the device was configured for, which is why no
   suite could fail for the reason a chip 302 MHz out of config did.
+- `qpi-driver/py`: the spectroscopy roots judge a fitted line by how far its curve travels
+  against the scatter around it, not by a signal-to-noise floor. 16% to 55% of pure-noise
+  fits cleared the old floor of 3, because that ratio divides a fitted parameter by the
+  residual and an optimiser can inflate it without limit.
+- `qpi-driver/py`: `qubit_spectroscopy` only lets a drive power that shows a line set the
+  broadening reference the other powers are judged against. A row that converged, cleared
+  the sweep step and still showed nothing became the narrowest, and the 2x bound then
+  rejected every power that did show the line.
+- `qpi-driver/py`: every spectroscopy sweep is trimmed to the frequencies its port can
+  actually be driven at — its LO plus or minus the module's intermediate-frequency
+  limit. Asking outside it failed compilation with `Attempting to set NCO frequency`,
+  naming neither the routine nor the setpoint.
 - `qpi-driver/py`: the simulated backend carries the allowance the DAG judges a routine
   by, so the whole simulated calibration walks again. Without it every node of it died
   with `AttributeError: 'SimulatedBackend' object has no attribute 'last_allowance_s'`.

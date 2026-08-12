@@ -193,6 +193,27 @@ def _thinned(count: int) -> np.ndarray:
 #: flat Rabi sweep wrote an `amp180`36x too small and cost six runs before anything
 #: noticed.
 MIN_CURVE_TO_SCATTER = 3.0
+#: How far a fitted line's *curve* must travel, against the scatter left around it,
+#: before its centre counts as a frequency — the ``reach`` a Lorentzian fit reports.
+#:
+#: Five, from 1800 fits of pure noise that had already cleared the linewidth test below.
+#: Their reach had a 99th percentile of 3.4 to 3.6 and a maximum of 4.2, at sweeps from
+#: 51 to 301 points. A real line is nowhere near: 93 on this chip's resonator, and 104
+#: to 139 on the simulated qubit at spans from 4 MHz to 600 MHz. So five refuses every
+#: noise fit measured and passes every line measured by a factor of nineteen.
+#:
+#: This replaced a floor of 3.0 on ``snr``, which cannot do the job at any setting.
+#: ``snr`` divides a *fitted parameter* by the residual, so an optimiser handed noise
+#: can return whatever it likes — over those same 1800 fits its 99th percentile was 570
+#: to 2700 and its maximum 7048, and **16% to 55% of them cleared 3.0**. No rescaling
+#: separates a distribution with that tail from a real line at 127. ``snr`` is still
+#: what ranks one drive power against another, which is a comparison rather than a
+#: threshold, and is sound.
+#:
+#: The asymmetry is what sets the number rather than the gap: a refused fit leaves the
+#: last good frequency in place and says why, while an accepted one overwrites it and
+#: breaks every node downstream.
+MIN_LINE_REACH = 5.0
 
 
 def require_resolved_curve(

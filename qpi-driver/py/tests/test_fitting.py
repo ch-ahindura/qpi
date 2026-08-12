@@ -777,3 +777,67 @@ class TestCoherenceAndRamseyNeedAVisibleCurve:
         flat = 0.00817 + rng.normal(0.0, 8e-5, delays.size)
         with pytest.raises(FitError, match="no detuning to take from it"):
             fit_ramsey(delays, flat, 1e6)
+
+
+class TestOnlyARowWithALineMayJudgeTheOthers:
+    """`fit_spectroscopy_power` compares broadening against its narrowest row.
+
+    That reference has been wrong three times. Dropping rows that did not converge was
+    not enough; dropping rows narrower than the sweep step was not either. What survives
+    both is a row that converges, clears the step, and still shows nothing — and being
+    weak it is the *narrowest*, so `MAX_BROADENING` then rejects every row that does show
+    the line, and the answer comes from the one row with no line in it.
+
+    Measured on the simulated chip through the loop path, at a 40 MHz window centred on a
+    line the search had just located:
+
+        drive   linewidth    reach
+        0.005     0.01 MHz     2.7   dropped: narrower than the step
+        0.010     0.01 MHz     2.7   dropped: narrower than the step
+        0.020     3.11 MHz     2.6   became the reference
+        0.040    90.97 MHz     3.6   rejected as broadened
+        0.080   197.83 MHz    17.0   rejected as broadened
+
+    Widening the window does not fix it: at 200 MHz a 6.24 MHz row took the same role and
+    rejected three good rows. Only a row that shows a line may be the reference.
+    """
+
+    CENTRE = 5.214e9
+    FREQUENCIES = [5.214e9 - 20e6 + 1e6 * i for i in range(41)]
+
+    def _row(self, linewidth, amplitude, noise, seed):
+        import numpy as np
+
+        f = np.asarray(self.FREQUENCIES)
+        half = linewidth / 2.0
+        curve = amplitude * half**2 / ((f - self.CENTRE) ** 2 + half**2)
+        return 0.02 + curve + np.random.default_rng(seed).normal(0.0, noise, f.size)
+
+    def test_a_weak_row_cannot_become_the_broadening_reference(self):
+        import numpy as np
+        from qpi_driver.tuners.fitting import fit_spectroscopy_power
+
+        # A faint narrow row that clears the 1 MHz step, and two rows with real lines.
+        rows = np.vstack(
+            [
+                self._row(3.1e6, 0.0006, 2.0e-4, 1),
+                self._row(60e6, 0.05, 2.0e-4, 2),
+                self._row(120e6, 0.20, 2.0e-4, 3),
+            ]
+        )
+        fitted = fit_spectroscopy_power([0.02, 0.04, 0.08], self.FREQUENCIES, rows)
+
+        assert fitted["drive_amplitude"] in (0.04, 0.08), (
+            "the answer came from the row with no line in it"
+        )
+        assert fitted["clock_freq_01"] == pytest.approx(self.CENTRE, abs=5e6)
+        assert fitted["reach"] >= 5.0
+
+    def test_a_sweep_where_no_power_shows_a_line_is_refused(self):
+        """And says so as a power sweep, rather than reporting the least bad row."""
+        import numpy as np
+        from qpi_driver.tuners.fitting import fit_spectroscopy_power
+
+        rows = np.vstack([self._row(3.1e6, 0.0006, 2.0e-4, seed) for seed in (4, 5, 6)])
+        with pytest.raises(FitError, match="showed a line above its own scatter"):
+            fit_spectroscopy_power([0.02, 0.04, 0.08], self.FREQUENCIES, rows)
