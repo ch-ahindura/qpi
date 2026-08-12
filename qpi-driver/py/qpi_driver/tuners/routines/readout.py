@@ -23,7 +23,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.device import read_path, write_path
+from qpi_driver.tuners.base.device import (
+    measured_linewidth,
+    read_path,
+    write_path,
+)
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -50,6 +54,11 @@ def _two_state_path(element: Any, name: str) -> str | None:
     return f"{TWO_STATE}.{name}"
 
 
+#: How wide an operating-point sweep is, as a fraction of the measured resonator
+#: linewidth. Derived from two chips that agree: see `_grid`.
+SPAN_IN_LINEWIDTHS = 0.6
+
+
 class ReadoutOperatingPoint(CalibrationRoutine):
     """Where to interrogate the resonator, and how hard, so the states look least alike.
 
@@ -72,7 +81,7 @@ class ReadoutOperatingPoint(CalibrationRoutine):
     name = "readout_operating_point"
     depends_on = ("rabi",)
     updates = (f"{TWO_STATE}.frequency", f"{TWO_STATE}.pulse_amp")
-    reads = ("clock_freqs.readout", "measure.pulse_amp")
+    reads = ("clock_freqs.readout", "measure.pulse_amp", "resonator.linewidth")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element that can keep a discriminated readout point.
@@ -135,10 +144,17 @@ class ReadoutOperatingPoint(CalibrationRoutine):
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[tuple[float, float]]:
         centre = float(read_path(element, "clock_freqs.readout"))
-        # A refinement, not a scan. The optimum sits a fraction of a linewidth off
-        # the resonance — 200 kHz on the simulated chip, against a 2 MHz linewidth —
-        # so a wide span spends the register budget resolving nothing.
-        span = float(config.get("span", 2e6))
+        # A refinement, not a scan: the optimum sits a fraction of a linewidth off the
+        # resonance, so a wide span spends the register budget resolving nothing. Sized
+        # from the linewidth `resonator_spectroscopy` measured rather than from a
+        # constant, and 0.6 of it because that is what two independent chips agree on —
+        # the 2 MHz default that worked on the simulated chip is 0.60 of its measured
+        # 3.31 MHz, and the 200 kHz an operator hand-tuned on a 370 kHz resonator is
+        # 0.54 of that. The same constant was 5.4 linewidths on the second chip, which
+        # put the outer setpoints off resonance altogether and the node chose one.
+        span = float(
+            config.get("span", SPAN_IN_LINEWIDTHS * measured_linewidth(element, 2e6))
+        )
         points = int(config.get("points", 3))
         frequencies = (
             setpoints_of(config, "frequencies", [])

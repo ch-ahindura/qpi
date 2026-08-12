@@ -323,11 +323,34 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[tuple[float, float]]:
         centre = float(read_path(element, "clock_freqs.readout"))
-        # Five points across six megahertz. Three stepped 3 MHz against a 2 MHz
-        # linewidth, which found a point good enough to classify three states and not
-        # good enough for anything measured *at* it: `ramsey_12` reads |1> against
-        # |2>, and on the coarse point its f12 came back a megahertz out where a
-        # properly placed one gives kilohertz.
+        # Five points, and a span from the linewidth `resonator_spectroscopy` measured
+        # rather than a constant six megahertz. Three points stepped 3 MHz against a
+        # 2 MHz linewidth found a point good enough to classify three states and not
+        # good enough for anything measured *at* it: `ramsey_12` reads |1> against |2>,
+        # and on the coarse point its f12 came back a megahertz out where a properly
+        # placed one gives kilohertz.
+        #
+        # Six megahertz, and a constant — this is the one span in the graph that resisted
+        # being derived, so the reason is recorded rather than the number quietly kept.
+        #
+        # Two attempts. Sharing `readout_operating_point`'s 0.6 of a linewidth broke it
+        # outright: `ramsey_12`'s T2* came back at 250 us against a 0-1 coherence of 20 us,
+        # a fit extrapolating through a fringe with no decay left in it. The coefficient
+        # does not transfer because the ladder is wider — two states sit 2chi apart and the
+        # point that tells them apart is within a fraction of a linewidth of resonance,
+        # while three sit across 4chi and the point that separates all three can be
+        # further out.
+        #
+        # Then 1.8 linewidths, which reproduces this constant on the simulated chip almost
+        # exactly (1.8 x 3.31 MHz = 5.96 MHz). That left `ramsey_12`'s fringe at 3.0x its
+        # scatter against the 3x its guard allows — passing by nothing, on a quantity that
+        # now varies with a measurement.
+        #
+        # The span is not the free parameter it looks like. Placement wants more *points*,
+        # not a different width — and points are capped at five by the sequencer's
+        # single-shot registers: two amplitudes x five frequencies x three states is 30
+        # against a limit of 32, and seven points would be 42. So deriving this wants the
+        # register budget lifted first, which is not this phase's work. RFC 0007 §5.
         span = float(config.get("span", 6e6))
         points = int(config.get("points", 5))
         frequencies = (

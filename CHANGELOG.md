@@ -30,6 +30,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: `readout_operating_point` sizes its sweep from the measured resonator
+  linewidth rather than a 2 MHz constant. That constant was 5.4 linewidths on a 370 kHz
+  resonator, which put its outer setpoints off resonance altogether and it chose one.
 - `qpi-driver/py`: a `CalibratedTransmon` keeps the resonator linewidth
   `resonator_spectroscopy` measured, and the two resonator checks judge against it
   instead of a 2 MHz constant (RFC 0005 §13). On a chip whose resonator is 370 kHz wide
