@@ -550,41 +550,40 @@ shape of the RFC rather than just settling a detail.
 | Stage writes in a separate store until the run succeeds? | **No**, now RFC 0008 §7 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
 | Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
 | Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
-## 14. The simulator cannot fail a wrong f01, and phase 3 needs it to
+## 14. The gate paths ignored the drive detuning — done, and narrower than stated
 
-Found while building phase 1, and it blocks §8's acceptance test rather than merely
-inconveniencing it. Recorded here because it is not visible from the code without
-being pointed at.
+Found while building phase 1; **fixed** in August 2026, and the fix corrected this
+section twice. Both corrections are worth keeping, because one of them removed a
+blocker this RFC had invented.
 
-**The suites cannot detect a wrong `clock_freqs.f01`.** `test_calibration_loop.py`'s
-fixture device claims 5.0 GHz against a simulated qubit at 5.2142 GHz — 214 MHz out —
-and that suite was green. It was green because `qubit_spectroscopy` returned a *broad
-noise fit* that cleared both the old signal-to-noise floor and the linewidth test, and
-because nothing downstream cares: `SimulatedBackend._acquire_rabi` passes only
-amplitudes to the simulator, and `rabi`, `ramsey`, `t1` and `t2` all build their
-Hamiltonian with no detuning at all.
+**What was true.** `TransmonSimulator._anharmonic_hamiltonian(detuning_ghz=0.0)` is the
+drive-frame Hamiltonian and already carried a ``delta * number`` term, but only
+spectroscopy passed a detuning; `rabi`, `t1`, `t2_echo` and `ramsey` took the default. So
+a drive far off resonance rotated the simulated qubit exactly as well as one on it. Each
+now takes the detuning, and `SimulatedBackend` reads ``configured f01 - true f01`` off
+the device it was handed, per run: a walk that corrects f01 at spectroscopy has to get
+gates that then work. Measured on the integrator, rabi's peak-to-peak by detuning:
+0.996 on resonance, 0.446 at 50 MHz, 0.038 at 302 MHz, which is
+``Omega^2/(Omega^2 + delta^2)`` against a Rabi rate of about pi/20ns.
 
-**The physics is already there; four call sites pass zero.**
-`TransmonSimulator._anharmonic_hamiltonian(detuning_ghz=0.0)` is the drive-frame
-Hamiltonian and carries a ``delta * number`` term. Of its call sites, only spectroscopy
-(``transmon.py:431``) passes a detuning; the gate paths at 299, 318, 368 and 395 take the
-default. So a drive 302 MHz off resonance rotates the simulated qubit exactly as well as
-one on resonance, which is the one thing this month's hardware failure turned on.
+**Correction 1: this was never true of `test_calibration_loop.py`.** That suite runs the
+tuners over `SimulatedCoordinator`, which reads clock frequencies off the compiled
+schedule's clock resources and has always tracked per-qubit detunings — and it already
+carried the negative test, `test_an_uncalibrated_chip_gets_the_answer_wrong`, asserting
+that an X gate 214 MHz off leaves the qubit in ``|0>``. The blind spot was only ever in
+`tests/utils/simulation.py`'s schedule-reading shortcut, which `test_calibration_e2e.py`
+and the tier-3 tests use. Claiming "the suites" when one of the two was already honest
+overstated it.
 
-One wrinkle worth knowing before starting: `SimulatedBackend` answers from the
-*schedule*, and a schedule does not carry a gate's clock frequency — only
-`SetClockFrequency` sweeps do. `SimulatedTuner` holds both the device and the simulator,
-so it is the natural place to set the detuning from ``configured f01 - true f01`` before
-each run.
+**Correction 2, and this is the one that mattered.** On the strength of correction 1, the
+loop fixture's ``f01: 5e9`` is *load-bearing and correct* — spectroscopy's 600 MHz span
+genuinely finds 5.2142 GHz, and the fixture's LO puts that line at 224 MHz of IF, well
+inside the 500 MHz limit. So the ``5.040000e+08`` setpoint that suite rejects on
+`wip/rfc0007-accept-side-and-band` is **not** a fixture question and never had three
+possible fixes: it is the widening search overshooting a clamp that is not being applied.
+Changing the fixture or widening the span would have restored the blind spot for nothing,
+which is exactly the trap this section warned about — while pointing at the wrong door.
 
-**Why this comes before phase 3.** The acceptance test in §8 asserts that a chip known
-only from its design document calibrates. Against a simulator whose gates ignore
-detuning, that test passes with `f01` arbitrarily wrong, which makes it a test of the
-search's plumbing rather than of the outcome. Worse, the loop fixture is now red in a way
-that has **three** possible fixes — clamp the sweep, change the fixture, or widen the
-span — and two of them restore the blind spot. The suite cannot say which is right until
-a wrong `f01` fails on its own.
-
-Expect it to surface more. Phase 1 turned one suite red by refusing something that had
-been quietly accepted; making the simulator stricter is the same move one level down, so
-it is a "find out how deep it goes" job rather than a fixed-size one.
+**What this leaves.** Phase 3's acceptance test can now be written honestly: a wrong f01
+fails on its own through both simulator paths. And phase 2's remaining work is a plain
+bug in `addressable_band`'s application, with a suite that can judge it.
