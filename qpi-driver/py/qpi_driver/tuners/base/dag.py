@@ -359,6 +359,8 @@ class CalibrationDAG:
         )
 
         ran_any = False
+        skipped = 0
+        ledger = _ParameterLedger()
         for position, routine_name in enumerate(order, start=1):
             routine = self.routines[routine_name]
             routine_config = config.get_routine(routine_name)
@@ -372,11 +374,28 @@ class CalibrationDAG:
 
             log.info("%s running on %s", label, ", ".join(targets))
             for target in targets:
+                blocked = ledger.blockers(routine, target)
+                if blocked:
+                    # Not run and not failed: it has nothing to measure against, so
+                    # running it would report a confident number off an uncalibrated
+                    # chip, and failing it would invent an error that never happened.
+                    # RFC 0007 §11.
+                    detail = ledger.explain(blocked)
+                    log.warning("%s %s skipped: %s", label, target, detail)
+                    report.notes.append(f"{routine_name}[{target}]: skipped, {detail}")
+                    ledger.unsatisfied(routine, target, blame=ledger.blame(blocked))
+                    skipped += 1
+                    continue
+
                 ran_any = True
                 target_started = time.monotonic()
                 succeeded = self._run_one(
                     routine, target, device, backend, routine_config, config, report
                 )
+                if succeeded:
+                    ledger.produced(routine, target)
+                else:
+                    ledger.unsatisfied(routine, target)
                 log.info(
                     "%s %s %s in %s",
                     label,
@@ -409,12 +428,13 @@ class CalibrationDAG:
 
         report.duration_s = time.monotonic() - started
         log.info(
-            "%s calibration %s in %s: %d succeeded, %d failed",
+            "%s calibration %s in %s: %d succeeded, %d failed, %d skipped",
             mode,
             report.status,
             _human_duration(report.duration_s),
             len(report.routine_results),
             len(report.errors),
+            skipped,
         )
         return report
 
@@ -562,3 +582,78 @@ def _applies(routine: Any, device: Any, target: str, name: str) -> bool:
     except Exception:  # noqa: BLE001 - a broken predicate must not silence a routine
         log.warning("%s could not say whether it applies to %s", name, target)
         return True
+
+
+class _ParameterLedger:
+    """What a walk has produced, and what it has failed to produce (RFC 0007 §11).
+
+    A node whose input was never measured cannot measure anything either. Running it
+    anyway is how one failure became six on an August 2026 chip: `qubit_spectroscopy`
+    failed, and six nodes behind it measured a qubit still in ``|0>`` and reported
+    confident numbers fitted from its noise.
+
+    Keyed on *parameters* rather than on routines, which is what makes it correct here.
+    `depends_on` orders the walk and is not a data dependency — `cz_chevron` depends on
+    `rb` and `flux_spectroscopy`, and neither writes a parameter at all — so blocking a
+    node because a neighbour failed would decline work that has everything it needs.
+    Two consequences fall out of the parameter view for free:
+
+    - **A failed refiner blocks nothing.** Seven parameters have two writers, the
+      first producing and the second refining. `ramsey` failing leaves the
+      `clock_freqs.f01` that `qubit_spectroscopy` produced, so every node reading f01
+      still runs.
+    - **A disabled node is not a failed one.** It never ran, so it never recorded a
+      failure, and nothing downstream is blocked by its absence. A parameter an
+      operator supplies by hand — `measure.integration_time` and `r12.ef_duration` have
+      no producer in the graph at all — is likewise never in question.
+    """
+
+    def __init__(self) -> None:
+        self._produced: set[tuple[str, str]] = set()
+        self._unsatisfied: dict[tuple[str, str], set[str]] = {}
+
+    def produced(self, routine: CalibrationRoutine, target: str) -> None:
+        """Record that *routine* measured what it writes."""
+        for path in routine.updates:
+            self._produced.add((target, path))
+
+    def unsatisfied(
+        self,
+        routine: CalibrationRoutine,
+        target: str,
+        blame: set[str] | None = None,
+    ) -> None:
+        """Record that *routine* did not produce what it writes.
+
+        *blame* carries the root cause forward when this routine was itself skipped, so
+        a chain of skips names the failure that started it rather than its neighbour —
+        the same choice `diagnose` makes in blaming the deepest failing ancestor.
+        """
+        culprits = blame or {routine.name}
+        for path in routine.updates:
+            self._unsatisfied.setdefault((target, path), set()).update(culprits)
+
+    def blockers(self, routine: CalibrationRoutine, target: str) -> dict[str, set[str]]:
+        """The parameters *routine* reads that this walk failed to produce."""
+        blocked: dict[str, set[str]] = {}
+        for path in routine.reads:
+            key = (target, path)
+            if key in self._produced:
+                continue
+            culprits = self._unsatisfied.get(key)
+            if culprits:
+                blocked[path] = culprits
+        return blocked
+
+    @staticmethod
+    def blame(blocked: dict[str, set[str]]) -> set[str]:
+        """Every routine implicated in *blocked*, to pass on to whatever this blocks."""
+        return {name for culprits in blocked.values() for name in culprits}
+
+    @staticmethod
+    def explain(blocked: dict[str, set[str]]) -> str:
+        """Why a node was skipped, naming the parameter and who failed to produce it."""
+        return "; ".join(
+            f"nothing produced {path} ({', '.join(sorted(culprits))} failed)"
+            for path, culprits in sorted(blocked.items())
+        )

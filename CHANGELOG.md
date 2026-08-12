@@ -87,6 +87,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a routine declares the device parameters it `reads`, the counterpart
   of the `updates` it already declared (RFC 0007 §11). A test derives the true set from
   an instrumented `read_path` and fails a declaration that is short of it.
+- `qpi-driver/py`: the walk skips a routine whose input this run failed to produce,
+  naming the routine to blame, instead of measuring an uncalibrated chip (RFC 0007 §11).
+  One failed `qubit_spectroscopy` cost six runs of debugging six downstream nodes that
+  had each fitted the noise of a qubit still in its ground state.
 - `repo`: Cleaned up and refactored `Makefile`.
 - `repo`: Cleaned up `.github/workflows/ci.yml`.
 - `qpi-driver/py`: Optimized `test-py-loop` execution speed with

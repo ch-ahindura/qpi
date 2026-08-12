@@ -565,7 +565,7 @@ class TestProgressReporting:
         assert any(m.startswith("[2/2] b q0 FAILED in ") for m in messages)
         assert any(
             m.startswith("full calibration partial_failure in ")
-            and m.endswith(": 1 succeeded, 1 failed")
+            and m.endswith(": 1 succeeded, 1 failed, 0 skipped")
             for m in messages
         )
 
@@ -879,3 +879,143 @@ class TestSetpointHelpers:
         from qpi_driver.tuners.fitting import signal_of
 
         assert list(signal_of(np.array([1.0, 2.0]))) == [1.0, 2.0]
+
+
+class Producer(StubRoutine):
+    """A routine that writes named parameters, so a ledger has something to record."""
+
+    def __init__(self, name, depends_on=(), updates=(), reads=(), targets="qubits"):
+        super().__init__(name, depends_on=depends_on, targets=targets)
+        self.updates = updates
+        self.reads = reads
+
+
+class FailingProducer(Producer):
+    def analyse(self, dataset, target, device, config):
+        raise RoutineError("could not fit")
+
+
+class TestANodeWhoseInputWasNeverProducedIsSkipped:
+    """RFC 0007 §11: block on an unsatisfied *parameter*, not on a failed neighbour.
+
+    The failure this exists for: on an August 2026 chip `qubit_spectroscopy` failed and
+    six nodes behind it measured a qubit still in |0>, each reporting a confident number
+    fitted from its noise. Six failures with six different-looking causes, none naming
+    the one that mattered — and before that run's guards existed, those six wrote the
+    noise to the device file.
+    """
+
+    def _run(self, routines):
+        return CalibrationDAG(routines, _config()).run(
+            device=None, backend=FakeBackend(), config=_config()
+        )
+
+    def test_a_reader_is_skipped_when_its_parameter_was_not_produced(self):
+        routines = [
+            FailingProducer("root", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("root",), reads=("clock_freqs.f01",)),
+        ]
+        report = self._run(routines)
+
+        assert [r.routine_name for r in report.routine_results] == []
+        # Skipped, not failed: one error for the node that actually broke.
+        assert len(report.errors) == 1 and "root" in report.errors[0]
+        assert any(
+            "reader[q0]: skipped" in note and "clock_freqs.f01" in note
+            for note in report.notes
+        ), report.notes
+
+    def test_a_failed_refiner_blocks_nothing(self):
+        """Seven parameters have two writers. The second failing leaves the first's.
+
+        `ramsey` refines the `clock_freqs.f01` that `qubit_spectroscopy` produced, so a
+        failed `ramsey` must not skip the graph behind it — node-level propagation would
+        have skipped five nodes here for nothing.
+        """
+        routines = [
+            Producer("producer", updates=("clock_freqs.f01",)),
+            FailingProducer(
+                "refiner",
+                depends_on=("producer",),
+                updates=("clock_freqs.f01",),
+                reads=("clock_freqs.f01",),
+            ),
+            Producer("reader", depends_on=("refiner",), reads=("clock_freqs.f01",)),
+        ]
+        report = self._run(routines)
+
+        assert [r.routine_name for r in report.routine_results] == [
+            "producer",
+            "reader",
+        ]
+        assert not [n for n in report.notes if "skipped" in n]
+
+    def test_a_disabled_producer_does_not_block_its_readers(self):
+        """It never ran, so it never failed. An operator may switch a node off.
+
+        `time_of_flight` is disabled on the August 2026 chip and `measure.acq_delay`
+        stays at the value its config carries; blocking here would take the whole graph
+        beneath it down.
+        """
+        config = _config(routines={"producer": RoutineConfig(enabled=False)})
+        routines = [
+            Producer("producer", updates=("measure.acq_delay",)),
+            Producer("reader", depends_on=("producer",), reads=("measure.acq_delay",)),
+        ]
+        report = CalibrationDAG(routines, config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+
+        assert [r.routine_name for r in report.routine_results] == ["reader"]
+        assert report.status == "success"
+
+    def test_a_reader_of_a_parameter_no_node_produces_still_runs(self):
+        """`measure.integration_time` and `r12.ef_duration` have no producer at all.
+
+        They come from the config, so "nothing produced it in this walk" must not mean
+        "it is missing" — otherwise seven EF nodes would refuse on every chip.
+        """
+        routines = [Producer("reader", reads=("r12.ef_duration",))]
+        report = self._run(routines)
+
+        assert [r.routine_name for r in report.routine_results] == ["reader"]
+
+    def test_a_skip_names_the_failure_that_started_it_not_its_neighbour(self):
+        """A chain of skips blames the root, as `diagnose` blames the deepest ancestor."""
+        routines = [
+            FailingProducer("root", updates=("clock_freqs.f01",)),
+            Producer(
+                "middle",
+                depends_on=("root",),
+                reads=("clock_freqs.f01",),
+                updates=("rxy.amp180",),
+            ),
+            Producer("leaf", depends_on=("middle",), reads=("rxy.amp180",)),
+        ]
+        report = self._run(routines)
+
+        leaf = next(n for n in report.notes if n.startswith("leaf[q0]"))
+        assert "root failed" in leaf, leaf
+        assert "middle" not in leaf, leaf
+
+    def test_a_failure_on_one_qubit_does_not_skip_another(self):
+        """The ledger is keyed on the target too — q1 is a different chip site."""
+
+        class FailsOnQ0(Producer):
+            def analyse(self, dataset, target, device, config):
+                if target == "q0":
+                    raise RoutineError("could not fit")
+                return {"value": 1.0}
+
+        config = _config(target_qubits=["q0", "q1"])
+        routines = [
+            FailsOnQ0("root", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("root",), reads=("clock_freqs.f01",)),
+        ]
+        report = CalibrationDAG(routines, config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+
+        ran = [(r.routine_name, r.target) for r in report.routine_results]
+        assert ("reader", "q1") in ran
+        assert ("reader", "q0") not in ran
