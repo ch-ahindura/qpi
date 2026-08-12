@@ -19,7 +19,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
-from qpi_driver.tuners.fitting.core import MIN_LINE_REACH
+from qpi_driver.tuners.fitting.core import MIN_LINE_REACH, OutOfRange
 
 log = logging.getLogger(__name__)
 
@@ -191,6 +191,62 @@ class CalibrationRoutine(ABC):
         """
         raise NotImplementedError
 
+    #: How many times `escalating` may widen a sweep before giving up. Three, because
+    #: each attempt is a full acquisition and the point is to cover a chip an order of
+    #: magnitude from the default, not to search indefinitely: at the fourfold default
+    #: step, three attempts reach 64 times the original extent.
+    MAX_ESCALATIONS = 3
+
+    def escalating(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> dict[str, Any]:
+        """Build, run and analyse, widening the sweep if the fit says the window was wrong.
+
+        The ordinary path already refuses a curve no taller than its own noise (RFC 0007
+        §6.1). For a coherence sweep that refusal is usually an instruction rather than a
+        verdict — *the decay was never seen in this window* means lengthen the delays — so
+        a guard that can say which axis was wrong raises `OutOfRange`, and this follows it.
+
+        Bounded on both sides. It stops after :attr:`MAX_ESCALATIONS`, and it re-raises the
+        last refusal rather than inventing a range, so a chip with no decay in it still
+        fails and says why. An operator who named the axis themselves is left alone: they
+        have made a statement about their chip, and widening past it would be overruling a
+        measurement with a default.
+        """
+        # Which axes the *operator* named, captured once. Widening puts its own setpoints
+        # into the config, so asking "is this axis configured?" after the first attempt
+        # would find this method's own work and mistake it for an instruction.
+        operator_set = frozenset(config.params)
+        attempted: list[str] = []
+        for attempt in range(self.MAX_ESCALATIONS + 1):
+            try:
+                schedule = self.build_schedule(target, device, config, backend)
+                dataset = backend.run(schedule, timeout_s=timeout_s)
+                return self.analyse(dataset, target, device, config)
+            except OutOfRange as refusal:
+                attempted.append(f"{refusal.axis} x{refusal.factor**attempt:g}")
+                if attempt == self.MAX_ESCALATIONS or refusal.axis in operator_set:
+                    raise
+                config = _widened(self, config, refusal)
+                log.info(
+                    "%s on %s: %s — widening %s by %gx and trying again (%d of %d)",
+                    self.name,
+                    target,
+                    refusal,
+                    refusal.axis,
+                    refusal.factor,
+                    attempt + 1,
+                    self.MAX_ESCALATIONS,
+                )
+        raise RoutineError(  # pragma: no cover - the loop above always returns or raises
+            f"{self.name} exhausted its escalations on {target}: {', '.join(attempted)}"
+        )
+
     @property
     def measures_itself(self) -> bool:
         """Whether this routine overrides :meth:`measure`."""
@@ -319,3 +375,32 @@ def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> N
             "measured — the fit is of the noise between setpoints. Scan the "
             "same span with more points, or narrow the span."
         )
+
+
+def _widened(
+    routine: CalibrationRoutine, config: RoutineConfig, refusal: OutOfRange
+) -> RoutineConfig:
+    """*config* with the axis *refusal* named stretched by its factor.
+
+    The setpoints come from what the routine actually built rather than from the config,
+    because the default case is the one that matters: a config with no ``delays`` in it is
+    exactly the config whose sweep needs widening, and reading only the config would find
+    nothing to stretch. Every routine keeps its setpoints as ``_<axis>`` for `analyse` to
+    fit against, which is what makes this readable from outside.
+
+    Only the setpoints move. Everything else the operator set is carried through, because
+    a wider sweep is still their sweep — and the axis is stored under its own config key,
+    so the next attempt reads it exactly as though it had been asked for.
+    """
+    current = list(
+        config.get(refusal.axis) or getattr(routine, f"_{refusal.axis}", ()) or ()
+    )
+    if not current:
+        return config
+    low, high = min(current), max(current)
+    extent = (high - low) * refusal.factor
+    centre = (high + low) / 2.0 if low < 0 else low
+    stretched = linear_setpoints(centre, centre + extent, len(current))
+    return RoutineConfig(
+        enabled=config.enabled, params={**config.params, refusal.axis: stretched}
+    )

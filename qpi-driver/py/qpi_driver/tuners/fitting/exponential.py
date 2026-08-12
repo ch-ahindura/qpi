@@ -65,6 +65,9 @@ def _fit_coherence(
             "the data cannot tell from a flat line is not a coherence time. Lengthen "
             "the delays, or average more shots"
         ),
+        # Escalatable: "lengthen the delays" is an instruction, and a caller that can
+        # follow it should not have to parse prose to know that.
+        axis="delays",
     )
     return {
         key: value,

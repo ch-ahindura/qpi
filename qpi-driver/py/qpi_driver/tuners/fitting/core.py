@@ -18,6 +18,37 @@ class FitError(Exception):
     """The data could not be fitted, or the fit is not physically usable."""
 
 
+class OutOfRange(FitError):
+    """A fit failed in a way that names what to sweep differently (RFC 0007 §6.1).
+
+    A guard that refuses a curve is usually saying one of two things, and they want
+    opposite responses: *this chip is dead*, or *you looked in the wrong place*. Prose
+    cannot be acted on, so the second case raises this instead — carrying which axis was
+    wrong and which way — and a caller may widen and try again rather than give up.
+
+    Subclasses `FitError` deliberately: every existing `except FitError` keeps working, so
+    a routine that does not know about escalation behaves exactly as it did.
+
+    Attributes:
+        axis: the sweep to change, named as the routine's config key — ``"delays"``.
+        direction: ``"wider"`` or ``"narrower"``.
+        factor: how much, as a multiplier on the current extent.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        axis: str,
+        direction: str = "wider",
+        factor: float = 4.0,
+    ) -> None:
+        super().__init__(message)
+        self.axis = axis
+        self.direction = direction
+        self.factor = factor
+
+
 def require_in_range(
     value: float, low: float, high: float, *, what: str, tolerance: float = 0.0
 ) -> float:
@@ -223,6 +254,7 @@ def require_resolved_curve(
     what: str,
     consequence: str,
     factor: float = MIN_CURVE_TO_SCATTER,
+    axis: str | None = None,
 ) -> None:
     """Refuse a fit whose curve is no taller than the noise it was fitted through.
 
@@ -246,8 +278,15 @@ def require_resolved_curve(
         return
     span = float(np.max(curve) - np.min(curve))
     if span < factor * scatter:
-        raise FitError(
+        message = (
             f"the fitted {what} spans {span:.4g} against a residual scatter of "
             f"{scatter:.4g} — {span / scatter:.1f}x, below the {factor:.0f}x a resolved "
             f"{what} clears — so {consequence}"
         )
+        # With an *axis*, the caller has said which sweep could be wrong, so this becomes
+        # something a routine can act on rather than only report — see `OutOfRange`. A
+        # curve flatter than its own noise is the signature of a window that missed, and
+        # for a decay the window is nearly always too short rather than too long.
+        if axis is not None:
+            raise OutOfRange(message, axis=axis, direction="wider")
+        raise FitError(message)

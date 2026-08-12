@@ -39,6 +39,7 @@ from .lorentzian import (
 from .trace import fit_readout_timing
 
 __all__ = [
+    "OutOfRange",
     "FitError",
     "align",
     "require_in_range",

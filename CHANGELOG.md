@@ -30,6 +30,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: `t1`, `t2_echo` and `ramsey` lengthen their delays and try again when
+  the fit says the decay was never seen in the window, rather than failing. Bounded at
+  three attempts, and an operator who named the delays themselves is not overruled.
 - `qpi-driver/py`: the two excited-state resonator sweeps size their spans from the
   measured linewidth rather than a 20 MHz constant, which was 6 linewidths on one chip
   and 54 on another.

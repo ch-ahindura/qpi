@@ -32,6 +32,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.fitting.core import OutOfRange
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines, routine_names
 
 
@@ -1019,3 +1020,68 @@ class TestANodeWhoseInputWasNeverProducedIsSkipped:
         ran = [(r.routine_name, r.target) for r in report.routine_results]
         assert ("reader", "q1") in ran
         assert ("reader", "q0") not in ran
+
+
+class TestAWindowTooShortIsWidenedRatherThanFailed:
+    """RFC 0007 §6.1: a guard that knows which axis was wrong is an instruction.
+
+    "the decay was never seen in this window" means lengthen the delays. Before this it
+    meant the node failed and an operator read the prose.
+    """
+
+    class Coherence(StubRoutine):
+        """Refuses until its delays reach *needs*, then reports."""
+
+        def __init__(self, name, needs):
+            super().__init__(name)
+            self.needs = needs
+            self.attempts: list[float] = []
+
+        def build_schedule(self, target, device, config, backend):
+            self._delays = setpoints_of(
+                config, "delays", linear_setpoints(0.0, 1e-5, 41)
+            )
+            return backend.new_schedule(self.name)
+
+        def analyse(self, dataset, target, device, config):
+            extent = max(self._delays)
+            self.attempts.append(extent)
+            if extent < self.needs:
+                raise OutOfRange(
+                    "the decay was never seen in this window", axis="delays"
+                )
+            return {"t1": extent / 3.0}
+
+        def measure(self, target, device, config, backend, bias=None, timeout_s=300.0):
+            return self.escalating(target, device, config, backend, timeout_s)
+
+    def _run(self, routines, config=None):
+        config = config or _config()
+        return CalibrationDAG(routines, config).run(
+            device=None, backend=FakeBackend(), config=config
+        )
+
+    def test_it_widens_until_the_decay_fits_in_the_window(self):
+        node = self.Coherence("t1", needs=1.5e-4)
+        report = self._run([node])
+
+        assert report.status == "success"
+        # 10 us, then 40, then 160: fourfold each time, and it stops as soon as it fits.
+        assert node.attempts == pytest.approx([1e-5, 4e-5, 1.6e-4])
+
+    def test_a_chip_with_no_decay_still_fails_and_says_why(self):
+        node = self.Coherence("t1", needs=1.0)
+        report = self._run([node])
+
+        assert report.status == "failed"
+        assert len(node.attempts) == node.MAX_ESCALATIONS + 1
+        assert "never seen in this window" in report.errors[0]
+
+    def test_an_operator_who_named_the_delays_is_not_overruled(self):
+        """Their setpoints are a statement about their chip; widening would overrule it."""
+        node = self.Coherence("t1", needs=1.5e-4)
+        config = _config(routines={"t1": RoutineConfig(params={"delays": [0.0, 1e-5]})})
+        report = self._run([node], config)
+
+        assert report.status == "failed"
+        assert node.attempts == pytest.approx([1e-5])

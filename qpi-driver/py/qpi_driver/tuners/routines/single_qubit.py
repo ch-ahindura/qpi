@@ -14,6 +14,7 @@ from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.base.routines import (
+    DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
@@ -209,6 +210,22 @@ class Ramsey(CalibrationRoutine):
     updates = ("clock_freqs.f01",)
     reads = ("clock_freqs.f01",)
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen the delays and try again when the fit says the decay was never seen.
+
+        A window too short for this chip is the commonest way this node fails, and the
+        guard already knows it — see `CalibrationRoutine.escalating`.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -267,6 +284,22 @@ class T1(CalibrationRoutine):
     depends_on = ("rabi",)
     updates = ()
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen the delays and try again when the fit says the decay was never seen.
+
+        A window too short for this chip is the commonest way this node fails, and the
+        guard already knows it — see `CalibrationRoutine.escalating`.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -297,6 +330,22 @@ class T2Echo(CalibrationRoutine):
     name = "t2_echo"
     depends_on = ("rabi",)
     updates = ()
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen the delays and try again when the fit says the decay was never seen.
+
+        A window too short for this chip is the commonest way this node fails, and the
+        guard already knows it — see `CalibrationRoutine.escalating`.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
