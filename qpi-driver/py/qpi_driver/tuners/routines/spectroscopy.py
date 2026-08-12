@@ -5,8 +5,10 @@ drive at. Each sweeps a clock frequency across the scan and fits a Lorentzian to
 the response.
 """
 
+import logging
 from typing import Any
 
+import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
@@ -18,6 +20,7 @@ from qpi_driver.tuners.base.device import (
     write_path,
 )
 from qpi_driver.tuners.base.routines import (
+    DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
@@ -27,6 +30,7 @@ from qpi_driver.tuners.base.routines import (
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
+    FitError,
     fit_punchout,
     fit_qubit_spectroscopy,
     fit_readout_timing,
@@ -34,6 +38,8 @@ from qpi_driver.tuners.fitting import (
     fit_spectroscopy_power,
     signal_of,
 )
+
+log = logging.getLogger(__name__)
 
 #: Full scale. The elements validate the same bound on `spec.amplitude`; past it a
 #: waveform clips and the schedule will not compile.
@@ -47,6 +53,15 @@ MAX_SPECTROSCOPY_AMPLITUDE = 1.0
 #: measured 0.0005 to 0.005 across six runs, so the floor sits an order of
 #: magnitude clear of both.
 MIN_SHIFT_TO_LINEWIDTH = 0.05
+
+#: How far the tallest bin of a wide search must stand over the scatter to count as a
+#: line. The tallest of n normal draws sits near ``sqrt(2 ln n)`` — 3.4 for the 301-point
+#: default, 5.3 even at a million — so 6 refuses noise at any grid size worth sweeping.
+#: Measured on the simulated chip: 115 to 126 on the line, 2.5 to 2.9 off it.
+MIN_SEARCH_PEAK = 6.0
+
+#: Scales a median absolute deviation to the standard deviation of a normal.
+MAD_TO_SIGMA = 1.4826
 
 
 def _frequency_sweep(
@@ -630,6 +645,8 @@ class QubitSpectroscopy(CalibrationRoutine):
     ``spec.amplitude`` only exists on a `CalibratedTransmon`. Against a config that
     keeps `BasicTransmonElement` the sweep still runs and still picks its best row —
     the power just is not remembered between calibrations.
+
+    The configured ``clock_freqs.f01`` is a *prior*, not an answer: see :meth:`measure`.
     """
 
     name = "qubit_spectroscopy"
@@ -646,13 +663,194 @@ class QubitSpectroscopy(CalibrationRoutine):
     #: recalibration should not pay it again to confirm what it already knows.
     RECALIBRATION_FACTORS = (0.5, 1.0, 2.0)
 
+    #: How far the widening pass looks, and how finely.
+    #:
+    #: Not as wide as it could usefully be, and the ceiling is hardware. An RF module
+    #: reaches +/-500 MHz either side of its LO — quantify's ``NCO_FREQ_LIMIT_STEPS`` over
+    #: ``NCO_FREQ_STEPS_PER_HZ`` — so a 1 GHz search is addressable only when the LO sits
+    #: at the search centre, and asking past that does not compile. 600 MHz leaves 200 MHz
+    #: of slack for an LO placed off-centre, which is the usual case.
+    #:
+    #: So the operator still has to widen this on a chip further out than 300 MHz, and the
+    #: refusal below says so. What the default buys is that being a few hundred MHz wrong
+    #: — a design value, a different flux bias — no longer needs anyone to notice.
+    #:
+    #: 2 MHz steps sit inside the width a saturating drive broadens the line to, so a real
+    #: line lands in some bin, and 301 acquisitions is well clear of what a sequencer
+    #: assembles.
+    SEARCH_SPAN = 600e6
+    SEARCH_POINTS = 301
+
+    #: One power for the widening pass, the strongest this routine would try anyway.
+    #: Locating a line does not need powers compared, and five of them across 301
+    #: frequencies is 1505 acquisitions — past what a sequencer will assemble.
+    SEARCH_AMPLITUDE = 0.08
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Sweep where the config says f01 is; if the line is not there, go and find it.
+
+        This node's job is to measure f01, so a configured value has to be treated as a
+        guess about the chip rather than as the answer. Design values, and values
+        measured at some other flux bias, are both routinely a few hundred MHz out — and
+        before this, the sweep only ever looked +/-20 MHz around whatever it was handed
+        and refused what it fitted. On a chip whose f01 sat 302 MHz below its design
+        value that read as six runs of "no drive power resolved a line", with nothing
+        saying the window was the problem, and it left the operator to supply by hand the
+        one number the node exists to produce.
+
+        Two passes, and the split matters. The wide pass only chooses *where to look*:
+        what gets written still comes from the narrow sweep and still has to clear
+        `require_resolved_line`. So a coarse grid — on which every real line is narrower
+        than one step, and a Lorentzian fit is therefore drawing through noise between
+        points — can never be the thing that sets f01.
+
+        Costs nothing on a chip that is where it says it is: the wide pass runs only
+        after the narrow one has already failed.
+        """
+        try:
+            return self._sweep(target, device, config, backend, timeout_s)
+        except (RoutineError, FitError) as narrow:
+            near = str(narrow)
+            log.info(
+                "%s: no line within the configured window for %s (%s) — widening to "
+                "%.0f MHz",
+                self.name,
+                target,
+                near,
+                float(config.get("search_span", self.SEARCH_SPAN)) / 1e6,
+            )
+
+        found = self._search(target, device, config, backend, timeout_s)
+        widened = RoutineConfig(
+            enabled=config.enabled,
+            params={**config.params, "centre_frequency": found},
+        )
+        try:
+            return self._sweep(target, device, widened, backend, timeout_s)
+        except (RoutineError, FitError) as exc:
+            raise RoutineError(
+                f"the widened search put {target}'s strongest line at {found:.0f} Hz, "
+                f"but sweeping finely there did not confirm it: {exc}. Around the "
+                f"configured f01 it said: {near}"
+            ) from exc
+
+    def _sweep(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> dict[str, Any]:
+        """The ordinary pass: build, run, fit, and refuse anything unresolved."""
+        schedule = self.build_schedule(target, device, config, backend)
+        dataset = backend.run(schedule, timeout_s=timeout_s)
+        return self.analyse(dataset, target, device, config)
+
+    def _search(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> float:
+        """Where the strongest line in a wide window is, to point the narrow sweep at."""
+        span = float(config.get("search_span", self.SEARCH_SPAN))
+        points = int(config.get("search_points", self.SEARCH_POINTS))
+        amplitude = float(config.get("search_amp", self.SEARCH_AMPLITUDE))
+        centre = _current_clock(device, target, "f01")
+        frequencies = linear_setpoints(centre - span / 2, centre + span / 2, points)
+
+        # Fewer shots than the narrow pass, because this only has to see a peak rather
+        # than measure its centre — and because a wide grid is already many acquisitions
+        # against a `routine_timeout_s` that bounds the whole two-pass loop.
+        schedule = self._probe_schedule(
+            target,
+            frequencies,
+            [amplitude],
+            backend,
+            int(config.get("search_shots", 256)),
+        )
+        signal = signal_of(backend.run(schedule, timeout_s=timeout_s))
+
+        # The tallest bin, not a fitted centre — no Lorentzian anywhere in this pass.
+        #
+        # Fitting one here was tried and is wrong twice over. A line on a 2 MHz grid is
+        # narrower than a step, so there is nothing for a lineshape to be fitted *to*;
+        # and an optimiser handed 301 points of noise returns a confident centre with a
+        # signal-to-noise of 3, which cleared `MIN_LINE_SNR` in this simulator and would
+        # have sent the narrow pass to an arbitrary frequency. Measured: a real line
+        # reaches 115-126 by the ratio below, and pure noise 2.5-2.9.
+        #
+        # A bin index cannot be pulled off the grid by a fit, and half a step of
+        # precision is all this pass owes — the narrow sweep is what measures f01.
+        baseline = float(np.median(signal))
+        deviation = np.abs(np.asarray(signal, dtype=float) - baseline)
+        # Median absolute deviation, scaled to a standard deviation. Robust by
+        # construction: a peak occupying a few bins of hundreds cannot inflate the
+        # scatter it is being judged against, the way an RMS residual would.
+        scatter = MAD_TO_SIGMA * float(np.median(deviation))
+        peak = float(np.max(deviation))
+        reach = peak / scatter if scatter > 0 else float("inf")
+
+        if reach < MIN_SEARCH_PEAK:
+            raise RoutineError(
+                f"nothing above the noise between {frequencies[0]:.0f} and "
+                f"{frequencies[-1]:.0f} Hz — the tallest bin in a {span / 1e6:.0f} MHz "
+                f"search around {target}'s configured f01 stands {reach:.1f}x over the "
+                f"scatter, below the {MIN_SEARCH_PEAK:g}x a line clears. Either the qubit "
+                f"is outside that window, or the drive is not reaching it: check the "
+                f"port's wiring and attenuation, then widen with `search_span` — bearing "
+                f"in mind a module reaches only +/-500 MHz either side of its LO, so past "
+                f"that the LO has to move too"
+            )
+
+        found = float(frequencies[int(np.argmax(deviation))])
+        log.info(
+            "%s: %s's strongest line is at %.0f Hz, %.0f MHz from the configured f01, "
+            "%.1fx over the scatter",
+            self.name,
+            target,
+            found,
+            (found - centre) / 1e6,
+            reach,
+        )
+        return found
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._frequencies = _frequency_sweep(
-            config, device, target, "f01", default_span=40e6
+        return self._probe_schedule(
+            target,
+            _frequency_sweep(config, device, target, "f01", default_span=40e6),
+            self._drive_amplitudes(config, device, target),
+            backend,
+            int(config.get("shots", 1024)),
         )
-        self._amplitudes = self._drive_amplitudes(config, device, target)
+
+    def _probe_schedule(
+        self,
+        target: str,
+        frequencies: list[float],
+        amplitudes: list[float],
+        backend: SchedulerBackend,
+        shots: int,
+    ) -> Any:
+        # Recorded here rather than by each caller, so `analyse` cannot read a grid other
+        # than the one the schedule it is handed actually swept — which two passes over
+        # different windows makes a live possibility rather than a theoretical one.
+        self._frequencies = frequencies
+        self._amplitudes = amplitudes
+
         clock = f"{target}.01"
         # A weak drive at the calibrated pulse shape, deliberately.
         #
@@ -667,12 +865,10 @@ class QubitSpectroscopy(CalibrationRoutine):
         # Precision is not lost by that choice, it is delegated: `ramsey` runs
         # after `rabi` and refines f01 to hertz. Spectroscopy finds the qubit,
         # Ramsey measures it — which is what the dependency order already says.
-        schedule = backend.new_schedule(
-            self.name, repetitions=int(config.get("shots", 1024))
-        )
+        schedule = backend.new_schedule(self.name, repetitions=shots)
         index = 0
-        for drive_amp in self._amplitudes:
-            for frequency in self._frequencies:
+        for drive_amp in amplitudes:
+            for frequency in frequencies:
                 schedule.add(backend.Reset(target))
                 schedule.add(
                     backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)

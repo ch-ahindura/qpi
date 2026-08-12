@@ -32,6 +32,7 @@ qutip = pytest.importorskip("qutip", reason="needs the [sim] extra")
 
 from tests.utils.simulation import (  # noqa: E402
     GHZ,
+    SimulatedBackend,
     StubBackend,
     TransmonSimulator,
     _rxy_qobj,
@@ -196,6 +197,70 @@ class TestSpectroscopy:
         assert device.get_element("q0").clock_freqs.f01 == pytest.approx(
             simulator.f01 * GHZ, abs=5e4
         )
+
+    def test_a_configured_f01_hundreds_of_mhz_out_is_still_located(self, simulator):
+        """The configured f01 is a prior, so being far wrong has to widen the search.
+
+        This is the node whose job is to measure f01. A design value, or one measured at
+        a different flux bias, is routinely a few hundred MHz from where the chip is —
+        and before this the sweep only looked +/-20 MHz around whatever it was handed.
+        On hardware that read as six runs of "no drive power resolved a line", and left
+        the operator to supply by hand the number the node exists to produce.
+
+        Against the wide pass directly, and at its default grid. Driving `measure` end to
+        end would make this depend on the narrow pass *refusing* first, which is a
+        property of one noise realisation rather than of the search.
+
+        250 MHz rather than the 302 it happened on: the default span is 600 MHz because a
+        module reaches only +/-500 MHz either side of its LO, so 302 needs `search_span`.
+        """
+        import dataclasses
+
+        from qpi_driver.tuners.base.device import write_path
+
+        # Its own copy, so the several hundred shot-noise draws a wide search costs do
+        # not shift what the module-scoped simulator hands the tests after this one.
+        # `replace` rebuilds the RNG from the same seed.
+        chip = dataclasses.replace(simulator)
+        device = device_for(chip)
+        node = routine("qubit_spectroscopy")
+        true_f01 = chip.f01 * GHZ
+        write_path(device.get_element("q0"), "clock_freqs.f01", true_f01 - 250e6)
+
+        found = node._search(
+            "q0", device, RoutineConfig(params={}), SimulatedBackend(chip), 300.0
+        )
+
+        # Within a step of the 2 MHz grid. Locating is all this pass owes; the narrow
+        # sweep it points at is what has to land on the line.
+        assert found == pytest.approx(true_f01, abs=2e6)
+
+    def test_a_search_that_finds_nothing_says_so_rather_than_fitting_noise(
+        self, simulator
+    ):
+        """Widening is not licence to report whatever the widest window fitted.
+
+        A qubit outside even the search window has to end in a refusal that names the
+        range swept, not in a frequency — and the wide pass never writes anything itself,
+        so its candidate still has to survive a fine sweep.
+        """
+        import dataclasses
+
+        from qpi_driver.tuners.base.device import write_path
+
+        chip = dataclasses.replace(simulator)
+        device = device_for(chip)
+        node = routine("qubit_spectroscopy")
+        write_path(device.get_element("q0"), "clock_freqs.f01", chip.f01 * GHZ - 3e9)
+
+        with pytest.raises(RoutineError, match="nothing above the noise between"):
+            node._search(
+                "q0",
+                device,
+                RoutineConfig(params={"search_points": 101}),
+                SimulatedBackend(chip),
+                300.0,
+            )
 
     def test_scanning_the_wrong_window_cannot_invent_the_right_answer(self, simulator):
         """A sweep that does not bracket the line gives a bounded wrong answer, or none.

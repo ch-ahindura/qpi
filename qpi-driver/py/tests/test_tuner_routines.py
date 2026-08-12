@@ -45,9 +45,16 @@ SMALL_SWEEPS: dict[str, dict] = {
 
 #: Every routine that builds a schedule — which is every one but `coupler_anticrossing`.
 #: That one sweeps a DC bias, sets instrument state between acquisitions and runs its
-#: own loop, so there is no single schedule for this file to compile. It is covered in
-#: the loop suite, where a simulated rack can actually hold a current.
-ROUTINE_NAMES = [cls.name for cls in ROUTINE_CLASSES if not cls().measures_itself]
+#: own loop, so there is no single schedule for this file to compile, and its
+#: `build_schedule` raises. It is covered in the loop suite, where a simulated rack can
+#: actually hold a current.
+#:
+#: Named rather than derived from `measures_itself`, which no longer implies it:
+#: `qubit_spectroscopy` also runs its own loop, and each pass of it is a schedule this
+#: file should still be compiling.
+ROUTINE_NAMES = [
+    cls.name for cls in ROUTINE_CLASSES if cls.name != "coupler_anticrossing"
+]
 
 
 @pytest.fixture(scope="module")

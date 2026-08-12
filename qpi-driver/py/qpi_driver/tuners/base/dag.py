@@ -432,9 +432,10 @@ class CalibrationDAG:
         started = time.monotonic()
         try:
             if routine.measures_itself:
-                # A routine that has to set DC state between acquisitions runs its own
-                # loop — see `CalibrationRoutine.measure`. One node needs this and the
-                # rest must not pay for it.
+                # A routine whose acquisitions cannot be one schedule — DC state set
+                # between them, or setpoints that depend on an earlier result — runs its
+                # own loop. See `CalibrationRoutine.measure`; the rest must not pay
+                # for it.
                 params = routine.measure(
                     target,
                     device,

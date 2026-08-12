@@ -149,15 +149,20 @@ class CalibrationRoutine(ABC):
         """Run the whole measurement, for a routine one schedule cannot express.
 
         The ordinary path is `build_schedule` then `analyse`: one schedule, one
-        acquisition, one fit. That covers every node in the graph but one, because
-        every sweep in them is a sweep of *pulse* parameters and a schedule can hold
-        those.
+        acquisition, one fit. That covers most of the graph, because most sweeps in it
+        are of *pulse* parameters at setpoints known before the run, and a schedule can
+        hold those. Two nodes are not, for two unrelated reasons.
 
         A coupler's parking bias is not a pulse. It is a DC current held for as long
         as the fridge is cold, delivered out of band over qcodes — through an SPI rack
         or a cluster output, but either way not by the sequencer. So a routine that
         sweeps it has to set instrument state, run a schedule, read it, and repeat,
         which is a loop no single schedule contains.
+
+        `qubit_spectroscopy`'s setpoints are not all known in advance. When no line
+        turns up near the configured f01 it widens the search, and where the sweep after
+        that looks depends on what the wide one found — which a single schedule cannot
+        express either, since its setpoints are compiled before any acquisition runs.
 
         Overriding this takes that loop into the routine rather than giving every node
         a second sweep axis it does not need — which is what RFC 0005 §11 argues for,
