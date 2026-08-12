@@ -341,12 +341,18 @@ noise, which is an argument for making it non-optional rather than `-m scqubits`
 In this order, so each step is independently mergeable and the escalation loop comes
 after the two classes that need no loop at all.
 
-0. **`reads`, and skipping on it** (§11). Declare what each routine consumes with a test
-   that derives it, hoist the six `analyse`-time reads, block on an unproduced parameter,
-   report the blocker. Independent of everything below it, and it goes first because it
-   makes the failures of the phases after it legible: a regression in one node should show
-   as one failure and a list of skips, not a graph-wide puzzle. It also stands alone:
-   worth landing even if nothing else here is.
+0. **`reads`, and skipping on it — done** (August 2026). Declare what each routine
+   consumes with a test that derives it, hoist the six `analyse`-time reads, block on an
+   unproduced parameter, report the blocker. First because it makes the failures of the
+   phases after it legible: a regression in one node shows as one failure and a list of
+   skips rather than a graph-wide puzzle. It also stood alone, which is why it went in
+   ahead of the rest.
+
+   Landed in three commits — the hoists, the declarations and their derivation test, then
+   the ledger the walk blocks on. Two corrections against what §11 predicted: the pre-walk
+   config check was withdrawn as unwritable without provenance, and the one read the
+   notation cannot express turned out to be `coupler_anticrossing`'s of its *parent
+   qubit's* `f01`. Twenty-three of thirty-three routines read a device parameter at all.
 1. **The accept side** (§6.2). Scale `require_resolved_line`'s floor with the number of
    points, and require `qubit_spectroscopy`'s chosen centre to reproduce across a second
    drive power. Before the derived ranges, not after: a guard that accepts noise means the
@@ -539,9 +545,15 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
 - A node is blocked when a parameter it reads has no trustworthy value — not produced
   in this walk, and no measured prior. A failed *refiner* leaves the value trustworthy,
   so nothing behind it is blocked.
-- A disabled node that is the only producer of a parameter something reads is a **config
-  error reported before the walk starts**, not a cascade discovered during it. That is
-  strictly more useful than either running or skipping.
+- ~~A disabled node that is the only producer of a parameter something reads is a
+  **config error reported before the walk starts**.~~ **Withdrawn on implementation.**
+  The check cannot be written without §10's provenance, because it cannot tell "never
+  produced by design" from "producer switched off". Two read paths —
+  `measure.integration_time` and `r12.ef_duration` — have no producer anywhere in the
+  graph and are supplied by hand on every chip, so a sole-producer rule fires on them
+  every run; and the August 2026 chip disables `time_of_flight` while its
+  `measure.acq_delay` is a perfectly good hand-set 200 ns. Nothing is lost by waiting:
+  the parameter view below already declines to block on either case.
 - Blocked nodes are recorded as **skipped, with the blocker named** — not failed.
   Auto-failing would replace six misleading failures with six fabricated ones, and would
   feed the drift check a history of failures that never happened.
@@ -582,6 +594,7 @@ shape of the RFC rather than just settling a detail.
 | Hoist the `analyse`-time reads? | **Yes, six of them** (§11). A read after the acquisition cannot be a prerequisite, and it is a one-line move per routine. |
 | Does a skipped node keep its stale parameter? | **Keep and mark**, §11. Clearing it stops a chip that ran yesterday from running today. |
 | Put provenance in `calibration.yml` rather than the device file? | **Neither — a sidecar the driver owns** (§10). And the blanket "no second store" from the round before was too blunt: it is sound against a second store of *values*, not against metadata that never holds a number anything needs to run a circuit. |
+| Report a disabled sole producer before the walk? | **Withdrawn during phase 0** (§11). Undecidable without §10's provenance: two read paths have no producer anywhere and are hand-supplied on every chip, so the rule fires on them every run. |
 | Where does the IF limit live? | **On `SchedulerBackend`, like `drag_span`** — but checked rather than assumed, and the two schedulers *agree*: `NCO_FREQ_LIMIT_STEPS / NCO_FREQ_STEPS_PER_HZ` is 500 MHz in quantify-scheduler 0.28 and qblox-scheduler 1.0.0b4 alike. That weakens the case for a property without removing it: the fact belongs to the backend either way, and no divergence is being modelled speculatively. |
 | Escalation in the DAG or in `measure`? | **In `measure`**, with the attempt count reported so the DAG and the report still see it. |
 | Does `resonator_punchout` come back? | **Yes.** Its amplitude grid stopping at 0.5 is a §5 hardware-bounded bug, so phase 3 fixes the reason it was switched off. It re-enables as part of that phase rather than separately, with the August 2026 chip as the test case. |
