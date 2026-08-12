@@ -14,9 +14,11 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0004](./0004-calibration-tuners.md) | Calibration Tuners | Implemented |
 | [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Implemented |
 | [0006](./0006-calibration-graph-in-the-dashboard.md) | The Calibration Graph in the Dashboard | Draft |
+| [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Draft |
 
-Neither calibration RFC has been verified against physical hardware; both say so
-where it matters.
+RFCs 0004 and 0005 were written before the graph had run on a chip, and say so where it
+matters. RFC 0007 is the opposite case: it exists because of what running it on one
+found.
 
 ## Conventions
 
