@@ -18,6 +18,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: the simulated backend carries the allowance the DAG judges a routine
+  by, so the whole simulated calibration walks again. Without it every node of it died
+  with `AttributeError: 'SimulatedBackend' object has no attribute 'last_allowance_s'`.
 - `qpi-driver/py`: a quantify tuner or executor resets the cluster when it opens one.
   Sequencer offsets, NCO frequencies and `sync_en` survive a reconnect, so the driver
   inherited whatever the last process left emitting — which held this chip's qubit in a

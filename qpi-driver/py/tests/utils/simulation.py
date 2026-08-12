@@ -218,6 +218,14 @@ class RecordingBackend:
         AVERAGE = "average"
         APPEND = "append"
 
+    #: What the DAG judges a routine's elapsed time against, read off whatever backend it
+    #: was handed — see `SchedulerBackend.allow`. Zero because nothing here measures a
+    #: schedule's duration, which leaves that check at the configured ceiling.
+    #:
+    #: Not optional, despite the duck typing above: the DAG is not a routine, and leaving
+    #: it out made every node of a simulated walk die with `AttributeError`.
+    last_allowance_s = 0.0
+
     def new_schedule(self, name: str, repetitions: int = 1) -> _Schedule:
         return _Schedule(name, repetitions)
 
