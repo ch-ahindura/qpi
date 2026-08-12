@@ -10,9 +10,11 @@
 
 ## 1. The idea
 
-A device config records what every parameter *is*. Nothing records where it came from,
-and the two cases it cannot tell apart are the ones that matter: a value this driver
-measured, and a value somebody typed in.
+A device config records what every parameter *is*. Nothing records **where it came
+from** — and the two cases it cannot tell apart are the ones that matter: a value this
+driver measured, and a value somebody typed in.
+
+That is all "provenance" means here; §2 says it at more length.
 
 The August 2026 chip carried `clock_freqs.f01: 4735509751.238763`. Nine significant
 figures, so it reads as a measurement, and the qubit was 302 MHz away; the line had
@@ -25,12 +27,16 @@ signal, so that "has this ever been measured?" is a question the driver can answ
 
 ## 2. Vocabulary
 
-- **Provenance** — for one parameter on one target: the routine that last produced it,
-  the run it was produced in, when, and a summary of the fit it came from.
+- **Provenance** — literally *where a thing came from*. In a gallery it is the paperwork
+  proving a painting is what it claims to be. Here it is the same idea for a single
+  number: which routine last measured this parameter on this target, in which run, when,
+  and what its fit looked like. The device file says a parameter **is** 4.7364 GHz;
+  provenance says whether anything ever measured that.
 - **Prior** — a value with no provenance. A design figure, a value from another control
   stack, a placeholder, or a measurement made before this RFC. Not necessarily wrong;
   just not attributable.
-- **Sidecar** — the file this RFC adds, holding provenance and nothing else.
+- **Sidecar** — a small file that travels beside a bigger one and describes it, without
+  the thing it describes needing to know it exists. Here: provenance, and nothing else.
 
 ## 3. Decisions
 
@@ -121,16 +127,17 @@ Four things are already waiting on this, three of them in RFC 0007:
 | Consumer | Today's weaker version | With provenance |
 |---|---|---|
 | RFC 0007 §2's *prior* | Not decidable; the word is defined and unusable | `is there provenance for this parameter?` |
-| RFC 0007 §11's ledger | "did *this walk* produce it?" | "was it ever measured, and how long ago?" |
+| RFC 0007 §11's ledger | "did *this walk* produce it?" | "was it ever measured, in any run?" |
 | RFC 0007 §11's skipped nodes | Kept, unmarked | Kept and marked as unconfirmed by this run |
 | RFC 0007 §11's withdrawn pre-walk check | Undecidable — a hand-supplied parameter and a disabled producer look alike | A disabled sole producer is an error only when the parameter has no provenance either |
 | Write-back gating (§7) | All-or-nothing per run | Per parameter: commit what its producer measured and its guards passed |
 
 The ledger row is the substantive one. RFC 0007 §11 blocks a node when *this run* failed
-to produce a parameter it reads, which is right for a bring-up and blind on a
-recalibration: a chip whose `f01` was measured six months ago and has since drifted looks
-identical to one measured an hour ago. Provenance turns that into an age, and an age is
-what a drift check is entitled to act on.
+to produce a parameter it reads, which is right for a bring-up and too narrow afterwards:
+on a partial recalibration almost nothing was produced by this run, so almost nothing is
+checkable, and a parameter no run ever measured is indistinguishable from one measured
+last week. Provenance separates those two, which is the whole of what the ledger needs.
+Not *how old* the measurement is — see §8.
 
 ## 7. Why not stage the writes until the run succeeds
 
@@ -161,7 +168,35 @@ commit a parameter when the node that produced it succeeded *and* its guards pas
 record which. That is a strictly finer boundary than a staging store, it needs no second
 copy of any value, and it subsumes the all-or-nothing case.
 
-## 8. Testing strategy
+## 8. Provenance does not expire, and the timestamp is not a deadline
+
+Worth stating outright, because it is the obvious next thought and it is wrong.
+
+Provenance records *when* a parameter was measured, so it is tempting to have something
+judge a value stale once it is old enough — a readout frequency drifts in hours, an
+anharmonicity does not move in months, so per-parameter expiry thresholds. **RFC 0005
+already rejected exactly that**, and its reason still holds: it added a `check` form per
+node so that "staleness is measured rather than remembered". An age threshold is
+remembering. It guesses at the answer a three-point check can go and measure for the cost
+of one acquisition.
+
+So the two questions are separate, and neither needs the other:
+
+| Question | Answered by | Kind of answer |
+|---|---|---|
+| Was this ever measured? | this RFC | yes or no, from whether a record exists |
+| Is it still right? | RFC 0005's check nodes | measured, per run |
+
+The timestamp is recorded for the operator and the report — *this f01 is from the run
+before last* is worth reading — and for §6's ledger row, which asks whether a parameter
+was measured in *some* run, not whether it was measured within N hours. Nothing here
+compares it against a threshold, and no schema field for one is added.
+
+The one place age might legitimately return is choosing *which* checks a drift run bothers
+to evaluate, as a cost heuristic rather than a verdict. That is a scheduling question for
+whatever owns the drift cadence, and it can read the timestamp this file already stores.
+
+## 9. Testing strategy
 
 - **Tier 1.** The sidecar's own round trip: merge per key, an absent file, a corrupt
   file, a file holding a target or path the device no longer has. Every one of those
@@ -177,7 +212,7 @@ copy of any value, and it subsumes the all-or-nothing case.
   nothing measured, asserted to be reported as a prior. That is the August 2026 failure
   written down, and it is the one test that would have saved those six runs.
 
-## 9. Implementation plan
+## 10. Implementation plan
 
 1. **`tuners/base/provenance.py`.** Load, merge-per-key, save, and query, against a path
    derived from `_device_config_path`. Tier-1 tests. Nothing calls it yet, so nothing can
@@ -196,7 +231,7 @@ Phases 1 to 3 are additive and observable before anything depends on them, which
 deliberate: a provenance record that is wrong is worse than none, and phase 3 is where
 that becomes visible on a real chip rather than in a test.
 
-## 10. Open questions
+## 11. Open questions
 
 1. **One sidecar or one per target?** One file is simpler and merges per key; one per
    qubit makes a partial recalibration's writes obviously disjoint and is friendlier to
@@ -206,13 +241,9 @@ that becomes visible on a real chip rather than in a test.
    The useful residue is probably the one or two numbers a guard judged:
    signal-to-noise, span over scatter. Deciding that is deciding what a future drift
    check can compare against.
-3. **Does provenance expire?** An age is only actionable against a threshold, and a
-   sensible threshold is per parameter: a readout frequency drifts in hours, an
-   anharmonicity does not. That may want to live beside the routine that produces it
-   rather than in this file.
-4. **Should the write-back gate on it in phase 2 or wait for phase 4?** Gating early is
+3. **Should the write-back gate on it in phase 2 or wait for phase 4?** Gating early is
    the safer chip behaviour and the larger behaviour change; the plan above defers it,
    which is a judgement rather than a conclusion.
-5. **What does the dashboard do with it?** RFC 0006 draws the graph; a node whose inputs
+4. **What does the dashboard do with it?** RFC 0006 draws the graph; a node whose inputs
    are priors is arguably a different colour. Out of scope here, but the payload
    decision in §3 is what would have to change first.
