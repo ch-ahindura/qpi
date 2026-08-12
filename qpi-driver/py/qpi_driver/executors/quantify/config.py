@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,8 @@ from qpi_driver.compat.quantify import (
     QuantumDevice,
     field_validator,
 )
+
+log = logging.getLogger(__name__)
 
 _DEVICE_ELEMENT_TYPE_PROP = "element_type"
 
@@ -270,6 +273,22 @@ def load_instrument_coordinator(
             cluster = Cluster(
                 name=instrument_name, identifier=cluster_ip, dummy_cfg=dummy_cfg
             )
+            if not is_dummy:
+                # Whatever the last process left in the modules is still there. A
+                # cluster keeps sequencer offsets, NCO frequencies, `sync_en` flags and
+                # uploaded programs across connections, so a driver that does not reset
+                # inherits them — and both of this chip's worst symptoms were exactly
+                # that. A stale `sync_en` deadlocked `wait_sync` on every routine at any
+                # timeout; a sequencer left emitting near f01 saturates the qubit into a
+                # mixture no `reset.duration` can empty, which makes X the identity and
+                # every 0-1 measurement blind while the 1-2 ladder still works.
+                #
+                # tergite-tuner resets on every start for this reason and reads this
+                # chip correctly. Done before any coupler bias is applied, so it cannot
+                # drop a current this process is holding — but it does drop one left by
+                # a previous process, which is the point.
+                log.info("resetting %s to a known state", instrument_name)
+                cluster.reset()
             cluster_component = ClusterComponent(cluster)
             coordinator.add_component(cluster_component)
 

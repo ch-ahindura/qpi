@@ -336,3 +336,70 @@ def test_closing_a_live_executor_does_not_raise():
     )
     executor.close()
     executor.close()  # and again: a driver failing mid-shutdown closes twice
+
+
+class TestTheClusterIsResetOnConnection:
+    """A cluster remembers what the last process left in it.
+
+    Sequencer offsets, NCO frequencies, `sync_en` flags and uploaded programs all
+    survive a reconnect, and this chip was bitten by two of them: a stale `sync_en`
+    deadlocked `wait_sync` on every routine at any timeout, and a sequencer left
+    emitting near f01 held the qubit in a mixture that made X the identity. Resetting
+    on connection is what tergite-tuner does, on the same cluster, correctly.
+    """
+
+    def _config(self):
+        from qpi_driver.executors.quantify.config import load_quantify_hardware_config
+
+        return load_quantify_hardware_config(_QUANTIFY_HARDWARE_CONFIG)
+
+    def test_a_real_cluster_is_reset_before_it_is_used(self, monkeypatch):
+        from qpi_driver.executors.quantify import config as config_module
+
+        reset_calls: list[str] = []
+
+        class _Recorder:
+            def __init__(self, name, identifier=None, dummy_cfg=None):
+                self.name = name
+
+            def reset(self):
+                reset_calls.append(self.name)
+
+        monkeypatch.setattr(config_module, "Cluster", _Recorder)
+        monkeypatch.setattr(config_module, "ClusterComponent", lambda cluster: cluster)
+        monkeypatch.setattr(
+            config_module,
+            "InstrumentCoordinator",
+            lambda name: type("IC", (), {"add_component": lambda self, c: None})(),
+        )
+
+        config_module.load_instrument_coordinator(
+            "ic", hardware_config=self._config(), is_dummy=False
+        )
+        assert reset_calls, "a real cluster was opened without being reset"
+
+    def test_a_dummy_cluster_is_left_alone(self, monkeypatch):
+        """There is no leftover state to clear, and the vendor's dummy need not support it."""
+        from qpi_driver.executors.quantify import config as config_module
+
+        reset_calls: list[str] = []
+
+        class _Recorder:
+            def __init__(self, name, identifier=None, dummy_cfg=None):
+                self.name = name
+
+            def reset(self):
+                reset_calls.append(self.name)
+
+        monkeypatch.setattr(config_module, "Cluster", _Recorder)
+        monkeypatch.setattr(config_module, "ClusterComponent", lambda cluster: cluster)
+        monkeypatch.setattr(
+            config_module,
+            "InstrumentCoordinator",
+            lambda name: type("IC", (), {"add_component": lambda self, c: None})(),
+        )
+
+        config_module.load_instrument_coordinator(
+            "ic", hardware_config=self._config(), is_dummy=True
+        )
+        assert reset_calls == []

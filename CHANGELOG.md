@@ -18,6 +18,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a quantify tuner or executor resets the cluster when it opens one.
+  Sequencer offsets, NCO frequencies and `sync_en` survive a reconnect, so the driver
+  inherited whatever the last process left emitting — which held this chip's qubit in a
+  mixture that made X the identity, and deadlocked `wait_sync` before that.
 - `qpi-driver/py`: a quantify tuner or executor stops the cluster after every run,
   including a failed one. Only `stop` clears `sync_en` on the modules a schedule did
   not use, so one left in the sync network by an earlier routine hung every later one
