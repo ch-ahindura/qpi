@@ -39,6 +39,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   the ground frequency they differenced against plus their own spectrum. A stale
   reference had them reporting a 186 kHz dispersive shift on a chip whose real shift
   was under 1 kHz.
+- `qpi-driver/py`: `rabi` refuses an oscillation no taller than the scatter it was
+  fitted through, rather than writing the `amp180` it implies. A first sweep through a
+  starved readout wrote 0.0134 where the chip's calibrated value was 0.5683, and the six
+  runs after it played an X pulse that rotated five degrees — leaving every 0-1
+  measurement in the graph blind, and self-perpetuating, since a dead X gate guarantees
+  the next Rabi sweep is flat.
 - `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_12` refuse a demodulated sweep
   far past the bound their own model sets, rather than writing the `amp180` it implies.
   A readout that was not resolving the qubit gave a sweep reaching 144 where one is the

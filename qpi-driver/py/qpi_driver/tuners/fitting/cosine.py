@@ -61,6 +61,21 @@ def _fit_decaying_cosine(
     raise FitError(f"could not fit {what}: {last_error}")
 
 
+#: How far a Rabi oscillation must rise above the scatter it was fitted through before
+#: its pi amplitude is worth writing to the device.
+#:
+#: `amp180` is the amplitude of every X pulse the chip plays afterwards, and a wrong one
+#: is self-perpetuating: a dead X gate guarantees the next Rabi sweep is flat, which
+#: writes another dead amplitude. Measured on this chip — a first sweep taken through a
+#: starved readout wrote 0.0134 where the calibrated value was 0.5683, and the six runs
+#: that followed wrote 0.013 to 0.032, an X pulse rotating five degrees instead of 180.
+#:
+#: Three, as for the RB decay, and from the same spread: the simulated chip's Rabi
+#: reaches 211, and the two hardware sweeps that wrote a dead amplitude reached 1.41
+#: and 1.78.
+MIN_CONTRAST_TO_SCATTER = 3.0
+
+
 def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     """Fit a Rabi amplitude sweep.
 
@@ -87,6 +102,21 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
         what="amp180",
         tolerance=0.1,
     )
+
+    # An oscillation no taller than the noise it was drawn through is not one, and the
+    # amplitude it implies must not reach the device — see `MIN_CONTRAST_TO_SCATTER`.
+    curve = decaying_cosine(x, amplitude, freq, phase, tau, offset)
+    scatter = float(np.sqrt(np.mean((y - curve) ** 2)))
+    span = float(np.max(curve) - np.min(curve))
+    if scatter > 0.0 and span < MIN_CONTRAST_TO_SCATTER * scatter:
+        raise FitError(
+            f"the fitted Rabi oscillation spans {span:.4g} against a residual scatter "
+            f"of {scatter:.4g} — {span / scatter:.1f}x, below the "
+            f"{MIN_CONTRAST_TO_SCATTER:.0f}x a resolved oscillation clears — so there "
+            f"is no pi amplitude to take from it. The readout is not resolving the "
+            f"qubit, and writing this would leave every later X pulse driving nothing"
+        )
+
     return {
         "amp180": amp180,
         "rabi_frequency": rabi_frequency,

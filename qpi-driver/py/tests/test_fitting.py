@@ -717,3 +717,31 @@ class TestFineAmplitudeNeedsRealContrast:
             counts, signal, 0.03, centre - contrast / 2, centre + contrast / 2
         )
         assert fitted["error_per_pulse"] == pytest.approx(delta, rel=0.1)
+
+
+class TestRabiNeedsAVisibleOscillation:
+    """`amp180` is the amplitude of every X pulse, and a wrong one is self-perpetuating.
+
+    A dead X gate guarantees the next Rabi sweep is flat, which writes another dead
+    amplitude. On this chip a first sweep through a starved readout wrote 0.0134 where
+    the calibrated value was 0.5683, and six runs later the X pulse was still rotating
+    five degrees instead of 180 — with every 0-1 measurement in the graph blind as a
+    result, and nothing failing to say so.
+    """
+
+    def test_a_real_oscillation_is_accepted(self):
+        amp180 = 0.21
+        amplitudes = np.linspace(0.0, 0.5, 81)
+        signal = 0.5 * np.cos(2 * np.pi * amplitudes / (2 * amp180)) + 0.5
+        fitted = fit_rabi(amplitudes, signal + _noise(len(amplitudes), 0.01))
+        assert fitted["amp180"] == pytest.approx(amp180, rel=0.05)
+
+    def test_a_sweep_no_taller_than_its_noise_is_refused(self):
+        """Contrast 8e-5 against 5e-5 of scatter — what the chip actually returned."""
+        rng = np.random.default_rng(11)
+        amplitudes = np.linspace(0.0, 0.5, 41)
+        # a token oscillation buried in noise, as the flat hardware sweeps were
+        signal = 0.008 + 4e-5 * np.cos(2 * np.pi * amplitudes / 0.03)
+        signal = signal + rng.normal(0.0, 5e-5, amplitudes.size)
+        with pytest.raises(FitError, match="no pi amplitude"):
+            fit_rabi(amplitudes, signal)
