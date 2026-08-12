@@ -376,6 +376,72 @@ class TestTimeDomainRoutines:
         assert abs(fitted["detuning"]) < 5e3
 
 
+class TestADriveOffResonance:
+    """What a wrong `clock_freqs.f01` costs a gate — which until RFC 0007 §14 was nothing.
+
+    Every gate path built its Hamiltonian with no detuning at all, so a drive
+    300 MHz off resonance rotated the simulated qubit exactly as well as one on
+    it. That is why no suite here could fail for the reason a real chip did.
+    """
+
+    #: What the August 2026 chip's `f01` was out by, and far enough that no
+    #: calibration on it can work.
+    DETUNING_HZ = 302e6
+
+    AMPLITUDES = list(np.linspace(0.0, 0.5, 41))
+
+    def test_a_drive_hundreds_of_mhz_off_resonance_barely_moves_the_qubit(
+        self, simulator
+    ):
+        """A π in 20 ns is a Rabi rate of ~25 MHz, so 302 MHz tilts the rotation
+        axis almost onto z: the population reaching |1> is Ω²/(Ω²+δ²), under a
+        percent. The sweep has no oscillation in it to find."""
+        on_resonance = simulator.rabi(self.AMPLITUDES)
+        off_resonance = simulator.rabi(self.AMPLITUDES, self.DETUNING_HZ / GHZ)
+
+        assert np.ptp(on_resonance) > 0.9
+        assert np.ptp(off_resonance) < 0.1, (
+            "a drive 302 MHz off resonance drove a usable rotation"
+        )
+
+    def test_a_rabi_fit_refuses_the_sweep_that_drove_nothing(self, simulator):
+        """Refusing is the whole point: an `amp180` read off this would be noise,
+        and every later X pulse would play it."""
+        rabi = routine("rabi")
+        device = device_for(simulator)
+        config = RoutineConfig(params={"amplitudes": self.AMPLITUDES})
+
+        rabi.build_schedule("q0", device, config, StubBackend())
+        acquisition = simulator.rabi(rabi._amplitudes, self.DETUNING_HZ / GHZ)
+
+        with pytest.raises(FitError):
+            rabi.analyse(acquisition, "q0", device, config)
+
+    def test_the_backend_drives_a_gate_at_the_frequency_the_device_configures(
+        self, simulator
+    ):
+        """Read off the device, because a schedule cannot say it.
+
+        Only a `SetClockFrequency` sweep carries a frequency; a gate carries
+        none, so a backend that reads only the schedule cannot tell a chip 302 MHz
+        out from one on resonance. This is the wiring that makes the two tests
+        above reachable from a calibration rather than only from a direct call.
+        """
+        rabi = routine("rabi")
+        config = RoutineConfig(params={"amplitudes": self.AMPLITUDES})
+
+        def run(configured_f01_hz: float):
+            device = device_for(simulator)
+            device.get_element("q0").clock_freqs.f01 = configured_f01_hz
+            backend = SimulatedBackend(simulator, device=device)
+            schedule = rabi.build_schedule("q0", device, config, backend)
+            return rabi.analyse(backend.run(schedule), "q0", device, config)
+
+        assert run(simulator.f01 * GHZ)["amp180"] == pytest.approx(0.2, rel=0.03)
+        with pytest.raises(FitError):
+            run(simulator.f01 * GHZ + self.DETUNING_HZ)
+
+
 class TestRandomizedBenchmarking:
     """The whole RB stack against real unitaries, composed from this package's own Clifford decomposition."""
 

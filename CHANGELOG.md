@@ -18,6 +18,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: the simulator's `rabi`, `t1`, `t2_echo` and `ramsey` carry the drive
+  detuning, so a wrong `clock_freqs.f01` costs a calibration its contrast. They built
+  their Hamiltonian on resonance whatever the device was configured for, which is why no
+  suite could fail for the reason a chip 302 MHz out of config did.
 - `qpi-driver/py`: the simulated backend carries the allowance the DAG judges a routine
   by, so the whole simulated calibration walks again. Without it every node of it died
   with `AttributeError: 'SimulatedBackend' object has no attribute 'last_allowance_s'`.

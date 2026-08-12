@@ -278,12 +278,17 @@ class TransmonSimulator:
         scale = self.shot_noise / np.sqrt(max(averages, 1))
         return values + self._rng.normal(0.0, scale, len(values))
 
-    def rabi(self, amplitudes) -> np.ndarray:
+    def rabi(self, amplitudes, detuning_ghz: float = 0.0) -> np.ndarray:
         """Excited-state population after driving at each amplitude.
 
         The rotation angle is the drive amplitude times a fixed pulse duration,
         so the oscillation comes out of the evolution rather than being written
         down. `amp180` is where the angle reaches π.
+
+        *detuning_ghz* is how far the drive sits from the qubit, ``f_drive −
+        f01``. Off resonance it rotates about a tilted axis and the population
+        peaks at ``Ω²/(Ω²+δ²)``, so a chip whose configured `f01` is wrong has no
+        π pulse to find.
         """
         import qutip
 
@@ -296,7 +301,7 @@ class TransmonSimulator:
             # Rabi rate chosen so amp180 lands at 0.2 in the sweep's units.
             rabi_rate = np.pi * (amplitude / 0.2) / duration
             drive = (rabi_rate / 2) * (destroy + destroy.dag())
-            hamiltonian = self._anharmonic_hamiltonian() + drive
+            hamiltonian = self._anharmonic_hamiltonian(detuning_ghz) + drive
             result = qutip.mesolve(
                 hamiltonian,
                 qutip.basis(self.levels, 0),
@@ -307,19 +312,26 @@ class TransmonSimulator:
             populations.append(float(result.expect[0][-1]))
         return self._measure(np.array(populations))
 
-    def t1(self, delays_s) -> np.ndarray:
-        """Population after exciting and waiting. The decay emerges from the solver."""
+    def t1(self, delays_s, detuning_ghz: float = 0.0) -> np.ndarray:
+        """Population after exciting and waiting. The decay emerges from the solver.
+
+        Carried into the frame for consistency with the other paths, but T1 is
+        insensitive to it: the detuning term is diagonal, and so is the state it
+        acts on. What a wrong `f01` really costs a T1 measurement is the π pulse
+        that prepares it, and that pulse is idealised here — see :meth:`_pulse`.
+        """
         import qutip
 
         _destroy, excited, collapse = self._operators()
         populations = []
         for delay in np.asarray(delays_s, dtype=float) / NS:
             result = qutip.mesolve(
-                self._anharmonic_hamiltonian(),
+                self._anharmonic_hamiltonian(detuning_ghz),
                 qutip.basis(self.levels, 1),
                 np.array([0.0, max(delay, 1e-9)]),
                 collapse,
                 e_ops=[excited],
+                options=_SOLVER_OPTIONS,
             )
             populations.append(float(result.expect[0][-1]))
         return self._measure(np.array(populations))
@@ -344,28 +356,33 @@ class TransmonSimulator:
         return qutip.Qobj(matrix)
 
     def _free(self, state, duration_ns: float, hamiltonian, collapse):
-        """Evolve *state* for *duration_ns* and return the density matrix."""
+        """Evolve *state* for *duration_ns* and return the density matrix.
+
+        By exponentiating the Liouvillian rather than stepping to it, as
+        :meth:`~qpi_driver.simulation.coordinator.SimulatedCoordinator._propagate`
+        does and for the same reason: the Hamiltonian is constant across the
+        interval, so ``exp(L·t)`` is exact, and stepping fails outright once a
+        detuning is in the frame — a few hundred MHz over a microsecond idle is
+        thousands of radians of accumulated phase, which exhausts any step budget
+        ("excess work done").
+        """
         import qutip
 
-        result = qutip.mesolve(
-            hamiltonian,
-            state,
-            np.array([0.0, max(duration_ns, 1e-9)]),
-            collapse,
-            e_ops=[],
-            options=_SOLVER_OPTIONS,
-        )
-        return result.final_state
+        if duration_ns <= 0:
+            return state
+        propagator = (qutip.liouvillian(hamiltonian, collapse) * duration_ns).expm()
+        return qutip.vector_to_operator(propagator * qutip.operator_to_vector(state))
 
-    def t2_echo(self, delays_s) -> np.ndarray:
+    def t2_echo(self, delays_s, detuning_ghz: float = 0.0) -> np.ndarray:
         """Hahn echo: π/2, wait, π, wait, π/2. The refocusing pulse cancels
-        static detuning, so what survives is T2."""
+        static detuning — *detuning_ghz* included — so what survives is T2, and a
+        wrong `f01` leaves this measurement alone."""
         import qutip
 
         _destroy, _excited, collapse = self._operators()
         half_pi = self._pulse(90, 0)
         pi_pulse = self._pulse(180, 0)
-        hamiltonian = self._anharmonic_hamiltonian()
+        hamiltonian = self._anharmonic_hamiltonian(detuning_ghz)
 
         populations = []
         for delay in np.asarray(delays_s, dtype=float) / NS:
@@ -379,7 +396,9 @@ class TransmonSimulator:
             populations.append(float(np.real(final[1, 1])))
         return self._measure(np.array(populations))
 
-    def ramsey(self, delays_s, artificial_detuning_hz: float) -> np.ndarray:
+    def ramsey(
+        self, delays_s, artificial_detuning_hz: float, detuning_ghz: float = 0.0
+    ) -> np.ndarray:
         """Ramsey fringe, generated the way the routine's schedule makes one.
 
         The routine does not detune the clock — it phase-advances the second
@@ -387,12 +406,17 @@ class TransmonSimulator:
         test exercises the routine's actual approach, so a schedule that
         advanced the phase the wrong way, or not at all, would fail rather than
         quietly agree with a differently-generated fringe.
+
+        *detuning_ghz* is the qubit's own offset from the drive, which the free
+        evolution accumulates alongside the artificial one. It is what the
+        routine subtracts back out as its residual, so it is the number a wrong
+        `f01` gets corrected by here.
         """
         import qutip
 
         _destroy, _excited, collapse = self._operators()
         first_pulse = self._pulse(90, 0)
-        hamiltonian = self._anharmonic_hamiltonian()
+        hamiltonian = self._anharmonic_hamiltonian(detuning_ghz)
 
         populations = []
         for delay_s in np.asarray(delays_s, dtype=float):

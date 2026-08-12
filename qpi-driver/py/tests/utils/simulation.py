@@ -282,6 +282,7 @@ class SimulatedBackend(RecordingBackend):
         *,
         gate_error: float = 0.001,
         coupled: CoupledTransmons | None = None,
+        device: FakeDevice | None = None,
     ) -> None:
         self.simulator = simulator
         #: Depolarising strength applied per gate in an RB sequence. Raising it
@@ -291,6 +292,10 @@ class SimulatedBackend(RecordingBackend):
         #: ``simulator`` because entanglement needs a joint state that one
         #: transmon cannot hold — see :mod:`qpi_driver.simulation.coupled`.
         self.coupled = coupled or CoupledTransmons()
+        #: Where the drive frequency comes from — see :meth:`_detuning_ghz`.
+        #: Without one every gate is driven exactly on resonance, which is the
+        #: behaviour this class had before a detuning existed at all.
+        self.device = device
 
     def run(
         self, schedule: _Schedule, timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
@@ -310,6 +315,20 @@ class SimulatedBackend(RecordingBackend):
     def _of_kind(schedule: _Schedule, kind: str) -> list[_Operation]:
         return [op for op in schedule.operations if op.kind == kind]
 
+    def _detuning_ghz(self, schedule: _Schedule) -> float:
+        """How far this schedule's drive sits from the qubit, ``f_drive − f01``.
+
+        A gate carries no clock frequency — only a ``SetClockFrequency`` sweep
+        does — so the one thing a wrong ``clock_freqs.f01`` costs a gate has to
+        come off the device rather than off the schedule. Read per run, so a walk
+        that corrects ``f01`` early gets gates that then work.
+        """
+        qubit = _target_of(schedule)
+        if self.device is None or qubit is None:
+            return 0.0
+        configured = float(self.device.get_element(qubit).clock_freqs.f01)
+        return configured / GHZ - self.simulator.f01
+
     def _idle_durations(self, schedule: _Schedule) -> list[float]:
         return [
             float(op.kwargs["duration"]) for op in self._of_kind(schedule, "IdlePulse")
@@ -328,24 +347,29 @@ class SimulatedBackend(RecordingBackend):
             for op in self._of_kind(schedule, "Rxy")
             if "amp180" in op.kwargs
         ]
-        return self.simulator.rabi(amplitudes)
+        return self.simulator.rabi(amplitudes, self._detuning_ghz(schedule))
 
     def _acquire_t1(self, schedule: _Schedule) -> np.ndarray:
-        return self.simulator.t1(self._idle_durations(schedule))
+        return self.simulator.t1(
+            self._idle_durations(schedule), self._detuning_ghz(schedule)
+        )
 
     def _acquire_t2_echo(self, schedule: _Schedule) -> np.ndarray:
         # The routine splits each delay in two around the refocusing pulse, so
         # the idles come in pairs and the delay is their sum.
         halves = self._idle_durations(schedule)
         return self.simulator.t2_echo(
-            [first + second for first, second in zip(halves[::2], halves[1::2])]
+            [first + second for first, second in zip(halves[::2], halves[1::2])],
+            self._detuning_ghz(schedule),
         )
 
     def _acquire_ramsey(self, schedule: _Schedule) -> np.ndarray:
         delays = self._idle_durations(schedule)
         second_pulses = self._of_kind(schedule, "Rxy")[1::2]
         phases = [float(op.kwargs["phi"]) for op in second_pulses]
-        return self.simulator.ramsey(delays, _detuning_of(delays, phases))
+        return self.simulator.ramsey(
+            delays, _detuning_of(delays, phases), self._detuning_ghz(schedule)
+        )
 
     def _acquire_rb(self, schedule: _Schedule) -> np.ndarray:
         """Play the schedule's own Clifford gates, with a known error on each.
@@ -444,6 +468,22 @@ def _ordered(values: set[float]) -> list[float]:
     return sorted(values)
 
 
+def _target_of(schedule: _Schedule) -> str | None:
+    """The qubit a schedule addresses, from the first operation naming one.
+
+    Routines pass the target as ``Rxy(qubit=...)`` and as the first positional
+    argument to ``Reset`` and ``Measure``. None means no operation named one,
+    which is a schedule with nothing to detune.
+    """
+    for operation in schedule.operations:
+        qubit = operation.kwargs.get("qubit")
+        if qubit is None and operation.args and isinstance(operation.args[0], str):
+            qubit = operation.args[0]
+        if qubit:
+            return str(qubit)
+    return None
+
+
 def _rotation_of(operation: _Operation) -> tuple[float, float]:
     """The ``(theta, phi)`` an operation rotates by, in degrees."""
     if operation.kind == "X":
@@ -503,10 +543,16 @@ class SimulatedTuner(Tuner):
         super().__init__(name=name)
         self.simulator = simulator or TransmonSimulator()
         self.coupled = coupled or CoupledTransmons()
-        self._backend = SimulatedBackend(
-            self.simulator, gate_error=gate_error, coupled=self.coupled
-        )
         self._device = device_for(self.simulator, *qubits, edges=edges)
+        # The backend is given the device, not just the simulator, so a gate is
+        # driven at the frequency the device is *configured* for rather than at
+        # the one the qubit happens to have — see `SimulatedBackend._detuning_ghz`.
+        self._backend = SimulatedBackend(
+            self.simulator,
+            gate_error=gate_error,
+            coupled=self.coupled,
+            device=self._device,
+        )
         self._device_config_path = (
             Path(device_config_path) if device_config_path is not None else None
         )
