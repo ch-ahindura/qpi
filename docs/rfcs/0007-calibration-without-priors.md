@@ -743,48 +743,58 @@ refusal now names the routine and says which setting to raise.
 It is a resource budget, which RFC 0007 §5 already distinguishes from the ranges this RFC
 removes: it needs no knowledge of the chip, only of how long the operator is willing to wait.
 
-### 11.5 Open gap: nothing calibrates the pi/2 amplitude, and AllXY cannot say what is wrong
+### 11.5 The AllXY equator error: one cause fixed, the other blocked upstream
 
-**Open.** Found on the B chip's first fully calibrated run, which is worth stating because the
-chip was *working*: randomised benchmarking measured a gate fidelity of 0.9879 over seven
-depths, T1 63.6 us, T2echo 87.3 us, and an AllXY whose two plateaus read 0.0086 and 0.0090
-rms against their ideals.
-
-All of the AllXY error sat in the equator block, and antisymmetrically:
+**Half fixed.** Found on the B chip's first fully calibrated run, which is worth stating
+because the chip was *working*: randomised benchmarking measured 0.9879 over seven depths, T1
+63.6 us, T2echo 87.3 us, and an AllXY whose two plateaus read 0.0086 and 0.0090 rms against
+their ideals. All of the error sat in the equator block, antisymmetrically:
 
 ```
 -0.103 -0.126 -0.090 -0.077 -0.018 +0.013 -0.020 -0.039 +0.091 +0.109 +0.092 +0.064
 ```
 
-The two pairs that are a single ``X90``/``Y90`` followed by an identity — which should land
-exactly on the equator — read 0.397 and 0.374.
+The two pairs that are a single ``X90``/``Y90`` then an identity — which should land exactly on
+the equator — read 0.397 and 0.374. That shape is read as *either* a residual detuning or a
+pi/2 amplitude error, and one rms deviation cannot separate them.
 
-**Two gaps, and the second is why the first cannot yet be acted on.**
+**Fixed: `ramsey` now refines until the residual is unresolvable.** One pass could never land
+on the answer, and the reason is in its own `analyse`: the correction is
+``current_f01 - detuning``, and the detuning was measured with the *old* f01 in the drive. A
+megahertz of error means the fringe was fitted a megahertz off resonance, so the correction
+lands near the answer rather than on it — the B chip moved f01 by 1.032 MHz in a single pass
+and had no way to ask what remained. Each pass now starts from where the last left the device,
+so the residual falls geometrically.
 
-*Nothing calibrates the pi/2 amplitude.* `fine_amplitude` refines ``rxy.amp180`` by
-repeating pi pulses and reading the accumulated error; there is no equivalent for pi/2, which
-is derived from ``amp180`` by the gate library. So a pi/2 that under-rotates can be *detected*
-by AllXY and never corrected by anything — the graph has no node whose job it is.
+Bounded three ways, and the first is the interesting one. It stops when the detuning is under
+what the sweep could tell from zero — ``1/(2*pi*window)``, derived from the operator's own
+delays rather than set as a constant, which is 6.6 kHz for the 24 us default and 27 kHz for a
+6 us one. It stops if the residual stops falling, keeping the better of the two passes, since
+another would be measuring noise. And it stops after `MAX_REFINEMENTS` regardless. Each pass
+is a full `escalating` call, so a window too short for the chip is still widened by the guard
+that already knows how.
 
-*AllXY reports one number where its shape carries the diagnosis.* An antisymmetric equator
-block with intact plateaus is read, in the literature and in practice, as either a residual
-detuning or a pi/2 amplitude error, and one rms deviation cannot separate them. This chip has
-positive evidence for the first — `ramsey` measured a detuning of 1.032 MHz and moved f01 by
-that much — and for the second, in that ``amp180`` of 0.5757 sits above half of full scale
-where the rotation angle stops being linear in amplitude, so halving it need not halve the
-rotation. Both are plausible and the run cannot say which.
+**Blocked: nothing can correct a pi/2 amplitude error, and it is not this graph's fault.**
+`fine_amplitude` refines ``rxy.amp180`` by repeating pi pulses; there is no equivalent for
+pi/2 and no field to write one to. quantify's `rxy_drag_pulse` derives every angle from
+``amp180`` by linear interpolation — its own docstring says so — so a separately calibrated
+pi/2 amplitude has nowhere to live and nothing that would honour it. Correcting this needs a
+custom pulse factory and a new element field on `CalibratedTransmon`, which changes how every
+gate on every chip compiles.
 
-What would distinguish them, in order of cost: a second `ramsey`, since it refines f01 from
-wherever the first left it and §12 already records iterating it as worth doing — if AllXY
-improves, it was detuning. Then, if not, the pi/2 node above.
+That is not worth building before the detuning half is ruled out, which the refinement above
+now does automatically: if the equator block collapses on the next run, this was detuning and
+there is nothing further to do. The evidence for the pi/2 reading is that ``amp180`` of 0.5757
+sits above half of full scale, where the rotation angle stops being linear in amplitude, so
+halving it need not halve the rotation — which is precisely the assumption quantify's
+interpolation makes.
 
-**Deliberately not recommended: changing ``rxy.duration``.** Lengthening the pulse lowers the
+**Deliberately not recommended: changing ``rxy.duration``.** A longer pulse needs less
 amplitude and would move ``amp180`` out of the nonlinear region, but 56 ns is already 14 times
-the 4 ns the measured 250.6 MHz anharmonicity sets as a leakage floor, so there is no leakage
-argument for it — and doubling the duration doubles the decoherence-limited error per gate,
-from 0.088% to 0.176% against an RB-measured 1.21%. Trading a known cost for an unverified
-mechanism is the wrong way round, and the duration is a chip-level choice rather than
-something this graph should be moving.
+the 4 ns the measured 250.6 MHz anharmonicity sets as a leakage floor, and doubling it doubles
+the decoherence-limited error per gate from 0.088% to 0.176% against an RB-measured 1.21%.
+Trading a known cost for an unverified mechanism is the wrong way round, and the duration is a
+chip-level choice rather than something this graph should move.
 
 ## 12. Resolved during review
 

@@ -1599,3 +1599,92 @@ class TestTheEfPiPulseIsHeldToTheLadder:
 
         _require_ef_ladder(self._device(0.0), "q5", 0.0677)  # noqa: B018
         _require_ef_ladder(SimpleNamespace(get_element=lambda n: None), "q5", 0.0677)  # noqa: B018
+
+
+class TestRamseyRefinesUntilTheResidualIsUnresolvable:
+    """RFC 0007 §11.5: one pass lands near the answer rather than on it.
+
+    `analyse` corrects f01 by ``current_f01 - detuning``, and the detuning was measured with
+    the *old* f01 in the drive — so a megahertz of error means the fringe was fitted a
+    megahertz off resonance. Each pass starts from where the last left the device, so the
+    residual falls geometrically.
+
+    The B chip's single pass moved f01 by 1.032 MHz and left an AllXY whose entire error was
+    in the equator block, which reads as either a residual detuning or a pi/2 amplitude
+    error. Iterating measures the first directly, which is what settles the ambiguity.
+    """
+
+    def _ramsey_with(self, delays):
+        node = routine("ramsey")
+        node._delays = list(delays)
+        return node
+
+    def test_the_floor_comes_from_the_window_the_operator_swept(self):
+        """A fringe over a window T is resolved to about 1/(2 pi T); below that is noise."""
+        node = self._ramsey_with([4e-9, 24e-6])
+
+        floor = node._detuning_floor(RoutineConfig(params={}))
+
+        assert floor == pytest.approx(1.0 / (2 * np.pi * (24e-6 - 4e-9)), rel=1e-6)
+        # A shorter window resolves less, so it stops sooner.
+        assert (
+            self._ramsey_with([0.0, 6e-6])._detuning_floor(RoutineConfig(params={}))
+            > floor
+        )
+
+    def test_no_delays_yet_means_no_floor_rather_than_a_crash(self):
+        node = routine("ramsey")
+        node._delays = []
+
+        assert node._detuning_floor(RoutineConfig(params={})) == 0.0
+
+    def test_it_refines_until_the_detuning_is_under_the_floor(self):
+        """Each pass returns a smaller residual, and the loop stops when one is small."""
+        node = self._ramsey_with([4e-9, 24e-6])
+        residuals = iter([1.032e6, 4.1e4, 1.2e3])
+        applied: list[float] = []
+
+        node.escalating = lambda *a, **k: {  # type: ignore[method-assign]
+            "detuning": next(residuals),
+            "clock_freq_01": 5.318e9,
+        }
+        node.apply = lambda device, target, params: applied.append(  # type: ignore[method-assign]
+            params["detuning"]
+        )
+
+        result = node.measure("q5", None, RoutineConfig(params={}), None)
+
+        assert result["detuning"] == pytest.approx(1.2e3), (
+            "it should keep the last, best pass"
+        )
+        # Applied between passes, which is the mechanism: the next drive uses the correction.
+        assert applied == [pytest.approx(1.032e6), pytest.approx(4.1e4)]
+
+    def test_it_stops_when_the_residual_stops_falling(self):
+        """Another pass would be measuring noise, so keep the better of the two."""
+        node = self._ramsey_with([4e-9, 24e-6])
+        residuals = iter([5.0e4, 6.0e4, 7.0e4])
+        node.escalating = lambda *a, **k: {  # type: ignore[method-assign]
+            "detuning": next(residuals),
+            "clock_freq_01": 5.318e9,
+        }
+        node.apply = lambda *a, **k: None  # type: ignore[method-assign]
+
+        result = node.measure("q5", None, RoutineConfig(params={}), None)
+
+        assert result["detuning"] == pytest.approx(5.0e4), "the first was the best"
+
+    def test_a_first_pass_already_on_resonance_costs_nothing(self):
+        node = self._ramsey_with([4e-9, 24e-6])
+        passes = []
+
+        def once(*a, **k):
+            passes.append(1)
+            return {"detuning": 500.0, "clock_freq_01": 5.318e9}
+
+        node.escalating = once  # type: ignore[method-assign]
+
+        result = node.measure("q5", None, RoutineConfig(params={}), None)
+
+        assert len(passes) == 1, "500 Hz is under the 6.6 kHz this window resolves"
+        assert result["detuning"] == 500.0

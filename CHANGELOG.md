@@ -34,6 +34,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `ramsey` re-measures after correcting the qubit frequency, until the residual
+  detuning is below what its own sweep can resolve. A single pass measured the detuning with
+  the uncorrected frequency in the drive, so it landed near the answer rather than on it.
 - `qpi-driver/py`: a reported fidelity is the worst of the protocols that measure a gate
   fidelity, and `allxy_check`'s diagnostic score no longer outvotes it. The default 0.999
   threshold demanded an AllXY rms of 0.001, so a drift check with AllXY enabled fired on every

@@ -6,6 +6,9 @@ device parameter — except AllXY, which is a diagnostic and writes none.
 
 from typing import Any
 
+import logging
+import math
+
 import numpy as np
 import xarray as xr
 
@@ -31,6 +34,8 @@ from qpi_driver.tuners.fitting import (
     fit_t2,
     signal_of,
 )
+
+log = logging.getLogger(__name__)
 
 #: The 21 gate pairs of the AllXY sequence, in Reed's order (Yale thesis, 2013).
 #: The ideal response is a staircase: five points at |0>, twelve at the
@@ -295,6 +300,13 @@ class Rabi(CalibrationRoutine):
 class Ramsey(CalibrationRoutine):
     """Ramsey interferometry: refine f01 and measure T2* (Ramsey, Phys. Rev. 78, 695)."""
 
+    #: How many times to re-measure after correcting f01.
+    #:
+    #: Each pass multiplies the residual by roughly the fractional error of the last, so
+    #: three is far more than convergence needs and is here as a bound rather than a
+    #: target — the loop normally stops on `_detuning_floor` after one or two.
+    MAX_REFINEMENTS = 3
+
     name = "ramsey"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f01",)
@@ -309,12 +321,66 @@ class Ramsey(CalibrationRoutine):
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
-        """Widen the delays and try again when the fit says the decay was never seen.
+        """Refine f01 until the residual detuning is under what this sweep can resolve.
 
-        A window too short for this chip is the commonest way this node fails, and the
-        guard already knows it — see `CalibrationRoutine.escalating`.
+        One pass is not enough, and the reason is in `analyse`: the correction is
+        ``current_f01 - detuning``, and the detuning was measured *with the old f01* in the
+        drive. Get it wrong by a megahertz and the fringe you fitted was a megahertz off
+        resonance, so the correction lands near the answer rather than on it. Each pass
+        starts from where the last left the device and measures what remains, so the
+        residual falls geometrically.
+
+        Iterating rather than accepting the first answer is what RFC 0007 §12 recorded as
+        worth doing and §11.5 then needed: on the B chip a single pass moved f01 by
+        1.032 MHz and left an AllXY whose whole error was in the equator block, which reads
+        as either a residual detuning or a pi/2 amplitude error. A second pass measures the
+        first of those directly, so the ambiguity is settled by the graph rather than by
+        the operator.
+
+        Bounded three ways. It stops when the detuning is below what the sweep can resolve
+        — see `_detuning_floor`, which derives that from the window rather than guessing a
+        constant. It stops after `MAX_REFINEMENTS` whatever happens. And each pass is a
+        full `escalating` call, so a window too short for this chip is still widened by the
+        guard that already knows how.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        refined = self.escalating(target, device, config, backend, timeout_s)
+        floor = self._detuning_floor(config)
+        for _attempt in range(self.MAX_REFINEMENTS):
+            if abs(float(refined.get("detuning", 0.0))) <= floor:
+                break
+            # Applied here so the next pass drives at the corrected frequency, which is the
+            # whole mechanism. The DAG applies again afterwards, and a write is idempotent.
+            self.apply(device, target, refined)
+            again = self.escalating(target, device, config, backend, timeout_s)
+            if abs(float(again.get("detuning", 0.0))) >= abs(
+                float(refined.get("detuning", 0.0))
+            ):
+                # Not converging: the residual is no smaller than what we started this pass
+                # with, so another pass measures noise. Keep the better of the two.
+                log.info(
+                    "%s on %s: detuning stopped falling at %.0f Hz, keeping it",
+                    self.name,
+                    target,
+                    abs(float(refined.get("detuning", 0.0))),
+                )
+                break
+            refined = again
+        return refined
+
+    def _detuning_floor(self, config: RoutineConfig) -> float:
+        """The smallest detuning this sweep could tell from zero, in Hz.
+
+        A fringe frequency fitted over a window ``T`` is resolved to about ``1/(2*pi*T)``,
+        so a residual below that is not a measurement of anything and another pass would
+        chase noise. Derived from the operator's own delays rather than set as a constant,
+        which is the same reasoning `_confirm_points` uses: their sweep is their statement
+        about the resolution their chip needs.
+        """
+        delays = [float(d) for d in getattr(self, "_delays", ()) or ()]
+        if not delays:
+            return 0.0
+        window = max(delays) - min(delays)
+        return 1.0 / (2.0 * math.pi * window) if window > 0 else 0.0
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
