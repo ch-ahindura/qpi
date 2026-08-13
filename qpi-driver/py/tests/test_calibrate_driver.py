@@ -866,14 +866,51 @@ class TestDriftDetection:
         assert _drifted_targets(_report_with(q0_q1=0.995), job) == []
         assert _drifted_targets(_report_with(q0_q1=0.95), job) == ["q0", "q1"]
 
-    def test_the_worst_protocol_wins_for_a_target(self):
-        """A drift check should fire on the worst evidence it has, not the best."""
+    def test_the_worst_protocol_wins_among_comparable_ones(self):
+        """A drift check fires on the worst evidence it has — of the same quantity.
+
+        This used to include `allxy_check`, and could not work. That protocol reports one
+        minus the rms deviation of a *normalised population* response, which is not a gate
+        infidelity, so comparing it against `fidelity_threshold` compares different units.
+        The default threshold is 0.999, which would demand an AllXY rms of 0.001 where a
+        well-calibrated one is 0.01 to 0.02 — so with `allxy_as_smoke_test` on, the check
+        fired on every run of every chip, which is a permanently tripped alarm rather than a
+        conservative one. A B chip measured 0.9879 by randomised benchmarking and reported
+        0.9232.
+
+        The conservatism is kept where it means something: between two protocols that both
+        measure a gate fidelity, the lower still wins.
+        """
+        report = _report_with(q0=0.9999)
+        report.add_benchmark(
+            BenchmarkResult(
+                protocol="interleaved_rb",
+                target="q0",
+                fidelity=0.99,
+                error_per_gate=None,
+            )
+        )
+        assert report.fidelities()["q0"] == 0.99
+
+    def test_a_diagnostic_score_does_not_outvote_a_measured_gate_fidelity(self):
         report = _report_with(q0=0.9999)
         report.add_benchmark(
             BenchmarkResult(
                 protocol="allxy_check", target="q0", fidelity=0.90, error_per_gate=None
             )
         )
+
+        assert report.fidelities()["q0"] == 0.9999
+
+    def test_a_diagnostic_score_is_the_evidence_when_it_is_the_only_evidence(self):
+        """`allxy_as_smoke_test` exists, so a chip with only AllXY must still be judged."""
+        report = _report_with()
+        report.add_benchmark(
+            BenchmarkResult(
+                protocol="allxy_check", target="q0", fidelity=0.90, error_per_gate=None
+            )
+        )
+
         assert report.fidelities()["q0"] == 0.90
 
 

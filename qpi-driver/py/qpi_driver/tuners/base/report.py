@@ -20,6 +20,23 @@ log = logging.getLogger(__name__)
 #: save is worse than a report with no chart in it.
 MAX_FIT_PAYLOAD_BYTES = 2_000_000
 
+#: Protocols whose ``fidelity`` is an average gate fidelity, and so comparable with each
+#: other's.
+#:
+#: `allxy_check` is deliberately not one. It reports ``1 - rms_deviation`` of a *normalised
+#: population* response, which is a diagnostic score and not a gate infidelity — the two are
+#: not in the same units, and treating them as though they were made the worse number win by
+#: construction. On the August 2026 B chip randomised benchmarking measured a gate fidelity of
+#: 0.9879 while AllXY's score was 0.9232, and the report showed 0.9232: not a second, worse
+#: measurement of the same thing, but a different quantity wearing the same name.
+#:
+#: Both are still worth having, and the gap between them is information rather than noise —
+#: AllXY is sensitive to *coherent* errors that randomisation averages into a depolarising
+#: rate, so it can be worse than RB and be right to be. That chip's AllXY was flat on both
+#: plateaus and carried all its error antisymmetrically across the equator block, which is a
+#: pi/2 pulse under-rotating. See :meth:`CalibrationReport.fidelities`.
+GATE_FIDELITY_PROTOCOLS = frozenset({"rb", "interleaved_rb"})
+
 
 @dataclass
 class RoutineResult:
@@ -119,18 +136,34 @@ class CalibrationReport:
         )
 
     def fidelities(self) -> dict[str, float]:
-        """Measured fidelity per target, for the drift check to compare against.
+        """Measured gate fidelity per target, for the drift check to compare against.
 
-        Where a target was benchmarked by more than one protocol the lowest wins:
-        a drift check should trigger on the worst evidence it has, not the best.
+        Where a target was benchmarked by more than one *comparable* protocol the lowest
+        wins: a drift check should trigger on the worst evidence it has, not the best.
+
+        Comparable is the load-bearing word, and it was missing. Only
+        :data:`GATE_FIDELITY_PROTOCOLS` report an average gate fidelity; `allxy_check`
+        reports one minus the rms deviation of a normalised population response, which is a
+        different quantity in different units. Taking the minimum across both let the
+        incommensurable one win by construction — a B chip measured 0.9879 by randomised
+        benchmarking and reported 0.9232, which is AllXY's score and not its gate fidelity.
+
+        A diagnostic score is still used when nothing measured a gate fidelity, because a
+        drift check with AllXY as its only evidence should compare against that rather than
+        against nothing — see ``monitoring.allxy_as_smoke_test``. Both appear in
+        :attr:`benchmarks` either way, each under its own protocol.
         """
         worst: dict[str, float] = {}
+        fallback: dict[str, float] = {}
         for benchmark in self.benchmarks:
             if benchmark.fidelity is None:
                 continue
-            current = worst.get(benchmark.target)
+            into = worst if benchmark.protocol in GATE_FIDELITY_PROTOCOLS else fallback
+            current = into.get(benchmark.target)
             if current is None or benchmark.fidelity < current:
-                worst[benchmark.target] = benchmark.fidelity
+                into[benchmark.target] = benchmark.fidelity
+        for target, score in fallback.items():
+            worst.setdefault(target, score)
         return worst
 
     def to_event_payload(self) -> dict[str, Any]:

@@ -10,6 +10,7 @@ import json
 
 import numpy as np
 import pytest
+from qpi_driver.tuners.base.report import BenchmarkResult, CalibrationReport
 import xarray as xr
 from qpi_driver.tuners.fitting import (
     FitError,
@@ -885,3 +886,87 @@ class TestOnlyARowWithALineMayJudgeTheOthers:
         rows = np.vstack([self._row(3.1e6, 0.0006, 2.0e-4, seed) for seed in (4, 5, 6)])
         with pytest.raises(FitError, match="showed a line above its own scatter"):
             fit_spectroscopy_power([0.02, 0.04, 0.08], self.FREQUENCIES, rows)
+
+
+class TestBenchmarksAreOnlyComparedWithComparableOnes:
+    """`fidelities()` takes the worst, which is only sound among the same quantity.
+
+    `allxy_check` reports one minus the rms deviation of a *normalised population*
+    response. That is a diagnostic score, not a gate infidelity, and taking the minimum
+    across both let it win by construction: the August 2026 B chip measured a gate fidelity
+    of 0.9879 by randomised benchmarking and its report showed 0.9232.
+    """
+
+    B_CHIP_RB = 0.9878625093122777
+    B_CHIP_ALLXY = 0.9231628641346621
+
+    def _report(self, *benchmarks):
+        report = CalibrationReport(timestamp="t", duration_s=0.0, mode="full")
+        for protocol, fidelity in benchmarks:
+            report.add_benchmark(
+                BenchmarkResult(
+                    protocol=protocol,
+                    target="q5",
+                    fidelity=fidelity,
+                    error_per_gate=None,
+                )
+            )
+        return report
+
+    def test_a_gate_fidelity_wins_over_a_diagnostic_score(self):
+        report = self._report(
+            ("rb", self.B_CHIP_RB), ("allxy_check", self.B_CHIP_ALLXY)
+        )
+
+        assert report.fidelities() == {"q5": pytest.approx(self.B_CHIP_RB)}
+
+    def test_the_worst_gate_fidelity_still_wins_among_gate_fidelities(self):
+        """The conservatism is kept where it is meaningful."""
+        report = self._report(("rb", 0.99), ("interleaved_rb", 0.95))
+
+        assert report.fidelities() == {"q5": pytest.approx(0.95)}
+
+    def test_a_diagnostic_score_is_used_when_nothing_measured_a_gate_fidelity(self):
+        """`monitoring.allxy_as_smoke_test` exists, so this must not compare against nothing."""
+        report = self._report(("allxy_check", self.B_CHIP_ALLXY))
+
+        assert report.fidelities() == {"q5": pytest.approx(self.B_CHIP_ALLXY)}
+
+    def test_both_are_still_reported_separately(self):
+        report = self._report(
+            ("rb", self.B_CHIP_RB), ("allxy_check", self.B_CHIP_ALLXY)
+        )
+
+        assert {b.protocol for b in report.benchmarks} == {"rb", "allxy_check"}
+
+
+class TestAThreeStateOperatingPointNeedsThreeStates:
+    """The point that feeds `three_state_discrimination` must clear what it refuses at.
+
+    On the August 2026 B chip `three_state_operating_point` reported a closest-pair
+    separation of 0.913 scatters and wrote the point; `three_state_discrimination` measured
+    0.86 on the same readout and refused. The 1-2 pi pulse had never populated |2>, so the
+    sweep was choosing between |0> and |1> and calling it a three-state point.
+    """
+
+    def test_a_point_that_resolves_only_two_states_is_refused(self):
+        from qpi_driver.tuners.fitting.discrimination import (
+            MIN_THREE_STATE_SEPARATION,
+            fit_three_state_operating_point,
+        )
+
+        rng = np.random.default_rng(7)
+        # |1> and |2> on top of each other, which is what an unpopulated |2> looks like.
+        clouds = np.array(
+            [
+                [
+                    rng.normal(centre, 1.0, 400) + 1j * rng.normal(0, 1.0, 400)
+                    for centre in (0.0, 3.0, 3.2)
+                ]
+            ]
+        )
+        with pytest.raises(FitError, match="scatters apart"):
+            fit_three_state_operating_point([(7.18e9, 0.1)], clouds)
+        assert MIN_THREE_STATE_SEPARATION > 1.0, (
+            "it must exceed what the consumer refuses at"
+        )

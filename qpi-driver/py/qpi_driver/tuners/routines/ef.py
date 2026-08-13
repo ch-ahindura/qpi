@@ -31,6 +31,7 @@ from qpi_driver.tuners.base.device import (
     write_path,
 )
 from qpi_driver.tuners.base.limits import full_scale
+from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
@@ -812,6 +813,24 @@ class Drag12(CalibrationRoutine):
     def applies_to(self, device: Any, target: str) -> bool:
         return has_three_state_readout(device, target)
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen the beta sweep when the optimum turns out to be outside it.
+
+        The default is `SchedulerBackend.drag_span` either side of zero, which is a
+        statement about the units rather than about a chip — and the B chip's 1-2 optimum
+        came out at 0.298 against a range of +/-0.2, so the node refused a fit that had
+        found its answer.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -869,7 +888,9 @@ class Drag12(CalibrationRoutine):
                 f"drag_12 expected {2 * len(self._drags)} acquisitions, got {signal.size}"
             )
         paired = signal[: 2 * len(self._drags)].reshape(-1, 2)
-        fitted = fit_drag(np.asarray(self._drags), paired[:, 0] - paired[:, 1])
+        fitted = fit_drag(
+            np.asarray(self._drags), paired[:, 0] - paired[:, 1], axis="drags"
+        )
         return {"ef_motzoi": fitted["motzoi"], **fitted}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

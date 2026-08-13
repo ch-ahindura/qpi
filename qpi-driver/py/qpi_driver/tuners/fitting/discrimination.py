@@ -35,6 +35,17 @@ log = logging.getLogger(__name__)
 #: setting in its grid cannot clear 0.6, the sweep found nothing worth writing.
 MIN_ASSIGNMENT_FIDELITY = 0.6
 
+#: How far apart the closest two of three readout clouds must be, in units of the scatter
+#: within them, for an operating point to be worth writing.
+#:
+#: `fit_three_state_discrimination` refuses at one — below that a threshold is a coin toss —
+#: so the point that *feeds* it needs margin above that, or a run whose noise differs
+#: slightly writes a point its own consumer then refuses. Which is what the August 2026 B
+#: chip did: `three_state_operating_point` reported 0.913 and succeeded,
+#: `three_state_discrimination` measured 0.86 on the same readout and refused. 1.5 leaves
+#: half a scatter of headroom.
+MIN_THREE_STATE_SEPARATION = 1.5
+
 
 def fit_readout_discrimination(
     ground: np.ndarray, excited: np.ndarray
@@ -309,6 +320,15 @@ def fit_three_state_operating_point(
         )
 
     (frequency, amplitude), separation, closest = best
+    if separation < MIN_THREE_STATE_SEPARATION:
+        raise FitError(
+            f"the best readout setting in the sweep put its closest two clouds "
+            f"{separation:.2f} scatters apart, against the "
+            f"{MIN_THREE_STATE_SEPARATION:g} a three-state readout needs — so this point "
+            "resolves |0> from |1> at best, and writing it would hand "
+            "`three_state_discrimination` a readout it then has to refuse. Most often the "
+            "sweep never prepared |2>: check the 1-2 pi pulse before the readout"
+        )
     log.debug(
         "three-state operating point %.6g Hz at %.4g, closest pair %.2f sigma",
         frequency,

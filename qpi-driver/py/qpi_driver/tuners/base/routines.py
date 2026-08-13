@@ -501,9 +501,25 @@ def _widened(
         # The same window, sampled harder. An aliased fringe needs resolution, not reach —
         # and lengthening the sweep would make the aliasing worse while costing more.
         stretched = linear_setpoints(low, high, int(len(current) * refusal.factor))
+    elif low < 0:
+        # Symmetric about its centre, and it has to be: a DRAG parameter's optimum may be
+        # either sign — `drag` measured -0.1437 on the B chip — and anchoring at the centre
+        # and growing upward only, as the one-sided branch below does, would put the whole
+        # negative half out of reach. Widening 0.4 by 4x gave [0, 1.6] rather than
+        # [-0.8, 0.8].
+        centre = (high + low) / 2.0
+        reach = (high - low) * refusal.factor / 2.0
+        stretched = linear_setpoints(centre - reach, centre + reach, len(current))
+        if ceiling is not None:
+            limit = float(ceiling)
+            if reach >= limit:
+                return config
+            stretched = linear_setpoints(
+                max(centre - reach, -limit), min(centre + reach, limit), len(current)
+            )
     else:
         extent = (high - low) * refusal.factor
-        centre = (high + low) / 2.0 if low < 0 else low
+        centre = low
         top = centre + extent
         if ceiling is not None:
             # A drive amplitude has a hardware ceiling and reaching past it does not fail

@@ -206,7 +206,9 @@ def fit_ramsey(
     }
 
 
-def fit_drag(betas: np.ndarray, signal: np.ndarray) -> dict[str, float]:
+def fit_drag(
+    betas: np.ndarray, signal: np.ndarray, *, axis: str | None = None
+) -> dict[str, float]:
     """Fit a DRAG (Motzoi) sweep.
 
     The standard sequence gives a signal linear in β near the optimum, crossing
@@ -222,7 +224,12 @@ def fit_drag(betas: np.ndarray, signal: np.ndarray) -> dict[str, float]:
 
     motzoi = float(-intercept / slope)
     require_in_range(
-        motzoi, float(np.min(x)), float(np.max(x)), what="motzoi", tolerance=0.1
+        motzoi,
+        float(np.min(x)),
+        float(np.max(x)),
+        what="motzoi",
+        tolerance=0.1,
+        axis=axis,
     )
     return {
         "motzoi": motzoi,

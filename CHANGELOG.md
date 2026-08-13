@@ -34,6 +34,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a reported fidelity is the worst of the protocols that measure a gate
+  fidelity, and `allxy_check`'s diagnostic score no longer outvotes it. The default 0.999
+  threshold demanded an AllXY rms of 0.001, so a drift check with AllXY enabled fired on every
+  run of every chip.
+- `qpi-driver/py`: `three_state_operating_point` refuses a point whose closest two clouds its
+  own consumer would reject, instead of writing one and letting
+  `three_state_discrimination` fail.
+- `qpi-driver/py`: `drag_12` widens its beta sweep when the optimum lies outside it, and a
+  widened sweep that is symmetric about zero stays symmetric — it previously dropped the whole
+  negative half, which is where `drag` had measured its own optimum.
 - `qpi-driver/py`: `rabi_12` refuses a 1-2 pi amplitude that the measured 0-1 one says cannot
   be one. A cosine fitted to a partial rotation reports a smaller amplitude with no sign
   anything is wrong, and the whole EF chain then measured a qubit still in the first excited

@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented
+- **Status:** Implemented, with one known gap open — §11.5
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -742,6 +742,49 @@ refusal now names the routine and says which setting to raise.
 
 It is a resource budget, which RFC 0007 §5 already distinguishes from the ranges this RFC
 removes: it needs no knowledge of the chip, only of how long the operator is willing to wait.
+
+### 11.5 Open gap: nothing calibrates the pi/2 amplitude, and AllXY cannot say what is wrong
+
+**Open.** Found on the B chip's first fully calibrated run, which is worth stating because the
+chip was *working*: randomised benchmarking measured a gate fidelity of 0.9879 over seven
+depths, T1 63.6 us, T2echo 87.3 us, and an AllXY whose two plateaus read 0.0086 and 0.0090
+rms against their ideals.
+
+All of the AllXY error sat in the equator block, and antisymmetrically:
+
+```
+-0.103 -0.126 -0.090 -0.077 -0.018 +0.013 -0.020 -0.039 +0.091 +0.109 +0.092 +0.064
+```
+
+The two pairs that are a single ``X90``/``Y90`` followed by an identity — which should land
+exactly on the equator — read 0.397 and 0.374.
+
+**Two gaps, and the second is why the first cannot yet be acted on.**
+
+*Nothing calibrates the pi/2 amplitude.* `fine_amplitude` refines ``rxy.amp180`` by
+repeating pi pulses and reading the accumulated error; there is no equivalent for pi/2, which
+is derived from ``amp180`` by the gate library. So a pi/2 that under-rotates can be *detected*
+by AllXY and never corrected by anything — the graph has no node whose job it is.
+
+*AllXY reports one number where its shape carries the diagnosis.* An antisymmetric equator
+block with intact plateaus is read, in the literature and in practice, as either a residual
+detuning or a pi/2 amplitude error, and one rms deviation cannot separate them. This chip has
+positive evidence for the first — `ramsey` measured a detuning of 1.032 MHz and moved f01 by
+that much — and for the second, in that ``amp180`` of 0.5757 sits above half of full scale
+where the rotation angle stops being linear in amplitude, so halving it need not halve the
+rotation. Both are plausible and the run cannot say which.
+
+What would distinguish them, in order of cost: a second `ramsey`, since it refines f01 from
+wherever the first left it and §12 already records iterating it as worth doing — if AllXY
+improves, it was detuning. Then, if not, the pi/2 node above.
+
+**Deliberately not recommended: changing ``rxy.duration``.** Lengthening the pulse lowers the
+amplitude and would move ``amp180`` out of the nonlinear region, but 56 ns is already 14 times
+the 4 ns the measured 250.6 MHz anharmonicity sets as a leakage floor, so there is no leakage
+argument for it — and doubling the duration doubles the decoherence-limited error per gate,
+from 0.088% to 0.176% against an RB-measured 1.21%. Trading a known cost for an unverified
+mechanism is the wrong way round, and the duration is a chip-level choice rather than
+something this graph should be moving.
 
 ## 12. Resolved during review
 
