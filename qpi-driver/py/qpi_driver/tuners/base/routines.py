@@ -324,17 +324,36 @@ class CalibrationRoutine(ABC):
 def setpoints_of(config: RoutineConfig, key: str, default: list[Any]) -> list[Any]:
     """Read a sweep axis from *config*, falling back to *default*.
 
+    Numeric strings are converted, because YAML will hand us plenty of them: PyYAML only
+    reads an exponent as a float when the mantissa carries a decimal point, so ``4e-9`` in
+    a config file is the *string* ``"4e-9"`` while ``4.0e-9`` is a number. The two look
+    identical in a file and `calibration.example.yml` shipped the first form for every time
+    axis, which put strings where the schedule wanted seconds.
+
+    Integers are left alone. ``depths`` and ``repetitions`` are counts rather than
+    quantities, and turning them into floats would push them into APIs that want an ``int``.
+
     Raises:
-        RoutineError: if the configured value is not a non-empty sequence. A
-            sweep with no points would otherwise compile to an empty schedule
-            and report success having measured nothing.
+        RoutineError: if the configured value is not a non-empty sequence, or if a
+            setpoint is not a number. A sweep with no points would otherwise compile to
+            an empty schedule and report success having measured nothing.
     """
     values = config.get(key, default)
     if not isinstance(values, (list, tuple)) or not values:
         raise RoutineError(
             f"{key!r} must be a non-empty list of setpoints, got {values!r}"
         )
-    return list(values)
+    converted = []
+    for value in values:
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                raise RoutineError(
+                    f"{key!r} setpoint {value!r} is not a number"
+                ) from None
+        converted.append(value)
+    return converted
 
 
 def linear_setpoints(start: float, stop: float, count: int) -> list[float]:

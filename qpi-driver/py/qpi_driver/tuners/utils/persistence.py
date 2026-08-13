@@ -169,9 +169,34 @@ def _apply_serialised(component: Any, data: dict[str, Any]) -> None:
                 _apply_serialised(submodule, value)
             continue
         try:
-            write(component, key, value)
+            write(component, key, _numeric(value))
         except Exception:  # noqa: BLE001 - a parameter the device will not take
             log.debug("skipping %s: device would not accept it", key)
+
+
+def _numeric(value: Any) -> Any:
+    """*value*, as a number if it is a string spelling one.
+
+    YAML's own trap, and it is quiet. PyYAML reads an exponent as a float only when the
+    mantissa carries a decimal point **and** the exponent carries a sign, so ``5.318e+9``
+    is a number while ``5.318e9`` and ``20e6`` are strings — three forms that look
+    identical in a hand-written config.
+
+    Nothing downstream objects loudly. A qcodes frequency parameter accepts the string and
+    stores it, `_current_clock` calls `float` on the way into a sweep so the centre is
+    right, and the fault surfaces only where a schedule is compiled and the string reaches
+    something that wanted Hz. Converting here means a device config written the natural way
+    holds numbers.
+
+    Left alone if it is not a number: some parameters are genuinely strings, and a
+    validator refusing one is better than this guessing.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        return float(value)
+    except ValueError:
+        return value
 
 
 def save_device_config(device: Any, path: Path, *, keep_backup: bool = True) -> None:

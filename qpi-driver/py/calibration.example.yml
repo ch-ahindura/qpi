@@ -6,6 +6,19 @@
 # working default — so the shortest useful file is just `target_qubits`. A
 # routine name that matches no routine is a startup error, not a silent no-op,
 # so a typo here is caught before any hardware is touched.
+#
+# Prefer leaving a sweep out to writing its default down. Several routines widen or
+# refine their own sweep when the fit says the window was wrong (RFC 0007 §5), and
+# naming an axis here switches that off for it deliberately: an operator who states a
+# range has made a claim about the chip, and the driver will not overrule it with a
+# default. Everything below is therefore an illustration of the *shape* of each config,
+# not a recommendation to paste.
+#
+# Write exponents as `20.0e+6` — decimal point *and* a signed exponent. PyYAML needs
+# both: `20e6`, `20.0e6` and `7.183e9` all parse as *strings*, while `20.0e+6` and
+# `4.0e-9` are numbers. The three forms are indistinguishable on the page. The driver
+# converts numeric strings on the way in, for configs and device files alike, so every
+# form works — but only one of them is a number in the file you are reading.
 
 target_qubits: [q0, q1, q2]
 target_edges: [q0_q1, q1_q2]
@@ -20,38 +33,70 @@ routines:
     # Either an explicit list of frequencies, or a span about the value
     # currently in quantify.device.yml — the latter being what a
     # recalibration wants, since it only has to find where the peak moved to.
-    span: 20e6
+    #
+    # Leave `span` out on a bring-up. Left to itself this node widens and re-runs when
+    # the resonator turns out to be outside the window, and samples harder when the line
+    # is thinner than the grid; naming a span here means a resonator a few MHz away fails
+    # the run instead. `points` is safe to set — it is the resolution, not the reach.
+    span: 20.0e+6
     points: 51
     shots: 1024
 
   resonator_punchout:
-    amplitudes: [0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
-    span: 20e6
+    # Reaching 1.0 matters: punch-through is by definition the high-power end, and a grid
+    # stopping at half scale cannot find it on a line carrying any real attenuation — with
+    # 20 dB of `output_att` it is some 26 dB short. Spaced log-ish, since punch-through is
+    # a log-power effect, so the points sit where the transition is.
+    #
+    # Watch the cost. This sweeps frequency *and* power, and a frequency sweep costs about
+    # 15 Q1ASM instructions per point against a QRM ceiling of 12288 — so amplitudes x
+    # points must stay under roughly 800.
+    amplitudes: [0.02, 0.08, 0.25, 0.6, 1.0]
+    span: 20.0e+6
     points: 31
 
   qubit_spectroscopy:
-    span: 40e6
+    # Two passes. `span`/`points` is the narrow sweep about the configured f01; if no line
+    # is there, `search_*` looks across everything the drive port can reach and the narrow
+    # sweep is repeated where it found one. Both are trimmed to the port's +/-500 MHz of
+    # its LO, so a search wider than that simply covers the whole band.
+    span: 40.0e+6
     points: 51
-    # Deliberately weak: saturating the transition broadens the line and hides
-    # the centre this routine exists to find.
-    drive_amp: 0.01
+    search_span: 600.0e+6
+    search_points: 301
+    # One power for the search, because locating a line does not need powers compared.
+    # Strong enough to see, and no stronger: a saturated line spreads over tens of MHz,
+    # and the sweep that confirms it is sized from the width the search measured.
+    search_amp: 0.08
+    # A *range* rather than one weak power. Weak is right in principle — saturating the
+    # transition broadens the line and pulls the centre this routine exists to find — but
+    # too weak is a line under the noise, which is a failed run rather than a cautious
+    # one. `fit_spectroscopy_power` keeps the narrowest credible line of the set, so
+    # offering a spread lets it pick the lowest power that actually resolved.
+    drive_amps: [0.02, 0.08, 0.2]
 
   # --- Single-qubit gates ---
   rabi:
+    # Half scale, because a strongly driven transmon stops being the cosine this fits.
+    # Left unset, `rabi` starts here and reaches further when the fit says the pi pulse is
+    # above the sweep — which naming the axis here turns off.
     amplitudes: [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
 
   ramsey:
-    delays: [4e-9, 1e-6, 2e-6, 3e-6, 4e-6, 5e-6, 7e-6, 10e-6]
-    artificial_detuning: 1e6
+    delays: [4.0e-9, 1.0e-6, 2.0e-6, 3.0e-6, 4.0e-6, 5.0e-6, 7.0e-6, 10.0e-6]
+    artificial_detuning: 1.0e+6
 
   t1:
-    delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 60e-6, 80e-6, 100e-6]
+    delays: [0.0, 10.0e-6, 20.0e-6, 30.0e-6, 40.0e-6, 60.0e-6, 80.0e-6, 100.0e-6]
 
   t2_echo:
-    delays: [0, 10e-6, 20e-6, 30e-6, 40e-6, 60e-6, 80e-6, 100e-6]
+    delays: [0.0, 10.0e-6, 20.0e-6, 30.0e-6, 40.0e-6, 60.0e-6, 80.0e-6, 100.0e-6]
 
   drag:
-    motzois: [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0]
+    # Seconds, not a dimensionless amplitude: the DRAG parameter scales a time derivative
+    # of the envelope, so a 56 ns gate wants values of order 1e-11. At a dimensionless
+    # scale the derivative term dwarfs the carrier and the waveform exceeds full scale.
+    motzois: [-2.0e-10, -1.0e-10, -5.0e-11, 0.0, 5.0e-11, 1.0e-10, 2.0e-10]
 
   allxy: {}
 
@@ -77,7 +122,7 @@ routines:
   cz_chevron:
     enabled: false
     amplitudes: [0.1, 0.2, 0.3, 0.4, 0.5]
-    durations: [20e-9, 60e-9, 100e-9, 140e-9, 180e-9]
+    durations: [20.0e-9, 60.0e-9, 100.0e-9, 140.0e-9, 180.0e-9]
 
   conditional_phase:
     enabled: false

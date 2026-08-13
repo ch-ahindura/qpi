@@ -28,6 +28,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a skipped routine reports which parameters it left unconfirmed and when
   they were last measured, and a run whose producer for a never-measured parameter is
   switched off says so before the walk starts.
+
+### Fixed
+
+- `qpi-driver/py`: a sweep axis written as `4e-9` reaches the schedule as a number rather
+  than the string PyYAML actually parsed it to, and a device config frequency written as
+  `5.318e9` loads as one too. Both forms need a decimal point *and* a signed exponent to be
+  numbers, which is invisible on the page.
+- `qpi-driver/py`: `calibration.example.yml` reached full readout scale in
+  `resonator_punchout`, sets DRAG in seconds rather than ten orders of magnitude out, and
+  spells its exponents so YAML reads them as numbers.
 - `qpi-driver/py`: 22 routines now declare the qubit frequency and pi-pulse amplitude their
   gates need, so a failed `qubit_spectroscopy` skips everything behind it. One dead
   frequency previously produced eight separate failures, each looking like its own fault.
@@ -52,9 +62,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   are indistinguishable, instead of normalising noise to full scale — which had `allxy_check`
   reporting a fidelity of 0.53 to the drift check. `allxy_check` also now normalises the way
   `allxy` does, rather than by min and max, which inverts on half of all readout chains.
-
-### Fixed
-
 - `qpi-driver/py`: the simulator's `rabi`, `t1`, `t2_echo` and `ramsey` carry the drive
   detuning, so a wrong `clock_freqs.f01` costs a calibration its contrast. They built
   their Hamiltonian on resonance whatever the device was configured for, which is why no

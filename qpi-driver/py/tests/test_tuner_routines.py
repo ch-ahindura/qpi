@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
+import yaml
 import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
@@ -1361,3 +1362,65 @@ class _NoElements:
 
     def get_element(self, name: str) -> Any:
         raise AssertionError("the config names drive_amps, so no element is needed")
+
+
+class TestYamlsQuietFloatTrap:
+    """PyYAML reads an exponent as a number only with a decimal point *and* a signed one.
+
+    So `5.318e+9` is a float while `5.318e9`, `20e6` and `20.0e6` are strings, and the four
+    forms are indistinguishable in a hand-written file. Nothing downstream objects loudly: a
+    qcodes frequency parameter accepts the string and stores it, and `_current_clock` calls
+    `float` on the way into a sweep, so the fault surfaces only where a schedule is compiled
+    and the string reaches something that wanted Hz.
+
+    `calibration.example.yml` shipped every time axis in the string form, which is how this
+    was found.
+    """
+
+    def test_a_sweep_axis_written_the_natural_way_arrives_as_numbers(self):
+        from qpi_driver.tuners.base.routines import setpoints_of
+
+        config = RoutineConfig(params=yaml.safe_load("delays: [4e-9, 1.0e-6, 2.0e+0]"))
+
+        delays = setpoints_of(config, "delays", [])
+
+        assert delays == [4e-9, 1.0e-6, 2.0]
+        assert all(isinstance(d, float) for d in delays)
+
+    def test_counts_stay_integers(self):
+        """`depths` and `repetitions` index APIs that want an int, not a quantity."""
+        from qpi_driver.tuners.base.routines import setpoints_of
+
+        config = RoutineConfig(params={"depths": [1, 2, 4]})
+
+        assert setpoints_of(config, "depths", []) == [1, 2, 4]
+        assert all(isinstance(d, int) for d in setpoints_of(config, "depths", []))
+
+    def test_a_setpoint_that_is_not_a_number_is_refused(self):
+        from qpi_driver.tuners.base.routines import setpoints_of
+
+        with pytest.raises(RoutineError, match="is not a number"):
+            setpoints_of(RoutineConfig(params={"delays": ["soon"]}), "delays", [])
+
+    def test_a_device_config_frequency_written_the_natural_way_loads_as_a_number(self):
+        from qpi_driver.tuners.utils.persistence import _numeric
+
+        assert _numeric("5.318e9") == pytest.approx(5.318e9)
+        assert isinstance(_numeric("5.318e9"), float)
+        assert _numeric(7.183e9) == pytest.approx(7.183e9)
+        # And a parameter that is genuinely a string is left for its own validator.
+        assert _numeric("BasicTransmonElement") == "BasicTransmonElement"
+
+    def test_the_example_config_is_numbers_on_the_page(self):
+        """It is what operators copy, so its own spelling has to be the right one."""
+        example = yaml.safe_load(
+            (Path(__file__).parent.parent / "calibration.example.yml").read_text()
+        )
+
+        offenders = {}
+        for name, params in (example["routines"] or {}).items():
+            for key, value in (params or {}).items():
+                values = value if isinstance(value, list) else [value]
+                if any(isinstance(v, str) for v in values):
+                    offenders[f"{name}.{key}"] = value
+        assert not offenders, f"write these with a signed exponent: {offenders}"
