@@ -22,6 +22,9 @@ is why `make test-py-sim` syncs `--extra sim` alone:
 
 import numpy as np
 import pytest
+from qpi_driver.tuners.fitting import fit_rabi
+from qpi_driver.tuners.base.device import read_path
+from tests.utils.simulation import SimulatedTuner
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.fitting import FitError, fit_rb_decay
@@ -898,3 +901,113 @@ class TestTheTunableCoupler:
         message = str(excinfo.value)
         assert "scqubits" in message
         assert "qpi-driver[sim]" in message, "it has to name the extra, not the package"
+
+
+class TestTheEfLadderComesOutOfThePhysics:
+    """Three-level physics for the 1-2 transition, so the EF chain is testable at all.
+
+    Before this the simulator refused `rabi_12` — correctly, since returning data that
+    means nothing is worse — which meant the one routine the whole EF chain bootstraps
+    from could only ever be tested on a chip. `levels` was already 3 and the ladder
+    already came from diagonalising a Cooper-pair box; what was missing was a frame in
+    which 1-2 is resonant, and a readout that can tell ``|2>`` from ``|0>``.
+    """
+
+    PI_AMPLITUDE = 0.2
+    #: The 0-1 pulse length the amplitude-to-rate mapping is defined against.
+    PULSE_NS = 20.0
+
+    def _ladder(self) -> float:
+        return self.PI_AMPLITUDE / np.sqrt(2.0)
+
+    def test_the_ef_pi_pulse_is_the_0_1_one_over_root_two(self):
+        """Nothing in the model says sqrt(2): the drive is (a + a-dagger) on a real ladder.
+
+        Its 1-2 matrix element is sqrt(2) times its 0-1 one, so the pi amplitude comes out
+        smaller by that factor. This is what makes `_require_ef_ladder` a measurement of the
+        transmon rather than a comment about it.
+        """
+        simulator = TransmonSimulator(shot_noise=0.005, seed=11)
+        amplitudes = np.linspace(0.0, 0.5, 41)
+
+        signal = simulator.rabi_12(
+            amplitudes,
+            ef_duration_ns=self.PULSE_NS,
+            pi_amplitude=self.PI_AMPLITUDE,
+        )
+
+        fitted = fit_rabi(amplitudes, signal)
+        assert fitted["amp180"] == pytest.approx(self._ladder(), rel=0.05)
+
+    def test_mapping_back_doubles_the_contrast(self):
+        """|1> against |2> is one dispersive step; |0> against |2> is two.
+
+        A dispersive readout is linear in the shift, and for a transmon the shifts go as
+        chi(1-2n) — so the number operator is the observable and the map-back moves the
+        oscillation from the 1-to-2 interval onto the 0-to-2 one.
+        """
+        simulator = TransmonSimulator(shot_noise=0.005, seed=11)
+        amplitudes = np.linspace(0.0, 0.4, 41)
+
+        def contrast(map_back: bool) -> float:
+            signal = simulator.rabi_12(
+                amplitudes,
+                ef_duration_ns=self.PULSE_NS,
+                pi_amplitude=self.PI_AMPLITUDE,
+                map_back=map_back,
+            )
+            return float(signal.max() - signal.min())
+
+        assert contrast(map_back=True) == pytest.approx(
+            2 * contrast(map_back=False), rel=0.1
+        )
+
+    def test_mapping_back_is_what_survives_a_noisier_readout(self):
+        """And this is the whole reason `rabi_12` plays the extra pulse.
+
+        It does not change the answer where the line is clean — both fit the ladder to
+        under a percent — so its value is entirely in how much readout noise the fit
+        tolerates. At this level the plain sequence is refused and the mapped-back one is
+        not, which is the claim the routine's comment makes.
+        """
+        amplitudes = np.linspace(0.0, 0.5, 41)
+
+        def fit_at(map_back: bool):
+            simulator = TransmonSimulator(shot_noise=0.3, seed=3)
+            signal = simulator.rabi_12(
+                amplitudes,
+                ef_duration_ns=self.PULSE_NS,
+                pi_amplitude=self.PI_AMPLITUDE,
+                map_back=map_back,
+            )
+            return fit_rabi(amplitudes, signal)
+
+        with pytest.raises((FitError, RoutineError)):
+            fit_at(map_back=False)
+        assert fit_at(map_back=True)["amp180"] == pytest.approx(self._ladder(), rel=0.1)
+
+    def test_the_routine_itself_now_runs_against_the_simulator(self):
+        """The point of the build: `rabi_12` was the one node no test could exercise.
+
+        Loose on the ratio because the routine's own EF duration need not match the 0-1
+        pulse length the rate mapping is defined against, and the amplitude scales inversely
+        with it — which is also why `MAX_EF_LADDER_ERROR` allows a factor of two rather than
+        the few percent the relation itself holds to.
+        """
+        tuner = SimulatedTuner()
+        amp180 = float(read_path(tuner.device.get_element("q0"), "rxy.amp180"))
+        node = next(r for r in all_routines() if r.name == "rabi_12")
+        config = RoutineConfig(params={})
+
+        schedule = node.build_schedule("q0", tuner.device, config, tuner.backend)
+        params = node.analyse(
+            tuner.backend.run(schedule, timeout_s=120), "q0", tuner.device, config
+        )
+
+        assert tuner.backend._maps_back(schedule), (
+            "the routine should map back before reading"
+        )
+        ratio = params["ef_amp180"] / (amp180 / np.sqrt(2.0))
+        assert 0.5 <= ratio <= 2.0, (
+            f"the ladder guard would refuse this at {ratio:.2f}x"
+        )

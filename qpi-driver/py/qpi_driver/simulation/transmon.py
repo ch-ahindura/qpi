@@ -278,6 +278,78 @@ class TransmonSimulator:
         scale = self.shot_noise / np.sqrt(max(averages, 1))
         return values + self._rng.normal(0.0, scale, len(values))
 
+    def rabi_12(
+        self,
+        amplitudes,
+        ef_duration_ns: float,
+        pi_amplitude: float,
+        map_back: bool = True,
+    ) -> np.ndarray:
+        """Readout signal after preparing ``|1>``, driving 1-2, and mapping back.
+
+        The three-level physics this needs is already here — `levels` is 3 and the ladder
+        comes from diagonalising a Cooper-pair box — so what was missing was a frame in
+        which 1-2 is resonant, and a readout that can tell ``|2>`` from ``|0>``.
+
+        **The frame.** `_anharmonic_hamiltonian` puts level ``n`` at ``n*delta +
+        alpha*n(n-1)/2``, which is the frame of a drive near 0-1. A drive at ``f12`` wants
+        ``E_n - n*omega_12``, which works out as ``alpha*(n(n-1)/2 - n)``: zero, ``-alpha``,
+        ``-alpha``. So 1-2 is degenerate and therefore resonant, and 0-1 is detuned by the
+        anharmonicity — which is what makes the 0-1 pulses below leave ``|2>`` alone.
+
+        **The readout.** Every other experiment here measures ``|1><1|``, which cannot see
+        this one at all: after the map-back a state that stayed in ``|1>`` and one that
+        reached ``|2>`` both give zero. A dispersive readout is linear in the *shift*, and
+        for a transmon the shifts go as ``chi(1-2n)`` — so on a scale where ``|0>`` reads 0
+        and ``|1>`` reads 1, ``|2>`` reads 2, and the observable is the number operator.
+        The two agree wherever ``|2>`` is unpopulated, which is every other experiment.
+
+        **Why the ladder falls out rather than being written down.** The drive is
+        ``(a + a-dagger)``, whose 1-2 matrix element is ``sqrt(2)`` times its 0-1 one. So a
+        pi pulse on 1-2 needs ``pi_amplitude / sqrt(2)`` and nothing here says so.
+
+        *map_back* plays a second 0-1 pi before measuring, as `rabi_12` does. Off by
+        default only so a test can measure what it buys.
+        """
+        import qutip
+
+        _destroy, _excited, collapse = self._operators()
+        destroy = qutip.destroy(self.levels)
+        number = destroy.dag() * destroy
+        alpha = 2 * np.pi * self.anharmonicity
+        # The 1-2 drive frame: zero, -alpha, -alpha.
+        ef_frame = alpha * (number * (number - 1) / 2 - number)
+        # And the 0-1 drive frame, for the preparation and map-back pulses.
+        ge_frame = self._anharmonic_hamiltonian(0.0)
+
+        pi_duration = 20.0  # ns, the length `rabi` calibrates against
+        ge_rate = np.pi * (pi_amplitude / 0.2) / pi_duration
+        ge_drive = (ge_rate / 2) * (destroy + destroy.dag())
+        ge_pi = ge_frame + ge_drive
+
+        signals = []
+        for amplitude in np.asarray(amplitudes, dtype=float):
+            # Same units as the 0-1 drive, so the sqrt(2) is the physics and not a fudge.
+            ef_rate = np.pi * (float(amplitude) / 0.2) / pi_duration
+            ef_drive = (ef_rate / 2) * (destroy + destroy.dag())
+            state = qutip.basis(self.levels, 0)
+            for hamiltonian, duration in self._ef_rabi_sequence(
+                ge_pi, ef_frame + ef_drive, pi_duration, ef_duration_ns, map_back
+            ):
+                state = qutip.mesolve(
+                    hamiltonian, state, np.array([0.0, duration]), collapse
+                ).states[-1]
+            signals.append(float(qutip.expect(number, state)))
+        return self._measure(np.array(signals))
+
+    @staticmethod
+    def _ef_rabi_sequence(ge_pi, ef, pi_duration, ef_duration, map_back):
+        """``(hamiltonian, duration)`` for prepare, drive, and optionally map back."""
+        steps = [(ge_pi, pi_duration), (ef, ef_duration)]
+        if map_back:
+            steps.append((ge_pi, pi_duration))
+        return steps
+
     def rabi(self, amplitudes, detuning_ghz: float = 0.0) -> np.ndarray:
         """Excited-state population after driving at each amplitude.
 

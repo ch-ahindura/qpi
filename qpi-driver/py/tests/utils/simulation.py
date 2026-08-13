@@ -408,6 +408,67 @@ class SimulatedBackend(RecordingBackend):
             np.array(survival), averages=schedule.repetitions
         )
 
+    def _acquire_rabi_12(self, schedule: _Schedule) -> np.ndarray:
+        """The 1-2 amplitude sweep, read off the ``SquarePulse``\ s on the ``.12`` clock.
+
+        The 0-1 pulses either side are `Rxy`\ s and are *not* part of the swept axis — the
+        routine plays one to prepare ``|1>`` and one to map back — so this filters on the
+        clock rather than counting pulses. Simulating it at all is what makes the sqrt(2)
+        ladder a measurement rather than a comment: `TransmonSimulator.rabi_12` drives
+        ``(a + a-dagger)`` on a real transmon ladder and never mentions the factor.
+        """
+        amplitudes = [
+            float(op.kwargs["amp"])
+            for op in self._of_kind(schedule, "SquarePulse")
+            if str(op.kwargs.get("clock", "")).endswith(".12")
+        ]
+        if not amplitudes:
+            raise NotImplementedError(
+                "rabi_12 built no square pulses on the .12 clock, so there is no "
+                "amplitude sweep here to simulate"
+            )
+        durations = {
+            float(op.kwargs["duration"])
+            for op in self._of_kind(schedule, "SquarePulse")
+            if str(op.kwargs.get("clock", "")).endswith(".12")
+        }
+        qubit = _target_of(schedule)
+        pi_amplitude = 0.2
+        if self.device is not None and qubit is not None:
+            configured = float(self.device.get_element(qubit).rxy.amp180)
+            pi_amplitude = configured or pi_amplitude
+        return self.simulator.rabi_12(
+            amplitudes,
+            ef_duration_ns=max(durations) * 1e9 if durations else 20.0,
+            pi_amplitude=pi_amplitude,
+            map_back=self._maps_back(schedule),
+        )
+
+    @staticmethod
+    def _maps_back(schedule: _Schedule) -> bool:
+        """Whether a second 0-1 pi follows the ef pulse, as `rabi_12` plays one.
+
+        Read off the schedule rather than assumed, so the simulator measures what the
+        routine actually built — which is the point of reading schedules at all, and is how
+        this can say what the map-back buys instead of taking it on faith.
+        """
+        kinds = [op.kind for op in schedule.operations]
+        try:
+            last_ef = max(
+                index
+                for index, op in enumerate(schedule.operations)
+                if op.kind == "SquarePulse"
+                and str(op.kwargs.get("clock", "")).endswith(".12")
+            )
+        except ValueError:
+            return False
+        after = kinds[last_ef + 1 :]
+        before_readout = (
+            after[: after.index("Measure")] if "Measure" in after else after
+        )
+        # X and Rxy are distinct kinds, as _acquire_rb also has to allow for.
+        return any(kind in ("X", "Y", "Rxy") for kind in before_readout)
+
     def _acquire_cz_chevron(self, schedule: _Schedule) -> np.ndarray:
         """The flux sweep, read back off the schedule's square pulses.
 
@@ -457,6 +518,7 @@ class SimulatedBackend(RecordingBackend):
     _ACQUISITIONS = {
         "qubit_spectroscopy": _acquire_qubit_spectroscopy,
         "rabi": _acquire_rabi,
+        "rabi_12": _acquire_rabi_12,
         "t1": _acquire_t1,
         "t2_echo": _acquire_t2_echo,
         "ramsey": _acquire_ramsey,
