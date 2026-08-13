@@ -16,7 +16,11 @@ from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
 from qpi_driver.tuners.fitting import fit_rb_decay, signal_of
-from qpi_driver.tuners.routines.single_qubit import ALLXY_IDEAL, ALLXY_PAIRS
+from qpi_driver.tuners.routines.single_qubit import (
+    ALLXY_IDEAL,
+    ALLXY_PAIRS,
+    normalised_allxy,
+)
 from qpi_driver.tuners.routines.two_qubit import qubits_of
 from qpi_driver.tuners.utils.clifford import (
     clifford_to_gates,
@@ -195,13 +199,12 @@ class AllXYCheck(CalibrationRoutine):
                 f"AllXY check expected {len(ALLXY_PAIRS)} acquisitions, got {signal.size}"
             )
         measured = signal[: len(ALLXY_PAIRS)]
-        low, high = float(np.min(measured)), float(np.max(measured))
-        if high - low < 1e-12:
-            raise RoutineError(
-                "AllXY check response is flat — the qubit is not responding"
-            )
-
-        normalised = (measured - low) / (high - low)
+        # The same normalisation `allxy` uses, and for the reasons recorded there: this
+        # used to divide by its own min and max, which inverts on half of all readout
+        # chains and — worse on an unresponsive qubit — stretches noise to full scale and
+        # calls the result a fidelity. On the August 2026 B chip that reported 0.533 to the
+        # drift check.
+        normalised = normalised_allxy(measured)
         deviation = float(np.sqrt(np.mean((normalised - np.asarray(ALLXY_IDEAL)) ** 2)))
 
         # Reported as a fidelity so the drift check compares it the same way it

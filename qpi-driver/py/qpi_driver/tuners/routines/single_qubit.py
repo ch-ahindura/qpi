@@ -62,6 +62,76 @@ ALLXY_PAIRS: tuple[tuple[tuple[float, float], tuple[float, float]], ...] = (
 #: The staircase AllXY should produce, normalised to [0, 1].
 ALLXY_IDEAL: tuple[float, ...] = (0.0,) * 5 + (0.5,) * 12 + (1.0,) * 4
 
+#: How far AllXY's ``|0>`` and ``|1>`` reference plateaus must stand apart, in units of the
+#: scatter *within* the plateaus, before the sequence is measuring anything.
+#:
+#: The contrast between those two groups is AllXY's own normalisation denominator, so when
+#: it is noise the normalisation divides by noise and manufactures a full-scale response
+#: out of nothing. On the August 2026 B chip, whose qubit was never excited, that produced
+#: a "normalised response" ranging -22 to +12.5 and an rms deviation of 9.65 — reported as
+#: success. `allxy_check` turned the same data into a *fidelity* of 0.533 and offered it to
+#: the drift check, which is the number a threshold would have believed.
+#:
+#: Three sigma because the plateaus average five and four points: two random groups of that
+#: size differ by about 0.7 of their own scatter, so three separates noise from any real
+#: contrast without demanding a good gate — a badly calibrated one still has full readout
+#: contrast between ``|0>`` and ``|1>``, which is exactly what AllXY then measures the shape
+#: of.
+MIN_ALLXY_CONTRAST = 3.0
+
+
+def normalised_allxy(measured: np.ndarray) -> np.ndarray:
+    """*measured* on the ``[0, 1]`` scale `ALLXY_IDEAL` is written on.
+
+    Against the sequence's *own* reference points, not its min and max.
+
+    Two reasons, and the first is a correctness bug. Min-max normalisation assumes the
+    smallest reading is ``|0>`` and the largest is ``|1>``, which is only true when the
+    readout happens to make ``|z|`` rise with excitation. Whether it rises or falls depends
+    on which side of the resonator's line the readout sits, and `resonator_spectroscopy`
+    puts it on the ground-state resonance — where ``|1>`` reflects *less*. Inverted, this
+    compared a descending response against an ascending staircase and reported an rms
+    deviation of 0.65 on a well-calibrated qubit. The five ``|0>`` pairs and four ``|1>``
+    pairs are in the sequence precisely so it can normalise itself, and dividing by their
+    difference carries the sign.
+
+    Second, averaging nine reference points is steadier than trusting the two most extreme
+    readings in the set, which is what min-max does.
+
+    Raises:
+        RoutineError: if the two reference plateaus are not separated by more than the
+            scatter within them. The contrast is the denominator, so without this the
+            normalisation divides by noise — see :data:`MIN_ALLXY_CONTRAST`.
+    """
+    ideal = np.asarray(ALLXY_IDEAL)
+    ground_points = measured[ideal == 0.0]
+    excited_points = measured[ideal == 1.0]
+    ground = float(np.mean(ground_points))
+    excited = float(np.mean(excited_points))
+    contrast = excited - ground
+
+    # Pooled about each plateau's own mean, so a real staircase is not counted as scatter.
+    residuals = np.concatenate(
+        [
+            ground_points - ground,
+            measured[ideal == 0.5] - float(np.mean(measured[ideal == 0.5])),
+            excited_points - excited,
+        ]
+    )
+    scatter = float(np.std(residuals))
+    if abs(contrast) < MIN_ALLXY_CONTRAST * scatter:
+        raise RoutineError(
+            f"AllXY's |0> and |1> reference pairs are {abs(contrast):.4g} apart against a "
+            f"scatter of {scatter:.4g} within the plateaus — {abs(contrast) / scatter:.1f}x, "
+            f"below the {MIN_ALLXY_CONTRAST:g}x a responding qubit clears. The sequence "
+            "normalises against that contrast, so there is nothing to divide by and any "
+            "deviation reported from it would be noise scaled to full range"
+        )
+
+    # Deliberately unclipped: a point outside the reference range is a real error signal,
+    # and min-max normalisation threw exactly that information away by construction.
+    return (measured - ground) / contrast
+
 
 class Rabi(CalibrationRoutine):
     """Sweep drive amplitude to find the π pulse (Vion et al., Science 296, 886)."""
@@ -519,37 +589,9 @@ class AllXY(CalibrationRoutine):
                 f"AllXY expected {len(ALLXY_PAIRS)} acquisitions, got {signal.size}"
             )
         measured = signal[: len(ALLXY_PAIRS)]
-        ideal = np.asarray(ALLXY_IDEAL)
+        normalised = normalised_allxy(measured)
 
-        # Against the sequence's *own* reference points, not its min and max.
-        #
-        # Two reasons, and the first is a correctness bug. Min-max normalisation
-        # assumes the smallest reading is |0> and the largest is |1>, which is only
-        # true when the readout happens to make |z| rise with excitation. Whether it
-        # rises or falls depends on which side of the resonator's line the readout
-        # sits, and `resonator_spectroscopy` puts it on the ground-state resonance —
-        # where |1> reflects *less*. Inverted, this compared a descending response
-        # against an ascending staircase and reported an rms deviation of 0.65 on a
-        # well-calibrated qubit. The five |0> pairs and four |1> pairs are in the
-        # sequence precisely so it can normalise itself, and dividing by their
-        # difference carries the sign.
-        #
-        # Second, averaging nine reference points is steadier than trusting the two
-        # most extreme readings in the set, which is what min-max does.
-        ground = float(np.mean(measured[ideal == 0.0]))
-        excited = float(np.mean(measured[ideal == 1.0]))
-        contrast = excited - ground
-        if abs(contrast) < 1e-12:
-            raise RoutineError(
-                "AllXY's |0> and |1> reference pairs read the same, so the qubit is "
-                "not responding and there is nothing to normalise against"
-            )
-        # Deliberately unclipped: a point outside the reference range is a real error
-        # signal, and min-max normalisation threw exactly that information away by
-        # construction.
-        normalised = (measured - ground) / contrast
-
-        deviation = normalised - ideal
+        deviation = normalised - np.asarray(ALLXY_IDEAL)
         return {
             "rms_deviation": float(np.sqrt(np.mean(deviation**2))),
             "max_deviation": float(np.max(np.abs(deviation))),

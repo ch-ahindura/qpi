@@ -476,6 +476,41 @@ class TestTheReadoutDiscriminator:
         with pytest.raises(FitError, match="needs single shots"):
             fit_readout_discrimination(np.array([1 + 1j]), np.array([2 + 2j]))
 
+    def test_discrimination_refuses_a_readout_at_chance_however_many_shots(self):
+        """The significance test alone is not a usability test, and cannot be.
+
+        Its threshold carries a 1/sqrt(n), so averaging more shots *lowers* the bar: on the
+        August 2026 B chip the same chance-level readout was refused by
+        `readout_discrimination` at 2000 shots and accepted by `readout_operating_point` at
+        300, which then wrote the operating point. Whether single shots can be assigned is
+        the question a readout has to answer, and it does not improve with averaging.
+
+        The clouds here are separated by a quarter of their own scatter — a real difference
+        of means at any decent shot count, and useless for assigning a shot.
+        """
+        rng = np.random.default_rng(11)
+        for shots in (300, 2000, 20000):
+            ground = rng.normal(0, 1.0, shots) + 1j * rng.normal(0, 1.0, shots)
+            excited = (
+                ground * 0
+                + rng.normal(0.25, 1.0, shots)
+                + 1j * rng.normal(0, 1.0, shots)
+            )
+            with pytest.raises(FitError, match="assigned correctly") as raised:
+                fit_readout_discrimination(ground, excited)
+            assert "60%" in str(raised.value), str(raised.value)
+
+    def test_discrimination_still_accepts_a_poor_but_usable_readout(self):
+        """The floor must not refuse a readout worth optimising — that is the node's job."""
+        rng = np.random.default_rng(12)
+        shots = 4000
+        ground = rng.normal(0, 1.0, shots) + 1j * rng.normal(0, 1.0, shots)
+        excited = rng.normal(3.0, 1.0, shots) + 1j * rng.normal(0, 1.0, shots)
+
+        fitted = fit_readout_discrimination(ground, excited)
+
+        assert 0.6 < fitted["assignment_fidelity"] < 0.99
+
 
 def _chevron_grid(
     durations: np.ndarray,

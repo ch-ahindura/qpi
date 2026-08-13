@@ -19,6 +19,22 @@ from .core import FitError
 
 log = logging.getLogger(__name__)
 
+#: How often single shots must be assigned correctly for a discriminator to be worth
+#: writing. Chance is 0.5.
+#:
+#: The failure it exists for: on the August 2026 B chip, whose qubit was never excited,
+#: `readout_operating_point` reported an assignment fidelity of **0.53** and wrote the
+#: operating point it came from — 45% of ground shots and 49% of excited ones on the wrong
+#: side of the threshold. The significance test above passed it, because with 300 shots a
+#: 0.57e-3 separation against a 3.5e-3 scatter is a statistically real difference of means
+#: and a useless readout. `readout_discrimination` refused the same chip only because it
+#: averages 2000 shots and so happened to sit the other side of a shot-count-dependent bar.
+#:
+#: 0.6 rather than higher because this also gates `readout_operating_point`, which runs
+#: *before* the readout is optimised and may legitimately start poor — but if the best
+#: setting in its grid cannot clear 0.6, the sweep found nothing worth writing.
+MIN_ASSIGNMENT_FIDELITY = 0.6
+
 
 def fit_readout_discrimination(
     ground: np.ndarray, excited: np.ndarray
@@ -62,6 +78,12 @@ def fit_readout_discrimination(
     # Scatter along the line joining them, which is the only direction the threshold
     # can be crossed by noise.
     spread = float(np.std(np.concatenate([zero, one])))
+    # A *significance* test: are the two cloud means distinguishable at all. Kept
+    # because it catches a degenerate fit cheaply, but it is not a usability test and
+    # cannot be one — the 1/sqrt(n) means more averaging lowers the bar, so 2000 shots
+    # accept a separation 2.6x smaller than 300 shots do. That is right for "do the means
+    # differ" and backwards for "can a single shot be assigned", which is what a readout
+    # has to do. The assignment-fidelity floor below is the test that answers that.
     if separation <= 2.0 * spread / np.sqrt(min(zero.size, one.size)):
         raise FitError(
             f"the two readout clouds are {separation:.4g} apart against a scatter of "
@@ -83,10 +105,19 @@ def fit_readout_discrimination(
     threshold = _weighted_midpoint(projected_zero, projected_one)
     ground_error = float(np.mean(projected_zero >= threshold))
     excited_error = float(np.mean(projected_one < threshold))
+    assignment_fidelity = 1.0 - 0.5 * (ground_error + excited_error)
+    if assignment_fidelity < MIN_ASSIGNMENT_FIDELITY:
+        raise FitError(
+            f"single shots are assigned correctly {assignment_fidelity:.0%} of the time, "
+            f"against the {MIN_ASSIGNMENT_FIDELITY:.0%} a usable readout clears — "
+            f"{ground_error:.0%} of ground shots and {excited_error:.0%} of excited ones "
+            "land the wrong side of the threshold, so this discriminator would label "
+            "noise. Check that the qubit is being excited before optimising the readout"
+        )
     return {
         "acq_rotation": rotation,
         "acq_threshold": threshold,
-        "assignment_fidelity": 1.0 - 0.5 * (ground_error + excited_error),
+        "assignment_fidelity": assignment_fidelity,
         "separation": separation,
         # Separation in units of the scatter that has to be crossed to confuse the
         # two. This is what `fit_readout_operating_point` ranks settings on, and the

@@ -1225,3 +1225,66 @@ class _DipBackend(SchedulerBackend):
         return xr.Dataset(
             {"y": ("x", _dip(frequencies, self._centre, self._linewidth))}
         )
+
+
+class TestAllXYRefusesAResponseItCannotNormalise:
+    """The contrast between AllXY's own reference plateaus is its denominator.
+
+    When that contrast is noise the normalisation divides by noise, which does not fail
+    quietly — it manufactures a full-scale response. On the August 2026 B chip, whose qubit
+    was never excited, `allxy` reported an rms deviation of 9.65 from a response ranging
+    -22 to +12.5, and `allxy_check` turned the same data into a *fidelity of 0.533* and
+    offered it to the drift check. Both reported success.
+    """
+
+    def test_it_refuses_a_response_that_is_only_noise(self):
+        from qpi_driver.tuners.routines.single_qubit import normalised_allxy
+
+        rng = np.random.default_rng(0)
+
+        with pytest.raises(
+            RoutineError, match="below the 3x a responding qubit clears"
+        ):
+            normalised_allxy(rng.normal(0.005, 0.0004, 21))
+
+    def test_it_accepts_a_gate_that_is_merely_badly_calibrated(self):
+        """The floor is about whether the qubit responds, not whether the gate is good."""
+        from qpi_driver.tuners.routines.single_qubit import (
+            ALLXY_IDEAL,
+            normalised_allxy,
+        )
+
+        ideal = np.asarray(ALLXY_IDEAL)
+        rng = np.random.default_rng(1)
+        measured = (ideal + rng.normal(0, 0.08, 21)) * 0.01
+
+        normalised = normalised_allxy(measured)
+
+        rms = float(np.sqrt(np.mean((normalised - ideal) ** 2)))
+        assert 0.02 < rms < 0.3, "a bad gate must still be measurable"
+
+    def test_it_carries_the_sign_of_an_inverted_readout(self):
+        """`resonator_spectroscopy` sits on the ground-state resonance, where |1> reflects
+        less — so half of all chains produce a descending response."""
+        from qpi_driver.tuners.routines.single_qubit import (
+            ALLXY_IDEAL,
+            normalised_allxy,
+        )
+
+        ideal = np.asarray(ALLXY_IDEAL)
+        rng = np.random.default_rng(2)
+        descending = (1.0 - ideal) * 0.01 + rng.normal(0, 0.0001, 21)
+
+        normalised = normalised_allxy(descending)
+
+        assert float(np.sqrt(np.mean((normalised - ideal) ** 2))) < 0.05
+
+    def test_the_check_and_the_calibration_normalise_the_same_way(self):
+        """`allxy_check` used min-max, which inverts on half of all readout chains."""
+        import inspect
+
+        from qpi_driver.tuners.routines import benchmarks
+
+        source = inspect.getsource(benchmarks.AllXYCheck.analyse)
+        assert "normalised_allxy" in source
+        assert "np.min" not in source and "np.max" not in source

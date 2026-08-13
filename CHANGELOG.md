@@ -39,6 +39,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `resonator_spectroscopy` widens and re-runs its own sweep when the
   resonator is outside the window, or samples it harder when the line is thinner than the
   grid. The root of the calibration graph previously stopped the whole chip instead.
+- `qpi-driver/py`: a readout whose single shots are assigned little better than by chance is
+  refused rather than written. `readout_operating_point` previously wrote an operating point
+  it had measured at 53% assignment fidelity.
+- `qpi-driver/py`: `allxy` and `allxy_check` refuse a response whose own reference plateaus
+  are indistinguishable, instead of normalising noise to full scale — which had `allxy_check`
+  reporting a fidelity of 0.53 to the drift check. `allxy_check` also now normalises the way
+  `allxy` does, rather than by min and max, which inverts on half of all readout chains.
 
 ### Fixed
 
