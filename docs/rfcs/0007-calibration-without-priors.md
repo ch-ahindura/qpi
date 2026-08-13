@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented, with one known gap open — §11.3
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -679,52 +679,50 @@ linewidths wide and missed the one that motivated it.
 An operator who names `span` is still left alone, per §7 — including on the B chip, whose
 `calibration.yml` sets 4 MHz.
 
-### 11.3 Open gap: a saturated spectroscopy fit is accepted, and width is not the test
+### 11.3 A broad spectroscopy line is not a wrong one — closed, having been wrong twice
 
-**Open, and narrower than it first looked.** Two attempts are recorded because the second
-disproved the first, and the disproof is the useful part.
+**Closed. No guard was added, and the section is kept because it took two wrong attempts to
+establish that none is wanted.**
 
-`qubit_spectroscopy` on the B chip **reported success** on a fit with no baseline: a 48.0 MHz
-line in a 54.0 MHz window, 89% of it, reach 11.7, snr 20.3, Q = 111 — three orders below any
-transmon. It wrote a frequency to nine significant figures and the `rabi` that read it could
-not find a pi pulse. Neither existing guard is wrong to pass it: reach and snr measure height
-against scatter and a saturated line is genuinely tall, and `require_resolved_line` bounds the
-linewidth only from *below*, against the sweep step.
+The starting observation looked damning. `qubit_spectroscopy` on the B chip reported success
+on a 48.0 MHz line in a 54.0 MHz window — 89% of it — at Q = 111, three orders below any
+transmon, and the `rabi` that read the frequency could not find a pi pulse. It looked like a
+fit of noise dressed as a measurement.
 
-**First attempt: bound the width from above.** A `MAX_LINE_TO_SPAN` of one third, on the
-reasoning that a Lorentzian filling its window has no baseline to be determined against. It
-refuses the B-chip fit and accepts the resonator's 8%.
+**First attempt: bound the linewidth against the span**, on the reasoning that a Lorentzian
+filling its window has no baseline to be determined against. It refuses the B-chip fit and
+accepts the resonator's 8%. It also refuses the *simulated* chip at 99%, and capping the
+confirming span to make room broke §8's acceptance test — because that chip's line, measured
+per drive power in the acceptance test's own configuration, reaches 124 with a centre 1.35 MHz
+from truth while filling a 153 MHz window. So a line filling its own window can be a perfectly
+good measurement, and `CONFIRM_SPAN_IN_WIDTHS` was right all along.
 
-**Why that is the wrong criterion.** It also refuses the simulated chip at 99%, and capping
-the confirming span to make room broke §8's acceptance test. Measuring per drive power in the
-acceptance test's own configuration shows why: that chip's qubit line **really is 100 to
-160 MHz wide** at the default drive ladder, and at 0.08 in a 153 MHz window it reaches 124
-with a centre 1.35 MHz from truth — usable. Narrow the window to 16 MHz and nothing clears
-the reach floor at all, the best being 4.97 against 5. So `CONFIRM_SPAN_IN_WIDTHS` is right,
-the cap was wrong, and a line filling its own window can still yield a usable centre. Width
-over span does not separate the two chips.
+**Second attempt: test for power dependence**, since power broadening is by definition a
+dependence on power, and the sweep already fits every row. That refuses a line whose width
+grows with the drive that shows it, needs no threshold in Hz, and is portable between chips.
 
-**What actually separates them is physics, not geometry.** A 48 MHz linewidth on a 5.3 GHz
-transmon implies a coherence time of nanoseconds; the fit was of a saturated transition, not
-of a line. The simulated chip's 150 MHz is its model's genuine response at that drive. So the
-test wants to be a plausibility bound on the *linewidth itself* — a Q floor, or a linewidth
-ceiling in absolute Hz — and neither can be set from the two chips available, because one of
-them would fail any bound the other passes.
+**It refuses the physics simulator's own textbook behaviour**, which is what settled the
+question. That chip's linewidths are 1.51, 3.06, 6.12 and 12.37 MHz at drives of 0.005, 0.01,
+0.02 and 0.04 — *proportional* to the amplitude, exactly as a driven two-level system
+broadens, and `test_qubit_spectroscopy_finds_the_transmons_real_f01` passes throughout.
 
-Two ways forward, and both need evidence this RFC does not have:
+Which is the physics both attempts had wrong. **Power broadening is symmetric: it widens a
+line without moving its centre.** The effect that pulls a centre is the AC Stark shift, which
+is a different mechanism and does not follow from width. So a broad line is a *less precise*
+measurement of f01, not a wrong one, and there is nothing here for a guard to refuse — the
+existing floors already reject a line that is not there at all, which is the failure that
+matters.
 
-- Decide whether the simulator's 150 MHz line is its physics or an artefact of how its drive
-  amplitude maps to a Rabi rate. If it is an artefact, fix the simulator and a Q floor becomes
-  settable. Note that `SimulatedTuner` and `QuantifyTuner(is_simulated=True)` disagree here —
-  the first reports a 1.24 MHz line at 0.08 where the second reports 99 MHz — and that
-  disagreement is itself worth chasing.
-- Or judge the fit against the *drive power that produced it*, since saturation is the
-  mechanism: a linewidth that grows with power is saturating, and one that does not is real.
-  `fit_spectroscopy_power` already sweeps power, so the data to test that is already collected
-  and thrown away.
+**What this means for the B chip's failure.** The 48 MHz line was power broadening at a drive
+of 0.3, and its centre was not thereby wrong. `rabi` failed for a reason found separately and
+since fixed: escalation widened its amplitude sweep past full scale and the compiler refused a
+gain of 1.05 (§11.2's clamp). The two were unrelated, and reading the wide line as the cause
+was a wrong inference from a coincidence of timing.
 
-Until then the B chip's symptom is a config matter: drive more gently and average more shots,
-which is what §11.4's per-routine ``timeout_s`` exists to afford.
+The one thing worth keeping from the investigation: `SimulatedTuner` and
+`QuantifyTuner(is_simulated=True)` report 1.24 MHz and 99 MHz for the same measurement at the
+same drive. The second is a fit pinned near its window rather than a linewidth, which is worth
+knowing when reading either.
 
 ### 11.4 A routine may carry its own timeout
 

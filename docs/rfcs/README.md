@@ -14,7 +14,7 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0004](./0004-calibration-tuners.md) | Calibration Tuners | Implemented |
 | [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Implemented |
 | [0006](./0006-calibration-graph-in-the-dashboard.md) | The Calibration Graph in the Dashboard | Draft |
-| [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Implemented (§11.3 open) |
+| [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Implemented |
 | [0008](./0008-parameter-provenance.md) | Parameter Provenance | Implemented |
 
 RFCs 0004 and 0005 were written before the graph had run on a chip, and say so where it
