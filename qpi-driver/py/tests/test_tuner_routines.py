@@ -1552,3 +1552,50 @@ class TestEscalationStopsAtFullScale:
         )
 
         assert max(widened.get("delays")) == pytest.approx(320e-6)
+
+
+class TestTheEfPiPulseIsHeldToTheLadder:
+    """A transmon's 1-2 matrix element is sqrt(2) times its 0-1 one, so the amplitude is not
+    free: at the same duration the same rotation needs ``amp180 / sqrt(2)``.
+
+    `fit_rabi` fits a cosine and halves its period, and a partial rotation is still a cosine
+    — driven too weakly it finds a longer period and reports a *smaller* amplitude with no
+    sign anything is wrong. On the August 2026 B chip that wrote `ef_amp180` of 0.0677
+    against an `amp180` of 0.5757, six times below the ladder, and every EF node after it
+    measured a qubit still in |1>: the second-excited sweep put |2> *closer* to |0> than |1>
+    is, which no transmon does, and `three_state_discrimination` was the only node to refuse.
+    """
+
+    B_CHIP_AMP180 = 0.5757070085511985
+    B_CHIP_EF = 0.06766417047411832
+
+    def _device(self, amp180: float):
+        element = SimpleNamespace(rxy=SimpleNamespace(amp180=amp180), name="q5")
+        return SimpleNamespace(get_element=lambda name: element)
+
+    def test_the_b_chip_s_ef_pulse_is_refused(self):
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
+            _require_ef_ladder(self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF)
+
+    def test_a_pulse_on_the_ladder_is_accepted(self):
+        """0.1577 fitted against 0.1429 predicted, which is where the relation was measured."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        _require_ef_ladder(self._device(0.2), "q5", 0.1577)  # noqa: B018
+
+    @pytest.mark.parametrize("factor", (0.55, 1.9))
+    def test_the_bound_is_generous_enough_for_a_differing_duration(self, factor):
+        """The EF pulse need not be the same length as the 0-1 one, so this is a factor of
+        two either way rather than the 10% the relation itself holds to."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        _require_ef_ladder(self._device(0.4), "q5", factor * 0.4 / 2**0.5)  # noqa: B018
+
+    def test_no_amp180_to_compare_against_is_not_evidence(self):
+        """`rabi` may be disabled or skipped, and refusing then would be the wrong reason."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        _require_ef_ladder(self._device(0.0), "q5", 0.0677)  # noqa: B018
+        _require_ef_ladder(SimpleNamespace(get_element=lambda n: None), "q5", 0.0677)  # noqa: B018

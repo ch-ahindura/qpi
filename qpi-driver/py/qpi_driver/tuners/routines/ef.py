@@ -18,6 +18,8 @@ same opt-in every other addition in this RFC makes.
 
 from typing import Any
 
+import math
+
 import numpy as np
 import xarray as xr
 
@@ -53,6 +55,22 @@ from qpi_driver.tuners.fitting import (
 from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
     EXCITED_SPAN_IN_LINEWIDTHS,
 )
+
+#: How far the fitted 1-2 pi amplitude may sit from the ladder the 0-1 one implies.
+#:
+#: A transmon's 1-2 matrix element is sqrt(2) times its 0-1 one, so at the same duration the
+#: same rotation needs ``amp180 / sqrt(2)``. That is a statement about the ladder rather than
+#: about a chip, which is what makes it usable as a bound: it holds to about 10% where it has
+#: been measured — 0.1577 fitted against 0.1429 predicted — and a factor of two either way
+#: leaves room for the duration differing and for the approximation itself.
+#:
+#: The failure it exists for, on the August 2026 B chip: `rabi_12` fitted ``ef_amp180`` of
+#: 0.0677 against an ``amp180`` of 0.5757, which the ladder puts at 0.4071 — six times out,
+#: so the pulse it wrote turned a fraction of a rotation rather than half of one. Nothing
+#: objected, and the whole EF chain then measured a qubit still in |1>: the second-excited
+#: sweep reported |2> *closer* to |0> than |1> is, which no transmon does, and
+#: `three_state_discrimination` was left as the only node that refused.
+MAX_EF_LADDER_ERROR = 2.0
 
 #: Where a `CalibratedTransmon` keeps its EF pulse.
 EF = "r12"
@@ -212,6 +230,7 @@ class Rabi12(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
+        _require_ef_ladder(device, target, fitted["amp180"])
         return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -947,3 +966,37 @@ def _prepared_clouds(dataset: Any, states: int) -> list[np.ndarray]:
             "the width of each cloud is gone and nothing can be classified"
         )
     return [values[..., index].reshape(-1) for index in range(states)]
+
+
+def _require_ef_ladder(device: Any, target: str, ef_amp180: float) -> None:
+    """Refuse a 1-2 pi amplitude the 0-1 one says cannot be a pi pulse.
+
+    `fit_rabi` fits a cosine and takes its half period, and a partial rotation is still a
+    cosine: driven too weakly the fit finds a longer period and reports a *smaller* amplitude
+    with no sign that anything is wrong. What catches it is that the 1-2 amplitude is not
+    free — see :data:`MAX_EF_LADDER_ERROR`.
+
+    Silent when the element has no ``rxy.amp180`` to compare against, or it is zero: this
+    runs after `rabi` in the graph, so an absent value means that node was disabled or
+    skipped, and inventing a comparison against nothing would refuse a chip for the wrong
+    reason.
+    """
+    try:
+        amp180 = float(read_path(device.get_element(target), "rxy.amp180"))
+    except Exception:  # noqa: BLE001 - an unreadable amp180 is not evidence
+        return
+    if not amp180:
+        return
+
+    expected = amp180 / math.sqrt(2.0)
+    ratio = ef_amp180 / expected if expected else 0.0
+    if 1.0 / MAX_EF_LADDER_ERROR <= ratio <= MAX_EF_LADDER_ERROR:
+        return
+    raise RoutineError(
+        f"the 1-2 pi amplitude fitted to {ef_amp180:.4g} against the {expected:.4g} that "
+        f"the 0-1 amplitude of {amp180:.4g} implies — {ratio:.2f}x, outside the "
+        f"{1 / MAX_EF_LADDER_ERROR:.1f}-{MAX_EF_LADDER_ERROR:.0f}x a transmon's sqrt(2) "
+        "ladder allows. A cosine fitted to a partial rotation reports a smaller amplitude "
+        "than a pi pulse, so this is most likely a 1-2 drive too weak to turn one: check "
+        "clock_freqs.f12 is the transition, and widen the amplitude sweep"
+    )

@@ -34,6 +34,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rabi_12` refuses a 1-2 pi amplitude that the measured 0-1 one says cannot
+  be one. A cosine fitted to a partial rotation reports a smaller amplitude with no sign
+  anything is wrong, and the whole EF chain then measured a qubit still in the first excited
+  state.
 - `qpi-driver/py`: a widened drive-amplitude sweep stops at full scale instead of asking the
   AWG for more than it has. `rabi` starting at half scale and escalating past it compiled to
   a gain of 1.05, which the compiler refused while naming a pulse rather than the routine.
