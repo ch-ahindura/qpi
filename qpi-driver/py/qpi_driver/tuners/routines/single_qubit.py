@@ -14,6 +14,10 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.executors.base.rotations import (
+    QUARTER_TURN_DEGREES,
+    amplitude_for_angle,
+)
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.base.routines import (
@@ -206,6 +210,8 @@ class Rabi(CalibrationRoutine):
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
+
+    #: Where a `CalibratedTransmon` keeps its separately measured pi/2 amplitude.
 
     #: Repetitions of the pi pulse the check amplifies the error over, and the
     #: rotation error it tolerates, in radians. Five pulses turn a 3-degree error
@@ -748,3 +754,184 @@ class FineAmplitude(CalibrationRoutine):
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
+
+
+AMP90_PATH = "fine.amp90"
+
+#: Repetition counts that amplify a pi/2 error linearly.
+#:
+#: Every fourth, and it is the model rather than a preference: after ``4k+1`` quarter
+#: turns the state is back on the equator with the accumulated error along the measured
+#: axis, so the response is ``(1 + sin(n*d))/2``. At ``4k+3`` the quadratures have
+#: swapped and at even counts the response is flat in the error to first order — see
+#: `fit_fine_amplitude`, which refuses the wrong counts rather than fitting them.
+#:
+#: Short on purpose. The slope fit linearises ``sin(n*d)``, so it needs ``n*d`` inside
+#: about a radian; the B chip's equator block implies ``d`` near 0.2, which 13 pulses
+#: already stretch to 2.6. The refinement below is what makes that converge, and it is
+#: cheaper to iterate four short sweeps than to fit one long one through a sine's turn.
+DEFAULT_AMP90_REPETITIONS = (1, 5, 9, 13)
+
+
+class FineAmplitude90(CalibrationRoutine):
+    """Amplify a small error in the pi/2 pulse by repeating it (RFC 0007 §11.5).
+
+    `fine_amplitude` refines the pi pulse and nothing refines the pi/2, because until
+    `fine.amp90` existed there was nowhere to write one: both schedulers derive every
+    angle from ``amp180`` by linear interpolation, so a pi/2 was *defined* as half a pi
+    and could not be wrong. Past half of full scale the amplifier compresses and it is,
+    and the error is invisible to everything else in the graph — randomised benchmarking
+    averages a coherent over-rotation into its depolarising rate, and Rabi and
+    `fine_amplitude` both measure the pi.
+
+    AllXY sees it, which is how it was found: on the August 2026 B chip the two plateaus
+    were flat to 0.009 while the equator block carried an antisymmetric +0.1795 that
+    survived the residual detuning being driven to -384 Hz. But AllXY writes nothing.
+    This measures the same error directly and writes it.
+
+    No pre-rotation, unlike `fine_amplitude`. There the pulse under test is the pi and a
+    pi/2 in front of it turns an even response into a signed one; here the pulse under
+    test *is* the pi/2, and starting at ``|0>`` with ``4k+1`` of them puts the state on
+    the equator by itself. A pre-rotation would have to be played by the very pulse being
+    calibrated, so its error would enter twice and the fit could not tell the two apart.
+    """
+
+    #: How many times to re-measure after correcting amp90. Same bound and same reason as
+    #: `Ramsey.MAX_REFINEMENTS`, and here it is load-bearing rather than belt-and-braces:
+    #: the first pass of a badly-set pi/2 is biased low by the sine it linearises.
+    MAX_REFINEMENTS = 3
+
+    #: Stop when a pass moves the amplitude by less than this fraction of itself. Below a
+    #: per mille the correction is smaller than the shot noise on a 1024-shot sweep, so
+    #: another pass would be measuring the readout.
+    CONVERGED_FRACTION = 1e-3
+
+    name = "fine_amplitude_90"
+    depends_on = ("fine_amplitude",)
+    updates = (AMP90_PATH,)
+    reads = ("rxy.amp180", AMP90_PATH, "clock_freqs.f01")
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only an element with somewhere to put the answer.
+
+        A `BasicTransmonElement` keeps the interpolated pi/2 it always had. That is not a
+        misconfiguration — it is every device config written before this element existed.
+        """
+        element = device.get_element(target)
+        submodule = getattr(element, "fine", None)
+        return submodule is not None and hasattr(submodule, "amp90")
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Refine amp90 until a pass stops moving it.
+
+        One pass is not enough here for a different reason than `ramsey`'s. The fit takes
+        the slope of ``sin(n*d)`` as ``d``, which is exact only for small ``n*d``; an
+        uncalibrated pi/2 starts far enough out that the first pass under-reports and
+        corrects most of the way rather than all of it. Each pass then plays the corrected
+        amplitude — the element's own factory sees to that — and measures what remains, so
+        what is left shrinks into the range the linearisation is exact in.
+
+        Bounded the same three ways as `ramsey`: by convergence, by the correction
+        becoming smaller than the noise, and by `MAX_REFINEMENTS`.
+        """
+        refined = self.escalating(target, device, config, backend, timeout_s)
+        for _attempt in range(self.MAX_REFINEMENTS):
+            previous = float(refined["amp90"])
+            # Applied here so the next pass plays the corrected pi/2, which is the whole
+            # mechanism. The DAG applies again afterwards, and a write is idempotent.
+            self.apply(device, target, refined)
+            again = self.escalating(target, device, config, backend, timeout_s)
+            moved = abs(float(again["amp90"]) - previous) / max(previous, 1e-12)
+            refined = again
+            if moved <= self.CONVERGED_FRACTION:
+                break
+            log.info(
+                "%s on %s: pass moved amp90 by %.2f%%, refining again",
+                self.name,
+                target,
+                100 * moved,
+            )
+        return refined
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        self._repetitions = [
+            int(n)
+            for n in setpoints_of(
+                config, "repetitions", list(DEFAULT_AMP90_REPETITIONS)
+            )
+        ]
+        # What the compiler will actually play for a 90, which is not amp180/2 once this
+        # has run once. Read before the acquisition rather than after it, for the reason
+        # `fine_amplitude` states: it is the amplitude every pulse below is played at.
+        element = device.get_element(target)
+        self._current_amp90 = amplitude_for_angle(
+            QUARTER_TURN_DEGREES,
+            float(read_path(element, "rxy.amp180")),
+            float(read_path(element, AMP90_PATH) or 0.0),
+        )
+
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 1024))
+        )
+        for index, count in enumerate(self._repetitions):
+            schedule.add(backend.Reset(target))
+            for _ in range(count):
+                schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+
+        # |0> and |1>, so the fit knows the full contrast rather than whatever fraction
+        # of it this sweep reached. See `fit_fine_amplitude`.
+        reference = len(self._repetitions)
+        schedule.add(backend.Reset(target))
+        schedule.add(
+            backend.Measure(
+                target, acq_index=reference, bin_mode=backend.BinMode.AVERAGE
+            )
+        )
+        schedule.add(backend.Reset(target))
+        schedule.add(backend.X(target))
+        schedule.add(
+            backend.Measure(
+                target, acq_index=reference + 1, bin_mode=backend.BinMode.AVERAGE
+            )
+        )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        signal = signal_of(dataset)
+        count = len(self._repetitions)
+        if signal.size < count + 2:
+            raise RoutineError(
+                f"fine amplitude 90 expected {count + 2} acquisitions "
+                f"(sweep plus two calibration points), got {signal.size}"
+            )
+
+        fitted = fit_fine_amplitude(
+            np.asarray(self._repetitions, dtype=float),
+            signal[:count],
+            self._current_amp90,
+            ground=float(signal[count]),
+            excited=float(signal[count + 1]),
+            turn=math.pi / 2,
+            pre_rotation=0.0,
+        )
+        return {"amp90": fitted["amplitude"], **fitted}
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        write_path(device.get_element(target), AMP90_PATH, params["amp90"])

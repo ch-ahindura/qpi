@@ -1441,6 +1441,32 @@ class TestTheWholeDagThroughTheRealStack:
         }
         assert ran == expected, f"did not run {sorted(expected - ran)}"
 
+    def test_the_pi_over_two_amplitude_comes_out_at_half_on_a_linear_chip(
+        self, fully_calibrated
+    ):
+        """`fine_amplitude_90` must agree with the interpolation it replaces, here.
+
+        The simulated drive is exactly linear in amplitude — the Rabi rate is
+        proportional to the envelope — so half a pi pulse really is a pi/2 and the
+        right answer is the one both schedulers already assume. That makes this the
+        test for the failure mode the routine could most easily have: a sign error, a
+        wrong demodulation, or the wrong repetition counts would all still *fit*, and
+        would write a confidently wrong amplitude to every gate on the chip.
+
+        It is the hardware case that is the interesting one, and it cannot be asserted
+        here. RFC 0007 §11.5 has the B chip's evidence for it.
+        """
+        _report, device, _simulator, _scheduler = fully_calibrated
+        config = yaml.safe_load(Path(device).read_text())
+
+        for qubit in ("q0", "q1"):
+            amp180 = float(config[qubit]["rxy"]["amp180"])
+            amp90 = float(config[qubit]["fine"]["amp90"])
+            assert amp90 == pytest.approx(amp180 / 2, rel=0.05), (
+                f"{qubit}: a linear drive makes a pi/2 exactly half a pi, but "
+                f"fine_amplitude_90 wrote {amp90:.4f} against an amp180 of {amp180:.4f}"
+            )
+
     def test_the_dispersive_shift_is_measured_and_not_assumed(self, fully_calibrated):
         """`resonator_spectroscopy_excited` recovers chi, which nothing else measures.
 
