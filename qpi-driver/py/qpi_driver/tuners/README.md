@@ -328,6 +328,17 @@ every subsequent job reads.
   parameters worked out by hand, arrive the same way.
 - The tuner re-reads it at the start of each calibration, so a chip something else
   moved is not calibrated from stale values and then overwritten with them.
+- Beside it, `quantify.device.provenance.yml` records **which routine last measured
+  each parameter, and when** (RFC 0008). It holds no values, nothing that runs a
+  circuit reads it, and it is safe to delete — every parameter then simply reads as
+  never-measured, which is what a fresh chip has.
+
+That last file is what lets a report tell a measurement from a number somebody typed
+in. A device config cannot: `clock_freqs.f01: 4735509751.238763` has nine significant
+figures whether it was fitted or copied from a design document, and on the August 2026
+chip it was the latter, 302 MHz from the qubit. A calibration now says outright which of
+its inputs nothing had ever measured — in the report's notes, per target, and on each
+routine result — and, when a node is skipped, how old the values it left standing are.
 
 ## Adding a tuner
 

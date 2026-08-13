@@ -14,6 +14,7 @@ import pytest
 import xarray as xr
 from qpi_driver.tuners.base import RECALIBRATION_ROOTS, Tuner
 from qpi_driver.tuners.base.backend import SchedulerBackend
+from qpi_driver.tuners.base.provenance import Provenance, ProvenanceStore
 from qpi_driver.tuners.base.config import (
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationConfig,
@@ -1085,3 +1086,145 @@ class TestAWindowTooShortIsWidenedRatherThanFailed:
 
         assert report.status == "failed"
         assert node.attempts == pytest.approx([1e-5])
+
+
+class TestWhatTheWalkSaysAboutPriors:
+    """RFC 0008 phase 4: the pre-walk check RFC 0007 §11 withdrew, now decidable.
+
+    §11 wanted to report a read parameter whose only producer is switched off, and could
+    not: two paths have no producer anywhere in the graph and are hand-supplied on every
+    chip, so the rule fired on them every run. Provenance splits the three cases, and only
+    the middle one is worth saying anything about.
+    """
+
+    def _run(self, routines, config=None, provenance=None):
+        config = config or _config()
+        return CalibrationDAG(routines, config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            provenance=provenance,
+        )
+
+    def test_it_reports_a_parameter_whose_producer_is_switched_off(self):
+        config = _config(routines={"producer": RoutineConfig(enabled=False)})
+        routines = [
+            Producer("producer", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("producer",), reads=("clock_freqs.f01",)),
+        ]
+
+        report = self._run(routines, config)
+
+        note = next(n for n in report.notes if "clock_freqs.f01" in n)
+        assert "nothing has ever measured" in note
+        # And it names the way out, which is the point of reporting rather than refusing.
+        assert "producer" in note
+        assert report.status == "success"
+
+    def test_it_says_nothing_about_a_parameter_no_routine_produces(self):
+        """The reason §11's version was withdrawn: this fires on every chip, forever."""
+        routines = [Producer("reader", reads=("r12.ef_duration",))]
+
+        report = self._run(routines)
+
+        assert report.notes == []
+
+    def test_a_prior_this_run_will_measure_is_reported_as_ordinary(self):
+        routines = [
+            Producer(
+                "producer", updates=("clock_freqs.f01",), reads=("clock_freqs.f01",)
+            )
+        ]
+
+        report = self._run(routines)
+
+        assert report.notes == ["q0: clock_freqs.f01 not measured before this run"]
+
+    def test_an_earlier_run_having_measured_it_silences_the_note(self):
+        config = _config(routines={"producer": RoutineConfig(enabled=False)})
+        routines = [
+            Producer("producer", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("producer",), reads=("clock_freqs.f01",)),
+        ]
+        store = ProvenanceStore()
+        store.record(
+            "q0",
+            "clock_freqs.f01",
+            Provenance(routine="producer", at="2026-08-01T00:00:00Z"),
+        )
+
+        report = self._run(routines, config, provenance=store)
+
+        assert report.notes == []
+
+    def test_a_result_carries_the_priors_it_was_derived_from(self):
+        routines = [
+            Producer("producer", updates=("clock_freqs.f01",)),
+            Producer(
+                "reader",
+                depends_on=("producer",),
+                reads=("clock_freqs.f01", "r12.ef_duration"),
+            ),
+        ]
+
+        report = self._run(routines)
+
+        by_name = {r.routine_name: r for r in report.routine_results}
+        # `producer` measured f01 before `reader` ran, so only the hand-supplied path is
+        # left — a prior with no producer is still a prior, whatever the notes say of it.
+        assert by_name["reader"].priors == ("r12.ef_duration",)
+        assert by_name["producer"].priors == ()
+
+    def test_a_skipped_node_says_how_old_what_it_left_standing_is(self):
+        """RFC 0007 §11 keeps a skipped node's stale values; this says how stale."""
+        routines = [
+            FailingProducer("root", updates=("clock_freqs.f01",)),
+            Producer(
+                "reader",
+                depends_on=("root",),
+                reads=("clock_freqs.f01",),
+                updates=("rxy.amp180",),
+            ),
+        ]
+        store = ProvenanceStore()
+        store.record(
+            "q0", "rxy.amp180", Provenance(routine="rabi", at="2026-08-01T09:00:00Z")
+        )
+
+        report = self._run(routines, provenance=store)
+
+        note = next(n for n in report.notes if "not reconfirmed" in n)
+        assert (
+            "rxy.amp180 still holds what rabi measured at 2026-08-01T09:00:00Z" in note
+        )
+
+    def test_a_skipped_node_that_never_measured_anything_says_nothing_extra(self):
+        """No provenance means no staleness to report — the prior notes already said it."""
+        routines = [
+            FailingProducer("root", updates=("clock_freqs.f01",)),
+            Producer(
+                "reader",
+                depends_on=("root",),
+                reads=("clock_freqs.f01",),
+                updates=("rxy.amp180",),
+            ),
+        ]
+
+        report = self._run(routines)
+
+        assert not [n for n in report.notes if "not reconfirmed" in n]
+
+    def test_no_sidecar_leaves_the_walk_exactly_as_it_was(self):
+        """Every parameter a prior, and nothing blocked for it — RFC 0008 §3."""
+        routines = [
+            Producer("producer", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("producer",), reads=("clock_freqs.f01",)),
+        ]
+
+        report = self._run(routines, provenance=None)
+
+        assert report.status == "success"
+        assert [r.routine_name for r in report.routine_results] == [
+            "producer",
+            "reader",
+        ]

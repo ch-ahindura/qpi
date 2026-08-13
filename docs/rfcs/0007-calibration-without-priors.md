@@ -444,6 +444,13 @@ all: §11's ledger asks "did this walk produce it?" rather than "was this ever m
 That is right for a bring-up and blind on a recalibration, which is the cost of the
 deferral and the reason it should not be deferred indefinitely.
 
+**RFC 0008 is now implemented, and answered three of the four rather than all four.** The
+ledger's *blocking* rule stayed as it is, on purpose: a failure to measure a parameter is
+evidence against whatever the file holds for it, whether or not an earlier run measured it
+— see RFC 0008 §6. What provenance changed is what the run *says*: the withdrawn check
+below is back as a report, a skipped node now says how old what it left standing is, and
+each result names the inputs nothing had ever measured.
+
 **RFC 0008** carries the design, which was argued out in review here: where provenance
 lives, why neither config file is its home, and why staging value commits does not address
 what actually went wrong. It also corrects a claim this section used to make — that the
@@ -538,13 +545,21 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
   every run; and the August 2026 chip disables `time_of_flight` while its
   `measure.acq_delay` is a perfectly good hand-set 200 ns. Nothing is lost by waiting:
   the parameter view below already declines to block on either case.
+  **Reinstated by RFC 0008 as a report, not an error.** Provenance splits the three cases
+  the rule could not: a prior a routine in this run will measure, a prior whose producer is
+  out of this run, and a path no routine produces anywhere. Only the middle one is
+  reported, and it names the routine that would produce it. It reports rather than refuses
+  because every chip calibrated before the sidecar existed has measured values and no
+  provenance, so refusing would take working chips down for want of a file.
 - Blocked nodes are recorded as **skipped, with the blocker named** — not failed.
   Auto-failing would replace six misleading failures with six fabricated ones, and would
   feed the drift check a history of failures that never happened.
 - A skipped node's parameter is **kept and marked, not cleared.** Clearing it would mean a
   chip that ran jobs yesterday cannot run today because one node was blocked, which is a
   worse outcome than running on a value this walk did not confirm — provided the report
-  says which values were not confirmed. That proviso is §10's provenance field.
+  says which values were not confirmed. That proviso is §10's provenance field, and RFC
+  0008 supplies it: a skipped node's note now names each parameter it left standing and the
+  routine and time that last measured it.
 
 `diagnose` already walks `depends_on` to blame the deepest failing ancestor rather than
 the symptom (RFC 0005 §8), so the traversal exists and the calibrate path can borrow its

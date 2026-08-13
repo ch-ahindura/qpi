@@ -25,6 +25,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a calibration report names the inputs nothing has ever measured, per
   target and per routine. A run built on a hand-supplied frequency previously read exactly
   like one built on a measured one.
+- `qpi-driver/py`: a skipped routine reports which parameters it left unconfirmed and when
+  they were last measured, and a run whose producer for a never-measured parameter is
+  switched off says so before the walk starts.
 
 ### Fixed
 

@@ -303,30 +303,52 @@ class CalibrationDAG:
 
         One note per target and kind rather than per parameter, because a five-qubit chip
         reads twenty-odd paths and twenty notes per qubit is a wall rather than a warning.
+
+        The third kind is silent, and it is what made this undecidable before RFC 0008: a
+        path **no** routine produces anywhere is hand-supplied on every chip by design —
+        `measure.integration_time` and `r12.ef_duration` have no producer in the graph at
+        all — so a rule that could not tell it from an absent producer fired on every run,
+        which is why RFC 0007 §11 withdrew its pre-walk check. Provenance separates them.
         """
         produced_here = {path for name in order for path in self.routines[name].updates}
+        producible = {
+            path for routine in self.routines.values() for path in routine.updates
+        }
         by_target: dict[str, tuple[set[str], set[str]]] = {}
         for name in order:
             routine = self.routines[name]
             for target in self._targets_for(name, config, device):
-                coming, supplied = by_target.setdefault(target, (set(), set()))
+                coming, orphaned = by_target.setdefault(target, (set(), set()))
                 component = component_for(device, target, routine.targets)
                 for path in ledger.priors(routine, target, component):
-                    (coming if path in produced_here else supplied).add(path)
+                    if path in produced_here:
+                        coming.add(path)
+                    elif path in producible:
+                        orphaned.add(path)
 
         notes = []
-        for target, (coming, supplied) in sorted(by_target.items()):
-            if supplied:
+        for target, (coming, orphaned) in sorted(by_target.items()):
+            if orphaned:
                 notes.append(
-                    f"{target}: nothing has ever measured {', '.join(sorted(supplied))}, "
-                    "and nothing in this run will — every result derived from them is "
-                    "only as good as the value supplied"
+                    f"{target}: nothing has ever measured {', '.join(sorted(orphaned))}, "
+                    f"and the routine that would ({self._producers_of(orphaned)}) is not "
+                    "in this run — every result derived from them is only as good as the "
+                    "value supplied"
                 )
             if coming:
                 notes.append(
                     f"{target}: {', '.join(sorted(coming))} not measured before this run"
                 )
         return notes
+
+    def _producers_of(self, paths: set[str]) -> str:
+        """The routines that write any of *paths*, for a note that names the way out."""
+        producers = {
+            name
+            for name, routine in self.routines.items()
+            if paths & set(routine.updates)
+        }
+        return ", ".join(sorted(producers))
 
     def _targets_for(
         self, name: str, config: CalibrationConfig, device: Any = None
@@ -437,6 +459,14 @@ class CalibrationDAG:
                     detail = ledger.explain(blocked)
                     log.warning("%s %s skipped: %s", label, target, detail)
                     report.notes.append(f"{routine_name}[{target}]: skipped, {detail}")
+                    # What it did not reconfirm, and what those parameters still hold.
+                    # RFC 0007 §11 keeps a skipped node's stale values — clearing them
+                    # would stop a chip that ran yesterday from running today — so the
+                    # operator's question is how old they are, which provenance answers.
+                    left = ledger.unconfirmed(routine, target)
+                    if left:
+                        log.warning("%s %s %s", label, target, left)
+                        report.notes.append(f"{routine_name}[{target}]: {left}")
                     ledger.unsatisfied(routine, target, blame=ledger.blame(blocked))
                     skipped += 1
                     continue
@@ -735,6 +765,21 @@ class _ParameterLedger:
         culprits = blame or {routine.name}
         for path in routine.updates:
             self._unsatisfied.setdefault((target, path), set()).update(culprits)
+
+    def unconfirmed(self, routine: CalibrationRoutine, target: str) -> str:
+        """What a skipped *routine* left standing on *target*, and how old it is.
+
+        Empty when it writes nothing, or when nothing ever measured what it writes — there
+        is then no staleness to report, only the prior the pre-walk notes already named.
+        """
+        described = [
+            f"{path} still holds what {record.routine} measured at {record.at}"
+            for path in routine.updates
+            if (record := self._provenance.of(target, path)) is not None
+        ]
+        if not described:
+            return ""
+        return "not reconfirmed by this run: " + "; ".join(described)
 
     def blockers(self, routine: CalibrationRoutine, target: str) -> dict[str, set[str]]:
         """The parameters *routine* reads that this walk failed to produce."""

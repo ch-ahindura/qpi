@@ -1,6 +1,6 @@
 # RFC 0008 — Parameter Provenance
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (the device file and its write-back), RFC 0005 (the completed
@@ -127,7 +127,7 @@ Four things are already waiting on this, three of them in RFC 0007:
 | Consumer | Today's weaker version | With provenance |
 |---|---|---|
 | RFC 0007 §2's *prior* | Not decidable; the word is defined and unusable | `is there provenance for this parameter?` |
-| RFC 0007 §11's ledger | "did *this walk* produce it?" | "was it ever measured, in any run?" |
+| RFC 0007 §11's ledger | "did *this walk* produce it?" | "was it ever measured, in any run?" — for reporting and for the pre-walk check, **not** for blocking; see the correction below |
 | RFC 0007 §11's skipped nodes | Kept, unmarked | Kept and marked as unconfirmed by this run |
 | RFC 0007 §11's withdrawn pre-walk check | Undecidable — a hand-supplied parameter and a disabled producer look alike | A disabled sole producer is an error only when the parameter has no provenance either |
 | Write-back gating (§7) | All-or-nothing per run | Per parameter: commit what its producer measured and its guards passed |
@@ -138,6 +138,18 @@ on a partial recalibration almost nothing was produced by this run, so almost no
 checkable, and a parameter no run ever measured is indistinguishable from one measured
 last week. Provenance separates those two, which is the whole of what the ledger needs.
 Not *how old* the measurement is — see §8.
+
+**Corrected while implementing phase 4: this must not relax the blocking rule.** The
+tempting reading is that a node blocked because its input failed *this* run should run
+anyway when an earlier run measured that input — the device does hold a real number. It is
+wrong, and the August 2026 chip is the counterexample: a failure to *measure* f01 is
+evidence against whatever f01 the file holds, because the usual reason spectroscopy finds
+no line is that the qubit is not where the file says. Running the six nodes behind it
+against last week's value fits the same noise, whatever the value's pedigree. So a failed
+measurement still blocks, and provenance's two uses are the ones below it in the table —
+report, and decide the pre-walk check. Blocking on *absent* provenance would be worse
+still: every chip calibrated before this shipped has measured values and no sidecar, so it
+would refuse the runs it exists to protect.
 
 ## 7. Why not stage the writes until the run succeeds
 
@@ -223,27 +235,56 @@ whatever owns the drift cadence, and it can read the timestamp this file already
 3. **Report it.** Surface a parameter's provenance in the calibration report's notes and
    in the routine result, so an operator reading a failed run can see which inputs were
    attributable and which were guesses. Report-only; nothing changes behaviour yet.
-4. **Consume it.** Sharpen RFC 0007 §11's ledger from "produced in this walk" to "has
-   provenance, and how old", mark what a skipped node left unconfirmed, and reinstate the
-   pre-walk check that §11 withdrew for want of this.
+   `RoutineResult.priors` stays out of `to_event_payload`, as `CalibrationReport.notes`
+   already does, so §3's "no payload change" holds: the payload is one contract asserted
+   in Go and TypeScript.
+4. **Consume it.** Mark what a skipped node left unconfirmed and how old it is, and
+   reinstate the pre-walk check that §11 withdrew for want of this. The ledger's blocking
+   rule is deliberately left alone — see §6's correction, which is the one place the plan
+   as drafted was wrong.
 
 Phases 1 to 3 are additive and observable before anything depends on them, which is
 deliberate: a provenance record that is wrong is worse than none, and phase 3 is where
 that becomes visible on a real chip rather than in a test.
 
-## 11. Open questions
+All four are implemented. Phase 4 is report-only too, in the end, for the reason §6 now
+records — which means nothing in this RFC can refuse a run that would have succeeded
+before it.
 
-1. **One sidecar or one per target?** One file is simpler and merges per key; one per
-   qubit makes a partial recalibration's writes obviously disjoint and is friendlier to
-   whatever ends up watching the directory. Leaning one file until a reason appears.
-2. **What of the fit summary is worth keeping?** The whole `fit` payload is large — RFC
-   0005 caps it at `MAX_FIT_PAYLOAD_BYTES` for the event — and most of it is the sweep.
-   The useful residue is probably the one or two numbers a guard judged:
-   signal-to-noise, span over scatter. Deciding that is deciding what a future drift
-   check can compare against.
-3. **Should the write-back gate on it in phase 2 or wait for phase 4?** Gating early is
-   the safer chip behaviour and the larger behaviour change; the plan above defers it,
-   which is a judgement rather than a conclusion.
-4. **What does the dashboard do with it?** RFC 0006 draws the graph; a node whose inputs
-   are priors is arguably a different colour. Out of scope here, but the payload
-   decision in §3 is what would have to change first.
+## 11. Resolved while implementing
+
+No open questions remain. Four were open when this was drafted, and building it settled
+all of them — three by finding the answer in the code and one by looking at the output.
+
+| Question | Resolution |
+|---|---|
+| One sidecar or one per target? | **One file**, as the draft leaned. Merging per key makes a partial run's writes disjoint anyway, which was the only thing one-per-qubit bought, and one file is one thing to find, delete and back up. |
+| What of the fit summary is worth keeping? | **The scalars a guard judged** — `snr`, `reach`, `contrast`, `separation` — and nothing else, since the rest of a fit payload is the sweep. Chosen by asking which numbers the guards actually compare: `require_resolved_curve` reads `reach`, the discriminators read `separation` and `contrast`. Infinities are dropped rather than stored, because `snr` is infinite when a fit had no residual scatter and YAML `.inf` does not travel. |
+| Gate the write-back on provenance in phase 2 or phase 4? | **Neither, because it was already true.** `report.routine_results` holds only routines that succeeded, so writing provenance from `_persist` after a successful write-back *is* the per-parameter gate §7 asked for. No new mechanism, and no behaviour change to defer. |
+| What does the dashboard do with it? | **Still out of scope**, and now cheaper to answer: `RoutineResult.priors` is computed and available locally: only §3's payload decision stands between it and RFC 0006. |
+
+Three things the implementation found that the draft did not anticipate:
+
+- **A prior must be filtered to paths the element actually has.** `spec.amplitude` and
+  `measure.integration_time` do not exist on a `BasicTransmonElement`, so reporting them
+  as unmeasured put a permanent warning in front of every run — the same noise that made
+  RFC 0007 §11 withdraw its pre-walk check in the first place, arriving by a different
+  door. A path that is not there is not an unmeasured one.
+- **The run identifier is the report's timestamp, not the job id.** The job id is not
+  plumbed into `Tuner.calibrate` and threading it there would change the tuner contract
+  for a metadata field. Every walk has a timestamp, it distinguishes runs, and `at` still
+  distinguishes parameters *within* a run.
+- **§6's ledger row was wrong about blocking**, which is the one substantive correction —
+  recorded there rather than here because it changes what the RFC claims, not just how it
+  was built.
+
+## 12. What this deliberately does not do
+
+Two are worth stating because they are the obvious next thoughts:
+
+- **Nothing expires.** §8's reasoning, unchanged by the implementation: no code compares a
+  timestamp against a threshold, and there is no schema field for one. Staleness is
+  measured by RFC 0005's check nodes.
+- **Nothing refuses a run.** Every consumer built here reports. A chip that calibrated
+  yesterday calibrates today, whether or not the sidecar exists, is readable, or says
+  anything about the parameters in play.
