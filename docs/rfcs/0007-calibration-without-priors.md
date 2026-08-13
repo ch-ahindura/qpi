@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented
+- **Status:** Implemented, with one known gap open — §11.3
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -678,6 +678,48 @@ linewidths wide and missed the one that motivated it.
 
 An operator who names `span` is still left alone, per §7 — including on the B chip, whose
 `calibration.yml` sets 4 MHz.
+
+### 11.3 Open gap: nothing refuses a line that fills its own window
+
+**Open. Attempted in August 2026 and reverted — the attempt is recorded because it got two
+thirds of the way and the last third is the interesting part.**
+
+`qubit_spectroscopy` on the B chip **reported success** on a fit with no baseline: a 48.0 MHz
+line in a 54.0 MHz window, 89% of it, with a reach of 11.7 and a signal-to-noise of 20.3. It
+wrote a frequency to nine significant figures, and the `rabi` that read it could not find a
+pi pulse. The resonator in the same report is the contrast: 326 kHz in a 4 MHz window, 8%,
+Q = 22001. The qubit fit's Q was **111**, three orders below any transmon.
+
+Both existing guards pass it, and neither is wrong to. `reach` and `snr` measure height
+against scatter, and a saturated line is genuinely tall; `require_resolved_line`'s width test
+bounds the linewidth from *below* — narrower than the sweep step means the line was never
+sampled — and there is no bound from above. A Lorentzian needs baseline as much as a peak:
+with no flat stretch either side, amplitude, offset and width trade against each other and
+the centre follows whichever the optimiser preferred.
+
+**What was tried.** A `MAX_LINE_TO_SPAN` of one third in `require_resolved_line`, refusing
+the B-chip fit while accepting the resonator, and deliberately not escalatable — the two
+remedies pull opposite ways (drive gentler, or sweep wider) and the driver cannot tell which
+a chip wants.
+
+**Why it did not land.** The guard also refuses the *simulated* chip, at 99%: a 150.7 MHz
+line in a 153 MHz window. That window is `CONFIRM_SPAN_IN_WIDTHS` times a width the search
+measured at its own saturating power, so the fix looked like capping the confirming span by
+the search *step* — the search establishes position to half a bin, not width. Capped at eight
+steps it splits the two cases correctly: the simulator gets 16 MHz for a 1.2 MHz line, and
+the B chip a 16 MHz window its 48 MHz line cannot fit.
+
+But capping the span breaks §8's acceptance test. With the narrower window no drive power
+clears the reach floor — the strongest reaches 3.07 against 5 — and that is not reproducible
+outside the walk: the same search and confirm, run directly on the same simulator, gives a
+reach of 156.6 and an f01 within 2 kHz. So the walk leaves the chip in a state the isolated
+path does not, and until that is understood, capping the span trades a verified capability
+(a chip known only from its design document calibrates) for a guard whose interaction is not
+understood. Reverted on those grounds rather than merged with the acceptance test failing.
+
+Whoever picks this up: the reach discrepancy between the isolated path and the walk is the
+thread to pull, not the guard. The guard is a dozen lines and its thresholds are already
+measured against two chips.
 
 ## 12. Resolved during review
 
