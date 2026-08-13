@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Draft
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -391,22 +391,38 @@ after the two classes that need no loop at all.
    here: two call sites never threaded the backend, and clamping to the edge exactly put a
    setpoint *on* the limit for the NCO's quarter-hertz rounding to push outside.
    `full_scale(element, path)` is still to do, with the amplitude sweeps in phase 3.
-3. **The hardware-bounded class.** Frequency sweeps default to a coarse pass over the
-   addressable band, then the existing narrow sweep — the two-pass shape
-   `qubit_spectroscopy` already has, lifted into a shared helper, with a supplied `span`
-   as its first attempt (§7). Amplitude sweeps go to full scale. Chunking where a derived
-   grid does not fit. Finishes `qubit_spectroscopy`'s `search_span`, currently 600 MHz
-   because the LO was not yet known to be readable from a routine.
-4. **The physics-bounded class.** The two operating points and both excited-state
-   resonator sweeps take their span from the measured linewidth. `f12_spectroscopy`
-   keeps its prior but bounds it to `[150, 400]` MHz. `drag` centres on the measured
-   anharmonicity. Cheapest of the range phases, and it fixes a live readout bug.
-5. **Escalation.** `OutOfRange`, the retry helper, and the bounded attempt count. Wire
-   `t1`, `t2_echo`, `ramsey`, `ramsey_12`, and the two CZ duration sweeps.
-6. **The acceptance test, then the knobs.** Land the test; then delete every `span` and
-   `points` that phases 3–5 made redundant, from the routines' defaults and from the
-   operator's `calibration.yml`. A knob removed before its replacement is proven is a
-   regression, which is why this is last.
+3. **The hardware-bounded class — done.** Frequency sweeps trim to the addressable band
+   and `qubit_spectroscopy` widens over it. Amplitudes go to full scale, but by
+   *escalation* rather than by default: starting there put `amp180` 6.9% out and took
+   `rabi_12` off its sqrt(2) ladder, because a strongly driven transmon stops being the
+   cosine the fit assumes. So the default measures where the model holds and `fit_rabi`
+   asks for more when the pi pulse is above the sweep. Chunking a too-wide grid was not
+   needed: nothing derived here exceeded the sequencer.
+4. **The physics-bounded class — done, except one.** `readout_operating_point` takes 0.6
+   of the measured linewidth, a coefficient two independent chips agree on; the two
+   excited-state sweeps take eight of it. `f12_spectroscopy` bounds the anharmonicity it
+   searches around *and* the one it fits. `CalibratedTransmon` gained
+   `resonator.linewidth`, which RFC 0005 §13 had asked for, because the value was measured
+   every run and thrown away.
+
+   `three_state_operating_point` resisted, and the reason is recorded at the code. Sharing
+   the two-state coefficient broke `ramsey_12` outright, and matching the old constant
+   left it passing by nothing. Placement there wants more *points*, and points are
+   capped at five by the sequencer's single-shot registers — so that span waits for the
+   register budget, not for a better coefficient.
+
+   `drag` is deliberately untouched: §5 proposed centring it on the measured
+   anharmonicity, and nothing measured says the symmetric sweep is wrong. Its failure on
+   the August 2026 chip was contrast, not placement.
+5. **Escalation — done.** `OutOfRange` carries the axis and the direction; `escalating`
+   follows it, bounded at three attempts, and leaves an operator who named the axis alone.
+   Two directions turned out to be needed rather than one: a flat *decay* wants a longer
+   window, and a flat *oscillation* wants a denser one, and asking for the wrong one makes
+   the other worse.
+6. **The acceptance test, then the knobs — done.** §8's test calibrates a chip known only
+   from its design document, recovering f01 to 0.6 MHz from 214 MHz away with nothing
+   supplied, and the loop config's four hints are deleted. Writing it found the last two
+   range bugs, which is what it was for.
 
 ## 10. What this defers
 
