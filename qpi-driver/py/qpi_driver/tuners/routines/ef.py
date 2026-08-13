@@ -220,6 +220,27 @@ class Rabi12(CalibrationRoutine):
             # a second look at 0-1.
             schedule.add(backend.X(target))
             add_ef_pulse(schedule, backend, target, amplitude, self._duration)
+            # Back to |0> if the ef drive did nothing, and left in |2> if it turned a pi.
+            #
+            # Without this the readout has to tell |1> from |2> *directly*, and it is sitting
+            # at an operating point chosen to separate |0> from |1> — where the two upper
+            # levels project close together, because a 0-1 discriminator is tuned to put its
+            # threshold between the first two and not the second two. The trace then barely
+            # oscillates, and `fit_rabi` halves the period of whatever cosine it can find: on
+            # the August 2026 B chip that returned an ef pi of 0.0677 against the 0.4071 the
+            # sqrt(2) ladder predicts, six times out and near the *bottom* of a sweep that
+            # reached 0.5, so no range guard could see it either.
+            #
+            # A second 0-1 pi maps |1> back to |0> and leaves |2> where it is, off-resonant
+            # by the 250 MHz anharmonicity against a pulse whose bandwidth is some 18 MHz. So
+            # the ef oscillation appears in the |0> population, which is the one quantity this
+            # readout is already good at, and the contrast is the full readout contrast rather
+            # than the difference between two dispersive shifts.
+            #
+            # This is also what unblocks the chain's bootstrap: every other EF node reads at
+            # `measure_3state`, which cannot be calibrated until something has populated |2>,
+            # and this is the node that has to do it first.
+            schedule.add(backend.X(target))
             schedule.add(
                 backend.Measure(
                     target, acq_index=index, bin_mode=backend.BinMode.AVERAGE

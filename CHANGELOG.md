@@ -34,6 +34,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rabi_12` maps the qubit back to the ground state before measuring, so the
+  1-2 oscillation appears in the population the readout is tuned to resolve. It previously
+  asked a 0-1 discriminator to tell the two upper levels apart, and fitted a pi pulse six
+  times too small from a trace that barely moved.
 - `qpi-driver/py`: `ramsey` re-measures after correcting the qubit frequency, until the residual
   detuning is below what its own sweep can resolve. A single pass measured the detuning with
   the uncorrected frequency in the drive, so it landed near the answer rather than on it.
