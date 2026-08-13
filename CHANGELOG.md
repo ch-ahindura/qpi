@@ -18,6 +18,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: an end-to-end test asserts the benchmarked gate error against the one
   the simulator was given, so a calibration that leaves a gate wrong now fails the suite
   instead of clearing a fixed fidelity threshold.
+- `qpi-driver/py`: a calibration writes a `*.provenance.yml` beside the device config
+  recording which routine last measured each parameter, and when. A device config could
+  not say whether a value was measured or typed in, so every reader had to assume the
+  better case.
 
 ### Fixed
 

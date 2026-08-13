@@ -54,6 +54,22 @@ def write_path(component: Any, dotted: str, value: Any) -> None:
     write(owner, name, value)
 
 
+def has_path(component: Any, dotted: str) -> bool:
+    """Whether *dotted* resolves on *component* at all.
+
+    What separates a parameter a routine chose not to write from one this element has
+    nowhere to keep: several `updates` are opt-in fields of `CalibratedTransmon` that a
+    plain `BasicTransmonElement` does not have, and `apply` skips those rather than
+    failing (RFC 0008 phase 2).
+    """
+    try:
+        owner, name = _walk(component, dotted)
+        _name_on(owner, name)
+    except Exception:  # noqa: BLE001 - an unresolvable path is simply not there
+        return False
+    return True
+
+
 def element_names(device: Any) -> list[str]:
     """The device's qubit names, however this scheduler exposes them."""
     return _names(getattr(device, "elements", None))

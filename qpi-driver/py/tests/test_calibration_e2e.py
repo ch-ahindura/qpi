@@ -29,6 +29,7 @@ import yaml
 from qpi_driver.builtins.calibrate import _execute_calibration
 from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.device import read_path
+from qpi_driver.tuners.base.provenance import ProvenanceStore, provenance_path
 from qpi_driver.tuners.routines import routine_names
 from qpi_driver.tuners.utils.clifford import clifford_to_gates
 
@@ -443,3 +444,145 @@ def _rb_error_per_gate(report) -> float:
     ]
     assert errors, f"rb reported no error, only {report.benchmarks}"
     return errors[0]
+
+
+class TestProvenanceFromARealWalk:
+    """RFC 0008 §9 tier 2: provenance for what a walk measured, and for nothing else.
+
+    A record that claims a parameter was measured when it was not is worse than no record,
+    because the whole file exists to be trusted on that one question. So both directions
+    are asserted here against a walk that really ran, rather than against `updates`, which
+    is a declaration and is what the recording is derived *from*.
+    """
+
+    def test_it_records_every_parameter_the_walk_wrote_and_no_others(
+        self, tmp_path, monkeypatch
+    ):
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        written = _recording_writes(monkeypatch)
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert report.status == "success", report.errors
+        store = ProvenanceStore.load(device_path)
+        recorded = {
+            (target, path) for target in store.targets() for path in store.paths(target)
+        }
+        assert recorded == written
+        assert recorded, "a successful walk recorded nothing"
+
+    def test_the_record_names_the_routine_that_measured_it(self, tmp_path):
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        store = ProvenanceStore.load(device_path)
+        # f01 has two writers: `qubit_spectroscopy` produces it and `ramsey` refines it, so
+        # the record must name the refiner — the last routine to measure it, not the first.
+        f01 = store.of("q0", "clock_freqs.f01")
+        assert f01.routine == "ramsey"
+        assert f01.run == report.timestamp
+        assert f01.at in {r.timestamp for r in report.routine_results}
+        assert store.of("q0", "rxy.amp180").routine == "rabi"
+
+    def test_a_benchmark_records_nothing_because_it_calibrates_nothing(self, tmp_path):
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+
+        tuner.calibrate(write_calibration_config(tmp_path))
+
+        store = ProvenanceStore.load(device_path)
+        recorded = {store.of("q0", path).routine for path in store.paths("q0")}
+        assert "rb" not in recorded
+        assert "t1" not in recorded  # measures a number nothing is tuned from
+
+    def test_a_failed_routine_leaves_no_provenance(self, tmp_path):
+        """The property the rest rests on: only a measurement is attributable."""
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        config = write_calibration_config(tmp_path)
+        # A one-point sweep cannot fit a cosine, so `rabi` fails while its upstream
+        # succeeds — and every node reading amp180 is then skipped, per RFC 0007 §11.
+        config.routines["rabi"].params["amplitudes"] = [0.1]
+
+        report = tuner.calibrate(config)
+
+        assert report.status == "partial_failure", report.status
+        store = ProvenanceStore.load(device_path)
+        assert not store.is_measured("q0", "rxy.amp180")
+        assert store.is_measured("q0", "clock_freqs.f01")
+
+    def test_a_failed_run_records_nothing(self, tmp_path):
+        """Provenance describes what is in the file, so it cannot outrun the write-back."""
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        config = write_calibration_config(tmp_path, enabled=("rabi",))
+        config.routines["rabi"].params["amplitudes"] = [0.1]
+
+        report = tuner.calibrate(config)
+
+        assert report.status == "failed", report.status
+        assert not provenance_path(device_path).exists()
+
+    def test_a_failed_write_back_records_nothing(self, tmp_path, monkeypatch):
+        """The values never reached the file, so nothing about them is attributable."""
+        from qpi_driver.tuners import base as base_mod
+
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        monkeypatch.setattr(base_mod, "save_device_config", _refusing("disk full"))
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert report.status == "partial_failure"
+        assert any("write-back failed" in error for error in report.errors)
+        assert not provenance_path(device_path).exists()
+
+    def test_a_second_walk_keeps_what_the_first_measured(self, tmp_path):
+        """Merge per key over a real walk, not just over the store's own unit tests."""
+        device_path = tmp_path / "quantify.device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        tuner.calibrate(write_calibration_config(tmp_path))
+        first = ProvenanceStore.load(device_path)
+        before = {(t, p) for t in first.targets() for p in first.paths(t)}
+
+        tuner.calibrate(write_calibration_config(tmp_path, enabled=("rabi",)))
+
+        second = ProvenanceStore.load(device_path)
+        after = {(t, p) for t in second.targets() for p in second.paths(t)}
+        assert before <= after
+        assert second.of("q0", "rxy.amp180").run != first.of("q0", "rxy.amp180").run
+
+
+def _refusing(message: str):
+    def refuse(*_args, **_kwargs):
+        raise OSError(message)
+
+    return refuse
+
+
+def _recording_writes(monkeypatch) -> set[tuple[str, str]]:
+    """``(target, dotted path)`` for every device write, as the walk makes them.
+
+    The same instrumentation `test_a_routine_declares_every_parameter_it_reads` uses for
+    the other direction, and for the same reason: `write_path` is the one funnel every
+    `apply` goes through, so patching it observes what was really written rather than what
+    a routine said it would write.
+    """
+    from qpi_driver.tuners.base import device as device_mod
+    from qpi_driver.tuners.routines import ef, readout, single_qubit, spectroscopy
+    from qpi_driver.tuners.routines import two_qubit
+
+    written: set[tuple[str, str]] = set()
+    original = device_mod.write_path
+
+    def recording(component, dotted, value):
+        written.add((getattr(component, "name", "?"), dotted))
+        return original(component, dotted, value)
+
+    for module in (device_mod, ef, readout, single_qubit, spectroscopy, two_qubit):
+        if hasattr(module, "write_path"):
+            monkeypatch.setattr(module, "write_path", recording)
+    return written

@@ -21,6 +21,12 @@ from qpi_driver.tuners.base.config import (
     RoutineConfig,
 )
 from qpi_driver.tuners.base.dag import CalibrationDAG, ProgressSink, utc_timestamp
+from qpi_driver.tuners.base.device import has_path
+from qpi_driver.tuners.base.provenance import (
+    Provenance,
+    ProvenanceStore,
+    fit_summary,
+)
 from qpi_driver.tuners.base.report import (
     BenchmarkResult,
     CalibrationReport,
@@ -308,6 +314,53 @@ class Tuner(ABC):
             log.exception("failed to persist calibrated device config")
             report.errors.append(f"write-back failed: {exc}")
             report.status = "partial_failure"
+            return
+
+        self._record_provenance(report)
+
+    def _record_provenance(self, report: CalibrationReport) -> None:
+        """Note which routine measured each parameter this run wrote (RFC 0008 phase 2).
+
+        After the write-back and only after it succeeds, because provenance describes what
+        is *in the file*. Recording it for a value that never reached disk would assert a
+        measurement the config does not hold, and a wrong record is worse than none.
+
+        `report.routine_results` holds only the routines that succeeded — the DAG appends
+        one on the success path alone — so the gate RFC 0008 §7 asks for is already here:
+        a parameter is attributable when its producer succeeded, its guards passed, and its
+        value was persisted.
+        """
+        store = ProvenanceStore.load(self._device_config_path)
+        routines = {routine.name: routine for routine in self.routines()}
+        for result in report.routine_results:
+            routine = routines.get(result.routine_name)
+            if routine is None or not routine.updates:
+                continue
+            component = self._component_for(routine, result.target)
+            for path in routine.updates:
+                # A declared update this element has nowhere to keep was not written:
+                # several are opt-in `CalibratedTransmon` fields, and `apply` skips them.
+                if component is not None and not has_path(component, path):
+                    continue
+                store.record(
+                    result.target,
+                    path,
+                    Provenance(
+                        routine=routine.name,
+                        at=result.timestamp,
+                        run=report.timestamp,
+                        fit=fit_summary(result.fit),
+                    ),
+                )
+        store.save()
+
+    def _component_for(self, routine: CalibrationRoutine, target: str) -> Any:
+        """The element or edge *routine* writes to, or ``None`` if it cannot be resolved."""
+        accessor = "get_edge" if routine.targets == "edges" else "get_element"
+        try:
+            return getattr(self.device, accessor)(target)
+        except Exception:  # noqa: BLE001 - an unresolvable target simply gets no filter
+            return None
 
     def close(self) -> None:
         """Release instruments. Safe to call more than once."""
