@@ -1015,3 +1015,34 @@ def test_a_failed_qubit_spectroscopy_blocks_everything_that_needs_a_gate():
     # Not everything: a node needing nothing f01 depends on must still run.
     assert "resonator_spectroscopy" not in skipped
     assert "time_of_flight" not in skipped
+
+
+def test_a_punchout_sweep_reaches_full_readout_scale(own_quantify_tuner):
+    """Punch-through is the high-power end, so a grid stopping at half cannot find it.
+
+    This is the §5 hardware bound that got `resonator_punchout` switched off on both
+    August 2026 chips, and that RFC 0007 §12 recorded as fixed in phase 3 when phase 3
+    had only raised the ceilings in `single_qubit.py` and `ef.py`. `full_scale` had never
+    been imported into `spectroscopy.py` at all.
+
+    Unlike `rabi`, there is no accuracy bound pulling the other way: a resonator driven
+    hard does not stop being a resonator, and a readout pulse past full scale simply
+    clips. So this one goes to the top rather than to half and leaves escalation out of
+    it. The B chip made the cost concrete — carrying `output_att: 20` on its readout, a
+    grid stopping at 0.5 is around 26 dB short of what the module can emit.
+    """
+    from qpi_driver.tuners.base.limits import FULL_SCALE, full_scale
+
+    element = own_quantify_tuner.device.get_element("q0")
+    assert full_scale(element, "measure.pulse_amp") == pytest.approx(FULL_SCALE)
+
+    node = routine("resonator_punchout")
+    node.build_schedule(
+        "q0",
+        own_quantify_tuner.device,
+        RoutineConfig(params={}),
+        own_quantify_tuner.backend,
+    )
+    assert max(node._powers) == pytest.approx(FULL_SCALE)
+    # And still starts low enough to have a dressed regime to compare against.
+    assert min(node._powers) < 0.05

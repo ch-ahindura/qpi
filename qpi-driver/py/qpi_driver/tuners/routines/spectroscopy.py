@@ -13,7 +13,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.limits import addressable_band, clamp_to_band
+from qpi_driver.tuners.base.limits import addressable_band, clamp_to_band, full_scale
 from qpi_driver.tuners.base.device import (
     has_flux_port,
     measured_linewidth,
@@ -482,8 +482,18 @@ class ResonatorPunchout(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
+        # To full scale, not to half. Punch-through is by definition the *high*-power end
+        # of the sweep, so a grid stopping at 0.5 finds it only on a line lossless enough
+        # to punch through at half drive — and on a chip carrying `output_att: 20` it is
+        # some 26 dB short of what the module can emit, which is to say it cannot find it
+        # at all. This is the §5 hardware bound that got the node switched off on the
+        # August 2026 chips, and that §12 recorded as fixed in phase 3 when it was not.
         self._powers = setpoints_of(
-            config, "amplitudes", linear_setpoints(0.01, 0.5, 11)
+            config,
+            "amplitudes",
+            linear_setpoints(
+                0.01, full_scale(device.get_element(target), "measure.pulse_amp"), 11
+            ),
         )
         self._frequencies = _frequency_sweep(
             config, device, target, "readout", default_span=20e6, backend=backend

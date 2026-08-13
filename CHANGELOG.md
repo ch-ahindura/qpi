@@ -31,6 +31,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: 22 routines now declare the qubit frequency and pi-pulse amplitude their
   gates need, so a failed `qubit_spectroscopy` skips everything behind it. One dead
   frequency previously produced eight separate failures, each looking like its own fault.
+- `qpi-driver/py`: `resonator_punchout` sweeps readout power to full scale rather than
+  stopping at half, so punch-through is reachable on an attenuated readout line. On a chip
+  with 20 dB of output attenuation the old ceiling was ~26 dB short of finding it.
 
 ### Fixed
 
