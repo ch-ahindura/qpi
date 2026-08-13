@@ -21,17 +21,23 @@ rather than assuming it, the way `drag_parameter_name` and `phase_correction_nam
 already do.
 """
 
+from typing import Any
+
 from qpi_driver.compat.quantify import (
     BasicTransmonElement,
     InstrumentChannel,
     ManualParameter,
     Numbers,
 )
+from qpi_driver.executors.base.rotations import amplitude_for_angle
 
 #: Drive amplitude a spectroscopy sweep may be asked for. The same full-scale bound the
 #: schedulers put on any pulse amplitude: past one the waveform clips and the schedule
 #: will not compile.
 MAX_SPECTROSCOPY_AMPLITUDE = 1.0
+
+#: The gate whose amplitude interpolation this element replaces.
+RXY_OPERATION = "Rxy"
 
 
 class SpectroscopySettings(InstrumentChannel):
@@ -212,6 +218,31 @@ class EFDrive(InstrumentChannel):
         )
 
 
+class FineRotation(InstrumentChannel):
+    """A separately measured pi/2 amplitude, for when half a pi pulse is not one.
+
+    Not on ``rxy`` beside ``amp180``, though that is where it belongs, because that
+    submodule is the base element's and adding to it would change what a
+    `BasicTransmonElement` serialises. Its own submodule keeps the opt-in the same
+    shape as every other field here.
+
+    Zero means "not measured", and the interpolation falls back to the straight line
+    through ``amp180`` that both schedulers already draw — so an element that has
+    never run `fine_amplitude_90` compiles bit-for-bit as it did before.
+    """
+
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
+
+        self.add_parameter(
+            "amp90",
+            parameter_class=ManualParameter,
+            unit="",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+        )
+
+
 class CalibratedTransmon(BasicTransmonElement):
     """A transmon with somewhere to put every parameter the graph calibrates."""
 
@@ -222,3 +253,47 @@ class CalibratedTransmon(BasicTransmonElement):
         self.add_submodule("measure_2state", TwoStateReadout(self, "measure_2state"))
         self.add_submodule("r12", EFDrive(self, "r12"))
         self.add_submodule("measure_3state", ThreeStateReadout(self, "measure_3state"))
+        self.add_submodule("fine", FineRotation(self, "fine"))
+
+    def _generate_config(self) -> dict[str, dict[str, Any]]:
+        """The base element's config with ``Rxy`` re-pointed at :func:`rxy_drag_pulse`.
+
+        Surgical on purpose: everything else the base builds — reset, Rz, H, measure,
+        the pulse-compensation entry — is untouched, so this element tracks upstream
+        changes to all of them and diverges on exactly the one operation it means to.
+        """
+        config = super()._generate_config()
+        rxy = config[self.name][RXY_OPERATION]
+        rxy.factory_func = rxy_drag_pulse
+        rxy.factory_kwargs["amp90"] = self.fine.amp90()
+        return config
+
+
+def rxy_drag_pulse(
+    amp180: float,
+    amp90: float,
+    motzoi: float,
+    theta: float,
+    phi: float,
+    port: str,
+    duration: float,
+    clock: str,
+    reference_magnitude: Any = None,
+) -> Any:
+    """quantify's ``rxy_drag_pulse``, with the amplitude off :func:`amplitude_for_angle`.
+
+    A wrapper rather than a patch: the upstream factory is what a stock element uses
+    and has to keep using, and its signature is the contract this has to match — the
+    keyword names here are the keys of ``factory_kwargs``.
+    """
+    from quantify_scheduler.operations import pulse_library
+
+    return pulse_library.DRAGPulse(
+        G_amp=amplitude_for_angle(theta, amp180, amp90),
+        D_amp=motzoi,
+        phase=phi,
+        port=port,
+        duration=duration,
+        clock=clock,
+        reference_magnitude=reference_magnitude,
+    )

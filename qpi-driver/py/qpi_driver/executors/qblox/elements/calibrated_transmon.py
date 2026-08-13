@@ -9,7 +9,7 @@ quantify-scheduler is the one being deprecated, so this is the side that has to 
 See the quantify module for why these parameters exist.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -19,10 +19,14 @@ from qpi_driver.compat.qblox import (
     Parameter,
     SchedulerSubmodule,
 )
+from qpi_driver.executors.base.rotations import amplitude_for_angle
 
 #: Kept identical to the quantify element's bound: it describes what a pulse amplitude
 #: can be, not which scheduler is emitting it.
 MAX_SPECTROSCOPY_AMPLITUDE = 1.0
+
+#: The gate whose amplitude interpolation this element replaces.
+RXY_OPERATION = "Rxy"
 
 
 class SpectroscopySettings(SchedulerSubmodule):
@@ -126,6 +130,17 @@ class EFDrive(SchedulerSubmodule):
     )
 
 
+class FineRotation(SchedulerSubmodule):
+    """A separately measured pi/2 amplitude. See the quantify twin."""
+
+    amp90: float = Parameter(
+        docstring="Amplitude of a pi/2 pulse. 0 falls back to half of amp180.",
+        unit="",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+    )
+
+
 class CalibratedTransmon(BasicTransmonElement):
     """A transmon with somewhere to put every parameter the graph calibrates."""
 
@@ -142,4 +157,42 @@ class CalibratedTransmon(BasicTransmonElement):
     r12: EFDrive = Field(default_factory=lambda: EFDrive(name="r12"))
     measure_3state: ThreeStateReadout = Field(
         default_factory=lambda: ThreeStateReadout(name="measure_3state")
+    )
+    fine: FineRotation = Field(default_factory=lambda: FineRotation(name="fine"))
+
+    def _generate_config(self) -> dict[str, dict[str, Any]]:
+        """The base element's config with ``Rxy`` re-pointed at :func:`rxy_drag_pulse`."""
+        config = super()._generate_config()
+        rxy = config[self.name][RXY_OPERATION]
+        rxy.factory_func = rxy_drag_pulse
+        rxy.factory_kwargs["amp90"] = self.fine.amp90
+        return config
+
+
+def rxy_drag_pulse(
+    amp180: float,
+    amp90: float,
+    beta: float,
+    theta: float,
+    phi: float,
+    port: str,
+    duration: float,
+    clock: str,
+    reference_magnitude: Any = None,
+) -> Any:
+    """qblox's ``rxy_drag_pulse``, with the amplitude off :func:`amplitude_for_angle`.
+
+    ``beta`` where quantify says ``motzoi`` and ``amplitude`` where it says ``G_amp``:
+    the same DRAG pulse, renamed upstream. See the quantify twin.
+    """
+    from qblox_scheduler.operations import pulse_library
+
+    return pulse_library.DRAGPulse(
+        amplitude=amplitude_for_angle(theta, amp180, amp90),
+        beta=beta,
+        phase=phi,
+        port=port,
+        duration=duration,
+        clock=clock,
+        reference_magnitude=reference_magnitude,
     )
