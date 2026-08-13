@@ -11,11 +11,15 @@ to the device.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
+import xarray as xr
 import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
+from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
 from qpi_driver.tuners.base.routines import RoutineError
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
@@ -1043,3 +1047,181 @@ def test_a_punchout_sweep_reaches_full_readout_scale(own_quantify_tuner):
     assert max(node._powers) == pytest.approx(FULL_SCALE)
     # And still starts low enough to have a dressed regime to compare against.
     assert min(node._powers) < 0.05
+
+
+class TestTheResonatorSweepWidensItself:
+    """RFC 0007 §11.2: the root of the graph could not re-centre its own window.
+
+    `resonator_spectroscopy` writes the frequency every other node reads, so a refusal
+    here stops the chip rather than one routine — and a resonator a few MHz outside its
+    window is the commonest bring-up state there is, since fabrication scatter alone moves
+    one by tens of MHz. It was the only escalating-class node with no escalation.
+
+    Hermetic on purpose: the simulator has no resonator physics, so a real walk cannot
+    exercise this, and the quantify fixtures are exactly the ones that fail on macOS.
+    """
+
+    #: The B chip's own numbers — a 20 MHz window with the line 12.8 MHz below its centre.
+    LINEWIDTH_HZ = 3.3e5
+
+    def test_a_centre_outside_the_window_asks_for_a_wider_span(self):
+        """Not a flat refusal: the axis and the direction are both knowable here.
+
+        The exact numbers are the B chip's own refusal — a fitted 7.11619 GHz against the
+        [7.11899, 7.13899] GHz it had swept — so the factor below is what that run would
+        have widened by.
+        """
+        from qpi_driver.tuners.fitting.core import OutOfRange, require_in_range
+
+        with pytest.raises(OutOfRange) as raised:
+            require_in_range(
+                7.11619e9,
+                7.11899e9,
+                7.13899e9,
+                what="resonator spectroscopy centre frequency",
+                axis="span",
+            )
+
+        assert raised.value.axis == "span"
+        assert raised.value.direction == "wider"
+        # Derived from the excursion and doubled, because the extrapolation says which
+        # side the line is on and not how far: 2.56x turns 20 MHz into 51.2 MHz, reaching
+        # 25.6 MHz either side, which contains the 12.8 MHz that actually defeated it.
+        assert raised.value.factor == pytest.approx(2.56, rel=0.02)
+
+    def test_a_caller_with_no_span_to_widen_still_gets_a_plain_refusal(self):
+        """Every other `require_in_range` caller must behave exactly as it did."""
+        from qpi_driver.tuners.fitting.core import (
+            FitError,
+            OutOfRange,
+            require_in_range,
+        )
+
+        with pytest.raises(FitError) as raised:
+            require_in_range(9.0, 0.0, 1.0, what="T1")
+        assert not isinstance(raised.value, OutOfRange)
+
+    def test_widening_a_span_scales_its_points_to_hold_the_step(self):
+        """A wider span at the same point count steps over the line it went to find."""
+        from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS, _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("resonator_spectroscopy")
+        node._span = 20e6
+        refusal = OutOfRange("out", axis="span", factor=4.0)
+
+        widened = _widened(node, RoutineConfig(params={}), refusal)
+
+        assert widened.get("span") == pytest.approx(80e6)
+        assert widened.get("points") == 51 * 4
+        # And it stops before the sequencer does.
+        huge = _widened(node, RoutineConfig(params={"points": 400}), refusal)
+        assert huge.get("points") == MAX_SWEEP_POINTS
+
+    def test_it_finds_a_resonator_outside_its_first_window(self):
+        """The whole point, end to end through `escalating`."""
+        configured = 7.12899e9
+        truth = configured - 12.8e6
+        node = routine("resonator_spectroscopy")
+        device = _FakeDevice(configured)
+        backend = _DipBackend(node, truth, self.LINEWIDTH_HZ)
+
+        # `points` and not `span`, so escalation stays free to widen the axis it names.
+        # 501 over the 20 MHz default is a 40 kHz grid, which a 330 kHz resonator needs:
+        # the default 51 points is 400 kHz, and `require_resolved_line` rightly refuses a
+        # line thinner than the grid however wide the span gets.
+        params = node.measure(
+            "q0",
+            device,
+            RoutineConfig(params={"points": 501}),
+            backend,
+            None,
+            timeout_s=60,
+        )
+
+        assert params["readout_frequency"] == pytest.approx(
+            truth, abs=self.LINEWIDTH_HZ
+        )
+        # Two attempts: the 20 MHz default, then the widened one that contains the line.
+        assert len(backend.spans) == 2
+        assert backend.spans[0] == pytest.approx(20e6, rel=0.01)
+        assert backend.spans[1] > 2 * 12.8e6, "the widened sweep must reach the line"
+
+    def test_an_operator_who_set_the_span_is_not_overruled(self):
+        """RFC 0007 §7: a named axis is a statement about the chip, not a default."""
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        configured = 7.12899e9
+        node = routine("resonator_spectroscopy")
+        device = _FakeDevice(configured)
+        backend = _DipBackend(node, configured - 12.8e6, self.LINEWIDTH_HZ)
+
+        with pytest.raises(OutOfRange):
+            node.measure(
+                "q0",
+                device,
+                RoutineConfig(params={"span": 20e6, "points": 501}),
+                backend,
+                None,
+                timeout_s=60,
+            )
+        assert len(backend.spans) == 1, "it should not have widened a stated sweep"
+
+
+def _dip(frequencies: np.ndarray, centre: float, linewidth: float) -> np.ndarray:
+    """A Lorentzian dip on a flat baseline, with enough scatter to be a real fit."""
+    detuning = (frequencies - centre) / (linewidth / 2.0)
+    signal = 1.0 - 0.9 / (1.0 + detuning**2)
+    return signal + np.random.default_rng(0).normal(0.0, 0.002, frequencies.size)
+
+
+class _FakeElement:
+    def __init__(self, readout: float) -> None:
+        self.name = "q0"
+        self.clock_freqs = SimpleNamespace(readout=readout)
+
+
+class _FakeDevice:
+    """The least a spectroscopy routine needs: one element with a readout clock.
+
+    No ``hardware_config``, so `addressable_band` returns ``None`` and nothing is band
+    clamped — which is what a test about span arithmetic wants.
+    """
+
+    def __init__(self, readout: float) -> None:
+        self._element = _FakeElement(readout)
+
+    def get_element(self, name: str) -> _FakeElement:
+        return self._element
+
+
+class _DipBackend(SchedulerBackend):
+    """Returns a resonator dip evaluated wherever *node* actually swept.
+
+    Reads the setpoints back off the routine rather than off the schedule, because the
+    schedule is the backend's own opaque object here and the frequencies are the only
+    thing this needs to answer.
+    """
+
+    name = "dip"
+    Reset = staticmethod(lambda *a, **k: ("reset", a, k))
+    Measure = staticmethod(lambda *a, **k: ("measure", a, k))
+    SetClockFrequency = staticmethod(lambda *a, **k: ("clock", a, k))
+    BinMode = SimpleNamespace(AVERAGE="average", APPEND="append")
+
+    def __init__(self, node: Any, centre: float, linewidth: float) -> None:
+        self._node = node
+        self._centre = centre
+        self._linewidth = linewidth
+        #: The span of each attempt, so a test can see escalation happen.
+        self.spans: list[float] = []
+
+    def new_schedule(self, name: str, repetitions: int = 1) -> Any:
+        return SimpleNamespace(ops=[], add=lambda op: None)
+
+    def run(self, schedule: Any, timeout_s: float = 0.0) -> xr.Dataset:
+        frequencies = np.asarray(self._node._frequencies, dtype=float)
+        self.spans.append(float(frequencies[-1] - frequencies[0]))
+        return xr.Dataset(
+            {"y": ("x", _dip(frequencies, self._centre, self._linewidth))}
+        )

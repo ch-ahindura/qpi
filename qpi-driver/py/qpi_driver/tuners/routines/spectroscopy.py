@@ -23,6 +23,7 @@ from qpi_driver.tuners.base.device import (
     write_path,
 )
 from qpi_driver.tuners.base.routines import (
+    DEFAULT_SWEEP_POINTS,
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
     CheckOutcome,
@@ -123,7 +124,7 @@ def _frequency_sweep(
     if centre is None:
         centre = _current_clock(device, target, clock)
     span = float(config.get("span", default_span))
-    points = int(config.get("points", 51))
+    points = int(config.get("points", DEFAULT_SWEEP_POINTS))
 
     low, high = centre - span / 2, centre + span / 2
     if backend is not None and clock in _PORT_CLOCKS:
@@ -314,11 +315,39 @@ class ResonatorSpectroscopy(CalibrationRoutine):
     updates = ("clock_freqs.readout", "resonator.linewidth")
     reads = ("clock_freqs.readout",)
 
+    #: How wide to look when the operator names no span, in Hz.
+    #:
+    #: A named constant rather than a literal because escalation multiplies it: a refusal
+    #: carries the axis ``span``, and `_scalar_axis` reads the value back off ``_span``.
+    SPAN = 20e6
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen and look again when the fitted line lands outside the window.
+
+        The root of the graph could not do this, which is the whole of RFC 0007 §11.2. A
+        resonator a few MHz outside its window is the commonest bring-up state there is —
+        fabrication scatter alone moves one by tens of MHz — and every node downstream
+        reads the frequency this one writes, so a refusal here stops the chip rather than
+        one routine.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
+        # Recorded for escalation to read back, under the `_<axis>` convention `_widened`
+        # already uses for setpoint lists.
+        self._span = float(config.get("span", self.SPAN))
         self._frequencies = _frequency_sweep(
-            config, device, target, "readout", default_span=20e6, backend=backend
+            config, device, target, "readout", default_span=self.SPAN, backend=backend
         )
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
@@ -344,7 +373,9 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         # It had no guard: a 72% dip confined to one 400 kHz bin was fitted as a
         # 2379 Hz linewidth at Q = 2.9 million, and the centre it wrote was 47 kHz
         # off the deepest sample it had actually measured.
-        require_resolved_line(fitted, self._frequencies)
+        # span so a flat window widens and a line thinner than the grid gets a
+        # finer one, instead of both ending the run (RFC 0007 §11.2).
+        require_resolved_line(fitted, self._frequencies, axis="span")
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

@@ -13,6 +13,13 @@ log = logging.getLogger(__name__)
 #: turning a report into something that will not save.
 MAX_FIT_POINTS = 200
 
+#: The largest widening a single refusal may ask for, as a multiple of the current extent.
+#:
+#: Escalation compounds — three rounds at this cap is 512x — and `_widened` scales the
+#: point count with the span to hold the step size, so an uncapped factor buys reach by
+#: spending the sequencer's acquisition budget on resolution nobody asked for.
+MAX_REACH_FACTOR = 8.0
+
 
 class FitError(Exception):
     """The data could not be fitted, or the fit is not physically usable."""
@@ -52,7 +59,13 @@ class OutOfRange(FitError):
 
 
 def require_in_range(
-    value: float, low: float, high: float, *, what: str, tolerance: float = 0.0
+    value: float,
+    low: float,
+    high: float,
+    *,
+    what: str,
+    tolerance: float = 0.0,
+    axis: str | None = None,
 ) -> float:
     """Return *value*, or raise if it falls outside ``[low, high]``.
 
@@ -60,8 +73,16 @@ def require_in_range(
     not a measurement — the fitter wandered. Widening by *tolerance* (a fraction
     of the span) allows for a peak sitting exactly on the last setpoint.
 
+    *axis* names the config key a caller may widen and try again with. Supplying it turns
+    the refusal into an `OutOfRange`, which is the difference between "this chip is dead"
+    and "you looked in the wrong place" — and a fitted centre outside its own window is
+    nearly always the second. Left ``None`` it raises a plain `FitError`, so a caller with
+    no sweep to widen, or one whose axis is a list of setpoints rather than a span,
+    behaves exactly as it did.
+
     Raises:
         FitError: naming the value, the bound it broke and the window.
+        OutOfRange: the same message, when *axis* says which sweep to widen.
     """
     if low > high:
         low, high = high, low
@@ -70,11 +91,34 @@ def require_in_range(
     if not np.isfinite(value):
         raise FitError(f"{what} is not finite ({value})")
     if value < low - margin or value > high + margin:
-        raise FitError(
+        message = (
             f"{what} fitted to {value:.6g}, outside the swept range "
             f"[{low:.6g}, {high:.6g}] — treating as a failed fit"
         )
+        if axis is None:
+            raise FitError(message)
+        raise OutOfRange(
+            message,
+            axis=axis,
+            direction="wider",
+            factor=_reach_factor(value, low, high),
+        )
     return float(value)
+
+
+def _reach_factor(value: float, low: float, high: float) -> float:
+    """How much wider a sweep must be before *value* could sit inside it, doubled.
+
+    Doubled on purpose. A fitted centre outside its own window is an extrapolation, so it
+    says the line is *past this edge* without saying how far past: the August 2026 B chip
+    put a resonator 2.8 MHz below a 20 MHz window when the true offset was 12.8 MHz, and a
+    sweep widened to contain the extrapolation exactly would have missed it a second time.
+    """
+    half = (high - low) / 2.0
+    if half <= 0:
+        return MAX_REACH_FACTOR
+    excursion = max(low - value, value - high, 0.0)
+    return min(2.0 * (half + excursion) / half, MAX_REACH_FACTOR)
 
 
 def require_positive(value: float, *, what: str) -> float:

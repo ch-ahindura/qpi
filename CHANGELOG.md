@@ -36,6 +36,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   with 20 dB of output attenuation the old ceiling was ~26 dB short of finding it.
 - `qpi-driver/py`: a two-qubit routine is skipped when either of its qubits failed to
   calibrate, rather than measuring a gate through an endpoint that was never brought up.
+- `qpi-driver/py`: `resonator_spectroscopy` widens and re-runs its own sweep when the
+  resonator is outside the window, or samples it harder when the line is thinner than the
+  grid. The root of the calibration graph previously stopped the whole chip instead.
 
 ### Fixed
 

@@ -35,13 +35,22 @@ def lorentzian(
 
 
 def _fit_lorentzian(
-    frequencies: np.ndarray, signal: np.ndarray, *, what: str
+    frequencies: np.ndarray,
+    signal: np.ndarray,
+    *,
+    what: str,
+    axis: str | None = None,
 ) -> dict[str, float]:
     """Fit a Lorentzian, trying both a peak and a dip seed.
 
     Which way a spectroscopy feature points depends on the acquisition: a
     resonator scanned in transmission dips, one scanned in reflection peaks. The
     fit should not care, so both seeds are tried and the better residual wins.
+
+    *axis* passes through to `require_in_range`, so a caller able to widen its sweep gets
+    an `OutOfRange` naming what to widen rather than a flat refusal. Off by default: most
+    callers here sweep power or a list of setpoints, and only a span-based frequency sweep
+    can act on it.
     """
     x, y = align(frequencies, signal, what=what)
     span = float(x[-1] - x[0]) or 1.0
@@ -72,7 +81,11 @@ def _fit_lorentzian(
 
     residual, (amplitude, centre, width, offset) = best
     centre = require_in_range(
-        centre, float(np.min(x)), float(np.max(x)), what=f"{what} centre frequency"
+        centre,
+        float(np.min(x)),
+        float(np.max(x)),
+        what=f"{what} centre frequency",
+        axis=axis,
     )
     linewidth = require_positive(abs(width), what=f"{what} linewidth")
     return {
@@ -111,7 +124,11 @@ def fit_resonator_spectroscopy(
     frequencies: np.ndarray, signal: np.ndarray
 ) -> dict[str, float]:
     """Fit a resonator scan. Returns ``{'readout_frequency', 'linewidth', 'snr', ...}``."""
-    fitted = _fit_lorentzian(frequencies, signal, what="resonator spectroscopy")
+    # ``span`` so a line outside the window widens the sweep instead of failing the
+    # run — the caller decides whether to act on it (RFC 0007 §11.2).
+    fitted = _fit_lorentzian(
+        frequencies, signal, what="resonator spectroscopy", axis="span"
+    )
     return {
         "readout_frequency": fitted["frequency"],
         "linewidth": fitted["linewidth"],

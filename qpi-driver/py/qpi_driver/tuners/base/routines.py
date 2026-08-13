@@ -28,6 +28,23 @@ log = logging.getLogger(__name__)
 #: of nanoseconds.
 GRID_NS = 1e-9
 
+#: Sweep axes that are a single number rather than a list of setpoints, so escalation
+#: multiplies the number and leaves the routine to build the grid from it.
+#:
+#: Only ``span`` so far, and it is the one that matters: a frequency sweep centred on a
+#: configured value cannot be widened by stretching its setpoints without losing the
+#: centring, the resolution and the NCO band clamp all at once. See `_scalar_axis`.
+SCALAR_AXES = frozenset({"span"})
+
+#: Points in a span-based sweep when the operator names none. Shared with
+#: `_frequency_sweep`, which is where the grid is actually built.
+DEFAULT_SWEEP_POINTS = 51
+
+#: The most points escalation will put in one sweep. The QRM's Q1ASM ceiling is 12288
+#: instructions, which works out at roughly 950 acquisitions, and a routine that widens
+#: itself past that trades a fit that refused for a schedule that will not assemble.
+MAX_SWEEP_POINTS = 900
+
 
 class RoutineError(Exception):
     """A routine could not produce a usable result.
@@ -78,8 +95,12 @@ class CalibrationRoutine(ABC):
             an instrumented `read_path` and fails if a declaration is short —
             **but only for paths that go through `read_path` at all.** A gate's
             frequency and amplitude are resolved off the element by the gate
-            library, so seven nodes are short today and the test cannot say so.
-            RFC 0007 §11.1: eight failures from one fault on the B chip.
+            library, and no probe can derive those: compiling reads *every*
+            parameter through `generate_device_config`. So
+            ``test_a_routine_playing_a_gate_declares_the_gate_parameters``
+            asserts the rule instead — play a gate, declare `clock_freqs.f01`
+            and, unless you supply your own amplitude, `rxy.amp180`. RFC 0007
+            §11.1, where under-declaring turned one fault into eight on a chip.
         benchmark: Whether this routine's output is a gate fidelity. Declared
             rather than inferred from an empty ``updates``: T1 writes nothing
             either, and recording it as a benchmark would put a ``None``
@@ -328,7 +349,9 @@ def grid_duration(seconds: float) -> float:
     return round(float(seconds) / GRID_NS) * GRID_NS
 
 
-def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> None:
+def require_resolved_line(
+    fitted: dict[str, Any], frequencies: list[float], *, axis: str | None = None
+) -> None:
     """Refuse a line the sweep could not have seen, or that is not above the noise.
 
     Two ways a Lorentzian fit reports a confident centre for a line that was never
@@ -354,18 +377,31 @@ def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> N
     latched onto one bin, which reach cannot, because such a fit has a large span and
     tiny residuals. Reach catches the broad shallow fit, which the width test cannot.
 
+    *axis* names the config key a caller may change and try again with, which turns both
+    refusals into an `OutOfRange` carrying the direction each one wants. They want opposite
+    things — a flat window wants more spectrum, a line thinner than the grid wants more
+    grid — so the direction has to travel with the refusal rather than be inferred from it.
+    Left ``None`` both stay a plain `RoutineError`, which is what a caller with no sweep to
+    change should see.
+
     Raises:
         RoutineError: naming the number that failed and what to change, since a
             too-narrow line wants a finer sweep and a too-shallow one wants more
             shots or a drive amplitude that shows the transition.
+        OutOfRange: the same, when *axis* says which sweep to change.
     """
     reach = float(fitted.get("reach", float("inf")))
     if reach < MIN_LINE_REACH:
-        raise RoutineError(
+        raise _unresolved(
             f"the fitted line travels only {reach:.2f}x the scatter left around it, "
             f"below the {MIN_LINE_REACH:g}x a measured line clears, so its centre is "
             "not a frequency — average more shots, or drive at an amplitude where "
-            "the transition actually appears"
+            "the transition actually appears",
+            # A flat window is the one refusal here that wants *reach*: either the line is
+            # somewhere else, or there is no line. Widening tries the first and stays
+            # bounded, so the second still fails and still says why.
+            axis=axis,
+            direction="wider",
         )
 
     if len(frequencies) < 2:
@@ -373,12 +409,24 @@ def require_resolved_line(fitted: dict[str, Any], frequencies: list[float]) -> N
     step = abs(frequencies[1] - frequencies[0])
     linewidth = float(fitted["linewidth"])
     if linewidth < step:
-        raise RoutineError(
+        raise _unresolved(
             f"fitted linewidth {linewidth:.4g} Hz is narrower than the "
             f"{step:.4g} Hz spacing of the sweep, so the line was never "
             "measured — the fit is of the noise between setpoints. Scan the "
-            "same span with more points, or narrow the span."
+            "same span with more points, or narrow the span.",
+            # The opposite response to the one above, which is why the direction has to
+            # travel with the refusal: a line thinner than the grid needs the grid, not
+            # more of the spectrum, and widening would make it worse.
+            axis=axis,
+            direction="finer",
         )
+
+
+def _unresolved(message: str, *, axis: str | None, direction: str) -> Exception:
+    """The refusal `require_resolved_line` raises: escalatable when an axis is named."""
+    if axis is None:
+        return RoutineError(message)
+    return OutOfRange(message, axis=axis, direction=direction, factor=2.0)
 
 
 def _widened(
@@ -395,7 +443,20 @@ def _widened(
     Only the setpoints move. Everything else the operator set is carried through, because
     a wider sweep is still their sweep — and the axis is stored under its own config key,
     so the next attempt reads it exactly as though it had been asked for.
+
+    A **scalar** axis is widened rather than the setpoints it would produce, and that
+    distinction is what makes this usable on a frequency sweep. Stretching a list of
+    frequencies gets three things wrong at once: it anchors at the low end and reaches
+    only upward, so it widens away from a resonator that sits below the window; it holds
+    the point count, so a wider span steps over a narrow line; and it lands in the config
+    as an explicit ``frequencies``, which `_frequency_sweep` passes through *unclamped*,
+    so the next attempt asks the NCO for a frequency it cannot reach. Widening ``span``
+    instead leaves centring, resolution and the band clamp where they already live.
     """
+    scalar = _scalar_axis(routine, config, refusal)
+    if scalar is not None:
+        return scalar
+
     current = list(
         config.get(refusal.axis) or getattr(routine, f"_{refusal.axis}", ()) or ()
     )
@@ -412,4 +473,47 @@ def _widened(
         stretched = linear_setpoints(centre, centre + extent, len(current))
     return RoutineConfig(
         enabled=config.enabled, params={**config.params, refusal.axis: stretched}
+    )
+
+
+def _scalar_axis(
+    routine: CalibrationRoutine, config: RoutineConfig, refusal: OutOfRange
+) -> RoutineConfig | None:
+    """*config* with a scalar *refusal* axis multiplied out, or ``None`` if it is a list.
+
+    ``points`` moves with ``span`` so the step size survives the widening: a resonator is
+    a few hundred kHz wide and a sweep that quadruples its reach while keeping 51 points
+    steps over the very line it was widened to find. Bounded by `MAX_SWEEP_POINTS`,
+    because the sequencer's acquisition ceiling is real and a clamped span does not need
+    the resolution an unclamped one asked for.
+    """
+    if refusal.axis not in SCALAR_AXES:
+        return None
+    # The same fallback the list branch uses, and for the same reason: the default case
+    # is a config with no `span` in it, which is exactly the one needing widened.
+    current = config.get(refusal.axis, getattr(routine, f"_{refusal.axis}", None))
+    if current is None:
+        return None
+
+    points = config.get("points", DEFAULT_SWEEP_POINTS)
+    if refusal.direction == "finer":
+        # The same window, sampled harder — a line thinner than the grid needs the grid.
+        # The span is left exactly as it was, so this is not a widening at all.
+        return RoutineConfig(
+            enabled=config.enabled,
+            params={
+                **config.params,
+                "points": min(int(points * refusal.factor), MAX_SWEEP_POINTS),
+            },
+        )
+    return RoutineConfig(
+        enabled=config.enabled,
+        params={
+            **config.params,
+            refusal.axis: float(current) * refusal.factor,
+            # Alongside the span, so the step size survives the widening: a resonator is a
+            # few hundred kHz wide and a sweep that quadruples its reach on 51 points steps
+            # over the very line it was widened to find.
+            "points": min(int(points * refusal.factor), MAX_SWEEP_POINTS),
+        },
     )

@@ -632,6 +632,46 @@ live, so an irrelevant spelling is silently absent rather than wrong.
 So a failed `rabi` on either end of an edge now skips the edge, which is what
 `validate_targets` refuses the *configuration* for and the walk previously allowed anyway.
 
+### 11.2 The root of the graph could not re-centre its own sweep
+
+**Fixed in August 2026,** and it is the refusal that opened the investigation §11.1 came
+out of: `resonator_spectroscopy` on a B-chip qubit reported a centre 2.8 MHz below the
+20 MHz window it had swept, and stopped. It writes the frequency every other node reads,
+so a refusal there stops the chip rather than one routine — and a resonator a few MHz
+outside its window is the commonest bring-up state there is, since fabrication scatter
+alone moves one by tens of MHz.
+
+It was the only node in §5's escalation-bounded class with no escalation, and pointing the
+existing machinery at it would not have worked. Three separate reasons, all in `_widened`:
+
+- It anchors a widened axis at `low` and extends **upward**, which is right for a delay
+  and backwards for a resonator that sits below its window.
+- It holds the point count, so a wider frequency span steps over the line it was widened
+  to find — and `require_resolved_line` then refuses it for being thinner than the grid.
+- It writes the result as explicit setpoints, and `_frequency_sweep` passes explicit
+  ``frequencies`` through **unclamped**, so the next attempt asks the NCO for a frequency
+  outside its ±500 MHz reach.
+
+So escalation widens **`span`**, a scalar, and leaves centring, resolution and the band
+clamp where they already live. `points` moves with it to hold the step size, bounded by
+`MAX_SWEEP_POINTS` because the sequencer's ceiling is real.
+
+**Both of the fit's refusals escalate, in opposite directions.** `require_in_range` — the
+centre outside the window — asks for a wider span, by a factor derived from the excursion
+and then doubled, since an extrapolated centre says which side the line is on and not how
+far. `require_resolved_line` splits: a flat window asks for more spectrum, and a line
+thinner than the grid asks for more grid over the same span. Getting that second one
+backwards would make the failure worse, which is why the direction travels with the
+refusal rather than being inferred from the axis.
+
+Discovered while testing, and worth recording: for a line *far* outside a narrow window
+there is no signal at all, so the flat-window guard fires before the range guard ever sees
+the fit. Escalating only `require_in_range` would have covered a band of cases a few
+linewidths wide and missed the one that motivated it.
+
+An operator who names `span` is still left alone, per §7 — including on the B chip, whose
+`calibration.yml` sets 4 MHz.
+
 ## 12. Resolved during review
 
 No open questions remain. Recorded because the reasoning is worth keeping, and because
