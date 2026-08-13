@@ -268,7 +268,10 @@ class CalibrationRoutine(ABC):
                 attempted.append(f"{refusal.axis} x{refusal.factor**attempt:g}")
                 if attempt == self.MAX_ESCALATIONS or refusal.axis in operator_set:
                     raise
-                config = _widened(self, config, refusal)
+                widened = _widened(self, config, refusal)
+                if widened is config:
+                    raise
+                config = widened
                 log.info(
                     "%s on %s: %s — widening %s by %gx and trying again (%d of %d)",
                     self.name,
@@ -493,6 +496,7 @@ def _widened(
     if not current:
         return config
     low, high = min(current), max(current)
+    ceiling = getattr(routine, f"_{refusal.axis}_ceiling", None)
     if refusal.direction == "finer":
         # The same window, sampled harder. An aliased fringe needs resolution, not reach —
         # and lengthening the sweep would make the aliasing worse while costing more.
@@ -500,7 +504,20 @@ def _widened(
     else:
         extent = (high - low) * refusal.factor
         centre = (high + low) / 2.0 if low < 0 else low
-        stretched = linear_setpoints(centre, centre + extent, len(current))
+        top = centre + extent
+        if ceiling is not None:
+            # A drive amplitude has a hardware ceiling and reaching past it does not fail
+            # politely: the compiler refuses `awg_gain_0` outside [-1, 1], naming a pulse
+            # rather than the routine. `rabi` starts at half scale precisely so escalation
+            # can reach the rest, and said so in a comment while nothing enforced it — a
+            # 4x widening of 0-0.5 asked for 0-2.0 and died at the 1.05 setpoint.
+            top = min(top, float(ceiling))
+            if top <= high:
+                # Already at the ceiling, so there is nothing further to try. Returning the
+                # config unchanged lets `escalating` re-raise instead of re-running an
+                # identical sweep to get an identical refusal.
+                return config
+        stretched = linear_setpoints(centre, top, len(current))
     return RoutineConfig(
         enabled=config.enabled, params={**config.params, refusal.axis: stretched}
     )

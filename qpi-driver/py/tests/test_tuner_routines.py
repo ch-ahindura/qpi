@@ -1484,3 +1484,71 @@ class TestTheSearchDrivesAsHardAsTheConfirmPass:
         acquisitions = len(node.DEFAULT_AMPLITUDES) * 151
 
         assert acquisitions * INSTRUCTIONS_PER_ACQUISITION <= Q1ASM_CEILING
+
+
+class TestEscalationStopsAtFullScale:
+    """A widened amplitude sweep must not ask the AWG for more than it has.
+
+    `rabi` starts at half scale so escalation can reach the rest, and said exactly that in
+    a comment while nothing enforced it. On the B chip a 4x widening of 0-0.5 asked for
+    0-2.0 and the compiler refused the 21st setpoint:
+
+        awg_gain_0 is set to 1.0495151796199138. Parameter must be in the range
+        -1.0 <= awg_gain_0 <= 1.0 for Pulse Rxy(180, 0, 'q5')
+
+    Which names a pulse rather than the routine, and is a compile failure rather than a
+    fit refusal — so it says nothing about where the pi pulse actually is.
+    """
+
+    def _rabi_at(self, top: float):
+        from qpi_driver.tuners.base.routines import linear_setpoints
+
+        node = routine("rabi")
+        node._amplitudes = linear_setpoints(0.0, top, 41)
+        node._amplitudes_ceiling = 1.0
+        return node
+
+    def test_widening_clamps_to_the_ceiling(self):
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = self._rabi_at(0.5)
+        refusal = OutOfRange("above the sweep", axis="amplitudes", factor=4.0)
+
+        widened = _widened(node, RoutineConfig(params={}), refusal)
+
+        assert max(widened.get("amplitudes")) == pytest.approx(1.0)
+        assert len(widened.get("amplitudes")) == 41
+
+    def test_a_sweep_already_at_the_ceiling_stops_rather_than_repeating(self):
+        """Re-running an identical sweep to get an identical refusal wastes a chip's time."""
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = self._rabi_at(1.0)
+        config = RoutineConfig(params={})
+
+        assert (
+            _widened(
+                node,
+                config,
+                refusal := OutOfRange("above the sweep", axis="amplitudes", factor=4.0),
+            )
+            is config
+        ), refusal
+
+    def test_an_axis_with_no_ceiling_is_unbounded(self):
+        """Coherence delays have no hardware ceiling — only the routine timeout."""
+        from qpi_driver.tuners.base.routines import _widened, linear_setpoints
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("t1")
+        node._delays = linear_setpoints(0.0, 80e-6, 21)
+
+        widened = _widened(
+            node,
+            RoutineConfig(params={}),
+            OutOfRange("no decay", axis="delays", factor=4.0),
+        )
+
+        assert max(widened.get("delays")) == pytest.approx(320e-6)

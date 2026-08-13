@@ -173,12 +173,13 @@ class Rabi(CalibrationRoutine):
         # So: measure where the model holds, and reach further only when the fit says the
         # pi pulse is not in there. `full_scale` is the ceiling on that reaching, because
         # a waveform past it clips.
+        # Recorded for `_widened` to clamp against, under the same `_<axis>` convention it
+        # already reads setpoints by. Without it escalation walks straight past full scale.
+        self._amplitudes_ceiling = full_scale(device.get_element(target), "rxy.amp180")
         self._amplitudes = setpoints_of(
             config,
             "amplitudes",
-            linear_setpoints(
-                0.0, 0.5 * full_scale(device.get_element(target), "rxy.amp180"), 41
-            ),
+            linear_setpoints(0.0, 0.5 * self._amplitudes_ceiling, 41),
         )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))

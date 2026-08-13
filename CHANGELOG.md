@@ -31,6 +31,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a widened drive-amplitude sweep stops at full scale instead of asking the
+  AWG for more than it has. `rabi` starting at half scale and escalating past it compiled to
+  a gain of 1.05, which the compiler refused while naming a pulse rather than the routine.
 - `qpi-driver/py`: `qubit_spectroscopy`'s widening pass drives at the strongest power the
   run would try anyway, derived from `drive_amps`, rather than a constant that fell out of
   step with it. Raising `drive_amps` previously left the search probing weaker than the pass
