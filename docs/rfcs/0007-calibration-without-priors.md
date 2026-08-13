@@ -743,7 +743,7 @@ refusal now names the routine and says which setting to raise.
 It is a resource budget, which RFC 0007 §5 already distinguishes from the ranges this RFC
 removes: it needs no knowledge of the chip, only of how long the operator is willing to wait.
 
-### 11.5 The AllXY equator error: one cause fixed, the other blocked upstream
+### 11.5 The AllXY equator error: detuning fixed, the pi/2 amplitude now confirmed
 
 **Half fixed.** Found on the B chip's first fully calibrated run, which is worth stating
 because the chip was *working*: randomised benchmarking measured 0.9879 over seven depths, T1
@@ -782,12 +782,25 @@ pi/2 amplitude has nowhere to live and nothing that would honour it. Correcting 
 custom pulse factory and a new element field on `CalibratedTransmon`, which changes how every
 gate on every chip compiles.
 
-That is not worth building before the detuning half is ruled out, which the refinement above
-now does automatically: if the equator block collapses on the next run, this was detuning and
-there is nothing further to do. The evidence for the pi/2 reading is that ``amp180`` of 0.5757
-sits above half of full scale, where the rotation angle stops being linear in amplitude, so
-halving it need not halve the rotation — which is precisely the assumption quantify's
-interpolation makes.
+That was not worth building before the detuning half was ruled out, which the refinement above
+does automatically: if the equator block collapsed on the next run, this was detuning and there
+was nothing further to do.
+
+**It did not collapse, and that settles it.** The refinement drove the residual detuning from
+1032421.7 Hz to -384.2 Hz — a factor of 2687, and three orders of magnitude below the 6.6 kHz
+the window can resolve, so what is left is not detuning by any reading. The equator block moved
+by 5%:
+
+```
+before   pairs 6-9  -0.0991   pairs 14-17  +0.0890   split  +0.1881
+after    pairs 6-9  -0.0706   pairs 14-17  +0.1089   split  +0.1795
+```
+
+An antisymmetric split that survives the detuning going to zero is a pi/2 amplitude error, and
+the mechanism is the one already suspected: ``amp180`` of 0.5757 sits above half of full scale,
+where the rotation angle stops being linear in amplitude, so halving it does not halve the
+rotation — which is exactly what quantify's interpolation assumes. The upstream work above is
+therefore justified rather than speculative, and is the remaining half of this item.
 
 **Deliberately not recommended: changing ``rxy.duration``.** A longer pulse needs less
 amplitude and would move ``amp180`` out of the nonlinear region, but 56 ns is already 14 times
