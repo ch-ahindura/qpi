@@ -9,6 +9,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a routine may set its own `timeout_s` in `calibration.yml`, overriding the
+  global `routine_timeout_s`. One ceiling had to be set for the slowest node, so it could not
+  also catch a fast one hanging.
 - `qpi-driver/py`: a quantify routine logs how long its schedule should take before
   running it, and its Q1ASM at debug level. A timeout previously gave no way to tell a
   schedule that needed longer from one that was stuck.

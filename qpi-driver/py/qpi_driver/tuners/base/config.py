@@ -35,9 +35,20 @@ class RoutineConfig:
     Parameters are read flat — ``rabi: {amp_range: ...}`` — because a nested
     ``params:`` key is a level of ceremony that buys nothing and that an
     operator writing the file by hand will forget.
+
+    ``timeout_s`` is a field rather than one of those parameters so that a typo in it is a
+    startup error instead of a silently ignored key, and so it cannot be mistaken for a
+    sweep axis by anything that widens one.
     """
 
     enabled: bool = True
+    #: Wall-clock ceiling for this routine alone, overriding the walk's
+    #: `CalibrationConfig.routine_timeout_s`. ``None`` inherits it.
+    #:
+    #: One global number has to be set for the slowest node, which makes it no ceiling at all
+    #: for the fast ones: a spectroscopy that legitimately sweeps for minutes and a Rabi that
+    #: should take seconds cannot share a limit that catches a hang in either.
+    timeout_s: float | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -74,6 +85,19 @@ class CalibrationConfig:
         """Whether *routine_name* should run. Absent means yes — see the module docstring."""
         routine = self.routines.get(routine_name)
         return routine.enabled if routine is not None else True
+
+    def timeout_for(self, name: str) -> float:
+        """The wall-clock ceiling routine *name* runs under.
+
+        Its own ``timeout_s`` if it names one, else the walk's. Read through here rather
+        than off `routine_timeout_s` directly so that every place enforcing a ceiling — the
+        acquisition, the check schedules, and the over-budget refusal that reports it —
+        agrees about which number applied.
+        """
+        routine = self.routines.get(name)
+        if routine is not None and routine.timeout_s is not None:
+            return routine.timeout_s
+        return self.routine_timeout_s
 
     def get_routine(self, name: str) -> RoutineConfig:
         """*name*'s configuration, or an enabled one with default parameters."""
@@ -149,9 +173,15 @@ class CalibrationConfig:
                 raise ConfigError(
                     f"routine {name!r} must be a mapping of settings, got {type(routine_data)}"
                 )
-            params = {k: v for k, v in routine_data.items() if k != "enabled"}
+            params = {
+                k: v
+                for k, v in routine_data.items()
+                if k not in ("enabled", "timeout_s")
+            }
             routines[name] = RoutineConfig(
-                enabled=bool(routine_data.get("enabled", True)), params=params
+                enabled=bool(routine_data.get("enabled", True)),
+                timeout_s=_routine_timeout(name, routine_data),
+                params=params,
             )
 
         monitoring_data = data.get("monitoring") or {}
@@ -179,3 +209,21 @@ class CalibrationConfig:
         if data is None:
             raise ConfigError(f"{path} is empty")
         return cls.from_dict(data)
+
+
+def _routine_timeout(name: str, routine_data: dict[str, Any]) -> float | None:
+    """A routine's own ``timeout_s``, validated, or ``None`` to inherit the walk's."""
+    if "timeout_s" not in routine_data:
+        return None
+    value = routine_data["timeout_s"]
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        raise ConfigError(
+            f"routine {name!r}: timeout_s must be a number of seconds, got {value!r}"
+        ) from None
+    if seconds <= 0 or seconds != seconds:
+        raise ConfigError(
+            f"routine {name!r}: timeout_s must be positive, got {seconds}"
+        )
+    return seconds

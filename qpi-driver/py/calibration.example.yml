@@ -25,6 +25,12 @@ target_edges: [q0_q1, q1_q2]
 
 # Wall-clock ceiling for one routine on one target. A routine that hangs on an
 # instrument would otherwise hang the worker for the life of the driver.
+#
+# Any routine may override it with its own `timeout_s`, and on a real chip several want to.
+# The cost of a single global number is that it has to be set for the slowest node, which
+# makes it no ceiling at all for the fast ones: `qubit_spectroscopy` pays for a wide search
+# and then a fine confirm at several drive powers, and has been measured at 299 s, while a
+# Rabi that takes more than a few seconds is hung.
 routine_timeout_s: 900
 
 routines:
@@ -56,6 +62,10 @@ routines:
     points: 31
 
   qubit_spectroscopy:
+    # Its own ceiling, because this is the expensive node: a search across everything the
+    # port can reach, then a confirming sweep at each drive power. Raising the global limit
+    # to suit it would stop it catching a hang anywhere else.
+    timeout_s: 900
     # Two passes. `span`/`points` is the narrow sweep about the configured f01; if no line
     # is there, `search_*` looks across everything the drive port can reach and the narrow
     # sweep is repeated where it found one. Both are trimmed to the port's +/-500 MHz of

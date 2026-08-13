@@ -679,47 +679,71 @@ linewidths wide and missed the one that motivated it.
 An operator who names `span` is still left alone, per §7 — including on the B chip, whose
 `calibration.yml` sets 4 MHz.
 
-### 11.3 Open gap: nothing refuses a line that fills its own window
+### 11.3 Open gap: a saturated spectroscopy fit is accepted, and width is not the test
 
-**Open. Attempted in August 2026 and reverted — the attempt is recorded because it got two
-thirds of the way and the last third is the interesting part.**
+**Open, and narrower than it first looked.** Two attempts are recorded because the second
+disproved the first, and the disproof is the useful part.
 
 `qubit_spectroscopy` on the B chip **reported success** on a fit with no baseline: a 48.0 MHz
-line in a 54.0 MHz window, 89% of it, with a reach of 11.7 and a signal-to-noise of 20.3. It
-wrote a frequency to nine significant figures, and the `rabi` that read it could not find a
-pi pulse. The resonator in the same report is the contrast: 326 kHz in a 4 MHz window, 8%,
-Q = 22001. The qubit fit's Q was **111**, three orders below any transmon.
+line in a 54.0 MHz window, 89% of it, reach 11.7, snr 20.3, Q = 111 — three orders below any
+transmon. It wrote a frequency to nine significant figures and the `rabi` that read it could
+not find a pi pulse. Neither existing guard is wrong to pass it: reach and snr measure height
+against scatter and a saturated line is genuinely tall, and `require_resolved_line` bounds the
+linewidth only from *below*, against the sweep step.
 
-Both existing guards pass it, and neither is wrong to. `reach` and `snr` measure height
-against scatter, and a saturated line is genuinely tall; `require_resolved_line`'s width test
-bounds the linewidth from *below* — narrower than the sweep step means the line was never
-sampled — and there is no bound from above. A Lorentzian needs baseline as much as a peak:
-with no flat stretch either side, amplitude, offset and width trade against each other and
-the centre follows whichever the optimiser preferred.
+**First attempt: bound the width from above.** A `MAX_LINE_TO_SPAN` of one third, on the
+reasoning that a Lorentzian filling its window has no baseline to be determined against. It
+refuses the B-chip fit and accepts the resonator's 8%.
 
-**What was tried.** A `MAX_LINE_TO_SPAN` of one third in `require_resolved_line`, refusing
-the B-chip fit while accepting the resonator, and deliberately not escalatable — the two
-remedies pull opposite ways (drive gentler, or sweep wider) and the driver cannot tell which
-a chip wants.
+**Why that is the wrong criterion.** It also refuses the simulated chip at 99%, and capping
+the confirming span to make room broke §8's acceptance test. Measuring per drive power in the
+acceptance test's own configuration shows why: that chip's qubit line **really is 100 to
+160 MHz wide** at the default drive ladder, and at 0.08 in a 153 MHz window it reaches 124
+with a centre 1.35 MHz from truth — usable. Narrow the window to 16 MHz and nothing clears
+the reach floor at all, the best being 4.97 against 5. So `CONFIRM_SPAN_IN_WIDTHS` is right,
+the cap was wrong, and a line filling its own window can still yield a usable centre. Width
+over span does not separate the two chips.
 
-**Why it did not land.** The guard also refuses the *simulated* chip, at 99%: a 150.7 MHz
-line in a 153 MHz window. That window is `CONFIRM_SPAN_IN_WIDTHS` times a width the search
-measured at its own saturating power, so the fix looked like capping the confirming span by
-the search *step* — the search establishes position to half a bin, not width. Capped at eight
-steps it splits the two cases correctly: the simulator gets 16 MHz for a 1.2 MHz line, and
-the B chip a 16 MHz window its 48 MHz line cannot fit.
+**What actually separates them is physics, not geometry.** A 48 MHz linewidth on a 5.3 GHz
+transmon implies a coherence time of nanoseconds; the fit was of a saturated transition, not
+of a line. The simulated chip's 150 MHz is its model's genuine response at that drive. So the
+test wants to be a plausibility bound on the *linewidth itself* — a Q floor, or a linewidth
+ceiling in absolute Hz — and neither can be set from the two chips available, because one of
+them would fail any bound the other passes.
 
-But capping the span breaks §8's acceptance test. With the narrower window no drive power
-clears the reach floor — the strongest reaches 3.07 against 5 — and that is not reproducible
-outside the walk: the same search and confirm, run directly on the same simulator, gives a
-reach of 156.6 and an f01 within 2 kHz. So the walk leaves the chip in a state the isolated
-path does not, and until that is understood, capping the span trades a verified capability
-(a chip known only from its design document calibrates) for a guard whose interaction is not
-understood. Reverted on those grounds rather than merged with the acceptance test failing.
+Two ways forward, and both need evidence this RFC does not have:
 
-Whoever picks this up: the reach discrepancy between the isolated path and the walk is the
-thread to pull, not the guard. The guard is a dozen lines and its thresholds are already
-measured against two chips.
+- Decide whether the simulator's 150 MHz line is its physics or an artefact of how its drive
+  amplitude maps to a Rabi rate. If it is an artefact, fix the simulator and a Q floor becomes
+  settable. Note that `SimulatedTuner` and `QuantifyTuner(is_simulated=True)` disagree here —
+  the first reports a 1.24 MHz line at 0.08 where the second reports 99 MHz — and that
+  disagreement is itself worth chasing.
+- Or judge the fit against the *drive power that produced it*, since saturation is the
+  mechanism: a linewidth that grows with power is saturating, and one that does not is real.
+  `fit_spectroscopy_power` already sweeps power, so the data to test that is already collected
+  and thrown away.
+
+Until then the B chip's symptom is a config matter: drive more gently and average more shots,
+which is what §11.4's per-routine ``timeout_s`` exists to afford.
+
+### 11.4 A routine may carry its own timeout
+
+**Implemented in August 2026.** A single `routine_timeout_s` has to be set for the slowest
+node, which makes it no ceiling at all for the fast ones. On the B chip `qubit_spectroscopy`
+legitimately ran **299 s of a 300 s budget** — it pays for a search across everything the
+drive port reaches and then a confirming sweep at each drive power — while a `rabi` taking
+more than a few seconds is hung. Raising the global number to let spectroscopy average more
+shots also lets every other node sit for five minutes.
+
+So `RoutineConfig` gains `timeout_s`, and `CalibrationConfig.timeout_for` resolves it against
+the walk's. A field rather than one of the sweep parameters, so a typo is a startup error
+instead of a silently ignored key, and so nothing that widens an axis can mistake it for one.
+Read through `timeout_for` at every point that enforces a ceiling — the acquisition, the check
+schedules, and the over-budget refusal — so all three agree on which number applied, and the
+refusal now names the routine and says which setting to raise.
+
+It is a resource budget, which RFC 0007 §5 already distinguishes from the ranges this RFC
+removes: it needs no knowledge of the chip, only of how long the operator is willing to wait.
 
 ## 12. Resolved during review
 

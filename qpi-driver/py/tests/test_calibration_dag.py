@@ -18,6 +18,7 @@ from qpi_driver.tuners.base.provenance import Provenance, ProvenanceStore
 from qpi_driver.tuners.base.config import (
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationConfig,
+    ConfigError,
     RoutineConfig,
 )
 from qpi_driver.tuners.base.dag import CalibrationDAG, _human_duration
@@ -1228,3 +1229,66 @@ class TestWhatTheWalkSaysAboutPriors:
             "producer",
             "reader",
         ]
+
+
+class TestARoutineCanCarryItsOwnTimeout:
+    """One global ceiling has to be set for the slowest node, so it catches nothing.
+
+    RFC 0007 §11.4. On the B chip `qubit_spectroscopy` legitimately ran 299 s of a 300 s
+    budget — it pays for a wide search and then a fine confirm at several drive powers —
+    while `rabi` should finish in seconds. Raising the global number to give spectroscopy
+    room to average more shots also lets a hung Rabi sit for five minutes.
+    """
+
+    def _config(self, **routines):
+        return _config(routines=routines, routine_timeout_s=30.0)
+
+    def test_a_routine_without_one_inherits_the_walk_s(self):
+        config = self._config(rabi=RoutineConfig())
+
+        assert config.timeout_for("rabi") == 30.0
+        assert config.timeout_for("never_configured") == 30.0
+
+    def test_its_own_ceiling_wins(self):
+        config = self._config(
+            qubit_spectroscopy=RoutineConfig(timeout_s=600.0), rabi=RoutineConfig()
+        )
+
+        assert config.timeout_for("qubit_spectroscopy") == 600.0
+        assert config.timeout_for("rabi") == 30.0
+
+    def test_the_walk_enforces_the_routine_s_own_ceiling(self):
+        """The number that bounds the acquisition, not just the one that reports it."""
+        config = self._config(slow=RoutineConfig(timeout_s=7.0))
+        backend = FakeBackend()
+
+        CalibrationDAG([StubRoutine("slow")], config).run(
+            device=None, backend=backend, config=config
+        )
+
+        assert backend.timeouts == [7.0]
+
+    def test_it_is_read_from_the_config_file_and_validated(self, tmp_path):
+        path = tmp_path / "calibration.yml"
+        path.write_text(
+            "target_qubits: [q0]\nroutine_timeout_s: 30\n"
+            "routines:\n  qubit_spectroscopy:\n    timeout_s: 600\n    span: 20.0e+6\n"
+        )
+
+        config = CalibrationConfig.from_yaml(path)
+
+        assert config.timeout_for("qubit_spectroscopy") == 600.0
+        # And it is not mistaken for a sweep axis by anything that widens one.
+        assert "timeout_s" not in config.get_routine("qubit_spectroscopy")
+
+    @pytest.mark.parametrize("value", ("soon", 0, -5))
+    def test_a_ceiling_that_is_not_a_positive_number_is_a_startup_error(
+        self, tmp_path, value
+    ):
+        path = tmp_path / "calibration.yml"
+        path.write_text(
+            f"target_qubits: [q0]\nroutines:\n  rabi:\n    timeout_s: {value}\n"
+        )
+
+        with pytest.raises(ConfigError, match="timeout_s"):
+            CalibrationConfig.from_yaml(path)

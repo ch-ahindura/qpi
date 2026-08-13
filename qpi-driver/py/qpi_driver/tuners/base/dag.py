@@ -160,7 +160,7 @@ class CalibrationDAG:
                 )
                 if schedule is None:
                     continue
-                dataset = backend.run(schedule, timeout_s=config.routine_timeout_s)
+                dataset = backend.run(schedule, timeout_s=config.timeout_for(name))
                 outcome = routine.analyse_check(dataset, target, device, routine_config)
             except Exception:  # noqa: BLE001 - an unevaluable check is not drift
                 log.warning(
@@ -549,6 +549,7 @@ class CalibrationDAG:
         """Run one routine over one target, recording the outcome. True if it worked."""
         started = time.monotonic()
         backend.start_accounting()
+        allowance = config.timeout_for(routine.name)
         try:
             if routine.measures_itself:
                 # A routine whose acquisitions cannot be one schedule — DC state set
@@ -561,7 +562,7 @@ class CalibrationDAG:
                     routine_config,
                     backend,
                     self.bias,
-                    timeout_s=config.routine_timeout_s,
+                    timeout_s=allowance,
                 )
                 elapsed = time.monotonic() - started
                 # Against the *sum* of what each acquisition was owed, since the ceiling
@@ -569,9 +570,9 @@ class CalibrationDAG:
                 # schedule's allowance alone would fail a routine that never exceeded its
                 # allowance once — the exact failure `allow` exists to prevent, moved one
                 # level out.
-                allowed = max(config.routine_timeout_s, backend.total_allowance_s)
+                allowed = max(allowance, backend.total_allowance_s)
                 if elapsed > allowed:
-                    raise _over_budget(elapsed, allowed, config.routine_timeout_s)
+                    raise _over_budget(elapsed, allowed, allowance, routine.name)
                 fit = params.pop("fit", None)
                 routine.apply(device, target, params)
                 report.add_routine(
@@ -591,7 +592,7 @@ class CalibrationDAG:
             # The ceiling goes *into* the wait rather than only being checked after
             # it: `wait_done` blocks, so the check below can report a hang but never
             # end one.
-            dataset = backend.run(schedule, timeout_s=config.routine_timeout_s)
+            dataset = backend.run(schedule, timeout_s=allowance)
             elapsed = time.monotonic() - started
             # Against what the backend was prepared to wait for, not against the
             # configured ceiling: a schedule whose pulses outlast it raises its own
@@ -599,9 +600,9 @@ class CalibrationDAG:
             # ceiling instead would wait the longer time and then discard the data. The
             # total and the last are the same number on this path, which runs one
             # schedule; it is the total so that both paths read the same way.
-            allowed = max(config.routine_timeout_s, backend.total_allowance_s)
+            allowed = max(allowance, backend.total_allowance_s)
             if elapsed > allowed:
-                raise _over_budget(elapsed, allowed, config.routine_timeout_s)
+                raise _over_budget(elapsed, allowed, allowance, routine.name)
 
             params = routine.analyse(dataset, target, device, routine_config)
             # Lifted out before `apply` and before the benchmark's `raw_data` is
@@ -631,16 +632,22 @@ class CalibrationDAG:
             return False
 
 
-def _over_budget(elapsed: float, allowed: float, configured: float) -> RoutineError:
+def _over_budget(
+    elapsed: float, allowed: float, configured: float, routine: str
+) -> RoutineError:
     """Both numbers: the one that was enforced, and the one an operator can change.
 
     They differ when the schedule's own pulses raised the ceiling — see
     `SchedulerBackend.allow` — and an error naming only the setting would then be
     telling the operator to change a number that was not the limit.
+
+    Names *where* the setting lives too, since a routine may carry its own ``timeout_s``
+    and an operator raising the global one would otherwise see no effect.
     """
     return RoutineError(
         f"exceeded the {allowed:.0f}s allowed after {elapsed:.1f}s "
-        f"(routine_timeout_s is {configured:.0f}s)"
+        f"(the ceiling for {routine} is {configured:.0f}s — raise its own timeout_s, "
+        f"or routine_timeout_s if it has none)"
     )
 
 
