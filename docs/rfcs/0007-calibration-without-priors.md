@@ -654,7 +654,14 @@ existing machinery at it would not have worked. Three separate reasons, all in `
 
 So escalation widens **`span`**, a scalar, and leaves centring, resolution and the band
 clamp where they already live. `points` moves with it to hold the step size, bounded by
-`MAX_SWEEP_POINTS` because the sequencer's ceiling is real.
+`MAX_SWEEP_POINTS` because the sequencer's ceiling is real — and that bound was set wrong
+the first time. A frequency sweep costs three operations per point (`Reset`,
+`SetClockFrequency`, `Measure`), which a 846-acquisition `resonator_punchout` on the B chip
+measured at **15.0 Q1ASM instructions each** against the QRM's 12288: the "roughly 950
+acquisitions" rule of thumb assumed one group per point and is 30% optimistic for exactly
+the routines that escalate. quantify *warns* rather than raising when a program is too long
+and the sequencer may still run it, which is the trap — a truncated sweep loses its last
+setpoints, meaning the far end of the range escalation had just widened to reach.
 
 **Both of the fit's refusals escalate, in opposite directions.** `require_in_range` — the
 centre outside the window — asks for a wider span, by a factor derived from the excursion

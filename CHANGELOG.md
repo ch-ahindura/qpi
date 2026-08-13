@@ -39,6 +39,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `resonator_spectroscopy` widens and re-runs its own sweep when the
   resonator is outside the window, or samples it harder when the line is thinner than the
   grid. The root of the calibration graph previously stopped the whole chip instead.
+- `qpi-driver/py`: an escalating sweep is capped at 700 points rather than 900. A frequency
+  sweep costs three operations per point, measured at 15 Q1ASM instructions, so 900 built a
+  program over the sequencer's 12288-instruction ceiling — which quantify only warns about.
 - `qpi-driver/py`: a readout whose single shots are assigned little better than by chance is
   refused rather than written. `readout_operating_point` previously wrote an operating point
   it had measured at 53% assignment fidelity.

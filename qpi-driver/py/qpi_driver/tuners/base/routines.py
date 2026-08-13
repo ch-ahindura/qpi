@@ -40,10 +40,21 @@ SCALAR_AXES = frozenset({"span"})
 #: `_frequency_sweep`, which is where the grid is actually built.
 DEFAULT_SWEEP_POINTS = 51
 
-#: The most points escalation will put in one sweep. The QRM's Q1ASM ceiling is 12288
-#: instructions, which works out at roughly 950 acquisitions, and a routine that widens
-#: itself past that trades a fit that refused for a schedule that will not assemble.
-MAX_SWEEP_POINTS = 900
+#: The most points escalation will put in one sweep.
+#:
+#: Measured rather than estimated, after the first version of this got it wrong. A
+#: `resonator_punchout` of 846 acquisitions compiled to **12700** Q1ASM instructions on a
+#: QRM-RF — 15.0 per acquisition, against a ceiling of 12288. The rule of thumb of "roughly
+#: 950 acquisitions" assumed one instruction group per point, and a frequency sweep is
+#: three: `Reset`, `SetClockFrequency`, `Measure`. So 900 points is 13511 instructions and
+#: over the limit, which is what this constant exists to prevent.
+#:
+#: 700 leaves 14% headroom at that measured rate. quantify warns rather than raising when a
+#: program is too long, and the sequencer may accept it — but a program past the documented
+#: maximum risks being truncated, and a truncated sweep loses its *last* setpoints, which is
+#: to say the far end of the range escalation just widened to reach. Silently getting the
+#: half of the sweep you already had is the worst available outcome.
+MAX_SWEEP_POINTS = 700
 
 
 class RoutineError(Exception):
