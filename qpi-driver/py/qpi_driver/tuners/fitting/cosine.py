@@ -247,13 +247,22 @@ def fit_drag(
 #: 8.9 and 144.3.
 MAX_DEMODULATED = 3.0
 
+#: How much of the demodulating quadrature a setpoint may sit off before the sweep is
+#: refused as incompatible with the angle it claims to amplify — see
+#: :func:`fit_fine_amplitude`. Exactly zero is what the model wants and what every
+#: correct setpoint gives to within float error; this is a rounding tolerance, not a
+#: budget.
+MAX_QUADRATURE_LEAK = 1e-9
+
 
 def fit_fine_amplitude(
     repetitions: np.ndarray,
     signal: np.ndarray,
-    amp180: float,
+    amplitude: float,
     ground: float,
     excited: float,
+    turn: float = np.pi,
+    pre_rotation: float = np.pi / 2,
 ) -> dict[str, float]:
     """Fit a fine-amplitude (amplification) sweep.
 
@@ -277,8 +286,14 @@ def fit_fine_amplitude(
     instead would divide by however much of the contrast this particular sweep
     happened to reach, and report an error inflated by exactly that fraction.
 
-    Returns ``{'amp180', 'amplitude_error', 'error_per_pulse'}``, the error being
-    in radians per pulse.
+    *turn* is the angle the pulse under test is meant to turn, and *pre_rotation* the
+    exact rotation in front of the repetitions. The defaults are a pi pulse behind a
+    pi/2, which is what `fine_amplitude` plays; `fine_amplitude_90` amplifies the pi/2
+    itself, with no pre-rotation and every fourth repetition count.
+
+    Returns ``{'amplitude', 'amplitude_error', 'error_per_pulse'}`` — the corrected
+    amplitude for whichever angle *turn* names, the error as a fraction of it, and the
+    error in radians per pulse.
     """
     x, y = align(repetitions, signal, what="fine amplitude")
     counts = np.rint(x)
@@ -292,7 +307,9 @@ def fit_fine_amplitude(
             "is not responding, so there is no contrast to normalise against"
         )
     centre = (float(excited) + float(ground)) / 2
-    demodulated = ((y - centre) / (contrast / 2)) * np.power(-1.0, counts)
+    total = pre_rotation + counts * turn
+    _require_amplifying_setpoints(counts, total, turn)
+    demodulated = ((y - centre) / (contrast / 2)) * np.sin(total)
 
     # `demodulated` is sin(n*delta), so the model bounds it at one. Far outside that
     # and the contrast it was divided by was not the |0>-|1> contrast: the two
@@ -317,17 +334,17 @@ def fit_fine_amplitude(
         raise FitError("fine amplitude needs at least one non-zero repetition count")
     error_per_pulse = float(np.sum(counts * demodulated) / denominator)
 
-    if abs(error_per_pulse) >= np.pi / 2:
+    if abs(error_per_pulse) >= turn / 2:
         raise FitError(
             f"fine-amplitude error of {error_per_pulse:.4g} rad/pulse is out of "
-            "range — the starting amp180 is too far off for this refinement"
+            "range — the starting amplitude is too far off for this refinement"
         )
 
-    # The pulse turns by π + δ where it should turn by π, so scale it back.
-    corrected = amp180 * np.pi / (np.pi + error_per_pulse)
+    # The pulse turns by `turn` + δ where it should turn by `turn`, so scale it back.
+    corrected = amplitude * turn / (turn + error_per_pulse)
     return {
-        "amp180": require_positive(corrected, what="corrected amp180"),
-        "amplitude_error": error_per_pulse / np.pi,
+        "amplitude": require_positive(corrected, what="corrected amplitude"),
+        "amplitude_error": error_per_pulse / turn,
         "error_per_pulse": error_per_pulse,
         # The demodulated signal rather than the raw one: the straight line through
         # the origin is the thing being fitted, and the raw sweep alternates about
@@ -336,7 +353,46 @@ def fit_fine_amplitude(
             counts,
             demodulated,
             error_per_pulse * counts,
-            x_label="pi pulses",
+            x_label="pulses",
             y_label="demodulated",
         ),
     }
+
+
+def _require_amplifying_setpoints(
+    counts: np.ndarray, total: np.ndarray, turn: float
+) -> None:
+    """Refuse repetition counts at which the error does not show up linearly.
+
+    The signal after *n* pulses of nominal angle ``turn`` and error ``d``, behind a
+    pre-rotation, is ``-cos(total + n*d)``, which expands to
+    ``-cos(total)*cos(n*d) + sin(total)*sin(n*d)``. Only the second term carries the
+    sign of the error, so demodulating by ``sin(total)`` recovers ``sin(n*d)`` — but
+    only where ``cos(total)`` vanishes. Where it does not, a second-order term in the
+    error leaks in at full strength and the slope through it is not the error.
+
+    For a pi pulse behind a pi/2 pre-rotation that holds at every integer *n*, which is
+    why nothing needed to check it before. For a pi/2 pulse it holds only at
+    ``n = 1, 5, 9, ...``: at ``n = 3`` the pulse has turned three quarters and the
+    quadratures have swapped, at ``n = 2`` the response is flat in the error to first
+    order. Sweeping 1..25 there would fit a straight line through three quarters noise
+    and write the result to an amplitude every gate afterwards uses.
+    """
+    leak = float(np.max(np.abs(np.cos(total))))
+    if leak <= MAX_QUADRATURE_LEAK:
+        return
+    period = int(round(2 * np.pi / turn)) if turn > 0 else 0
+    wanted = (
+        f" — for a {np.degrees(turn):.0f} degree pulse sweep every {period}th count, "
+        f"starting at one"
+        if period > 1
+        else ""
+    )
+    raise FitError(
+        f"these repetition counts do not amplify a {np.degrees(turn):.0f} degree "
+        f"pulse's error: {leak:.3g} of the signal is in the quadrature the fit "
+        f"discards, where the model wants none, so the slope would be second order "
+        f"in the error rather than first{wanted}. Counts: "
+        f"{', '.join(str(int(c)) for c in counts[:8])}"
+        f"{'...' if counts.size > 8 else ''}"
+    )

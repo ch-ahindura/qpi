@@ -109,7 +109,7 @@ class TestOscillatoryFits:
         )
 
         assert fitted["error_per_pulse"] == pytest.approx(delta, abs=0.002)
-        assert fitted["amp180"] < 0.2  # over-rotating, so the amplitude comes down
+        assert fitted["amplitude"] < 0.2  # over-rotating, so the amplitude comes down
 
     def test_fine_amplitude_recovers_the_sign_of_an_under_rotation(self):
         """The π/2 pre-rotation is what makes this distinguishable from over-rotation."""
@@ -119,7 +119,7 @@ class TestOscillatoryFits:
         )
 
         assert fitted["error_per_pulse"] == pytest.approx(-0.01, abs=0.002)
-        assert fitted["amp180"] > 0.2  # under-rotating, so the amplitude goes up
+        assert fitted["amplitude"] > 0.2  # under-rotating, so the amplitude goes up
 
     def test_fine_amplitude_is_scaled_by_the_calibration_points_not_the_sweep(self):
         """Normalising against the observed range inflates the error by the contrast reached."""
@@ -133,6 +133,41 @@ class TestOscillatoryFits:
         counts = np.arange(1, 21, dtype=float)
         with pytest.raises(FitError, match="indistinguishable"):
             fit_fine_amplitude(counts, np.ones(20) * 0.5, 0.2, ground=0.5, excited=0.5)
+
+    def test_a_quarter_turn_is_amplified_by_every_fourth_repetition(self):
+        """The pi/2 sweep `fine_amplitude_90` plays: no pre-rotation, counts 1, 5, 9..."""
+        delta = 0.01
+        counts = np.arange(1, 41, 4, dtype=float)
+        signal = 0.5 * (1 + np.sin(counts * delta))
+        fitted = fit_fine_amplitude(
+            counts,
+            signal,
+            0.3,
+            ground=0.0,
+            excited=1.0,
+            turn=np.pi / 2,
+            pre_rotation=0.0,
+        )
+
+        assert fitted["error_per_pulse"] == pytest.approx(delta, abs=0.002)
+        assert fitted["amplitude"] < 0.3  # over-rotating, so the amplitude comes down
+        # As a fraction of the pi/2 it is, not of a pi it is not.
+        assert fitted["amplitude_error"] == pytest.approx(delta / (np.pi / 2), abs=1e-3)
+
+    def test_a_quarter_turn_swept_over_consecutive_counts_is_refused(self):
+        """At n = 3 the quadratures have swapped and at n = 2 the response is flat, so
+        a 1..25 sweep would fit a straight line through three quarters noise."""
+        counts = np.arange(1, 26, dtype=float)
+        with pytest.raises(FitError, match="do not amplify a 90 degree pulse"):
+            fit_fine_amplitude(
+                counts,
+                0.5 * (1 + np.sin(counts * 0.01)),
+                0.3,
+                ground=0.0,
+                excited=1.0,
+                turn=np.pi / 2,
+                pre_rotation=0.0,
+            )
 
     def test_fine_amplitude_refuses_fractional_repetition_counts(self):
         with pytest.raises(FitError, match="whole pulse repetitions"):

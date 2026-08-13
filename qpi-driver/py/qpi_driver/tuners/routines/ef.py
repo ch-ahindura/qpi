@@ -692,7 +692,7 @@ class FineAmplitude12(CalibrationRoutine):
             ground=in_one,
             excited=in_two,
         )
-        return {"ef_amp180": fitted["amp180"], **fitted}
+        return {"ef_amp180": fitted["amplitude"], **fitted}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)

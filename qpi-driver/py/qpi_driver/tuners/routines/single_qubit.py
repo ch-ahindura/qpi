@@ -737,13 +737,14 @@ class FineAmplitude(CalibrationRoutine):
                 f"(sweep plus two calibration points), got {signal.size}"
             )
 
-        return fit_fine_amplitude(
+        fitted = fit_fine_amplitude(
             np.asarray(self._repetitions, dtype=float),
             signal[:count],
             self._current_amp180,
             ground=float(signal[count]),
             excited=float(signal[count + 1]),
         )
+        return {"amp180": fitted["amplitude"], **fitted}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
