@@ -35,6 +35,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
     name = "rb"
     depends_on = ("fine_amplitude",)
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
     benchmark = True
 
     #: The gate interleaved between Cliffords. None for standard RB.
@@ -163,6 +164,7 @@ class AllXYCheck(CalibrationRoutine):
     name = "allxy_check"
     depends_on = ("fine_amplitude",)
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
     benchmark = True
 
     def build_schedule(

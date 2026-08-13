@@ -649,7 +649,12 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
     name = "resonator_spectroscopy_excited"
     depends_on = ("rabi",)
     updates = ()
-    reads = ("clock_freqs.readout", "resonator.linewidth")
+    reads = (
+        "clock_freqs.readout",
+        "resonator.linewidth",
+        "clock_freqs.f01",
+        "rxy.amp180",
+    )
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1129,7 +1134,7 @@ class F12Spectroscopy(CalibrationRoutine):
     name = "f12_spectroscopy"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f12",)
-    reads = ("clock_freqs.f01",)
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1253,7 +1258,7 @@ class FluxSpectroscopy(CalibrationRoutine):
     name = "flux_spectroscopy"
     depends_on = ("qubit_spectroscopy",)
     updates = ()
-    reads = ("clock_freqs.f01",)
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to a qubit the wiring carries a flux line to.

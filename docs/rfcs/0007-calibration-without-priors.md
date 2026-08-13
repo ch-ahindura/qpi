@@ -572,10 +572,11 @@ exactly the case this RFC is about. It is also what makes §8's acceptance test 
 on a chip known only from its design document the first walk will have failures, and
 without skip-propagation its report is the same six-way puzzle that motivated this RFC.
 
-### 11.1 Known gap: `reads` is under-declared, so this did not fire on the B chip
+### 11.1 `reads` was under-declared, so this did not fire on the B chip
 
-**Open. Found on hardware in August 2026, and it is the failure this section exists to
-prevent, recurring for a reason the section did not anticipate.**
+**Fixed for qubit-targeted nodes in August 2026; the edge case below is still open.** Found
+on hardware, and it was the failure this section exists to prevent, recurring for a reason
+the section did not anticipate.
 
 q5 on the B chip produced eight failures from one fault. `qubit_spectroscopy` found no
 line; the qubit was never excited; and then `rabi`, `t1`, `t2_echo`, `rb`,
@@ -603,19 +604,28 @@ With honest declarations the same run reports **one** error naming `qubit_spectr
 seven skips: f01 unsatisfied skips `rabi`, which leaves `rxy.amp180` unsatisfied, which
 skips the other six. That is what §11 promised.
 
-Two parts to the fix, and the second is what stops it coming back:
+**What was built.** An audit of all 34 routines found the gap wider than the seven: **22**
+qubit-targeted nodes were short, not seven. Every one that plays a gate now declares
+`clock_freqs.f01`, and every one that plays a gate without supplying its own amplitude also
+declares `rxy.amp180`. `rabi` is the exception that proves the rule — it produces
+`rxy.amp180`, so declaring that it reads it would make it block itself on a first bring-up.
 
-1. **Declare them.** Add `clock_freqs.f01` and `rxy.amp180` to the seven nodes above. Safe
-   against the existing invariant test, which asserts coverage rather than equality.
-2. **Make the derivation see gate-library reads.** Instrumenting `read_path` is the wrong
-   probe for a dependency that never passes through it. The honest probe is the device
-   element's own parameters — but a gate's frequency is resolved when the schedule is
-   *compiled*, and the test only builds, so this likely means compiling in the invariant
-   test and instrumenting the element rather than the helper. Heavier, and it is the only
-   version that cannot silently go short again.
+**Deriving the true set is not possible, so the rule is asserted instead.** Instrumenting
+`read_path` is the wrong probe for a dependency that never passes through it; the obvious
+alternative — instrument the element and compile — does not work either, because quantify
+compiles by way of `generate_device_config`, which serialises *every* parameter, so an
+instrumented element reports all of them and distinguishes nothing.
+`test_a_routine_playing_a_gate_declares_the_gate_parameters` therefore asserts the
+structural fact: play a gate, declare the two paths. Coarse, and it is exactly the class
+that bit us. `test_a_failed_qubit_spectroscopy_blocks_everything_that_needs_a_gate` pins the
+graph-level consequence by walking the real routine set with `qubit_spectroscopy` failing.
 
-Until (2) exists, `reads` is hand-maintained, and this section's guarantee is only as good
-as the hand.
+**Still open: edges.** A gate on an edge is played on its endpoint *qubits*, and the ledger
+keys on `(target, path)` — `("q5_q10", "rxy.amp180")` is a path no routine writes and no
+element has, so declaring it on `cz_chevron` or `conditional_phase` would match nothing.
+Expressing "this edge needs both its ends calibrated" is a ledger change, not a declaration:
+`blockers` would have to resolve an edge to its endpoints and ask about each. Worth doing,
+and not done here.
 
 ## 12. Resolved during review
 

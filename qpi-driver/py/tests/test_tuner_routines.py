@@ -204,6 +204,12 @@ def test_a_dummy_acquisition_fails_the_routine_rather_than_fitting_zeros(
 
     This is the failure mode the whole design turns on: a fit that returns zeros
     on bad data gets written to the device as though it were a measurement.
+
+    ``t1`` is enabled alongside `rabi` to pin the second half of it. It used to fail
+    too, for two errors; now that it declares reading the `rxy.amp180` its gate needs
+    (RFC 0007 §11.1) it is *skipped*, so the report says once what went wrong and names
+    it as the cause. One error and one skip is the stronger claim, and it is the
+    difference between this report and the eight-way one the B chip produced.
     """
     config = CalibrationConfig(
         target_qubits=["q0"],
@@ -219,7 +225,11 @@ def test_a_dummy_acquisition_fails_the_routine_rather_than_fitting_zeros(
 
     assert report.status == "failed"
     assert report.routine_results == []
-    assert len(report.errors) == 2
+    assert len(report.errors) == 1, report.errors
+    assert report.errors[0].startswith("rabi[q0]")
+    assert any(
+        note.startswith("t1[q0]: skipped") and "rabi" in note for note in report.notes
+    ), report.notes
 
 
 def test_a_failed_calibration_does_not_touch_the_device_config(quantify_tuner):
@@ -860,3 +870,148 @@ class TestAnAnharmonicityHasToBeATransmons:
         assert node._require_transmon_anharmonicity(-302.5e6, "q0") == pytest.approx(
             -302.5e6
         )
+
+
+#: Gate constructors a routine plays on its target, as named on the backend.
+#:
+#: Each resolves its frequency and amplitude off the device element when the schedule is
+#: *compiled*, not when it is built — so a routine that plays one depends on
+#: `clock_freqs.f01`, and on `rxy.amp180` unless it passes an amplitude itself.
+GATE_NAMES = ("Rxy", "X", "Y", "X90", "Y90")
+
+#: Keyword arguments that mean a routine supplied its own drive amplitude, so the
+#: element's calibrated `rxy.amp180` is not what the pulse uses.
+OWN_AMPLITUDE_KWARGS = ("amp180", "amp", "amplitude")
+
+#: Methods a routine may compose gates in. `measure` is here because the two routines
+#: that implement it have no single schedule to inspect.
+SCHEDULE_METHODS = (
+    "build_schedule",
+    "build_check_schedule",
+    "measure",
+    "_probe_schedule",
+    "_search",
+    "_confirm",
+    "_sequence_schedule",
+)
+
+
+def _gates_played(node) -> tuple[set[str], set[str]]:
+    """``(gate names, keyword arguments passed to them)`` across *node*'s schedule code.
+
+    Read off the source rather than off a built schedule, and the reason is the whole
+    point of this test: the dependency is not observable at build time. A backend gate
+    carries no frequency — quantify resolves that from the element during compilation —
+    and compiling cannot derive it either, because `generate_device_config` serialises
+    *every* parameter, so an instrumented element reports all of them and distinguishes
+    nothing. What is left is the structural fact: this routine plays a gate.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    source = ""
+    for name in SCHEDULE_METHODS:
+        method = getattr(type(node), name, None)
+        if method is None:
+            continue
+        try:
+            source += textwrap.dedent(inspect.getsource(method))
+        except (OSError, TypeError):
+            continue
+    if not source:
+        return set(), set()
+
+    gates: set[str] = set()
+    keywords: set[str] = set()
+    for element in ast.walk(ast.parse(source)):
+        if not isinstance(element, ast.Call):
+            continue
+        if not isinstance(element.func, ast.Attribute):
+            continue
+        if element.func.attr in GATE_NAMES:
+            gates.add(element.func.attr)
+            keywords |= {word.arg for word in element.keywords if word.arg}
+    return gates, keywords
+
+
+def test_a_routine_playing_a_gate_declares_the_gate_parameters():
+    """RFC 0007 §11.1, the gap that let one fault become eight on the B chip.
+
+    `test_a_routine_declares_every_parameter_it_reads` instruments `read_path`, which
+    cannot see a dependency that never passes through it — and a gate's frequency and
+    amplitude never do. So `rabi`, `t1`, `t2_echo`, `rb` and sixteen others declared
+    nothing, `qubit_spectroscopy` failed on q5, and seven nodes behind it ran on an
+    unexcited qubit and fitted their own noise into seven different-looking errors.
+
+    This asserts the rule instead of deriving the values: play a gate, declare
+    `clock_freqs.f01`; play one without supplying an amplitude, declare `rxy.amp180`.
+    Coarse, and it is what the other test structurally cannot do.
+
+    Edges are excluded. A gate on an edge is played on its endpoint *qubits*, and
+    `_ParameterLedger` keys on ``(target, path)`` — ``("q5_q10", "rxy.amp180")`` is a
+    path no routine writes and no element has, so declaring it there would match
+    nothing. Expressing "this edge needs both its ends calibrated" is a ledger change,
+    not a declaration, and RFC 0007 §11.1 records it as still open.
+    """
+    undeclared: dict[str, list[str]] = {}
+    for name in ROUTINE_NAMES:
+        node = routine(name)
+        if node.targets != "qubits":
+            continue
+        gates, keywords = _gates_played(node)
+        if not gates:
+            continue
+        missing = []
+        if "clock_freqs.f01" not in node.reads:
+            missing.append("clock_freqs.f01")
+        supplies_own = any(word in keywords for word in OWN_AMPLITUDE_KWARGS)
+        produces_it = "rxy.amp180" in node.updates and "rxy.amp180" not in node.reads
+        if not supplies_own and not produces_it and "rxy.amp180" not in node.reads:
+            missing.append("rxy.amp180")
+        if missing:
+            undeclared[name] = missing
+
+    assert not undeclared, "\n".join(
+        f"{name} plays a gate but does not declare {', '.join(paths)}"
+        for name, paths in sorted(undeclared.items())
+    )
+
+
+def test_a_failed_qubit_spectroscopy_blocks_everything_that_needs_a_gate():
+    """The graph-level consequence of those declarations, which is the point of them.
+
+    Walks the real routine set in dependency order with `qubit_spectroscopy` failing and
+    nothing else run, and asserts the propagation reaches the nodes that reported noise
+    on the B chip. Before RFC 0007 §11.1 was fixed this list was empty and all of them
+    ran.
+    """
+    from qpi_driver.tuners.base.dag import CalibrationDAG, _ParameterLedger
+
+    config = CalibrationConfig(target_qubits=["q0"], target_edges=[])
+    dag = CalibrationDAG(all_routines(), config)
+    ledger = _ParameterLedger()
+
+    skipped = []
+    for name in dag.execution_order():
+        node = dag.routines[name]
+        if node.targets != "qubits":
+            continue
+        if ledger.blockers(node, "q0"):
+            skipped.append(name)
+            ledger.unsatisfied(node, "q0")
+        elif name == "qubit_spectroscopy":
+            ledger.unsatisfied(node, "q0")
+        else:
+            ledger.produced(node, "q0")
+
+    for name in ("rabi", "t1", "t2_echo", "rb", "resonator_spectroscopy_excited"):
+        assert name in skipped, (
+            f"{name} would still run on an unmeasured f01: {skipped}"
+        )
+    # And the readout chain, which is what made the B chip's report eight-way.
+    for name in ("readout_discrimination", "readout_fidelity"):
+        assert name in skipped, f"{name} would still run: {skipped}"
+    # Not everything: a node needing nothing f01 depends on must still run.
+    assert "resonator_spectroscopy" not in skipped
+    assert "time_of_flight" not in skipped

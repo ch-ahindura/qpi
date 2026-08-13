@@ -28,6 +28,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a skipped routine reports which parameters it left unconfirmed and when
   they were last measured, and a run whose producer for a never-measured parameter is
   switched off says so before the walk starts.
+- `qpi-driver/py`: 22 routines now declare the qubit frequency and pi-pulse amplitude their
+  gates need, so a failed `qubit_spectroscopy` skips everything behind it. One dead
+  frequency previously produced eight separate failures, each looking like its own fault.
 
 ### Fixed
 

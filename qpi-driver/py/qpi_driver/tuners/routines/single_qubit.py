@@ -69,6 +69,7 @@ class Rabi(CalibrationRoutine):
     name = "rabi"
     depends_on = ("qubit_spectroscopy",)
     updates = ("rxy.amp180",)
+    reads = ("clock_freqs.f01",)
 
     def measure(
         self,
@@ -226,7 +227,7 @@ class Ramsey(CalibrationRoutine):
     name = "ramsey"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f01",)
-    reads = ("clock_freqs.f01",)
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def measure(
         self,
@@ -320,6 +321,7 @@ class T1(CalibrationRoutine):
     name = "t1"
     depends_on = ("rabi",)
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def measure(
         self,
@@ -367,6 +369,7 @@ class T2Echo(CalibrationRoutine):
     name = "t2_echo"
     depends_on = ("rabi",)
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def measure(
         self,
@@ -418,6 +421,7 @@ class Drag(CalibrationRoutine):
     depends_on = ("ramsey",)
     # Spelled `rxy.beta` under qblox — see `drag_parameter_name`.
     updates = ("rxy.motzoi",)
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -486,6 +490,7 @@ class AllXY(CalibrationRoutine):
     name = "allxy"
     depends_on = ("drag",)
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -564,7 +569,7 @@ class FineAmplitude(CalibrationRoutine):
     name = "fine_amplitude"
     depends_on = ("drag",)
     updates = ("rxy.amp180",)
-    reads = ("rxy.amp180",)
+    reads = ("rxy.amp180", "clock_freqs.f01")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

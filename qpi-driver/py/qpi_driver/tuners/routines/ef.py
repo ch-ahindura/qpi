@@ -165,7 +165,7 @@ class Rabi12(CalibrationRoutine):
     name = "rabi_12"
     depends_on = ("f12_spectroscopy",)
     updates = (f"{EF}.ef_amp180",)
-    reads = ("r12.ef_duration",)
+    reads = ("r12.ef_duration", "clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element with somewhere to keep an EF pulse."""
@@ -279,6 +279,8 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         "measure.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     #: Two, not three. The register budget buys ten settings and they are better
@@ -451,6 +453,8 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         "resonator.linewidth",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     def applies_to(self, device: Any, target: str) -> bool:
@@ -551,6 +555,8 @@ class FineAmplitude12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     def applies_to(self, device: Any, target: str) -> bool:
@@ -668,6 +674,8 @@ class Ramsey12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     def applies_to(self, device: Any, target: str) -> bool:
@@ -778,6 +786,8 @@ class Drag12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     def applies_to(self, device: Any, target: str) -> bool:
@@ -873,6 +883,8 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
     )
 
     #: Prepared states, in the order the confusion matrix indexes them.
