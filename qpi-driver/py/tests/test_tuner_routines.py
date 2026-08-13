@@ -1580,10 +1580,27 @@ class TestTheEfPiPulseIsHeldToTheLadder:
             _require_ef_ladder(self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF)
 
     def test_a_pulse_on_the_ladder_is_accepted(self):
-        """0.1577 fitted against 0.1429 predicted, which is where the relation was measured."""
-        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+        from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
 
-        _require_ef_ladder(self._device(0.2), "q5", 0.1577)  # noqa: B018
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.4), "q5", 0.4 * EF_ENVELOPE_AREA / 2**0.5
+        )
+
+    def test_the_envelopes_are_not_the_same_shape(self):
+        """`rxy` is a Gaussian and the ef pulse is a square, so equal amplitudes are not
+        equal rotations, and the bound has to carry the area ratio.
+
+        It moves the *centre* by 1.6x and does not by itself change any verdict, since 1.6
+        sits inside the factor of two the bound allows — so this asserts the arithmetic
+        rather than a refusal. What it buys is that the bound is centred on the pulse the
+        routine actually plays, which is what makes the factor of two a real margin instead
+        of most of it being spent on a known systematic.
+        """
+        from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
+
+        assert EF_ENVELOPE_AREA == pytest.approx(0.6267, rel=0.01)
+        # The sqrt(2)-only prediction is 1.6x high, which is inside the window either way.
+        _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5)  # noqa: B018
 
     @pytest.mark.parametrize("factor", (0.55, 1.9))
     def test_the_bound_is_generous_enough_for_a_differing_duration(self, factor):
@@ -1591,7 +1608,11 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         two either way rather than the 10% the relation itself holds to."""
         from qpi_driver.tuners.routines.ef import _require_ef_ladder
 
-        _require_ef_ladder(self._device(0.4), "q5", factor * 0.4 / 2**0.5)  # noqa: B018
+        from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA
+
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.4), "q5", factor * 0.4 * EF_ENVELOPE_AREA / 2**0.5
+        )
 
     def test_no_amp180_to_compare_against_is_not_evidence(self):
         """`rabi` may be disabled or skipped, and refusing then would be the wrong reason."""

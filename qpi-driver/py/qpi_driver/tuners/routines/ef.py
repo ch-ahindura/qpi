@@ -73,6 +73,20 @@ from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
 #: `three_state_discrimination` was left as the only node that refused.
 MAX_EF_LADDER_ERROR = 2.0
 
+#: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
+#:
+#: They are not the same shape, which the first version of the ladder bound missed. `rxy`
+#: compiles through quantify's ``rxy_drag_pulse`` to a Gaussian of ``nr_sigma = 4``, whose
+#: area is ``A*sigma*sqrt(2*pi) = 0.627*A*T``; `add_ef_pulse` emits a `SquarePulse` of area
+#: ``A*T``. Rotation follows area, so the same *nominal* amplitude turns 1.6 times the angle
+#: on the ef transition — so comparing the two amplitudes without it centres the bound 1.6x
+#: too high. That changes no verdict on its own, since 1.6 is inside the factor of two the
+#: bound allows, but it spends most of that margin on a systematic that is known and
+#: calculable. Centred properly, the factor of two is available for what it was meant for:
+#: the ef pulse being a different length from the 0-1 one, and the ladder relation itself
+#: holding only to about 10%.
+EF_ENVELOPE_AREA = 0.25 * math.sqrt(2.0 * math.pi)
+
 #: Where a `CalibratedTransmon` keeps its EF pulse.
 EF = "r12"
 
@@ -1030,7 +1044,10 @@ def _require_ef_ladder(device: Any, target: str, ef_amp180: float) -> None:
     if not amp180:
         return
 
-    expected = amp180 / math.sqrt(2.0)
+    # Two corrections, and both are properties of the pulse rather than of the chip: the
+    # sqrt(2) is the transmon's 1-2 matrix element, and the envelope ratio is that `rxy` is
+    # a Gaussian where this is a square.
+    expected = amp180 * EF_ENVELOPE_AREA / math.sqrt(2.0)
     ratio = ef_amp180 / expected if expected else 0.0
     if 1.0 / MAX_EF_LADDER_ERROR <= ratio <= MAX_EF_LADDER_ERROR:
         return
