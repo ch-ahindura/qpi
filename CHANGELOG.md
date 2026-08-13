@@ -22,6 +22,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   recording which routine last measured each parameter, and when. A device config could
   not say whether a value was measured or typed in, so every reader had to assume the
   better case.
+- `qpi-driver/py`: a calibration report names the inputs nothing has ever measured, per
+  target and per routine. A run built on a hand-supplied frequency previously read exactly
+  like one built on a measured one.
 
 ### Fixed
 

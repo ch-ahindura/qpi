@@ -70,6 +70,15 @@ def has_path(component: Any, dotted: str) -> bool:
     return True
 
 
+def component_for(device: Any, target: str, kind: str = "qubits") -> Any:
+    """The element or edge named *target*, or ``None`` if it cannot be resolved."""
+    accessor = "get_edge" if kind == "edges" else "get_element"
+    try:
+        return getattr(device, accessor)(target)
+    except Exception:  # noqa: BLE001 - an unresolvable target is not an error here
+        return None
+
+
 def element_names(device: Any) -> list[str]:
     """The device's qubit names, however this scheduler exposes them."""
     return _names(getattr(device, "elements", None))

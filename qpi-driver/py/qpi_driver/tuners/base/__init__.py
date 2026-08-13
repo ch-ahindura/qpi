@@ -21,7 +21,7 @@ from qpi_driver.tuners.base.config import (
     RoutineConfig,
 )
 from qpi_driver.tuners.base.dag import CalibrationDAG, ProgressSink, utc_timestamp
-from qpi_driver.tuners.base.device import has_path
+from qpi_driver.tuners.base.device import component_for, has_path
 from qpi_driver.tuners.base.provenance import (
     Provenance,
     ProvenanceStore,
@@ -142,7 +142,12 @@ class Tuner(ABC):
         config.validate_targets()
         dag = CalibrationDAG(self.routines(), config, bias=self.bias)
         report = dag.run(
-            self.device, self.backend, config, mode="full", on_progress=self.on_progress
+            self.device,
+            self.backend,
+            config,
+            mode="full",
+            on_progress=self.on_progress,
+            provenance=ProvenanceStore.load(self._device_config_path),
         )
         self._persist(report)
         return report
@@ -195,6 +200,7 @@ class Tuner(ABC):
             mode="partial",
             only=order,
             on_progress=self.on_progress,
+            provenance=ProvenanceStore.load(self._device_config_path),
         )
         report.notes.extend(notes)
         self._persist(report)
@@ -221,6 +227,7 @@ class Tuner(ABC):
             mode="fidelity_check",
             only=order,
             on_progress=self.on_progress,
+            provenance=ProvenanceStore.load(self._device_config_path),
         )
 
     def _narrow_to(
@@ -336,7 +343,7 @@ class Tuner(ABC):
             routine = routines.get(result.routine_name)
             if routine is None or not routine.updates:
                 continue
-            component = self._component_for(routine, result.target)
+            component = component_for(self.device, result.target, routine.targets)
             for path in routine.updates:
                 # A declared update this element has nowhere to keep was not written:
                 # several are opt-in `CalibratedTransmon` fields, and `apply` skips them.
@@ -353,14 +360,6 @@ class Tuner(ABC):
                     ),
                 )
         store.save()
-
-    def _component_for(self, routine: CalibrationRoutine, target: str) -> Any:
-        """The element or edge *routine* writes to, or ``None`` if it cannot be resolved."""
-        accessor = "get_edge" if routine.targets == "edges" else "get_element"
-        try:
-            return getattr(self.device, accessor)(target)
-        except Exception:  # noqa: BLE001 - an unresolvable target simply gets no filter
-            return None
 
     def close(self) -> None:
         """Release instruments. Safe to call more than once."""

@@ -13,6 +13,8 @@ from typing import Any
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig
+from qpi_driver.tuners.base.device import component_for, has_path
+from qpi_driver.tuners.base.provenance import ProvenanceStore
 from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
@@ -284,6 +286,48 @@ class CalibrationDAG:
             ]
         }
 
+    def _prior_notes(
+        self,
+        order: list[str],
+        config: CalibrationConfig,
+        device: Any,
+        ledger: "_ParameterLedger",
+    ) -> list[str]:
+        """What this walk is about to trust without anything having measured it (RFC 0008).
+
+        Two kinds, and separating them is the whole value of the note. A prior that a
+        routine *in this walk* is about to measure is ordinary — that is what a bring-up
+        is. A prior nothing in this walk measures is a number somebody supplied, and the
+        run's results are only as good as it: the August 2026 chip's ``f01`` was exactly
+        that, and nothing said so for six runs.
+
+        One note per target and kind rather than per parameter, because a five-qubit chip
+        reads twenty-odd paths and twenty notes per qubit is a wall rather than a warning.
+        """
+        produced_here = {path for name in order for path in self.routines[name].updates}
+        by_target: dict[str, tuple[set[str], set[str]]] = {}
+        for name in order:
+            routine = self.routines[name]
+            for target in self._targets_for(name, config, device):
+                coming, supplied = by_target.setdefault(target, (set(), set()))
+                component = component_for(device, target, routine.targets)
+                for path in ledger.priors(routine, target, component):
+                    (coming if path in produced_here else supplied).add(path)
+
+        notes = []
+        for target, (coming, supplied) in sorted(by_target.items()):
+            if supplied:
+                notes.append(
+                    f"{target}: nothing has ever measured {', '.join(sorted(supplied))}, "
+                    "and nothing in this run will — every result derived from them is "
+                    "only as good as the value supplied"
+                )
+            if coming:
+                notes.append(
+                    f"{target}: {', '.join(sorted(coming))} not measured before this run"
+                )
+        return notes
+
     def _targets_for(
         self, name: str, config: CalibrationConfig, device: Any = None
     ) -> list[str]:
@@ -305,6 +349,7 @@ class CalibrationDAG:
         mode: str = "full",
         only: list[str] | None = None,
         on_progress: ProgressSink | None = None,
+        provenance: ProvenanceStore | None = None,
     ) -> CalibrationReport:
         """Walk the graph, running each routine over each of its targets.
 
@@ -319,6 +364,12 @@ class CalibrationDAG:
         the graph, the rest so it can colour it during the hours before a report
         exists. A sink that raises is logged and the walk carries on: nobody loses a
         calibration because the thing watching it went away.
+
+        *provenance* is what earlier runs measured, and is read but never written here:
+        the walk reports which of its inputs nothing has ever measured, and the write
+        happens after the device write-back, where a record cannot outrun the value it
+        describes. ``None`` makes every parameter a prior, which is what a chip with no
+        sidecar has and must still calibrate from.
         """
         report = CalibrationReport(
             timestamp=utc_timestamp(), duration_s=0.0, mode=mode, backend=backend.name
@@ -360,7 +411,10 @@ class CalibrationDAG:
 
         ran_any = False
         skipped = 0
-        ledger = _ParameterLedger()
+        ledger = _ParameterLedger(provenance)
+        for note in self._prior_notes(order, config, device, ledger):
+            log.warning("%s", note)
+            report.notes.append(note)
         for position, routine_name in enumerate(order, start=1):
             routine = self.routines[routine_name]
             routine_config = config.get_routine(routine_name)
@@ -389,8 +443,21 @@ class CalibrationDAG:
 
                 ran_any = True
                 target_started = time.monotonic()
+                # Before the run, not after: the ledger records what this routine
+                # produced, and a routine that refines its own input would otherwise
+                # look as though it had been given a measured one.
+                priors = ledger.priors(
+                    routine, target, component_for(device, target, routine.targets)
+                )
                 succeeded = self._run_one(
-                    routine, target, device, backend, routine_config, config, report
+                    routine,
+                    target,
+                    device,
+                    backend,
+                    routine_config,
+                    config,
+                    report,
+                    priors,
                 )
                 if succeeded:
                     ledger.produced(routine, target)
@@ -447,6 +514,7 @@ class CalibrationDAG:
         routine_config: Any,
         config: CalibrationConfig,
         report: CalibrationReport,
+        priors: tuple[str, ...] = (),
     ) -> bool:
         """Run one routine over one target, recording the outcome. True if it worked."""
         started = time.monotonic()
@@ -484,6 +552,7 @@ class CalibrationDAG:
                         timestamp=utc_timestamp(),
                         duration_s=time.monotonic() - started,
                         fit=fit,
+                        priors=priors,
                     )
                 )
                 return True
@@ -522,6 +591,7 @@ class CalibrationDAG:
                     timestamp=utc_timestamp(),
                     duration_s=time.monotonic() - started,
                     fit=fit,
+                    priors=priors,
                 )
             )
             return True
@@ -608,9 +678,42 @@ class _ParameterLedger:
       no producer in the graph at all — is likewise never in question.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, provenance: ProvenanceStore | None = None) -> None:
         self._produced: set[tuple[str, str]] = set()
         self._unsatisfied: dict[tuple[str, str], set[str]] = {}
+        #: What earlier runs measured. Empty when there is no sidecar, which makes
+        #: every parameter a prior and leaves this ledger exactly as it was before
+        #: RFC 0008 — the walk must not need the file to be there.
+        self._provenance = provenance or ProvenanceStore()
+
+    def attributable(self, target: str, path: str) -> bool:
+        """Whether anything ever measured *path* on *target*.
+
+        The union of two facts, and it needs both: this walk produced it, or some earlier
+        run recorded that it did. "Produced here" alone is right for a bring-up and too
+        narrow afterwards — on a partial recalibration almost nothing is produced by this
+        run, so almost nothing would be checkable (RFC 0008 §6).
+        """
+        return (target, path) in self._produced or self._provenance.is_measured(
+            target, path
+        )
+
+    def priors(
+        self, routine: CalibrationRoutine, target: str, component: Any = None
+    ) -> tuple[str, ...]:
+        """The parameters *routine* reads that nothing has ever measured.
+
+        Restricted to paths *component* actually has. Several reads are opt-in fields a
+        given element does not carry — a `BasicTransmonElement` has no ``spec`` submodule
+        at all — and a path that does not exist on this chip is not an unmeasured one, so
+        reporting it would put a permanent warning in front of every run.
+        """
+        return tuple(
+            path
+            for path in routine.reads
+            if not self.attributable(target, path)
+            and (component is None or has_path(component, path))
+        )
 
     def produced(self, routine: CalibrationRoutine, target: str) -> None:
         """Record that *routine* measured what it writes."""

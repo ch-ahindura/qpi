@@ -586,3 +586,90 @@ def _recording_writes(monkeypatch) -> set[tuple[str, str]]:
         if hasattr(module, "write_path"):
             monkeypatch.setattr(module, "write_path", recording)
     return written
+
+
+class TestWhatTheReportSaysAboutItsInputs:
+    """RFC 0008 §9 tier 3 and its regression test: a prior is visible before it costs a run.
+
+    Report-only. Nothing here changes what runs — that is phase 4 — so every assertion is
+    about what an operator reading the run can now see and could not before.
+    """
+
+    def test_a_precise_looking_frequency_nothing_measured_is_reported_as_a_prior(
+        self, tmp_path
+    ):
+        """The August 2026 failure, written down.
+
+        That chip's config held `clock_freqs.f01: 4735509751.238763`. Nine significant
+        figures, so it read as a measurement, and the qubit was 302 MHz away — the line had
+        never been there. Six runs went into the consequences, because nothing in the report
+        distinguished that number from one this driver had fitted.
+        """
+        tuner = SimulatedTuner(device_config_path=tmp_path / "device.yml")
+        seeded = read_path(tuner.device.get_element("q0"), "clock_freqs.f01")
+        assert len(f"{seeded:.0f}") >= 9, "the fixture should look like a measurement"
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert any(
+            "clock_freqs.f01" in note and "not measured" in note
+            for note in report.notes
+        ), report.notes
+        spectroscopy = _result_for(report, "qubit_spectroscopy")
+        assert "clock_freqs.f01" in spectroscopy.priors
+
+    def test_a_second_walk_finds_the_first_walks_parameters_attributable(
+        self, tmp_path
+    ):
+        device_path = tmp_path / "device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        tuner.calibrate(write_calibration_config(tmp_path))
+
+        second = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert second.notes == []
+        assert all(result.priors == () for result in second.routine_results)
+
+    def test_deleting_the_sidecar_calibrates_identically_and_reports_priors_again(
+        self, tmp_path
+    ):
+        """Safe to delete. Forgetting where a value came from must not change what runs."""
+        device_path = tmp_path / "device.yml"
+        tuner = SimulatedTuner(device_config_path=device_path)
+        tuner.calibrate(write_calibration_config(tmp_path))
+        with_memory = tuner.calibrate(write_calibration_config(tmp_path))
+
+        provenance_path(device_path).unlink()
+        forgetful = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert forgetful.status == with_memory.status == "success"
+        assert [r.routine_name for r in forgetful.routine_results] == [
+            r.routine_name for r in with_memory.routine_results
+        ]
+        assert _result_for(forgetful, "qubit_spectroscopy").priors == (
+            "clock_freqs.f01",
+        )
+
+    def test_priors_stay_out_of_the_wire_payload(self, tmp_path):
+        """One contract written twice, as `CalibrationReport.notes` already is."""
+        tuner = SimulatedTuner(device_config_path=tmp_path / "device.yml")
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert _result_for(report, "qubit_spectroscopy").priors
+        payload = report.to_event_payload()
+        assert all("priors" not in result for result in payload["routine_results"])
+        assert "notes" not in payload
+
+    def test_a_chip_with_no_device_config_still_calibrates(self, tmp_path):
+        """No path means no sidecar to read or write, and must mean no difference."""
+        report = SimulatedTuner().calibrate(write_calibration_config(tmp_path))
+
+        assert report.status == "success", report.errors
+
+
+def _result_for(report, routine_name: str):
+    for result in report.routine_results:
+        if result.routine_name == routine_name:
+            return result
+    raise AssertionError(f"{routine_name} produced no result in {report.summary()}")

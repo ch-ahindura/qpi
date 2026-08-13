@@ -34,6 +34,12 @@ class RoutineResult:
     #: ``analyse`` does not produce one yet — one is converted at a time, and the
     #: card simply shows no chart for the rest.
     fit: dict[str, Any] | None = None
+    #: Which of this routine's ``reads`` nothing had ever measured when it ran
+    #: (RFC 0008). A result derived from a prior is not wrong, but it is only as
+    #: good as the number it was given, and that was previously unknowable after
+    #: the fact. Out of :meth:`to_dict` for the reason `CalibrationReport.notes`
+    #: is out of the payload: it is one contract written twice.
+    priors: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
