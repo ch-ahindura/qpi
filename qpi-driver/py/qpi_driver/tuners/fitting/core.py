@@ -31,8 +31,10 @@ class OutOfRange(FitError):
 
     Attributes:
         axis: the sweep to change, named as the routine's config key — ``"delays"``.
-        direction: ``"wider"`` or ``"narrower"``.
-        factor: how much, as a multiplier on the current extent.
+        direction: ``"wider"`` for more reach, ``"finer"`` for more resolution over the
+            same reach. They are different failures: a decay that never appeared wants a
+            longer window, and a fringe that aliased wants a denser one.
+        factor: how much, as a multiplier on the extent or on the point count.
     """
 
     def __init__(
@@ -255,6 +257,7 @@ def require_resolved_curve(
     consequence: str,
     factor: float = MIN_CURVE_TO_SCATTER,
     axis: str | None = None,
+    direction: str = "wider",
 ) -> None:
     """Refuse a fit whose curve is no taller than the noise it was fitted through.
 
@@ -288,5 +291,5 @@ def require_resolved_curve(
         # curve flatter than its own noise is the signature of a window that missed, and
         # for a decay the window is nearly always too short rather than too long.
         if axis is not None:
-            raise OutOfRange(message, axis=axis, direction="wider")
+            raise OutOfRange(message, axis=axis, direction=direction)
         raise FitError(message)

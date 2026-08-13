@@ -70,25 +70,43 @@ class Rabi(CalibrationRoutine):
     depends_on = ("qubit_spectroscopy",)
     updates = ("rxy.amp180",)
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Reach further when the fit says the pi pulse was above the sweep."""
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        # To full scale, not to half of it. A sweep stopping at 0.5 cannot find a pi
-        # pulse above it, and `require_in_range` will not say so — it checks the fitted
-        # value lies *inside* the swept range, which is the opposite test. Measured on a
-        # chip whose own working calibration used 0.5683: every Rabi run came back flat,
-        # and the amplitude it wrote left X rotating five degrees.
+        # Half scale by default, and *escalating* to full scale rather than starting
+        # there. Both bounds are real and they pull against each other.
         #
-        # 81 points, not 41: doubling the range keeps the *step* rather than the count,
-        # because the step is what the fit needs and the range is only where to look. At
-        # 41 the simulated chip's Rabi still lands within 1.6%, but `rabi_12`'s pi is
-        # smaller and the same halving put it 10.3% off a sqrt(2) ladder — outside what
-        # the loop suite allows, and rightly.
+        # Reach: a sweep stopping at 0.5 cannot find a pi pulse above it, and
+        # `require_in_range` will not say so — it checks the fitted value lies inside the
+        # swept range, which fires the same way for a value too small. A chip whose own
+        # working calibration used 0.5683 returned a flat Rabi every run and wrote an
+        # amplitude that left X rotating five degrees.
+        #
+        # Accuracy: the fit is a cosine, and a strongly driven transmon stops being one —
+        # population leaks to |2> and the oscillation is no longer what is being fitted.
+        # Sweeping straight to full scale put amp180 6.9% out on the simulated chip where
+        # half scale lands within 1%, and `rabi_12` moved off its sqrt(2) ladder entirely.
+        #
+        # So: measure where the model holds, and reach further only when the fit says the
+        # pi pulse is not in there. `full_scale` is the ceiling on that reaching, because
+        # a waveform past it clips.
         self._amplitudes = setpoints_of(
             config,
             "amplitudes",
             linear_setpoints(
-                0.0, full_scale(device.get_element(target), "rxy.amp180"), 81
+                0.0, 0.5 * full_scale(device.get_element(target), "rxy.amp180"), 41
             ),
         )
         schedule = backend.new_schedule(
@@ -229,14 +247,33 @@ class Ramsey(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        # On the grid, as `ramsey_12` does: the default 41 points from 4 ns to 10 us
-        # step 249.9 ns, and a delay that is not a whole number of nanoseconds does
-        # not compile. Gridded here rather than on the way into the schedule because
-        # `analyse` fits against these same numbers.
+        # 601 points from 4 ns to 24 us, and both ends are load-bearing — this sweep has
+        # to satisfy two constraints at once, which is why it cannot be small.
+        #
+        # Fine enough. The fringe is the *residual* detuning plus the artificial one, and
+        # spectroscopy leaves a residual of several MHz — its line is Fourier-limited by a
+        # 20 ns pulse, so it lands the frequency to within about ten. At 40 ns steps
+        # Nyquist is 12.5 MHz, which covers that; the 250 ns steps this used to default to
+        # put it at 2 MHz, and a 9 MHz fringe folded down to something slow and plausible.
+        # RFC 0007's acceptance test found exactly that, reporting T2* = 1361 seconds.
+        #
+        # Long enough. The fit refuses a T2* the window never saw, so a sweep shorter than
+        # the coherence cannot measure it: 24 us against the simulated chip's 20 us.
+        #
+        # Escalation cannot substitute for either, and that is the point. It moves one axis
+        # per attempt, and this sweep being wrong in *both* directions at once — too coarse
+        # and too short — is a state it cannot walk out of: widening for the unfinished
+        # decay coarsens the step that was already aliasing. 601 acquisitions is inside the
+        # sequencer's ceiling of about 950, so one sweep can satisfy both, and it is what an
+        # operator had to supply by hand until now.
+        #
+        # On the grid, as `ramsey_12` does: a delay that is not a whole number of
+        # nanoseconds does not compile. Gridded here rather than on the way into the
+        # schedule because `analyse` fits against these same numbers.
         self._delays = [
             grid_duration(delay)
             for delay in setpoints_of(
-                config, "delays", linear_setpoints(4e-9, 10e-6, 41)
+                config, "delays", linear_setpoints(4e-9, 24e-6, 601)
             )
         ]
         self._detuning = float(config.get("artificial_detuning", 1e6))

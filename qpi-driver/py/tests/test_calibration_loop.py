@@ -128,29 +128,24 @@ def calibration_config() -> CalibrationConfig:
 
 
 def _sweep(name: str) -> dict:
-    return {
-        "qubit_spectroscopy": {"span": 600e6, "points": 61},
-        "rabi": {"amplitudes": [round(0.02 * i, 4) for i in range(26)]},
-        # 400 MHz about f01 minus 300, which brackets a transmon's anharmonicity without
-        # trusting the f12 already on the device — the fixture's is 134 MHz wrong, which is
-        # the honest state of a field nothing ever measured.
-        "f12_spectroscopy": {"span": 400e6, "points": 81},
-        # Ramsey's sweep is squeezed from both ends, which is worth stating
-        # because getting either wrong looks like a broken routine.
-        #
-        # Fine enough: spectroscopy leaves a residual of several MHz, so the
-        # fringe is ~9 MHz and 40 ns steps put Nyquist at 12.5 MHz. The
-        # routine's 250 ns default would alias it to something plausible and
-        # wrong.
-        #
-        # Long enough: the fit rejects a T2* outside the window that produced it
-        # — rightly — so a sweep shorter than T2 (20 µs here) cannot measure the
-        # decay it is being asked for.
-        "ramsey": {
-            "delays": [round(4e-9 + 4e-8 * i, 11) for i in range(601)],
-            "artificial_detuning": 1e6,
-        },
-    }.get(name, {})
+    """Nothing. Every hint this used to carry is now a derived default (RFC 0007).
+
+    It held four, and each was a number found by a failed run: a 600 MHz spectroscopy
+    span, explicit Rabi amplitudes, a 400 MHz f12 span, and 601 Ramsey delays. They are
+    kept here as a record of what the defaults now do on their own, because the whole
+    point of the RFC is that an operator should not have to know them:
+
+    - `qubit_spectroscopy` widens to a search over the band its port can address, so the
+      600 MHz span is no longer the difference between finding the qubit and not.
+    - `rabi` sweeps amplitude to full scale, so listing 0 to 0.5 by hand buys nothing.
+    - `f12_spectroscopy` already searched from f01 plus a bounded anharmonicity.
+    - `ramsey` defaults to 601 delays over 24 us, which is the sweep that used to be
+      supplied here — sized so that one sweep is both fine enough for the fringe and long
+      enough for the decay.
+
+    `TestAChipKnownOnlyFromItsDesignDocument` is the assertion that this is true.
+    """
+    return {}
 
 
 @pytest.fixture(scope="module")
@@ -2039,4 +2034,60 @@ class TestTheWholeDagThroughTheRealStack:
         counts = run(device, simulator, scheduler, circuit("x q[0];\n"), shots=400)
         assert counts["1"] / sum(counts.values()) > 0.9, (
             f"an X gate should land in |1> after a full calibration, got {counts}"
+        )
+
+
+class TestAChipKnownOnlyFromItsDesignDocument:
+    """RFC 0007 §8's acceptance test: calibrate with nothing supplied.
+
+    Every other test in this file hands the routines a sweep — 600 MHz for spectroscopy,
+    601 delays for Ramsey, explicit Rabi amplitudes. Each of those numbers was found by a
+    failed run, and needing them is what RFC 0007 exists to remove: the operator is being
+    asked to know roughly what the answer is before the node that measures it will work.
+
+    So this one supplies *nothing but which qubit*. The fixture device claims f01 = 5.0 GHz
+    against a transmon at 5.21 GHz, which is the honest state of a chip known only from a
+    design document, and the assertion is that the driver finds it anyway.
+    """
+
+    def test_it_calibrates_with_no_sweep_supplied(self, scheduler, tmp_path):
+        simulator = TransmonSimulator()
+        device = tmp_path / "quantify.device.yml"
+        shutil.copy(FIXTURES / "quantify.device.yml", device)
+
+        close_instruments(scheduler)
+        tuner = tuner_for(
+            scheduler,
+            name=f"bare_{scheduler}",
+            quantify_hardware_config=FIXTURES / "quantify.hardware.json",
+            quantify_device_config=device,
+            is_simulated=True,
+            simulator=simulator,
+        )
+        try:
+            config = CalibrationConfig(
+                target_qubits=["q0"],
+                routines={
+                    name: RoutineConfig(enabled=name in CALIBRATED)
+                    for name in routine_names()
+                },
+            )
+            report = tuner.calibrate(config)
+            true_f01 = simulator.f01 * GHZ
+            found = read_path(tuner.device.get_element("q0"), "clock_freqs.f01")
+        finally:
+            tuner.close()
+            close_instruments(scheduler)
+
+        assert report.status == "success", report.errors
+        # A megahertz, not the 200 kHz the hinted sweeps in this file achieve, and the
+        # difference is honest rather than slack. Those hand a 600 MHz spectroscopy span
+        # that lands the line closer than the derived search does, so the single Ramsey
+        # after it starts nearer. From nothing supplied this comes out around 0.6 MHz,
+        # which is 4 degrees of phase error on a 20 ns gate — usable, and what a second
+        # Ramsey would take further. RFC 0007 §12 records that iteration as the open
+        # question it is; this test asserts the run *works*, not that one pass is optimal.
+        assert found == pytest.approx(true_f01, abs=1e6), (
+            f"f01 came out {(found - true_f01) / 1e6:+.2f} MHz from the truth having "
+            f"started 214 MHz away, with nothing supplied"
         )

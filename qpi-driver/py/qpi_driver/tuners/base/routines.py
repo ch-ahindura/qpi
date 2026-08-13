@@ -398,9 +398,14 @@ def _widened(
     if not current:
         return config
     low, high = min(current), max(current)
-    extent = (high - low) * refusal.factor
-    centre = (high + low) / 2.0 if low < 0 else low
-    stretched = linear_setpoints(centre, centre + extent, len(current))
+    if refusal.direction == "finer":
+        # The same window, sampled harder. An aliased fringe needs resolution, not reach —
+        # and lengthening the sweep would make the aliasing worse while costing more.
+        stretched = linear_setpoints(low, high, int(len(current) * refusal.factor))
+    else:
+        extent = (high - low) * refusal.factor
+        centre = (high + low) / 2.0 if low < 0 else low
+        stretched = linear_setpoints(centre, centre + extent, len(current))
     return RoutineConfig(
         enabled=config.enabled, params={**config.params, refusal.axis: stretched}
     )

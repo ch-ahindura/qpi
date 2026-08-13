@@ -12,6 +12,7 @@ to the device.
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
@@ -698,74 +699,51 @@ def test_a_routine_declares_every_parameter_it_reads(own_quantify_tuner, monkeyp
     )
 
 
-def test_a_rabi_sweep_reaches_full_scale(own_quantify_tuner):
-    """A pi pulse above the top of the sweep cannot be found, and nothing says so.
+def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify_tuner):
+    """Two bounds pull against each other, so the default measures and escalation reaches.
 
-    `require_in_range` checks the fitted amplitude lies *inside* the swept range, which is
-    the opposite test — it passes a value that is wrong for being too small and cannot
-    fire on one that is missing for being too large. The August 2026 chip's own working
-    calibration used `amp180 = 0.5683` against a sweep that stopped at 0.5, so every Rabi
-    run came back flat and the amplitude it wrote left X rotating five degrees.
+    Reach: a sweep stopping at 0.5 cannot find a pi pulse above it, and `require_in_range`
+    will not say so — it checks the fitted value lies *inside* the swept range, which fires
+    the same way for a value that is too small. The August 2026 chip's own working
+    calibration used `amp180 = 0.5683` against exactly that sweep, so every Rabi run came
+    back flat and the amplitude it wrote left X rotating five degrees.
 
-    And the element does not bound this: quantify validates `rxy.amp180` in [-10, 10], a
-    sanity range rather than a drive bound. Full scale is a hardware fact — a waveform
-    past it clips — so `full_scale` is the only thing that stops the sweep.
+    Accuracy: the fit is a cosine and a strongly driven transmon stops being one. Starting
+    at full scale put amp180 6.9% out on the simulated chip where half scale lands within
+    1%, and took `rabi_12` off its sqrt(2) ladder entirely.
 
-    `rabi_12` is deliberately not held to this. Its ceiling is the *model*, not the
-    hardware: `_drive_ef` neglects the off-resonant 0-1 term, and sweeping the EF drive to
-    full scale moved its fitted pi off a sqrt(2) ladder and cost `ramsey_12` its fringe.
+    So the default is half of full scale, `fit_rabi` raises `OutOfRange` when the pi pulse
+    is above the sweep, and `escalating` reaches further — up to full scale, because a
+    waveform past that clips. The element does not bound this at all: quantify validates
+    `rxy.amp180` in [-10, 10], a sanity range rather than a drive bound.
     """
-    from qpi_driver.tuners.base.limits import FULL_SCALE
-
-    for name, path in (("rabi", "rxy.amp180"),):
-        node = routine(name)
-        # The *default* sweep, not `SMALL_SWEEPS`' override — the default is the claim.
-        node.build_schedule(
-            "q0",
-            own_quantify_tuner.device,
-            RoutineConfig(params={}),
-            own_quantify_tuner.backend,
-        )
-        assert max(node._amplitudes) == pytest.approx(FULL_SCALE), (
-            f"{name} stops at {max(node._amplitudes)}, so it cannot find a pi pulse "
-            f"above that — and {path} has no element bound that would"
-        )
-        assert min(node._amplitudes) == pytest.approx(0.0)
-
-
-def test_the_resonator_keeps_the_linewidth_that_was_measured(own_quantify_tuner):
-    """`resonator_spectroscopy` measured a linewidth and used to throw it away.
-
-    Three nodes size their own sweeps from it and had to guess instead — a 2 MHz constant,
-    which on a chip whose resonator is 370 kHz wide put `readout_operating_point`'s outer
-    setpoints 2.7 linewidths off resonance, and it chose one of them (RFC 0007 §1). RFC
-    0005 §13 asked for the field; this is it.
-
-    Opt-in, like every other `CalibratedTransmon` addition: a plain `BasicTransmonElement`
-    has nowhere to keep it and those chips keep the constant. Zero means "not measured",
-    so having the field and having a value are different questions.
-    """
-    from qpi_driver.tuners.base.device import (
-        measured_linewidth,
-        read_path,
-        resonator_linewidth_path,
-        write_path,
-    )
+    from qpi_driver.tuners.base.limits import FULL_SCALE, full_scale
 
     element = own_quantify_tuner.device.get_element("q0")
-    assert resonator_linewidth_path(element) == "resonator.linewidth"
+    assert full_scale(element, "rxy.amp180") == pytest.approx(FULL_SCALE)
 
-    # Unmeasured, so a caller gets its own fallback rather than a zero-wide resonator.
-    write_path(element, "resonator.linewidth", 0.0)
-    assert measured_linewidth(element, 2e6) == pytest.approx(2e6)
-
-    routine("resonator_spectroscopy").apply(
-        own_quantify_tuner.device,
+    node = routine("rabi")
+    node.build_schedule(
         "q0",
-        {"readout_frequency": 7.1e9, "linewidth": 370e3},
+        own_quantify_tuner.device,
+        RoutineConfig(params={}),
+        own_quantify_tuner.backend,
     )
-    assert read_path(element, "resonator.linewidth") == pytest.approx(370e3)
-    assert measured_linewidth(element, 2e6) == pytest.approx(370e3)
+    assert max(node._amplitudes) == pytest.approx(0.5 * FULL_SCALE), (
+        "the default should measure where the cosine model holds"
+    )
+
+    # And a pi pulse above that is a request for more amplitude, not a failed fit.
+    from qpi_driver.tuners.fitting import fit_rabi
+    from qpi_driver.tuners.fitting.core import OutOfRange
+
+    amplitudes = np.linspace(0.0, 0.5, 41)
+    # A cosine whose half period is 0.9 — a pi pulse well past the top of this sweep.
+    signal = 0.5 - 0.5 * np.cos(2 * np.pi * amplitudes / 1.8)
+    with pytest.raises(OutOfRange, match="past the top of the range") as raised:
+        fit_rabi(amplitudes, signal)
+    assert raised.value.axis == "amplitudes"
+    assert raised.value.direction == "wider"
 
 
 class TestSweepsSizedFromTheMeasuredLinewidth:

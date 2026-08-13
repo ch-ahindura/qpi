@@ -10,6 +10,7 @@ from .core import (
     align,
     estimate_frequency,
     fit_summary,
+    OutOfRange,
     require_in_range,
     require_positive,
     require_resolved_curve,
@@ -81,10 +82,24 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     rabi_frequency = require_positive(abs(freq), what="Rabi frequency")
     amp180 = 1.0 / (2.0 * rabi_frequency)
 
+    high = float(np.max(x))
+    if amp180 > high * 1.1:
+        # Above the sweep, which is the one direction `require_in_range` cannot usefully
+        # report: it fires the same way for a value too small and one that is missing
+        # because the pi pulse is off the top, and only the second is fixable by sweeping
+        # differently. Escalatable, so a routine can reach further rather than an operator
+        # reading prose — a chip whose working amp180 was 0.5683 against a sweep stopping
+        # at 0.5 returned a flat Rabi every run.
+        raise OutOfRange(
+            f"amp180 fitted to {amp180:.4g}, above the {high:.4g} this sweep reached — "
+            "the pi pulse is past the top of the range, so there is more amplitude to try",
+            axis="amplitudes",
+            direction="wider",
+        )
     require_in_range(
         amp180,
         float(np.min(x)),
-        float(np.max(x)),
+        high,
         what="amp180",
         tolerance=0.1,
     )
@@ -134,7 +149,31 @@ def fit_ramsey(
 
     fringe = require_positive(abs(freq), what="Ramsey fringe frequency")
     t2_star = require_positive(abs(tau), what="T2*")
-    require_in_range(t2_star, 0.0, float(np.max(x)) * 10, what="T2*", tolerance=0.0)
+    window = float(np.max(x))
+    if t2_star > window * 10:
+        # Two different failures reach here, and they want opposite sweeps.
+        #
+        # A T2* modestly past the window is a decay the window was too short to contain,
+        # and wants a longer one. A T2* *absurdly* past it is an aliased fringe: the step
+        # was coarser than half the fringe period, so the cosine fitted a slow beat that
+        # is not there, and its envelope came out flat. The August 2026 acceptance test hit
+        # this at 1361 seconds against a 100 us window — seven orders of magnitude, which
+        # no window length explains.
+        #
+        # A hundred windows is well clear of either: a genuine too-short sweep overruns by
+        # single digits, and an alias by orders of magnitude.
+        raise OutOfRange(
+            f"T2* fitted to {t2_star:.4g} s against a {window:.4g} s window — "
+            + (
+                "far enough past it that the fringe was aliased rather than merely "
+                "unfinished, so the delays need sampling more finely"
+                if t2_star > window * 100
+                else "the decay did not finish inside it, so the delays need to reach "
+                "further"
+            ),
+            axis="delays",
+            direction="finer" if t2_star > window * 100 else "wider",
+        )
     require_resolved_curve(
         y,
         decaying_cosine(x, amplitude, freq, phase, tau, offset),
@@ -144,6 +183,14 @@ def fit_ramsey(
             "a number read off the noise. Average more shots, or check that the pi/2 "
             "pulses are reaching the qubit at all"
         ),
+        # Escalatable, and *finer* rather than wider — which is the opposite of what a
+        # plain decay wants, because the model is different. A flat exponential means the
+        # window ended before the decay did. A flat *oscillation* usually means the step
+        # was too coarse to show it: the fringe is folded down to something slow, the
+        # cosine fits a beat that is not there, and the envelope comes out level. Asking
+        # for a longer window there makes it worse, since the step grows with it.
+        axis="delays",
+        direction="finer",
     )
     return {
         "detuning": fringe - artificial_detuning,

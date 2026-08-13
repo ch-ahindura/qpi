@@ -65,11 +65,20 @@ class TestOscillatoryFits:
         assert fitted["amp180"] == pytest.approx(amp180, rel=0.05)
 
     def test_rabi_refuses_a_fit_outside_the_swept_range(self):
-        """A pi pulse the sweep never reached is an extrapolation, not a measurement."""
+        """A pi pulse the sweep never reached is an extrapolation, not a measurement.
+
+        Above the range it is also *actionable* — there is more amplitude to try — so it
+        raises `OutOfRange` and a routine can reach further rather than an operator reading
+        the message. Still a `FitError`, so a caller that does not escalate is unaffected.
+        """
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
         amplitudes = np.linspace(0.0, 0.02, 41)
         signal = 0.5 * np.cos(2 * np.pi * amplitudes / (2 * 5.0)) + 0.5
-        with pytest.raises(FitError, match="outside the swept range"):
+        with pytest.raises(FitError, match="past the top of the range") as raised:
             fit_rabi(amplitudes, signal)
+        assert isinstance(raised.value, OutOfRange)
+        assert (raised.value.axis, raised.value.direction) == ("amplitudes", "wider")
 
     def test_ramsey_recovers_the_detuning_and_t2_star(self):
         detuning, artificial, t2 = 0.3e6, 1e6, 8e-6

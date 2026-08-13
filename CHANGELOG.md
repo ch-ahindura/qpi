@@ -30,6 +30,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   broadening reference the other powers are judged against. A row that converged, cleared
   the sweep step and still showed nothing became the narrowest, and the 2x bound then
   rejected every power that did show the line.
+- `qpi-driver/py`: a calibration finds a chip known only from its design document, with
+  no sweep supplied. The fixture claims f01 = 5.0 GHz against a transmon at 5.21 GHz, and
+  the driver recovers it to under a megahertz. `ramsey`'s default sweep is sized for both
+  its constraints at once, and `rabi` reaches past half scale only when the fit says the
+  pi pulse is above it.
 - `qpi-driver/py`: `t1`, `t2_echo` and `ramsey` lengthen their delays and try again when
   the fit says the decay was never seen in the window, rather than failing. Bounded at
   three attempts, and an operator who named the delays themselves is not overruled.
