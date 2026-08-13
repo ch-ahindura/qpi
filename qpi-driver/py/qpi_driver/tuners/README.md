@@ -78,6 +78,7 @@ red for parameters its elements were never going to have:
 | `measure_2state` | `readout_operating_point` |
 | `r12` | `rabi_12`, `resonator_spectroscopy_second_excited` |
 | `measure_3state` | `ramsey_12`, `drag_12`, `fine_amplitude_12`, `three_state_operating_point`, `three_state_discrimination` |
+| `fine.amp90` | `fine_amplitude_90` — without it a pi/2 is whatever half a pi interpolates to, which is what it always was |
 | `bias.parking_current` on the edge | `coupler_anticrossing` — and with one but no rack to deliver it, that node *fails* rather than declining: an edge declaring a bias nothing can hold is a misconfiguration, not an absent feature |
 | `clock_freqs.cz` on the edge | `cz_spectroscopy`, `cz_parametrization` — a `CompositeSquareEdge` has no drive frequency, and `cz_chevron` is its counterpart |
 
@@ -171,7 +172,7 @@ resonator_spectroscopy → resonator_punchout → qubit_spectroscopy → rabi
 
 rabi → resonator_spectroscopy_excited
 rabi → readout_operating_point → readout_discrimination → readout_fidelity
-rabi → ramsey → drag → { allxy, fine_amplitude → { rb, allxy_check } }
+rabi → ramsey → drag → { allxy, fine_amplitude → { fine_amplitude_90, rb, allxy_check } }
 rabi → { t1, t2_echo }
 
 rabi → f12_spectroscopy → rabi_12 → resonator_spectroscopy_second_excited
@@ -215,6 +216,7 @@ pulse, so half the readout nodes sit below `rabi`.
 | `drag` | `rxy.motzoi` (`rxy.beta` under qblox) | Zero crossing of X90-Y180 against Y90-X180. |
 | `allxy` | — | 21-pair diagnostic against the ideal staircase. |
 | `fine_amplitude` | `rxy.amp180` | Amplifies a small error over repeated π pulses. |
+| `fine_amplitude_90` | `fine.amp90` | The same, for the π/2 — which is otherwise interpolated and so cannot be wrong. |
 | `rb`, `interleaved_rb`, `allxy_check` | — | Benchmarks. Their fidelity is what the drift check reads. |
 
 **The 1-2 transition.** A transmon is a ladder used as a qubit, and every gate leaks

@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented, with one known gap open — §11.5
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -743,9 +743,9 @@ refusal now names the routine and says which setting to raise.
 It is a resource budget, which RFC 0007 §5 already distinguishes from the ranges this RFC
 removes: it needs no knowledge of the chip, only of how long the operator is willing to wait.
 
-### 11.5 The AllXY equator error: detuning fixed, the pi/2 amplitude now confirmed
+### 11.5 The AllXY equator error: both causes fixed
 
-**Half fixed.** Found on the B chip's first fully calibrated run, which is worth stating
+**Fixed, in two halves and two runs.** Found on the B chip's first fully calibrated run, which is worth stating
 because the chip was *working*: randomised benchmarking measured 0.9879 over seven depths, T1
 63.6 us, T2echo 87.3 us, and an AllXY whose two plateaus read 0.0086 and 0.0090 rms against
 their ideals. All of the error sat in the equator block, antisymmetrically:
@@ -774,13 +774,12 @@ another would be measuring noise. And it stops after `MAX_REFINEMENTS` regardles
 is a full `escalating` call, so a window too short for the chip is still widened by the guard
 that already knows how.
 
-**Blocked: nothing can correct a pi/2 amplitude error, and it is not this graph's fault.**
-`fine_amplitude` refines ``rxy.amp180`` by repeating pi pulses; there is no equivalent for
-pi/2 and no field to write one to. quantify's `rxy_drag_pulse` derives every angle from
-``amp180`` by linear interpolation — its own docstring says so — so a separately calibrated
-pi/2 amplitude has nowhere to live and nothing that would honour it. Correcting this needs a
-custom pulse factory and a new element field on `CalibratedTransmon`, which changes how every
-gate on every chip compiles.
+**Was blocked: nothing could correct a pi/2 amplitude error, and it was not this graph's
+fault.** `fine_amplitude` refines ``rxy.amp180`` by repeating pi pulses; there was no
+equivalent for pi/2 and no field to write one to. quantify's `rxy_drag_pulse` derives every
+angle from ``amp180`` by linear interpolation — its own docstring says so, and qblox's is the
+same function under a different parameter name — so a separately calibrated pi/2 amplitude had
+nowhere to live and nothing that would honour it.
 
 That was not worth building before the detuning half was ruled out, which the refinement above
 does automatically: if the equator block collapsed on the next run, this was detuning and there
@@ -799,8 +798,43 @@ after    pairs 6-9  -0.0706   pairs 14-17  +0.1089   split  +0.1795
 An antisymmetric split that survives the detuning going to zero is a pi/2 amplitude error, and
 the mechanism is the one already suspected: ``amp180`` of 0.5757 sits above half of full scale,
 where the rotation angle stops being linear in amplitude, so halving it does not halve the
-rotation — which is exactly what quantify's interpolation assumes. The upstream work above is
-therefore justified rather than speculative, and is the remaining half of this item.
+rotation — which is exactly what quantify's interpolation assumes.
+
+**Fixed: `fine.amp90`, an interpolation that honours it, and `fine_amplitude_90`.** Three
+pieces, and the middle one is the one that has to be got right, since it changes how every
+gate on every chip compiles.
+
+The interpolation is piecewise-linear through ``(0, 0)``, ``(amp90, 90)`` and
+``(amp180, 180)``. Not a curve fitted through the two measurements: two points do not
+determine a compression curve, and a quadratic through them turns back on itself before 180 —
+handing a larger angle a smaller amplitude, which is worse than the straight line it replaces.
+Monotonic is worth more here than smooth. With ``amp90`` unmeasured, which is every element on
+every chip until the routine runs, it reproduces ``amp180 * theta / 180`` to the bit, and so
+does an ``amp90`` that happens to equal half. Both are asserted rather than assumed.
+
+The routine amplifies the pi/2 the way `fine_amplitude` amplifies the pi, with two
+differences. It plays no pre-rotation: there the pulse under test is the pi and a pi/2 in
+front of it turns an even response into a signed one, but here the pulse under test *is* the
+pi/2, so a pre-rotation would be played by the very pulse being calibrated and its error would
+enter twice. And its repetition counts are ``1, 5, 9, 13`` rather than ``1..n``, because only
+after ``4k+1`` quarter turns does the accumulated error lie along the axis being measured — at
+``4k+3`` the quadratures have swapped and at even counts the response is flat in the error to
+first order. `fit_fine_amplitude` now refuses the wrong counts rather than fitting them, which
+it could do silently before because a pi pulse behind a pi/2 satisfies the condition at every
+integer.
+
+The counts are short for a second reason: the fit takes the slope of ``sin(n*d)`` as ``d``,
+which is exact only for small ``n*d``, and the equator block above implies ``d`` near 0.2 —
+already 2.6 by the thirteenth pulse. So the routine refines, in the same shape and under the
+same three bounds as `ramsey` above, each pass starting from the corrected amplitude and
+measuring what remains.
+
+The simulated drive is exactly linear, so the full-DAG test asserts ``amp90`` lands within 5%
+of half of ``amp180`` on both qubits under both schedulers. That is the no-op case, and it is
+the one worth asserting here: a sign error, a wrong demodulation or the wrong counts would all
+still *fit*, and would write a confidently wrong amplitude to every gate on the chip. The
+hardware case is the interesting one and cannot be asserted in a test — the evidence for it is
+the B chip measurement above.
 
 **Deliberately not recommended: changing ``rxy.duration``.** A longer pulse needs less
 amplitude and would move ``amp180`` out of the nonlinear region, but 56 ns is already 14 times

@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `fine_amplitude_90` measures the pi/2 amplitude and writes it to a new
+  `fine.amp90` on `CalibratedTransmon`. Both schedulers derived a pi/2 from `amp180` by linear
+  interpolation, so a drive that compresses near full scale left an AllXY error nothing could
+  correct.
 - `qpi-driver/py`: the simulator has three-level physics for the 1-2 transition, so `rabi_12`
   can be tested without a chip. The sqrt(2) ladder between the two transitions comes out of
   the model rather than being written into it.
