@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented
+- **Status:** Implemented, with one known gap open — §11.1
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -571,6 +571,51 @@ needs less: on a first calibration, "produced in this walk" is sufficient, and t
 exactly the case this RFC is about. It is also what makes §8's acceptance test readable:
 on a chip known only from its design document the first walk will have failures, and
 without skip-propagation its report is the same six-way puzzle that motivated this RFC.
+
+### 11.1 Known gap: `reads` is under-declared, so this did not fire on the B chip
+
+**Open. Found on hardware in August 2026, and it is the failure this section exists to
+prevent, recurring for a reason the section did not anticipate.**
+
+q5 on the B chip produced eight failures from one fault. `qubit_spectroscopy` found no
+line; the qubit was never excited; and then `rabi`, `t1`, `t2_echo`, `rb`,
+`readout_discrimination`, `readout_fidelity` and `resonator_spectroscopy_excited` each ran
+anyway and fitted its own noise, reporting seven further errors with seven different-looking
+causes. The guards did their job — every one of those seven refused rather than writing —
+but the walk should not have run them at all.
+
+Why the ledger let them through:
+
+| Node | Declares | Actually needs |
+|---|---|---|
+| `rabi`, `t1`, `t2_echo`, `rb` | *(nothing)* | `clock_freqs.f01`, and `rxy.amp180` for the last three |
+| `readout_discrimination`, `readout_fidelity` | the two `measure_2state` paths | `rxy.amp180` as well |
+| `resonator_spectroscopy_excited` | `clock_freqs.readout`, `resonator.linewidth` | `clock_freqs.f01` and `rxy.amp180` as well |
+
+None of them reads those paths through `read_path`. They get the drive frequency and the pi
+pulse from the *compiled gate* — `backend.Rxy` and the gate library resolve them off the
+device element directly — so `test_a_routine_declares_every_parameter_it_reads`, which
+derives the truth by instrumenting `read_path`, structurally cannot see the dependency.
+The test asserts a lower bound and the declaration is the contract; here the contract is
+simply short, and nothing was in a position to say so.
+
+With honest declarations the same run reports **one** error naming `qubit_spectroscopy` and
+seven skips: f01 unsatisfied skips `rabi`, which leaves `rxy.amp180` unsatisfied, which
+skips the other six. That is what §11 promised.
+
+Two parts to the fix, and the second is what stops it coming back:
+
+1. **Declare them.** Add `clock_freqs.f01` and `rxy.amp180` to the seven nodes above. Safe
+   against the existing invariant test, which asserts coverage rather than equality.
+2. **Make the derivation see gate-library reads.** Instrumenting `read_path` is the wrong
+   probe for a dependency that never passes through it. The honest probe is the device
+   element's own parameters — but a gate's frequency is resolved when the schedule is
+   *compiled*, and the test only builds, so this likely means compiling in the invariant
+   test and instrumenting the element rather than the helper. Heavier, and it is the only
+   version that cannot silently go short again.
+
+Until (2) exists, `reads` is hand-maintained, and this section's guarantee is only as good
+as the hand.
 
 ## 12. Resolved during review
 

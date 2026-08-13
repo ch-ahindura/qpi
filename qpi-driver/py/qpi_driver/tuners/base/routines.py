@@ -75,7 +75,11 @@ class CalibrationRoutine(ABC):
             set is static, and because the two routines that override
             :meth:`measure` have no schedule to inspect beforehand;
             ``test_a_routine_declares_every_parameter_it_reads`` derives it from
-            an instrumented `read_path` and fails if a declaration is short.
+            an instrumented `read_path` and fails if a declaration is short —
+            **but only for paths that go through `read_path` at all.** A gate's
+            frequency and amplitude are resolved off the element by the gate
+            library, so seven nodes are short today and the test cannot say so.
+            RFC 0007 §11.1: eight failures from one fault on the B chip.
         benchmark: Whether this routine's output is a gate fidelity. Declared
             rather than inferred from an empty ``updates``: T1 writes nothing
             either, and recording it as a benchmark would put a ``None``
