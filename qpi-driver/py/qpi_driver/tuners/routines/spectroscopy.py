@@ -24,6 +24,7 @@ from qpi_driver.tuners.base.device import (
 )
 from qpi_driver.tuners.base.routines import (
     DEFAULT_SWEEP_POINTS,
+    MAX_SWEEP_POINTS,
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
     CheckOutcome,
@@ -866,6 +867,10 @@ class QubitSpectroscopy(CalibrationRoutine):
     #: was never the problem.
     CONFIRM_MIN_SPAN_IN_STEPS = 4.0
 
+    #: How wide the ordinary sweep about the configured f01 is, when the operator names no
+    #: span. Named because `_confirm_points` reads it too, to hold the same step.
+    NARROW_SPAN = 40e6
+
     def measure(
         self,
         target: str,
@@ -917,7 +922,12 @@ class QubitSpectroscopy(CalibrationRoutine):
                 "span": float(
                     config.get("confirm_span", self._confirm_span(config, width))
                 ),
-                "points": int(config.get("confirm_points", self.CONFIRM_POINTS)),
+                "points": int(
+                    config.get(
+                        "confirm_points",
+                        self._confirm_points(config, device, target, width),
+                    )
+                ),
             },
         )
         try:
@@ -1058,13 +1068,45 @@ class QubitSpectroscopy(CalibrationRoutine):
             span,
         )
 
+    def _confirm_points(
+        self, config: RoutineConfig, device: Any, target: str, width: float
+    ) -> int:
+        """Points for the confirming sweep: enough to hold the narrow pass's own step.
+
+        Fixed at `CONFIRM_POINTS` before, which made the *step* a consequence of the span
+        rather than a choice — and the span comes from the width the search measured at
+        **search** power. A power-broadened line reads as tens of MHz across: on the
+        August 2026 B chip a 32 MHz width gave a 48 MHz span, 41 points, a 1.2 MHz step,
+        and all three drive powers refused for a linewidth below the sweep step. The line
+        was real, found within 2 MHz of the chip's VNA value, and 0.8 MHz wide.
+
+        The operator's own ``span``/``points`` is their statement about the resolution
+        their chip needs, so that is the step this holds. Bounded by the share of
+        `MAX_SWEEP_POINTS` each drive power can afford, because the confirming sweep is one
+        schedule across all of them, and floored at `CONFIRM_POINTS` so a chip whose narrow
+        pass is coarser than the confirm span never sweeps fewer points than before.
+        """
+        narrow_span = float(config.get("span", self.NARROW_SPAN))
+        narrow_points = max(int(config.get("points", DEFAULT_SWEEP_POINTS)), 2)
+        step = narrow_span / (narrow_points - 1)
+        span = float(config.get("confirm_span", self._confirm_span(config, width)))
+        amplitudes = max(len(self._drive_amplitudes(config, device, target)), 1)
+        affordable = MAX_SWEEP_POINTS // amplitudes
+        wanted = int(span / step) + 1 if step > 0 else self.CONFIRM_POINTS
+        return max(self.CONFIRM_POINTS, min(wanted, affordable))
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         return self._probe_schedule(
             target,
             _frequency_sweep(
-                config, device, target, "f01", default_span=40e6, backend=backend
+                config,
+                device,
+                target,
+                "f01",
+                default_span=self.NARROW_SPAN,
+                backend=backend,
             ),
             self._drive_amplitudes(config, device, target),
             backend,

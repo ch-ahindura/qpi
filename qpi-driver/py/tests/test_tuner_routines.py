@@ -21,7 +21,7 @@ from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
-from qpi_driver.tuners.base.routines import RoutineError
+from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS, RoutineError
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -1288,3 +1288,76 @@ class TestAllXYRefusesAResponseItCannotNormalise:
         source = inspect.getsource(benchmarks.AllXYCheck.analyse)
         assert "normalised_allxy" in source
         assert "np.min" not in source and "np.max" not in source
+
+
+class TestTheConfirmingSweepHoldsItsStep:
+    """RFC 0007: a power-broadened search must not make the confirming sweep too coarse.
+
+    The B chip's search found q5's line at 5319999360 Hz — within one 2 MHz step of the
+    5.318 GHz its VNA reported, so the location was right. Then the confirming sweep refused
+    it at all three drive powers, each for "linewidth below the sweep step". The line was
+    0.8 MHz wide and the step was 1.2 MHz.
+
+    The span is sized from the width the search measured, and the search ran at a drive
+    power that broadened a 0.8 MHz line to 32 MHz across. With `CONFIRM_POINTS` fixed at 41,
+    a 48 MHz span *is* a 1.2 MHz step — so the routine located the line and then swept too
+    coarsely to see it.
+    """
+
+    B_CHIP = {
+        "span": 20e6,
+        "points": 151,
+        "drive_amps": [0.1, 0.2, 0.4],
+        "search_span": 1860e6,
+        "search_points": 931,
+    }
+
+    def test_a_broadened_search_still_leaves_a_step_that_resolves_the_line(self):
+        node = routine("qubit_spectroscopy")
+        width = 32e6
+
+        span = node._confirm_span(RoutineConfig(params=self.B_CHIP), width)
+        points = node._confirm_points(
+            RoutineConfig(params=self.B_CHIP), _NoElements(), "q5", width
+        )
+
+        step = span / (points - 1)
+        assert span == pytest.approx(48e6), "the span still follows the measured width"
+        assert step < 0.8e6, (
+            f"a 0.8 MHz line needs a finer step than {step / 1e3:.0f} kHz"
+        )
+        # And within the sequencer's reach: one schedule covers every drive power.
+        assert points * len(self.B_CHIP["drive_amps"]) <= MAX_SWEEP_POINTS
+
+    def test_it_never_sweeps_fewer_points_than_it_used_to(self):
+        """The floor matters: a chip whose narrow pass is coarse must not lose resolution."""
+        node = routine("qubit_spectroscopy")
+        coarse = dict(self.B_CHIP, span=40e6, points=11)
+
+        points = node._confirm_points(
+            RoutineConfig(params=coarse), _NoElements(), "q5", 1e6
+        )
+
+        assert points == node.CONFIRM_POINTS
+
+    def test_it_holds_the_step_the_operator_asked_for(self):
+        node = routine("qubit_spectroscopy")
+        config = RoutineConfig(params=self.B_CHIP)
+        width = 4e6
+
+        span = node._confirm_span(config, width)
+        points = node._confirm_points(config, _NoElements(), "q5", width)
+
+        # 20 MHz over 151 points is 133 kHz, and that is what the confirm sweep uses.
+        assert span / (points - 1) == pytest.approx(20e6 / 150, rel=0.05)
+
+
+class _NoElements:
+    """A device with no elements, for the sizing arithmetic that never touches one.
+
+    `_confirm_points` asks `_drive_amplitudes` how many powers it will sweep, and that
+    reads the element only when the config names none — which these configs all do.
+    """
+
+    def get_element(self, name: str) -> Any:
+        raise AssertionError("the config names drive_amps, so no element is needed")

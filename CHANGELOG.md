@@ -42,6 +42,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: an escalating sweep is capped at 700 points rather than 900. A frequency
   sweep costs three operations per point, measured at 15 Q1ASM instructions, so 900 built a
   program over the sequencer's 12288-instruction ceiling — which quantify only warns about.
+- `qpi-driver/py`: `qubit_spectroscopy`'s confirming sweep holds the resolution the narrow
+  pass asks for instead of a fixed 41 points, so a line the search power-broadened is no
+  longer refused for being thinner than the step of the sweep sent to measure it.
 - `qpi-driver/py`: a readout whose single shots are assigned little better than by chance is
   refused rather than written. `readout_operating_point` previously wrote an operating point
   it had measured at 53% assignment fidelity.
