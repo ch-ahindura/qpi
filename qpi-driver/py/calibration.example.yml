@@ -64,16 +64,16 @@ routines:
     points: 51
     search_span: 600.0e+6
     search_points: 301
-    # One power for the search, because locating a line does not need powers compared.
-    # Strong enough to see, and no stronger: a saturated line spreads over tens of MHz,
-    # and the sweep that confirms it is sized from the width the search measured.
-    search_amp: 0.08
-    # A *range* rather than one weak power. Weak is right in principle — saturating the
+    # A geometric *range*, not one power. Weak is right in principle — saturating the
     # transition broadens the line and pulls the centre this routine exists to find — but
-    # too weak is a line under the noise, which is a failed run rather than a cautious
-    # one. `fit_spectroscopy_power` keeps the narrowest credible line of the set, so
-    # offering a spread lets it pick the lowest power that actually resolved.
-    drive_amps: [0.02, 0.08, 0.2]
+    # too weak is a line under the noise, which is a failed run rather than a cautious one.
+    # `fit_spectroscopy_power` keeps the narrowest credible line of the set, so a wide
+    # bracket costs acquisitions rather than accuracy, and geometric spacing is what covers
+    # an unknown scale. Each power multiplies the acquisition count, so watch the ceiling.
+    #
+    # `search_amp` is deliberately absent: the widening pass drives at the strongest of
+    # these by default, which is the pass that has to see a line at all.
+    drive_amps: [0.01, 0.03, 0.1, 0.3]
 
   # --- Single-qubit gates ---
   rabi:

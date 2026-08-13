@@ -27,6 +27,13 @@ from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+#: Measured on a QRM-RF: a `resonator_punchout` of 846 acquisitions compiled to 12700
+#: Q1ASM instructions, against the 12288 the module accepts. A frequency sweep is three
+#: operations per point — `Reset`, `SetClockFrequency`, `Measure` — which is why the rule of
+#: thumb of one group per point is about 30% optimistic.
+INSTRUCTIONS_PER_ACQUISITION = 15.01
+Q1ASM_CEILING = 12288
+
 # Small sweeps: the point is that each routine compiles, not that it is precise.
 SMALL_SWEEPS: dict[str, dict] = {
     "resonator_spectroscopy": {"points": 5, "span": 10e6},
@@ -1424,3 +1431,56 @@ class TestYamlsQuietFloatTrap:
                 if any(isinstance(v, str) for v in values):
                     offenders[f"{name}.{key}"] = value
         assert not offenders, f"write these with a signed exponent: {offenders}"
+
+
+class TestTheSearchDrivesAsHardAsTheConfirmPass:
+    """The widening pass must not probe weaker than the pass it exists to feed.
+
+    `SEARCH_AMPLITUDE` was a constant equal to `DEFAULT_AMPLITUDES`' ceiling, so the
+    docstring's "the strongest this routine would try anyway" held only until either moved.
+    An operator raising `drive_amps` to 0.3 left the search at 0.08 — 3.75x weaker than the
+    confirm pass, and backwards, because the search is the one that has to see a line at all
+    while the confirm pass is where a gentle power belongs.
+    """
+
+    def test_the_search_power_follows_the_configured_drive_amps(self):
+        node = routine("qubit_spectroscopy")
+        config = RoutineConfig(params={"drive_amps": [0.01, 0.03, 0.1, 0.3]})
+
+        assert max(node._drive_amplitudes(config, _NoElements(), "q5")) == 0.3
+
+    def test_an_operator_can_still_name_the_search_power(self):
+        config = RoutineConfig(params={"drive_amps": [0.3], "search_amp": 0.05})
+
+        assert float(config.get("search_amp", 999)) == 0.05
+
+    def test_the_default_ladder_is_geometric(self):
+        """Geometric because the scale is unknown; a linear ladder sits in one decade.
+
+        Deliberately *not* asserting a ceiling. Raising it was tried and reverted: a B-chip
+        transition needs more than 0.08 to clear the 5x floor, and a ladder reaching 0.3 puts
+        the simulated chip's f01 1.76 MHz out against a 1 MHz tolerance. The right ceiling
+        belongs to the chip and its drive chain, so it lives in `drive_amps`.
+        """
+        rungs = routine("qubit_spectroscopy").DEFAULT_AMPLITUDES
+
+        ratios = [b / a for a, b in zip(rungs, rungs[1:])]
+        assert max(ratios) - min(ratios) < 0.5, f"not geometric: {ratios}"
+        assert max(rungs) / min(rungs) >= 10, "too narrow to bracket an unknown scale"
+
+    def test_the_ladder_fits_the_sequencer_at_a_raised_point_count(self):
+        """`drive_amps` multiplies the acquisition count, and the ceiling is real.
+
+        Against the sequencer's own limit, not `MAX_SWEEP_POINTS` — that caps the *points*
+        an escalating sweep may reach, and the drive ladder multiplies on top of it. A
+        frequency sweep measured 15.0 Q1ASM instructions per acquisition on a QRM-RF against
+        a 12288 ceiling, so the real bound is about 818 acquisitions.
+
+        Five rungs at 151 points is 755, which fits at 92% — close enough that an operator
+        adding a sixth power, or more points, will trip the warning that quantify only logs.
+        """
+        node = routine("qubit_spectroscopy")
+
+        acquisitions = len(node.DEFAULT_AMPLITUDES) * 151
+
+        assert acquisitions * INSTRUCTIONS_PER_ACQUISITION <= Q1ASM_CEILING

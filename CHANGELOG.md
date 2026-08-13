@@ -31,6 +31,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `qubit_spectroscopy`'s widening pass drives at the strongest power the
+  run would try anyway, derived from `drive_amps`, rather than a constant that fell out of
+  step with it. Raising `drive_amps` previously left the search probing weaker than the pass
+  it exists to feed.
 - `qpi-driver/py`: a sweep axis written as `4e-9` reaches the schedule as a number rather
   than the string PyYAML actually parsed it to, and a device config frequency written as
   `5.318e9` loads as one too. Both forms need a decimal point *and* a signed exponent to be

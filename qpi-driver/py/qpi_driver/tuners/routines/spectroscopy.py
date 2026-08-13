@@ -802,6 +802,23 @@ class QubitSpectroscopy(CalibrationRoutine):
 
     #: Drive powers to compare, as a fraction of full scale. Wide, because on a first
     #: bring-up nothing yet says which end of it the chip wants.
+    #:
+    #: Geometric, and that is the whole design: the response is power-law with an unknown
+    #: scale, and `fit_spectroscopy_power` keeps the *narrowest* credible line of the set, so
+    #: a wide bracket costs acquisitions rather than accuracy. A linear ladder would spend
+    #: its rungs in one decade and miss whichever one the chip is in.
+    #:
+    #: **Raising the ceiling was tried in August 2026 and reverted.** Two chips disagree, and
+    #: both are evidence. A B-chip transition reached only 3.33x over its own scatter at 0.08
+    #: against the 5x `require_resolved_line` clears, so this ladder cannot see every real
+    #: line. But a ladder reaching 0.3 put the simulated chip's calibrated f01 1.76 MHz out,
+    #: against a 1 MHz tolerance — measured against the same rung *count* at these powers,
+    #: which passes, so it is the power and not the changed noise draw.
+    #:
+    #: So the right ceiling is a property of the chip and its drive chain, which is what
+    #: ``drive_amps`` is for. A chip that needs more than this says so by refusing, and the
+    #: refusal names the axis; guessing higher here trades a chip that cannot be seen for
+    #: every chip being measured slightly worse.
     DEFAULT_AMPLITUDES = (0.005, 0.01, 0.02, 0.04, 0.08)
 
     #: Multiples of a remembered power to bracket on a recalibration. Three rather
@@ -828,10 +845,16 @@ class QubitSpectroscopy(CalibrationRoutine):
     SEARCH_SPAN = 600e6
     SEARCH_POINTS = 301
 
-    #: One power for the widening pass, the strongest this routine would try anyway.
-    #: Locating a line does not need powers compared, and five of them across 301
-    #: frequencies is 1505 acquisitions — past what a sequencer will assemble.
-    SEARCH_AMPLITUDE = 0.08
+    #: The widening pass drives at one power, and locating a line does not need powers
+    #: compared — five of them across 301 frequencies is 1505 acquisitions, past what a
+    #: sequencer assembles. Which power is *derived*: the strongest this routine would try
+    #: anyway, so `_drive_amplitudes` answers it.
+    #:
+    #: It was a constant equal to the old `DEFAULT_AMPLITUDES` ceiling, which made the
+    #: "strongest anyway" claim true only until either changed. An operator raising
+    #: ``drive_amps`` to 0.3 left the search probing 3.75x weaker than the pass it exists to
+    #: feed — backwards, since the search is the one that has to *see* a line at all, and
+    #: the confirm pass is where a gentle power belongs.
 
     #: How wide the sweep that *confirms* a searched-out line should be, as a multiple of
     #: the width the search measured, and over how many points.
@@ -967,7 +990,11 @@ class QubitSpectroscopy(CalibrationRoutine):
         used by the caller that asked for the search.
         """
         span = float(config.get("search_span", self.SEARCH_SPAN))
-        amplitude = float(config.get("search_amp", self.SEARCH_AMPLITUDE))
+        amplitude = float(
+            config.get(
+                "search_amp", max(self._drive_amplitudes(config, device, target))
+            )
+        )
         centre = _current_clock(device, target, "f01")
 
         # Trimmed to what the port can actually be driven at. A span centred on the
