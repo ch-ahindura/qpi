@@ -279,7 +279,7 @@ class CZSpectroscopy(CalibrationRoutine):
     depends_on = ("rabi",)
     targets = "edges"
     updates = ("clock_freqs.cz",)
-    reads = ("clock_freqs.cz", "cz.square_amp")
+    reads = ("clock_freqs.cz", "cz.square_amp", "clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an edge whose CZ is a drive rather than a flux pulse."""
@@ -391,7 +391,7 @@ class CZParametrization(CalibrationRoutine):
     depends_on = ("cz_spectroscopy",)
     targets = "edges"
     updates = ("cz.square_amp", "cz.square_duration")
-    reads = ("clock_freqs.cz", "cz.square_amp")
+    reads = ("clock_freqs.cz", "cz.square_amp", "clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an edge whose CZ is a drive — the same test `cz_spectroscopy` makes."""
@@ -489,6 +489,7 @@ class CZChevron(CalibrationRoutine):
     depends_on = ("rb", "flux_spectroscopy")
     targets = "edges"
     updates = ("cz.square_amp", "cz.square_duration")
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an edge whose CZ *is* a flux pulse — the inverse of the test
@@ -577,6 +578,7 @@ class ConditionalPhase(CalibrationRoutine):
     # Named by role; `apply` resolves them to whatever this edge actually calls
     # them, which differs between the two schedulers.
     updates = ("cz.parent_phase_correction", "cz.child_phase_correction")
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

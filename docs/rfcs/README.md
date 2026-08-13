@@ -14,14 +14,14 @@ holds both the system design and its phased implementation plan, so a contributo
 | [0004](./0004-calibration-tuners.md) | Calibration Tuners | Implemented |
 | [0005](./0005-calibration-graph-completion.md) | Calibration Graph Completion | Implemented |
 | [0006](./0006-calibration-graph-in-the-dashboard.md) | The Calibration Graph in the Dashboard | Draft |
-| [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Implemented (§11.1 open) |
+| [0007](./0007-calibration-without-priors.md) | Calibration Without Priors | Implemented |
 | [0008](./0008-parameter-provenance.md) | Parameter Provenance | Implemented |
 
 RFCs 0004 and 0005 were written before the graph had run on a chip, and say so where it
 matters. RFCs 0007 and 0008 are the opposite case: they exist because of what running it
 on one found. 0008 was the piece 0007 deferred; both are now implemented, and each records
-where building it corrected what it had claimed. 0007 §11.1 is the one part still open, and
-it is open because hardware found it after the RFC was closed.
+where building it corrected what it had claimed. 0007 §11.1 was added after both were
+closed, because hardware found it — a gap the RFC's own mechanism was meant to cover.
 
 ## Conventions
 

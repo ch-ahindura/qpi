@@ -34,6 +34,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: `resonator_punchout` sweeps readout power to full scale rather than
   stopping at half, so punch-through is reachable on an attenuated readout line. On a chip
   with 20 dB of output attenuation the old ceiling was ~26 dB short of finding it.
+- `qpi-driver/py`: a two-qubit routine is skipped when either of its qubits failed to
+  calibrate, rather than measuring a gate through an endpoint that was never brought up.
 
 ### Fixed
 

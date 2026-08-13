@@ -28,7 +28,7 @@ import pytest
 import yaml
 from qpi_driver.builtins.calibrate import _execute_calibration
 from qpi_driver.tuners.base.config import CalibrationConfig
-from qpi_driver.tuners.base.device import read_path
+from qpi_driver.tuners.base.device import read_path, write_path
 from qpi_driver.tuners.base.provenance import ProvenanceStore, provenance_path
 from qpi_driver.tuners.routines import routine_names
 from qpi_driver.tuners.utils.clifford import clifford_to_gates
@@ -673,3 +673,54 @@ def _result_for(report, routine_name: str):
         if result.routine_name == routine_name:
             return result
     raise AssertionError(f"{routine_name} produced no result in {report.summary()}")
+
+
+class TestOneDeadFrequencyIsOneFailure:
+    """RFC 0007 §11.1 over a real walk: the B chip's eight-way report, reproduced.
+
+    The tier below this asserts the propagation by walking the routine set with a ledger
+    directly. This runs it: a simulated chip whose qubit is nowhere near its configured
+    f01, through `_execute_calibration`, with every routine's own guards live. The claim
+    is about the *shape* of the report — one error, the rest skipped, and the skips naming
+    the node that actually failed.
+
+    On the B chip this same fault produced eight errors with eight different-looking
+    causes, because seven nodes ran on an unexcited qubit and fitted their own noise.
+    """
+
+    def test_a_failed_qubit_spectroscopy_leaves_one_error_and_names_it(self, tmp_path):
+        tuner = SimulatedTuner(device_config_path=tmp_path / "device.yml")
+        config = write_calibration_config(tmp_path)
+        # Far enough off that the search cannot find the line, and the axes named by the
+        # operator so RFC 0007's escalation leaves them alone rather than overruling a
+        # stated sweep. 41 points rather than a handful: the search judges its tallest bin
+        # against a median absolute deviation, and over five bins that statistic is noise
+        # itself — a 5-point window let pure noise clear the 6x floor and report success.
+        config.routines["qubit_spectroscopy"].params.update(
+            {"search_span": 20.0e6, "search_points": 41, "span": 4.0e6, "points": 41}
+        )
+        element = tuner.device.get_element("q0")
+        write_path(element, "clock_freqs.f01", tuner.simulator.f01 * GHZ + 900e6)
+
+        report = tuner.calibrate(config)
+
+        assert report.status == "failed", report.status
+        assert len(report.errors) == 1, report.errors
+        assert report.errors[0].startswith("qubit_spectroscopy[q0]")
+
+        # Everything else in the run is skipped, not failed, and says why.
+        skipped = {note.split("[")[0] for note in report.notes if "skipped" in note}
+        assert skipped == {"rabi", "ramsey", "t1", "t2_echo", "rb"}, report.notes
+        assert all(
+            "qubit_spectroscopy" in note for note in report.notes if "skipped" in note
+        ), report.notes
+
+    def test_the_chain_runs_when_the_frequency_is_found(self, tmp_path):
+        """The other half: none of this may cost a walk that works."""
+        tuner = SimulatedTuner(device_config_path=tmp_path / "device.yml")
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert report.status == "success", report.errors
+        assert not [note for note in report.notes if "skipped" in note]
+        assert {r.routine_name for r in report.routine_results} == set(SIMULATED)

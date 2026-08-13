@@ -1,6 +1,6 @@
 # RFC 0007 — Calibration Without Priors
 
-- **Status:** Implemented, with one known gap open — §11.1
+- **Status:** Implemented
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-12
 - **Depends on:** RFC 0004 (routines, the DAG walk), RFC 0005 (the completed graph,
@@ -574,9 +574,8 @@ without skip-propagation its report is the same six-way puzzle that motivated th
 
 ### 11.1 `reads` was under-declared, so this did not fire on the B chip
 
-**Fixed for qubit-targeted nodes in August 2026; the edge case below is still open.** Found
-on hardware, and it was the failure this section exists to prevent, recurring for a reason
-the section did not anticipate.
+**Fixed in August 2026.** Found on hardware, and it was the failure this section exists to
+prevent, recurring for a reason the section did not anticipate.
 
 q5 on the B chip produced eight failures from one fault. `qubit_spectroscopy` found no
 line; the qubit was never excited; and then `rabi`, `t1`, `t2_echo`, `rb`,
@@ -620,12 +619,18 @@ structural fact: play a gate, declare the two paths. Coarse, and it is exactly t
 that bit us. `test_a_failed_qubit_spectroscopy_blocks_everything_that_needs_a_gate` pins the
 graph-level consequence by walking the real routine set with `qubit_spectroscopy` failing.
 
-**Still open: edges.** A gate on an edge is played on its endpoint *qubits*, and the ledger
-keys on `(target, path)` — `("q5_q10", "rxy.amp180")` is a path no routine writes and no
-element has, so declaring it on `cz_chevron` or `conditional_phase` would match nothing.
-Expressing "this edge needs both its ends calibrated" is a ledger change, not a declaration:
-`blockers` would have to resolve an edge to its endpoints and ask about each. Worth doing,
-and not done here.
+**Edges needed a ledger change, not a declaration.** A gate on an edge is played on its
+endpoint *qubits*, and the ledger keyed on `(target, path)` — `("q5_q10", "rxy.amp180")` is
+a path no routine writes and no element has, so declaring it on `cz_chevron` would have been
+true and inert. `blockers` now asks about an edge's endpoints as well as the edge itself,
+splitting the name the way `CalibrationConfig.validate_targets` already does; that
+convention was load-bearing before it got here, and `validate_targets`' own docstring states
+the dependency ("a two-qubit gate is measured *through* its qubits") that the ledger could
+not express. Both spellings are tried per path rather than classifying paths by where they
+live, so an irrelevant spelling is silently absent rather than wrong.
+
+So a failed `rabi` on either end of an edge now skips the edge, which is what
+`validate_targets` refuses the *configuration* for and the walk previously allowed anyway.
 
 ## 12. Resolved during review
 

@@ -782,16 +782,36 @@ class _ParameterLedger:
         return "not reconfirmed by this run: " + "; ".join(described)
 
     def blockers(self, routine: CalibrationRoutine, target: str) -> dict[str, set[str]]:
-        """The parameters *routine* reads that this walk failed to produce."""
+        """The parameters *routine* reads that this walk failed to produce.
+
+        An edge is asked about its endpoints as well as itself, because a two-qubit gate is
+        measured *through* its qubits — `cz_chevron` prepares ``|11>`` with a pi pulse on
+        each — so a failed `rabi` on either end leaves it nothing to prepare with.
+        `CalibrationConfig.validate_targets` already refuses an edge whose qubits are not
+        themselves being calibrated, and splits the name the same way, so the convention is
+        load-bearing before it gets here.
+
+        Both spellings are tried per path rather than classifying paths by where they live:
+        ``("q5_q10", "rxy.amp180")`` is a key nothing writes, and ``("q5", "cz.square_amp")``
+        likewise, so an irrelevant spelling is silently absent rather than wrong.
+        """
         blocked: dict[str, set[str]] = {}
         for path in routine.reads:
-            key = (target, path)
-            if key in self._produced:
-                continue
-            culprits = self._unsatisfied.get(key)
-            if culprits:
-                blocked[path] = culprits
+            for site in self._sites(routine, target):
+                key = (site, path)
+                if key in self._produced:
+                    continue
+                culprits = self._unsatisfied.get(key)
+                if culprits:
+                    blocked.setdefault(path, set()).update(culprits)
         return blocked
+
+    @staticmethod
+    def _sites(routine: CalibrationRoutine, target: str) -> tuple[str, ...]:
+        """Where *routine*'s reads may live: the target, plus an edge's two endpoints."""
+        if routine.targets != "edges":
+            return (target,)
+        return (target, *target.split("_"))
 
     @staticmethod
     def blame(blocked: dict[str, set[str]]) -> set[str]:

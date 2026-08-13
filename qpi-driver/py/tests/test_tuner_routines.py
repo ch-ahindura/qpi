@@ -948,17 +948,14 @@ def test_a_routine_playing_a_gate_declares_the_gate_parameters():
     `clock_freqs.f01`; play one without supplying an amplitude, declare `rxy.amp180`.
     Coarse, and it is what the other test structurally cannot do.
 
-    Edges are excluded. A gate on an edge is played on its endpoint *qubits*, and
-    `_ParameterLedger` keys on ``(target, path)`` — ``("q5_q10", "rxy.amp180")`` is a
-    path no routine writes and no element has, so declaring it there would match
-    nothing. Expressing "this edge needs both its ends calibrated" is a ledger change,
-    not a declaration, and RFC 0007 §11.1 records it as still open.
+    Edges are included, and only because the ledger now resolves them: a gate on an edge
+    is played on its endpoint *qubits*, so `_ParameterLedger.blockers` asks about
+    ``("q5", "rxy.amp180")`` as well as ``("q5_q10", "rxy.amp180")``. Before that, the
+    declaration would have been true and inert.
     """
     undeclared: dict[str, list[str]] = {}
     for name in ROUTINE_NAMES:
         node = routine(name)
-        if node.targets != "qubits":
-            continue
         gates, keywords = _gates_played(node)
         if not gates:
             continue

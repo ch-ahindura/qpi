@@ -131,6 +131,7 @@ class InterleavedRB(RandomizedBenchmarking):
     depends_on = ("conditional_phase",)
     targets = "edges"
     updates = ()
+    reads = ("clock_freqs.f01", "rxy.amp180")
     benchmark = True
     interleaved = "CZ"
 
