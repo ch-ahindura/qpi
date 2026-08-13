@@ -15,6 +15,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a timed-out quantify routine names the module and sequencer that did
   not stop, its state and its flags. qblox-instruments raises with a bare sequencer
   index, so the operator could not tell which of twelve modules had hung.
+- `qpi-driver/py`: an end-to-end test asserts the benchmarked gate error against the one
+  the simulator was given, so a calibration that leaves a gate wrong now fails the suite
+  instead of clearing a fixed fidelity threshold.
 
 ### Fixed
 

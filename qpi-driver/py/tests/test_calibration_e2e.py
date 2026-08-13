@@ -21,6 +21,7 @@ Needs the `sim` extra and no scheduler extra:
 """
 
 from pathlib import Path
+from statistics import mean
 
 import numpy as np
 import pytest
@@ -29,6 +30,7 @@ from qpi_driver.builtins.calibrate import _execute_calibration
 from qpi_driver.tuners.base.config import CalibrationConfig
 from qpi_driver.tuners.base.device import read_path
 from qpi_driver.tuners.routines import routine_names
+from qpi_driver.tuners.utils.clifford import clifford_to_gates
 
 pytest.importorskip("scqubits", reason="needs the [sim] extra")
 pytest.importorskip("qutip", reason="needs the [sim] extra")
@@ -375,3 +377,69 @@ class TestTheWriteBackIsATrustBoundary:
         assert report["routine_results"] == []
         assert device_path.read_text() == "q0: {this is the good config}\n"
         assert not device_path.with_suffix(".yml.prev").exists()
+
+
+class TestFidelityAgainstWhatTheSimulatorInjected:
+    """RFC 0007 §12: what "high fidelity" means in an acceptance test.
+
+    A constant threshold cannot say it. Set it low enough that the simulated chip's own
+    gate error dominates and it passes whatever the calibration did; set it high enough to
+    mean something and it pins the test to how the simulator happens to be tuned, so
+    retuning the model breaks a test about the driver.
+
+    So assert against the error the simulator was *given*, as
+    `test_rb_recovers_a_known_gate_error` does one tier down: a calibration good enough to
+    benchmark recovers the injected error, and one that left a gate miscalibrated reports
+    worse than it. Both hold at any injected level, so neither depends on the tuning.
+    """
+
+    def test_rb_recovers_the_injected_error_after_calibrating(self, tmp_path):
+        injected = 0.02
+        tuner = SimulatedTuner(
+            gate_error=injected, device_config_path=tmp_path / "device.yml"
+        )
+
+        report = tuner.calibrate(write_calibration_config(tmp_path))
+
+        assert report.status == "success", report.errors
+        assert _rb_error_per_gate(report) == pytest.approx(
+            _average_gate_error(injected), rel=0.15
+        )
+
+    def test_a_worse_chip_benchmarks_worse(self, tmp_path):
+        """The absolute number could be luck; that it tracks the model cannot."""
+        measured = {}
+        for injected in (0.004, 0.05):
+            room = tmp_path / f"p{injected}"
+            room.mkdir()
+            tuner = SimulatedTuner(
+                gate_error=injected, device_config_path=room / "device.yml"
+            )
+            report = tuner.calibrate(write_calibration_config(room))
+            assert report.status == "success", report.errors
+            measured[injected] = _rb_error_per_gate(report)
+
+        assert measured[0.004] < measured[0.05]
+        for injected, error in measured.items():
+            assert error == pytest.approx(_average_gate_error(injected), rel=0.15)
+
+
+def _average_gate_error(per_primitive: float) -> float:
+    """The error per Clifford `rb` should report, given the per-gate error injected.
+
+    The simulator depolarises once per primitive rotation, so a Clifford of n of them
+    decays by 1-(1-p)**n; averaged over the Clifford group that is an average gate error
+    of half as much, which is the p·(d-1)/d that `fit_rb_decay` inverts with d = 2.
+    """
+    primitives = mean(len(clifford_to_gates(clifford)) for clifford in range(24))
+    return 0.5 * (1.0 - (1.0 - per_primitive) ** primitives)
+
+
+def _rb_error_per_gate(report) -> float:
+    errors = [
+        benchmark.error_per_gate
+        for benchmark in report.benchmarks
+        if benchmark.protocol == "rb" and benchmark.error_per_gate is not None
+    ]
+    assert errors, f"rb reported no error, only {report.benchmarks}"
+    return errors[0]

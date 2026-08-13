@@ -364,7 +364,7 @@ after the two classes that need no loop at all.
    out not to apply on the chip that motivated it: only one row there survives the
    linewidth test, so there is nothing to reproduce against.
 
-   Before the derived ranges, not after, and that ordering paid twice. It exposed §14's
+   Before the derived ranges, not after, and that ordering paid twice. It exposed §13's
    detuning gap, and then two pieces of §5's physics-bounded class that no amount of
    phase-2 work would have reached. Both landed with it rather than waiting for phase 4:
 
@@ -474,7 +474,7 @@ depend on their output, and some are still depended on in the walk order.
 
 **Disabled is not failed.** `qubit_spectroscopy` depends on `resonator_punchout`, which
 is switched off on the August 2026 chip because its amplitude grid never reaches
-punch-through, which phase 3 fixes (§13). `time_of_flight` is off too, and under naive
+punch-through, which phase 3 fixes (§12). `time_of_flight` is off too, and under naive
 propagation disabling either would skip the entire graph beneath it — which is to say,
 everything. That both are off *because* of range bugs this RFC fixes does not help: the
 operator must be able to switch a node off without the graph collapsing.
@@ -557,17 +557,10 @@ exactly the case this RFC is about. It is also what makes §8's acceptance test 
 on a chip known only from its design document the first walk will have failures, and
 without skip-propagation its report is the same six-way puzzle that motivated this RFC.
 
-## 12. Open questions
+## 12. Resolved during review
 
-1. **What "high fidelity" means in the acceptance test.** A threshold low enough that
-   the simulated chip's own gate error dominates is a weak test; one too high pins the
-   test to simulator tuning. Perhaps assert against the simulator's injected error
-   rather than a constant, as `test_rb_recovers_a_known_gate_error` does.
-
-## 13. Resolved during review
-
-Recorded because the reasoning is worth keeping, and because several of these changed the
-shape of the RFC rather than just settling a detail.
+No open questions remain. Recorded because the reasoning is worth keeping, and because
+several of these changed the shape of the RFC rather than just settling a detail.
 
 | Question | Resolution |
 |---|---|
@@ -580,12 +573,13 @@ shape of the RFC rather than just settling a detail.
 | Put provenance in `calibration.yml` rather than the device file? | **Neither — a sidecar the driver owns**, now RFC 0008 §5. And the blanket "no second store" from the round before was too blunt: it is sound against a second store of *values*, not against metadata that never holds a number anything needs to run a circuit. |
 | Report a disabled sole producer before the walk? | **Withdrawn during phase 0** (§11). Undecidable without §10's provenance: two read paths have no producer anywhere and are hand-supplied on every chip, so the rule fires on them every run. |
 | Where does the IF limit live? | **On `SchedulerBackend`, like `drag_span`** — but checked rather than assumed, and the two schedulers *agree*: `NCO_FREQ_LIMIT_STEPS / NCO_FREQ_STEPS_PER_HZ` is 500 MHz in quantify-scheduler 0.28 and qblox-scheduler 1.0.0b4 alike. That weakens the case for a property without removing it: the fact belongs to the backend either way, and no divergence is being modelled speculatively. |
+| What does "high fidelity" mean in the acceptance test? | **Assert against the error the simulator was given**, not a constant — the last open question, settled in `TestFidelityAgainstWhatTheSimulatorInjected`. A constant is unfalsifiable low and simulator-tuning-dependent high. Two claims replace it: `rb` recovers the injected error, and a worse chip benchmarks worse. Both hold at any injected level. The expected number is derived, not written down: the simulator depolarises per primitive rotation, so a Clifford of n of them costs `0.5*(1-(1-p)**n)` with n read from `clifford_to_gates` — which also caught that the naive `p/2` was 3x low, since a Clifford averages 3.08 primitives. |
 | Escalation in the DAG or in `measure`? | **In `measure`**, with the attempt count reported so the DAG and the report still see it. |
 | Does `resonator_punchout` come back? | **Yes.** Its amplitude grid stopping at 0.5 is a §5 hardware-bounded bug, so phase 3 fixes the reason it was switched off. It re-enables as part of that phase rather than separately, with the August 2026 chip as the test case. |
 | Stage writes in a separate store until the run succeeds? | **No**, now RFC 0008 §7 — and the diagnosis matters more than the answer. The August 2026 corruption was not an early commit; `rabi` reported *success* while writing 0.0158, so a staging store would have committed it too. The finer boundary is per-parameter commit gated on provenance. |
 | Treat operator-supplied ranges as suggestions with a derived fallback? | **Yes**, §7 — and it collapsed a distinction the draft was carrying for nothing: a supplied window is just escalation's first attempt. |
 | Rewrite `calibration.yml` when a hint proves wrong? | **No**, §7. It is hand-authored reasoning, and `spec.amplitude`'s latch already showed what remembering a search hint costs. Report the range that worked and let the operator decide. |
-## 14. The gate paths ignored the drive detuning — done, and narrower than stated
+## 13. The gate paths ignored the drive detuning — done, and narrower than stated
 
 Found while building phase 1; **fixed** in August 2026, and the fix corrected this
 section twice. Both corrections are worth keeping, because one of them removed a
