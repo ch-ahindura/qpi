@@ -54,8 +54,14 @@ def _fit_coherence(
     amplitude, tau, offset = _fit_exponential(x, y, what=what)
 
     value = require_positive(abs(tau), what=what)
-    # A time constant far beyond the window was never observed, only extrapolated.
-    require_in_range(value, 0.0, float(np.max(x)) * 10, what=what)
+    # A time constant far beyond the window was never observed, only extrapolated — and
+    # naming the axis is what turns that from a verdict into an instruction. The guard
+    # below says the same thing about a flat curve and has always been escalatable; this
+    # one is reached first whenever the extrapolation lands on a number rather than on
+    # noise, and without an axis it stopped `T2Echo.measure` before it could widen. The
+    # August 2026 B chip fitted 2.12 ms of T2 over a 100 us window and failed there, on a
+    # chip whose T1 was 56 us.
+    require_in_range(value, 0.0, float(np.max(x)) * 10, what=what, axis="delays")
     require_resolved_curve(
         y,
         exponential_decay(x, amplitude, tau, offset),

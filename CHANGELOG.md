@@ -13,6 +13,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   of doubling it. `conditional_phase` wrote the measured fringe phase where it needed minus
   it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as
   scatter. The conditional phase itself was unaffected, being a difference of two fringes.
+- `qpi-driver/py`: `t1` and `t2_echo` widen their delays when the fitted coherence time
+  lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
+  sweep and failed, because that guard named no axis for escalation to act on.
 - `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
   `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
   fit that had found its answer, leaving every node after it on an uncorrected pulse.
