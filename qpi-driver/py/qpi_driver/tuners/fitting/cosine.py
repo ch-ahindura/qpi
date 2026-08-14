@@ -364,15 +364,20 @@ def fit_fine_amplitude(
 
     reached = abs(error_per_pulse) * float(np.max(counts))
     if reached > MAX_ACCUMULATED_ROTATION:
-        # With the trace: "a straight line does not describe this" is a claim about a
-        # shape, and the shape is the evidence for it.
-        raise FitError(
+        # Escalatable, and downward: the caller is being told to repeat the pulse *fewer*
+        # times, which is the one direction the generic widening cannot take — see
+        # `FineAmplitude.measure`. With the trace too, since "a straight line does not
+        # describe this" is a claim about a shape and the shape is the evidence for it.
+        raise OutOfRange(
             f"the amplified rotation reaches {reached:.2f} rad by the "
             f"{int(np.max(counts))}th pulse, past the {MAX_ACCUMULATED_ROTATION:g} where "
             f"sin(n*d) is still n*d — so the straight line fitted through it is not "
             f"measuring {error_per_pulse:.4g} rad per pulse, and the amplitude it implies "
             f"is not a calibration. Shorten the repetition counts until the largest turns "
             f"under a radian, or fix the amplitude this is refining first",
+            axis="repetitions",
+            direction="shorter",
+            factor=MAX_ACCUMULATED_ROTATION / reached,
             fit=fit_summary(
                 counts,
                 demodulated,

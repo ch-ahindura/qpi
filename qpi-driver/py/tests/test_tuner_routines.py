@@ -1832,3 +1832,76 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
 
         assert len(passes) == 1, "500 Hz is under the 6.6 kHz this window resolves"
         assert result["detuning"] == 500.0
+
+
+class TestASweepThatIsTheWrongSizeIsResized:
+    """Escalation in both directions, on the four nodes the B chip's last run refused.
+
+    Each of these had found its answer and thrown it away because the window was wrong,
+    which is RFC 0007's whole subject. Three wanted more reach; one wanted less.
+    """
+
+    def test_drag_asks_for_a_wider_beta_sweep_rather_than_failing(self):
+        """The B chip fitted -0.4803 against a swept +/-0.2 and refused, leaving every
+        node downstream running on an uncorrected pulse. `drag_12` already widened."""
+        from qpi_driver.tuners.fitting import fit_drag
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        betas = np.linspace(-0.2, 0.2, 31)
+        with pytest.raises(OutOfRange) as raised:
+            fit_drag(betas, 0.00899 * (betas + 0.4803), axis="motzois")
+
+        assert raised.value.axis == "motzois"
+        assert raised.value.direction == "wider"
+
+    def test_drag_escalates_where_it_used_only_to_raise(self):
+        assert routine("drag").measures_itself
+
+    def test_an_amplified_rotation_that_overran_asks_to_be_shortened(self):
+        """The one refusal that wants a *smaller* sweep. The B chip's pi/2 turned 1.51
+        rad by its thirteenth pulse, past where sin(n*d) is still n*d."""
+        from qpi_driver.tuners.fitting import fit_fine_amplitude
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        counts = np.array([1.0, 5.0, 9.0, 13.0])
+        # The chip's own trace rather than a clean sine, which flattens and drags the
+        # fitted slope back under the bound — the case that does not need catching.
+        demodulated = np.array([0.16425, 0.77211, -0.30209, -1.02863])
+        with pytest.raises(OutOfRange) as raised:
+            fit_fine_amplitude(
+                counts,
+                0.5 + 0.5 * demodulated,
+                0.284,
+                ground=0.0,
+                excited=1.0,
+                turn=np.pi / 2,
+                pre_rotation=0.0,
+            )
+
+        assert raised.value.axis == "repetitions"
+        assert raised.value.direction == "shorter"
+
+    def test_the_generic_widening_declines_to_shorten(self):
+        """Every sweep that asks to be shortened is a repetition ladder, and a stretch
+        breaks one: halving [1, 5, 9, 13] would give [1, 3, 5, 7], no longer 4k+1."""
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("fine_amplitude_90")
+        node._repetitions = [1, 5, 9, 13]
+        config = RoutineConfig(params={})
+        refusal = OutOfRange("x", axis="repetitions", direction="shorter", factor=0.66)
+
+        assert _widened(node, config, refusal) is config
+
+    def test_the_ladder_is_rebuilt_rather_than_interpolated(self):
+        from qpi_driver.tuners.routines.single_qubit import _shortened
+
+        assert _shortened([1, 5, 9, 13], 0.66, 4) == [1, 5]
+        assert _shortened(list(range(1, 26)), 0.43, 1) == list(range(1, 11))
+        # Never below two points, which is what the two-parameter fit needs.
+        assert _shortened([1, 5, 9, 13], 0.01, 4) == [1, 5]
+
+    def test_both_fine_amplitude_nodes_resize_themselves(self):
+        assert routine("fine_amplitude").measures_itself
+        assert routine("fine_amplitude_90").measures_itself

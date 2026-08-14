@@ -9,6 +9,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
+  `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
+  fit that had found its answer, leaving every node after it on an uncorrected pulse.
+- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` shorten their repetition counts
+  when the amplified rotation outruns the linearisation, instead of failing. How many
+  repetitions the fit can take depends on the error it is measuring, so no default is right
+  in advance.
 - `qpi-driver/py`: an RB fidelity fitted off a straight line is refused. The amplitude is
   bounded to 200x the survival's own span and a fit that reaches that stop is rejected: a
   chip reported 0.9999887 and 0.9999978 — thirty to three hundred times better than its T1
