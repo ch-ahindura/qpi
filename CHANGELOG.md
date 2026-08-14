@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` refuse a sweep no straight line
+  passes through. The demodulated signal is bounded at one, so its scatter has an absolute
+  scale — a chip whose points sat 0.35 off their own fitted line still reported a quarter
+  turn correct to 0.03%, and wrote the amplitude every gate afterwards uses.
 - `qpi-driver/py`: `ramsey` measures which of the fringe's two roots is the chip's instead
   of assuming the smaller one. A fringe is a magnitude, so the artificial detuning only
   signs the correction while it is the larger of the two — past that `ramsey` moved f01

@@ -289,6 +289,21 @@ MAX_QUADRATURE_LEAK = 1e-9
 #: a full swing of the sine, fitted as a line, and written to ``amp180``.
 MAX_ACCUMULATED_ROTATION = 1.0
 
+#: How far the demodulated points may sit off their own fitted line, rms, before no line
+#: describes them — see :func:`fit_fine_amplitude`.
+#:
+#: `require_resolved_curve` cannot do this job here, and its own docstring says why: it
+#: compares a curve's span against its scatter, and this line's span is legitimately tiny.
+#: A well-calibrated pulse *is* a flat line through zero. What the model does bound is the
+#: signal, at one — so the scatter has an absolute scale to be judged against rather than a
+#: relative one.
+#:
+#: A quarter of that range. Shot noise on a normalised population is about ``1/sqrt(shots)``
+#: either side, so a 1024-shot sweep scatters near 0.06 and this is four times clear of it.
+#: The August 2026 B chip reached 0.47 on its pi sweep and 0.35 on its pi/2 — and the pi/2
+#: reported 0.0003 rad per pulse from it, which reads as a quarter turn correct to 0.03%.
+MAX_DEMODULATED_SCATTER = 0.25
+
 #: How large the demodulated signal's intercept may be before it is worth naming.
 #:
 #: The model has none: at zero pulses there is no error, so the response is zero. A real
@@ -410,6 +425,20 @@ def fit_fine_amplitude(
                 error_per_pulse * counts + baseline,
                 x_label="pulses",
                 y_label="demodulated",
+            ),
+        )
+    line = error_per_pulse * counts + baseline
+    scatter = float(np.sqrt(np.mean((demodulated - line) ** 2)))
+    if scatter > MAX_DEMODULATED_SCATTER:
+        raise FitError(
+            f"the demodulated points sit {scatter:.3g} rms off the line fitted through "
+            f"them, past the {MAX_DEMODULATED_SCATTER:g} a signal bounded at one leaves "
+            f"room for — so no straight line describes this sweep and the "
+            f"{error_per_pulse:.4g} rad per pulse read off one is noise. The amplitude it "
+            f"implies would be written to every gate afterwards. Average more shots, or "
+            f"check that the readout resolves the qubit at all",
+            fit=fit_summary(
+                counts, demodulated, line, x_label="pulses", y_label="demodulated"
             ),
         )
     if abs(baseline) > NOTEWORTHY_BASELINE:

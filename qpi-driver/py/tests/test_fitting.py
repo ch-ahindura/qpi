@@ -144,6 +144,30 @@ class TestOscillatoryFits:
         fitted = fit_fine_amplitude(counts, signal, 0.2, ground=0.25, excited=0.75)
         assert fitted["error_per_pulse"] == pytest.approx(0.01, abs=0.002)
 
+    def test_fine_amplitude_refuses_points_no_line_passes_through(self):
+        """`fine_amplitude_90` reported 0.0003 rad/pulse — a quarter turn right to 0.03% —
+        from four points swinging half the model's whole range.
+
+        The span test cannot catch this: a correct pulse *is* a flat line through zero, so
+        the line is meant to be small. What bounds it is the signal, at one.
+        """
+        counts = np.arange(1, 41, dtype=float)
+        noise = np.random.default_rng(4).normal(0.0, 0.5, counts.size)
+        with pytest.raises(FitError, match="no straight line describes this sweep"):
+            fit_fine_amplitude(
+                counts, 0.5 + noise, 0.2, ground=0.0, excited=1.0
+            )
+
+    def test_fine_amplitude_accepts_a_sweep_at_the_shot_noise_floor(self):
+        """1024 shots scatter about 0.03, well inside the bound."""
+        counts = np.arange(1, 41, dtype=float)
+        signal = _fine_amplitude_signal(counts, 0.01)
+        noise = np.random.default_rng(5).normal(0.0, 1 / np.sqrt(1024), counts.size)
+        fitted = fit_fine_amplitude(
+            counts, signal + noise, 0.2, ground=0.0, excited=1.0
+        )
+        assert fitted["error_per_pulse"] == pytest.approx(0.01, abs=0.004)
+
     def test_fine_amplitude_refuses_indistinguishable_calibration_points(self):
         counts = np.arange(1, 21, dtype=float)
         with pytest.raises(FitError, match="indistinguishable"):
