@@ -1897,12 +1897,26 @@ class TestASweepThatIsTheWrongSizeIsResized:
         assert _widened(node, config, refusal) is config
 
     def test_the_ladder_is_rebuilt_rather_than_interpolated(self):
+        from qpi_driver.tuners.fitting.core import MIN_FIT_POINTS
         from qpi_driver.tuners.routines.single_qubit import _shortened
 
-        assert _shortened([1, 5, 9, 13], 0.66, 4) == [1, 5]
+        # On its own step, and never below what `align` takes — this asserted two points,
+        # which is what a slope needs and not what the fit does, so a shortening could
+        # produce a ladder the fit then refused.
+        assert _shortened([1, 5, 9, 13], 0.66, 2) == [1, 3, 5, 7]
         assert _shortened(list(range(1, 26)), 0.43, 1) == list(range(1, 11))
-        # Never below two points, which is what the two-parameter fit needs.
-        assert _shortened([1, 5, 9, 13], 0.01, 4) == [1, 5]
+        assert len(_shortened([1, 5, 9, 13], 0.01, 2)) == MIN_FIT_POINTS
+
+    def test_every_fourth_count_has_no_room_to_shorten(self):
+        """Which is why `fine_amplitude_90` shortens on odd counts instead.
+
+        [1, 5, 9, 13] is already the shortest four-point 4k+1 ladder, so on step 4 there is
+        nowhere to go and the floor correctly returns it unchanged rather than cutting it
+        to something unfittable.
+        """
+        from qpi_driver.tuners.routines.single_qubit import _shortened
+
+        assert _shortened([1, 5, 9, 13], 0.66, 4) == [1, 5, 9, 13]
 
     def test_a_coherence_time_past_its_window_asks_for_longer_delays(self):
         """The B chip fitted 2.12 ms of T2 over a 100 us window — on a chip whose T1 was
@@ -2083,12 +2097,45 @@ class TestEscalationIsBoundedOnEveryAxisItMoves:
         """The one direction `_widened` declines, so it carries its own bound."""
         from qpi_driver.tuners.routines.single_qubit import (
             MAX_SHORTENINGS,
-            _shortened,
         )
 
         assert MAX_SHORTENINGS == 2
-        # And it cannot shorten below a fittable ladder, whatever factor it is handed.
-        assert len(_shortened([1, 5, 9, 13], 0.001, 4)) >= 2
+
+    @pytest.mark.parametrize("factor", [0.66, 0.4, 0.1, 0.001, 0.0])
+    @pytest.mark.parametrize("step", [1, 2])
+    def test_shortening_never_goes_under_what_the_fit_takes(self, factor, step):
+        """It went to two points, which `align` refuses at four.
+
+        So the routine spent its retry to produce a refusal about its own sweep rather
+        than about the chip: `fine_amplitude_90` failed with "needs at least 4 points to
+        fit, got 2" where the honest answer was that the pi/2 was too far out to refine.
+        """
+        from qpi_driver.tuners.fitting.core import MIN_FIT_POINTS
+        from qpi_driver.tuners.routines.single_qubit import _shortened
+
+        assert len(_shortened([1, 5, 9, 13], factor, step)) >= MIN_FIT_POINTS
+
+    def test_the_pi_over_two_ladder_has_somewhere_to_shorten_to(self):
+        """On every fourth count it does not: [1, 5, 9, 13] is already the shortest
+        four-point 4k+1 ladder, so a rotation that overran could only be cut to something
+        the fit refuses. What the guard actually requires is ``cos(n*pi/2) == 0``, which
+        holds for every *odd* n with the demodulation alternating — and [1, 3, 5, 7]
+        accumulates 0.81 rad where 13 pulses gave 1.51.
+        """
+        import numpy as np
+
+        from qpi_driver.tuners.fitting.cosine import MAX_ACCUMULATED_ROTATION
+        from qpi_driver.tuners.routines.single_qubit import _shortened
+
+        shorter = _shortened([1, 5, 9, 13], 1.0 / 1.51, 2)
+
+        assert shorter == [1, 3, 5, 7]
+        # Still on the ladder the amplification model needs.
+        assert np.allclose(
+            np.cos(np.asarray(shorter, float) * np.pi / 2), 0.0, atol=1e-9
+        )
+        # And inside the linearisation, at the error that made the long ladder overrun.
+        assert max(shorter) * 0.116 < MAX_ACCUMULATED_ROTATION
 
 
 def test_every_swept_axis_is_readable_from_outside(monkeypatch, own_quantify_tuner):

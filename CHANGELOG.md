@@ -22,6 +22,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   can actually be widened. Each kept its setpoints under a name escalation does not look
   for, so widening found nothing and the refusal named the range already swept — `drag`
   failed run after run with an optimum of -0.614 against a swept +/-0.2 and never widened.
+- `qpi-driver/py`: `fine_amplitude_90` shortens onto odd repetition counts, and no
+  shortening goes below the four points a fit takes. It cut its ladder to two and then
+  refused for having two, spending its retry to complain about its own sweep.
 - `qpi-driver/py`: `resonator_punchout`, `flux_spectroscopy` and `qubit_spectroscopy` run a
   2-D grid as one schedule per group of rows. `MAX_SWEEP_POINTS` bounds the points in a
   sweep, and a 2-D schedule is rows times points — eleven rows of a 700-point sweep is nine

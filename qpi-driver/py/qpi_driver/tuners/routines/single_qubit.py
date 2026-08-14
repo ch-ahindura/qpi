@@ -20,7 +20,7 @@ from qpi_driver.executors.base.rotations import (
 )
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.limits import full_scale
-from qpi_driver.tuners.fitting.core import OutOfRange
+from qpi_driver.tuners.fitting.core import MIN_FIT_POINTS, OutOfRange
 from qpi_driver.tuners.base.routines import (
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
@@ -739,7 +739,7 @@ def _amplified(
             if (
                 refusal.direction != "shorter"
                 or attempt == MAX_SHORTENINGS
-                or len(shorter) < 2
+                or len(shorter) < MIN_FIT_POINTS
                 or shorter == counts
             ):
                 raise
@@ -767,10 +767,15 @@ def _shortened(counts: list[int], factor: float, step: int) -> list[int]:
 
     The ladder is why this is not `_widened`'s job. A generic stretch interpolates, and
     both of these sweeps have a shape interpolation breaks: the pi sweep needs whole
-    repetitions, and the pi/2 sweep needs ``4k+1`` of them or the error it is amplifying
-    does not lie along the axis being measured. Rebuilding from *step* keeps both.
+    repetitions, and the pi/2 sweep needs odd ones or the error it is amplifying does not
+    lie along the axis being measured. Rebuilding from *step* keeps both.
+
+    Floored at `MIN_FIT_POINTS` points rather than at two. Two is what a slope needs and
+    four is what `align` takes, so the old floor let a shortening produce a ladder the fit
+    then refused — and the routine had spent its retry to arrive at a refusal about its own
+    sweep instead of about the chip.
     """
-    top = max(int(max(counts) * factor), 1 + step)
+    top = max(int(max(counts) * factor), 1 + step * (MIN_FIT_POINTS - 1))
     return list(range(1, top + 1, step))
 
 
@@ -992,7 +997,15 @@ class FineAmplitude90(CalibrationRoutine):
         Every fourth count, because only after ``4k+1`` quarter turns does the accumulated
         error lie along the axis being measured — see `DEFAULT_AMP90_REPETITIONS`.
         """
-        return _amplified(self, target, device, config, backend, timeout_s, step=4)
+        # Odd, not every fourth. The default ladder is 4k+1 because that keeps the
+        # demodulation at +1 throughout, which is easier to read — but what the guard
+        # actually requires is ``cos(n*pi/2) == 0``, and that holds for every odd n with
+        # the demodulation alternating instead. Shortening on 4 has nowhere to go: [1, 5,
+        # 9, 13] is already the shortest four-point ladder it allows, so a rotation that
+        # overran could only be cut to something `align` refuses. On 2 the same four points
+        # become [1, 3, 5, 7] — 0.81 rad where 13 pulses gave 1.51, which is the difference
+        # between refining this pulse and refusing it.
+        return _amplified(self, target, device, config, backend, timeout_s, step=2)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

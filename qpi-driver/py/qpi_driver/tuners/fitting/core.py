@@ -192,6 +192,15 @@ def signal_of(dataset: Any) -> np.ndarray:
     return values
 
 
+#: The fewest points any fit here will take, and so the floor on any sweep that resizes
+#: itself.
+#:
+#: Named because a routine that *shrinks* a sweep has to know it — `_shortened` cut a pi/2
+#: ladder to two points, which `align` then refused, so the routine gave up its own retry
+#: to produce a refusal about the retry rather than about the chip.
+MIN_FIT_POINTS = 4
+
+
 def align(x: np.ndarray, y: np.ndarray, *, what: str) -> tuple[np.ndarray, np.ndarray]:
     """Trim *x* and *y* to a common length, or raise if there is nothing to fit.
 
@@ -205,9 +214,9 @@ def align(x: np.ndarray, y: np.ndarray, *, what: str) -> tuple[np.ndarray, np.nd
     x = np.asarray(x, dtype=float).reshape(-1)
     y = np.asarray(y, dtype=float).reshape(-1)
     n = min(x.size, y.size)
-    if n < 4:
+    if n < MIN_FIT_POINTS:
         raise FitError(
-            f"{what} needs at least 4 points to fit, got {n} "
+            f"{what} needs at least {MIN_FIT_POINTS} points to fit, got {n} "
             f"(setpoints={x.size}, acquisitions={y.size})"
         )
     return x[:n], y[:n]
