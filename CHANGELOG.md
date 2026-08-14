@@ -14,7 +14,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as
   scatter. The conditional phase itself was unaffected, being a difference of two fringes.
 - `qpi-driver/py`: `rb` deepens its sequences when the decay is too shallow to identify,
-  which is what its refusal already advised.
+  which is what its refusal already advised, and stops at an instruction budget rather than
+  walking three doublings out to a program no sequencer would take.
 - `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
   It previously appeared in `routine_results` and nowhere else, so it looked like it had run
   while the drift check compared against nothing.

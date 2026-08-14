@@ -1982,3 +1982,69 @@ class TestASweepThatIsTheWrongSizeIsResized:
     def test_both_fine_amplitude_nodes_resize_themselves(self):
         assert routine("fine_amplitude").measures_itself
         assert routine("fine_amplitude_90").measures_itself
+
+
+class TestEscalationIsBoundedOnEveryAxisItMoves:
+    """Every widening has to stop, and stop for a stated reason.
+
+    `MAX_ESCALATIONS` bounds the *count* for all of them, and `escalating` re-raises the
+    last refusal rather than inventing a range. What is per-axis is the *reach*: an
+    amplitude has full scale, a point count has `MAX_SWEEP_POINTS`, and RB's depths have
+    an instruction budget — which they did not have when depths first became escalatable.
+    """
+
+    def _widen(self, node, config, axis, factor=2.0):
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        return _widened(node, config, OutOfRange("x", axis=axis, factor=factor))
+
+    def _rb(self, depths, circuits):
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        return SimpleNamespace(
+            name="rb",
+            _depths=list(depths),
+            _depths_ceiling=2.0 * MAX_RB_CLIFFORDS / (circuits * len(depths)) - 1.0,
+        )
+
+    def test_rb_depths_stop_at_the_instruction_budget(self):
+        """Three doublings take 64 to 505, which at twelve circuits is 28000 Cliffords in
+        one program against a sequencer that takes 12288 instructions."""
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        depths, circuits = [1, 2, 4, 8, 16, 32, 64], 10
+        config = RoutineConfig(params={})
+        for _ in range(4):
+            widened = self._widen(self._rb(depths, circuits), config, "depths")
+            if widened is config:
+                break
+            depths = [int(d) for d in widened.get("depths")]
+            config = widened
+            assert circuits * sum(depths) <= MAX_RB_CLIFFORDS
+        else:
+            raise AssertionError("depths widened without ever reaching a ceiling")
+
+    def test_a_config_at_the_ceiling_comes_back_unchanged(self):
+        """Which is how `escalating` learns to re-raise rather than re-run the same sweep
+        for the same refusal."""
+        config = RoutineConfig(params={})
+        node = self._rb([1, 400, 800], 10)
+
+        assert self._widen(node, config, "depths") is config
+
+    def test_the_count_is_bounded_even_where_the_reach_is_not(self):
+        from qpi_driver.tuners.base.routines import CalibrationRoutine
+
+        assert CalibrationRoutine.MAX_ESCALATIONS == 3
+
+    def test_shortening_is_bounded_too(self):
+        """The one direction `_widened` declines, so it carries its own bound."""
+        from qpi_driver.tuners.routines.single_qubit import (
+            MAX_SHORTENINGS,
+            _shortened,
+        )
+
+        assert MAX_SHORTENINGS == 2
+        # And it cannot shorten below a fittable ladder, whatever factor it is handed.
+        assert len(_shortened([1, 5, 9, 13], 0.001, 4)) >= 2
