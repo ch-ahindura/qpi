@@ -9,6 +9,25 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: the CZ's virtual-Z corrections cancel the phase the gate leaves instead
+  of doubling it. `conditional_phase` wrote the measured fringe phase where it needed minus
+  it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as
+  scatter. The conditional phase itself was unaffected, being a difference of two fringes.
+- `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
+  `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
+  fit that had found its answer, leaving every node after it on an uncorrected pulse.
+- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` shorten their repetition counts
+  when the amplified rotation outruns the linearisation, instead of failing. How many
+  repetitions the fit can take depends on the error it is measuring, so no default is right
+  in advance.
+- `qpi-driver/py`: an RB fidelity fitted off a straight line is refused. The amplitude is
+  bounded to 200x the survival's own span and a fit that reaches that stop is rejected: a
+  chip reported 0.9999887 and 0.9999978 — thirty to three hundred times better than its T1
+  allows — from an amplitude of -807 and -4109 on a survival normalised to [0, 1].
+- `qpi-driver/py`: `rabi_12`'s ladder guard accepts a resolved oscillation however far off the
+  sqrt(2) ladder it sits, and refuses only a sweep holding less than one period. It exists to
+  catch a cosine fitted to a partial rotation, which shows fewer oscillations than the sweep
+  and never more — it had been refusing a clean three-and-a-half-period measurement.
 - `qpi-driver/py`: the fine-amplitude fit takes an intercept instead of being pinned through
   the origin, and refuses a sweep whose rotation accumulates past a radian. Two runs of an
   unchanged pi/2 pulse reported errors twelve times apart because a real baseline offset was

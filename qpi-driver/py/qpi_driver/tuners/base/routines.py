@@ -488,6 +488,15 @@ def _widened(
     so the next attempt asks the NCO for a frequency it cannot reach. Widening ``span``
     instead leaves centring, resolution and the band clamp where they already live.
     """
+    if refusal.direction == "shorter":
+        # Owned by the routine, not by this — see `OutOfRange.direction`. Every sweep that
+        # asks to be shortened is a repetition ladder, and interpolating one breaks it:
+        # halving [1, 5, 9, 13] here would give [1, 3, 5, 7], whole numbers that are no
+        # longer 4k+1, and the error being amplified stops lying along the measured axis.
+        # Returning unchanged makes `escalating` re-raise, which is what the routine
+        # catches.
+        return config
+
     scalar = _scalar_axis(routine, config, refusal)
     if scalar is not None:
         return scalar

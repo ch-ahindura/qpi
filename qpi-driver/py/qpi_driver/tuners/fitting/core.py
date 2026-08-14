@@ -60,8 +60,11 @@ class OutOfRange(FitError):
     Attributes:
         axis: the sweep to change, named as the routine's config key — ``"delays"``.
         direction: ``"wider"`` for more reach, ``"finer"`` for more resolution over the
-            same reach. They are different failures: a decay that never appeared wants a
-            longer window, and a fringe that aliased wants a denser one.
+            same reach, ``"shorter"`` for less reach. They are different failures: a decay
+            that never appeared wants a longer window, a fringe that aliased wants a denser
+            one, and an amplified rotation that ran past its own linearisation wants fewer
+            repetitions. Only the first two are generic — ``"shorter"`` is handled by the
+            routine, because the sweeps that need it have a shape a stretch would break.
         factor: how much, as a multiplier on the extent or on the point count.
     """
 
@@ -72,8 +75,9 @@ class OutOfRange(FitError):
         axis: str,
         direction: str = "wider",
         factor: float = 4.0,
+        fit: dict | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, fit=fit)
         self.axis = axis
         self.direction = direction
         self.factor = factor

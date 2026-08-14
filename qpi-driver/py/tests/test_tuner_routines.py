@@ -1637,7 +1637,11 @@ class TestTheEfPiPulseIsHeldToTheLadder:
 
         with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
             _require_ef_ladder(
-                self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF, 20e-9
+                self._device(self.B_CHIP_AMP180),
+                "q5",
+                self.B_CHIP_EF,
+                20e-9,
+                span=0.05,
             )
 
     def test_a_pulse_on_the_ladder_is_accepted(self):
@@ -1684,6 +1688,29 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         assert EF_ENVELOPE_AREA == pytest.approx(0.6267, rel=0.01)
         # The sqrt(2)-only prediction is 1.6x high, which is inside the window either way.
         _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5, 20e-9)  # noqa: B018
+
+    def test_a_resolved_oscillation_is_accepted_however_far_off_the_ladder(self):
+        """The failure this guard exists for has a signature, and it is the opposite one.
+
+        A drive too weak to turn a pi leaves the cosine's half period longer than the
+        sweep, so the fit extrapolates an arc — *less* than one oscillation, never more.
+        The August 2026 B chip's `rabi_12` sweep holds three and a half of them, evenly
+        spaced with a flat envelope, and the ladder refused it three runs running.
+        """
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.5622, duration=56e-9), "q5", 0.06751, 56e-9, span=0.5
+        )
+
+    def test_a_partial_rotation_this_far_off_the_ladder_is_still_refused(self):
+        """Same amplitude and same ladder violation; only the sweep is different."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        with pytest.raises(RoutineError, match="of an oscillation"):
+            _require_ef_ladder(
+                self._device(0.5622, duration=56e-9), "q5", 0.06751, 56e-9, span=0.05
+            )
 
     @pytest.mark.parametrize("factor", (0.55, 1.9))
     def test_the_bound_is_generous_enough_for_a_differing_duration(self, factor):
@@ -1805,3 +1832,142 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
 
         assert len(passes) == 1, "500 Hz is under the 6.6 kHz this window resolves"
         assert result["detuning"] == 500.0
+
+
+class TestASweepThatIsTheWrongSizeIsResized:
+    """Escalation in both directions, on the four nodes the B chip's last run refused.
+
+    Each of these had found its answer and thrown it away because the window was wrong,
+    which is RFC 0007's whole subject. Three wanted more reach; one wanted less.
+    """
+
+    def test_drag_asks_for_a_wider_beta_sweep_rather_than_failing(self):
+        """The B chip fitted -0.4803 against a swept +/-0.2 and refused, leaving every
+        node downstream running on an uncorrected pulse. `drag_12` already widened."""
+        from qpi_driver.tuners.fitting import fit_drag
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        betas = np.linspace(-0.2, 0.2, 31)
+        with pytest.raises(OutOfRange) as raised:
+            fit_drag(betas, 0.00899 * (betas + 0.4803), axis="motzois")
+
+        assert raised.value.axis == "motzois"
+        assert raised.value.direction == "wider"
+
+    def test_drag_escalates_where_it_used_only_to_raise(self):
+        assert routine("drag").measures_itself
+
+    def test_an_amplified_rotation_that_overran_asks_to_be_shortened(self):
+        """The one refusal that wants a *smaller* sweep. The B chip's pi/2 turned 1.51
+        rad by its thirteenth pulse, past where sin(n*d) is still n*d."""
+        from qpi_driver.tuners.fitting import fit_fine_amplitude
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        counts = np.array([1.0, 5.0, 9.0, 13.0])
+        # The chip's own trace rather than a clean sine, which flattens and drags the
+        # fitted slope back under the bound — the case that does not need catching.
+        demodulated = np.array([0.16425, 0.77211, -0.30209, -1.02863])
+        with pytest.raises(OutOfRange) as raised:
+            fit_fine_amplitude(
+                counts,
+                0.5 + 0.5 * demodulated,
+                0.284,
+                ground=0.0,
+                excited=1.0,
+                turn=np.pi / 2,
+                pre_rotation=0.0,
+            )
+
+        assert raised.value.axis == "repetitions"
+        assert raised.value.direction == "shorter"
+
+    def test_the_generic_widening_declines_to_shorten(self):
+        """Every sweep that asks to be shortened is a repetition ladder, and a stretch
+        breaks one: halving [1, 5, 9, 13] would give [1, 3, 5, 7], no longer 4k+1."""
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("fine_amplitude_90")
+        node._repetitions = [1, 5, 9, 13]
+        config = RoutineConfig(params={})
+        refusal = OutOfRange("x", axis="repetitions", direction="shorter", factor=0.66)
+
+        assert _widened(node, config, refusal) is config
+
+    def test_the_ladder_is_rebuilt_rather_than_interpolated(self):
+        from qpi_driver.tuners.routines.single_qubit import _shortened
+
+        assert _shortened([1, 5, 9, 13], 0.66, 4) == [1, 5]
+        assert _shortened(list(range(1, 26)), 0.43, 1) == list(range(1, 11))
+        # Never below two points, which is what the two-parameter fit needs.
+        assert _shortened([1, 5, 9, 13], 0.01, 4) == [1, 5]
+
+    def test_both_fine_amplitude_nodes_resize_themselves(self):
+        assert routine("fine_amplitude").measures_itself
+        assert routine("fine_amplitude_90").measures_itself
+
+
+class TestEscalationIsBoundedOnEveryAxisItMoves:
+    """Every widening has to stop, and stop for a stated reason.
+
+    `MAX_ESCALATIONS` bounds the *count* for all of them, and `escalating` re-raises the
+    last refusal rather than inventing a range. What is per-axis is the *reach*: an
+    amplitude has full scale, a point count has `MAX_SWEEP_POINTS`, and RB's depths have
+    an instruction budget — which they did not have when depths first became escalatable.
+    """
+
+    def _widen(self, node, config, axis, factor=2.0):
+        from qpi_driver.tuners.base.routines import _widened
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        return _widened(node, config, OutOfRange("x", axis=axis, factor=factor))
+
+    def _rb(self, depths, circuits):
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        return SimpleNamespace(
+            name="rb",
+            _depths=list(depths),
+            _depths_ceiling=2.0 * MAX_RB_CLIFFORDS / (circuits * len(depths)) - 1.0,
+        )
+
+    def test_rb_depths_stop_at_the_instruction_budget(self):
+        """Three doublings take 64 to 505, which at twelve circuits is 28000 Cliffords in
+        one program against a sequencer that takes 12288 instructions."""
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        depths, circuits = [1, 2, 4, 8, 16, 32, 64], 10
+        config = RoutineConfig(params={})
+        for _ in range(4):
+            widened = self._widen(self._rb(depths, circuits), config, "depths")
+            if widened is config:
+                break
+            depths = [int(d) for d in widened.get("depths")]
+            config = widened
+            assert circuits * sum(depths) <= MAX_RB_CLIFFORDS
+        else:
+            raise AssertionError("depths widened without ever reaching a ceiling")
+
+    def test_a_config_at_the_ceiling_comes_back_unchanged(self):
+        """Which is how `escalating` learns to re-raise rather than re-run the same sweep
+        for the same refusal."""
+        config = RoutineConfig(params={})
+        node = self._rb([1, 400, 800], 10)
+
+        assert self._widen(node, config, "depths") is config
+
+    def test_the_count_is_bounded_even_where_the_reach_is_not(self):
+        from qpi_driver.tuners.base.routines import CalibrationRoutine
+
+        assert CalibrationRoutine.MAX_ESCALATIONS == 3
+
+    def test_shortening_is_bounded_too(self):
+        """The one direction `_widened` declines, so it carries its own bound."""
+        from qpi_driver.tuners.routines.single_qubit import (
+            MAX_SHORTENINGS,
+            _shortened,
+        )
+
+        assert MAX_SHORTENINGS == 2
+        # And it cannot shorten below a fittable ladder, whatever factor it is handed.
+        assert len(_shortened([1, 5, 9, 13], 0.001, 4)) >= 2

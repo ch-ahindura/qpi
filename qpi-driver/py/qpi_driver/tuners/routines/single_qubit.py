@@ -20,6 +20,7 @@ from qpi_driver.executors.base.rotations import (
 )
 from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
 from qpi_driver.tuners.base.limits import full_scale
+from qpi_driver.tuners.fitting.core import OutOfRange
 from qpi_driver.tuners.base.routines import (
     DEFAULT_ROUTINE_TIMEOUT_S,
     CalibrationRoutine,
@@ -566,6 +567,25 @@ class Drag(CalibrationRoutine):
     updates = ("rxy.motzoi",)
     reads = ("clock_freqs.f01", "rxy.amp180")
 
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Widen the beta sweep when the optimum turns out to be outside it.
+
+        What `drag_12` already does, and for the same reason: the default is
+        `SchedulerBackend.drag_span` either side of zero, which is a statement about the
+        units rather than about a chip. The August 2026 B chip's 0-1 optimum came out at
+        -0.4803 against a range of +/-0.2, so the node refused a fit that had found its
+        answer — and everything downstream of `drag` then ran on an uncorrected pulse.
+        """
+        return self.escalating(target, device, config, backend, timeout_s)
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -615,7 +635,10 @@ class Drag(CalibrationRoutine):
                 f"DRAG expected {2 * len(self._betas)} acquisitions, got {signal.size}"
             )
         paired = signal[: 2 * len(self._betas)].reshape(-1, 2)
-        return fit_drag(np.asarray(self._betas), paired[:, 0] - paired[:, 1])
+        # Named, so a refusal is escalatable rather than prose — see `measure`.
+        return fit_drag(
+            np.asarray(self._betas), paired[:, 0] - paired[:, 1], axis="motzois"
+        )
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
@@ -672,6 +695,85 @@ class AllXY(CalibrationRoutine):
         }
 
 
+#: How many times a fine-amplitude sweep may be shortened before giving up.
+#:
+#: Each pass cuts the accumulated rotation to roughly a radian, so two is already an
+#: eightfold reduction from a sweep that overran by that much. A third would be measuring
+#: a pulse so far out that `rabi` upstream is the thing to fix.
+MAX_SHORTENINGS = 2
+
+
+def _amplified(
+    routine: CalibrationRoutine,
+    target: str,
+    device: Any,
+    config: RoutineConfig,
+    backend: SchedulerBackend,
+    timeout_s: float,
+    step: int,
+) -> dict[str, Any]:
+    """Run *routine*, shortening its repetitions if the rotation outran its own model.
+
+    The fit linearises ``sin(n*d)`` as ``n*d``, so how many repetitions it can take
+    depends on how big ``d`` turns out to be — which is the thing being measured. There is
+    no default that is right in advance: the August 2026 B chip needed 25 for its pi and
+    could not take 13 for its pi/2, on the same run.
+
+    So the refusal names the shortening it wants and this applies it, which is escalation
+    running downward. `_widened` declines the direction on purpose; the ladder is *step*
+    and rebuilding it is what a generic stretch cannot do.
+    """
+    for attempt in range(MAX_SHORTENINGS + 1):
+        try:
+            return routine.escalating(target, device, config, backend, timeout_s)
+        except OutOfRange as refusal:
+            counts = [
+                int(n)
+                for n in (
+                    config.get("repetitions")
+                    or getattr(routine, "_repetitions", ())
+                    or ()
+                )
+            ]
+            shorter = _shortened(counts, refusal.factor, step)
+            if (
+                refusal.direction != "shorter"
+                or attempt == MAX_SHORTENINGS
+                or len(shorter) < 2
+                or shorter == counts
+            ):
+                raise
+            log.info(
+                "%s on %s: %s — repeating %d times instead of %d (%d of %d)",
+                routine.name,
+                target,
+                refusal,
+                max(shorter),
+                max(counts),
+                attempt + 1,
+                MAX_SHORTENINGS,
+            )
+            config = RoutineConfig(
+                enabled=config.enabled,
+                params={**config.params, "repetitions": shorter},
+            )
+    raise RoutineError(  # pragma: no cover - the loop above always returns or raises
+        f"{routine.name} exhausted its shortenings on {target}"
+    )
+
+
+def _shortened(counts: list[int], factor: float, step: int) -> list[int]:
+    """*counts* rebuilt no longer than *factor* of their reach, on the same ladder.
+
+    The ladder is why this is not `_widened`'s job. A generic stretch interpolates, and
+    both of these sweeps have a shape interpolation breaks: the pi sweep needs whole
+    repetitions, and the pi/2 sweep needs ``4k+1`` of them or the error it is amplifying
+    does not lie along the axis being measured. Rebuilding from *step* keeps both.
+    """
+    top = max(int(max(counts) * factor), 1 + step)
+    return list(range(1, top + 1, step))
+
+
 class FineAmplitude(CalibrationRoutine):
     """Amplify a small amplitude error by repeating the π pulse.
 
@@ -685,6 +787,22 @@ class FineAmplitude(CalibrationRoutine):
     depends_on = ("drag",)
     updates = ("rxy.amp180",)
     reads = ("rxy.amp180", "clock_freqs.f01")
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Shorten the sweep if 25 repetitions turn further than the fit can linearise.
+
+        On the August 2026 B chip they turned 2.3 radians — a full swing of the sine,
+        fitted as a straight line, and written to the amplitude every X pulse plays at.
+        """
+        return _amplified(self, target, device, config, backend, timeout_s, step=1)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -842,13 +960,20 @@ class FineAmplitude90(CalibrationRoutine):
         Bounded the same three ways as `ramsey`: by convergence, by the correction
         becoming smaller than the noise, and by `MAX_REFINEMENTS`.
         """
-        refined = self.escalating(target, device, config, backend, timeout_s)
+        refined = self._pass(target, device, config, backend, timeout_s)
+        # Carry forward whatever the first pass settled on, so a sweep that had to be
+        # shortened is not rediscovered — and paid for — on every pass after it.
+        # `build_schedule` leaves the counts it used here.
+        config = RoutineConfig(
+            enabled=config.enabled,
+            params={**config.params, "repetitions": list(self._repetitions)},
+        )
         for _attempt in range(self.MAX_REFINEMENTS):
             previous = float(refined["amp90"])
             # Applied here so the next pass plays the corrected pi/2, which is the whole
             # mechanism. The DAG applies again afterwards, and a write is idempotent.
             self.apply(device, target, refined)
-            again = self.escalating(target, device, config, backend, timeout_s)
+            again = self._pass(target, device, config, backend, timeout_s)
             moved = abs(float(again["amp90"]) - previous) / max(previous, 1e-12)
             refined = again
             if moved <= self.CONVERGED_FRACTION:
@@ -860,6 +985,14 @@ class FineAmplitude90(CalibrationRoutine):
                 100 * moved,
             )
         return refined
+
+    def _pass(self, target, device, config, backend, timeout_s) -> dict[str, Any]:
+        """One refinement pass, shortened if the rotation outran the linearisation.
+
+        Every fourth count, because only after ``4k+1`` quarter turns does the accumulated
+        error lie along the axis being measured — see `DEFAULT_AMP90_REPETITIONS`.
+        """
+        return _amplified(self, target, device, config, backend, timeout_s, step=4)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
