@@ -295,6 +295,45 @@ class TestExponentialFits:
         with pytest.raises(FitError):
             fit_t1(delays, np.linspace(1.0, 0.999999, 41))
 
+    def test_t2_is_refused_above_the_ceiling_2t1_puts_on_an_echo(self):
+        """The August 2026 B chip's 201 us of T2 against a 32.8 us T1 — 3.07x the ceiling.
+
+        A Hahn echo refocuses static dephasing and nothing else, so it cannot outlast twice
+        the relaxation it refocuses through. Nothing else in `fit_t2` contradicted this one:
+        its curve spanned 6.7x its own scatter and 201 us is inside the ten windows
+        `require_in_range` allows.
+        """
+        delays = np.linspace(0.0, 100e-6, 41)
+        signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
+        with pytest.raises(FitError, match="ceiling that 2\\*T1 puts on a Hahn echo"):
+            fit_t2(delays, signal, t1=32.8e-6)
+
+    def test_t2_at_the_t1_limit_is_accepted(self):
+        """T2 = 2*T1 is where a qubit with no pure dephasing left sits, not an error."""
+        t1 = 40e-6
+        delays = np.linspace(0.0, 200e-6, 81)
+        signal = exponential_decay(delays, 1.0, 2 * t1, 0.05)
+        # Its own generator, not the module's: `_noise` advances a stream shared with every
+        # other test in this file, so drawing from it here moves the noise the tests below
+        # are fitted through.
+        noise = np.random.default_rng(20260814).normal(0.0, 0.005, len(delays))
+        fitted = fit_t2(delays, signal + noise, t1=t1)
+        assert fitted["t2"] == pytest.approx(2 * t1, rel=0.1)
+
+    def test_t2_without_a_t1_skips_the_ceiling(self):
+        """A `BasicTransmonElement` has nowhere to keep T1, and those chips behave as before."""
+        delays = np.linspace(0.0, 100e-6, 41)
+        signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
+        assert fit_t2(delays, signal)["t2"] > 100e-6
+
+    def test_a_refused_t2_carries_its_trace(self):
+        delays = np.linspace(0.0, 100e-6, 41)
+        signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
+        with pytest.raises(FitError) as raised:
+            fit_t2(delays, signal, t1=32.8e-6)
+        assert raised.value.fit is not None
+        assert raised.value.fit["x_label"] == "delay (s)"
+
     def test_rb_recovers_a_known_fidelity(self):
         decay = 0.995
         depths = np.array([1, 2, 4, 8, 16, 32, 64, 128], dtype=float)

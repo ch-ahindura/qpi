@@ -93,6 +93,35 @@ class ResonatorSettings(InstrumentChannel):
         )
 
 
+class CoherenceTimes(InstrumentChannel):
+    """What `t1` measured about relaxation, for the one guard that needs a ceiling.
+
+    Not a calibration — nothing is tuned to T1 — but `t2_echo` cannot tell a fitted
+    coherence time from an unconstrained one without it. A Hahn echo refocuses static
+    dephasing and nothing else, so ``T2 <= 2*T1`` is a hard bound rather than a typical
+    value; with T1 out of reach a T2 three times over it reads as a long-lived qubit, and
+    gets written as one. The August 2026 B chip fitted 201 us of T2 against a 32.8 us T1
+    over a 100 us window, and cleared every other guard in `fit_t2` doing it.
+
+    The same case RFC 0005 §13 makes for the resonator linewidth, one node along: a number
+    measured here and thrown away, which another node then has to do without.
+
+    Zero means "not measured", and `fit_t2` skips the ceiling rather than comparing
+    against nothing.
+    """
+
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
+
+        self.add_parameter(
+            "t1",
+            parameter_class=ManualParameter,
+            unit="s",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+        )
+
+
 class TwoStateReadout(InstrumentChannel):
     """The readout operating point used for *discriminating*, as opposed to measuring.
 
@@ -252,6 +281,7 @@ class CalibratedTransmon(BasicTransmonElement):
         super().__init__(name, **kwargs)
         self.add_submodule("spec", SpectroscopySettings(self, "spec"))
         self.add_submodule("resonator", ResonatorSettings(self, "resonator"))
+        self.add_submodule("coherence", CoherenceTimes(self, "coherence"))
         self.add_submodule("measure_2state", TwoStateReadout(self, "measure_2state"))
         self.add_submodule("r12", EFDrive(self, "r12"))
         self.add_submodule("measure_3state", ThreeStateReadout(self, "measure_3state"))

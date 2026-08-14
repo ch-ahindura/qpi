@@ -18,7 +18,13 @@ from qpi_driver.executors.base.rotations import (
     QUARTER_TURN_DEGREES,
     amplitude_for_angle,
 )
-from qpi_driver.tuners.base.device import drag_parameter_name, read_path, write_path
+from qpi_driver.tuners.base.device import (
+    drag_parameter_name,
+    measured_t1,
+    read_path,
+    relaxation_time_path,
+    write_path,
+)
 from qpi_driver.tuners.base.limits import full_scale
 from qpi_driver.tuners.fitting.core import MIN_FIT_POINTS, OutOfRange
 from qpi_driver.tuners.base.routines import (
@@ -464,7 +470,9 @@ class T1(CalibrationRoutine):
 
     name = "t1"
     depends_on = ("rabi",)
-    updates = ()
+    # Not a calibration — nothing plays differently because of it — but `t2_echo` needs it
+    # as a ceiling, and it was being measured and thrown away. See `CoherenceTimes`.
+    updates = ("coherence.t1",)
     reads = ("clock_freqs.f01", "rxy.amp180")
 
     def measure(
@@ -506,14 +514,27 @@ class T1(CalibrationRoutine):
     ) -> dict[str, Any]:
         return fit_t1(np.asarray(self._delays), signal_of(dataset))
 
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Keep T1 where `t2_echo` can find it, when the element has somewhere for it.
+
+        Opt-in like every other `CalibratedTransmon` field: a plain `BasicTransmonElement`
+        has no ``coherence`` submodule, and `fit_t2` then does without the ceiling exactly
+        as it did before.
+        """
+        element = device.get_element(target)
+        if relaxation_time_path(element):
+            write_path(element, "coherence.t1", params["t1"])
+
 
 class T2Echo(CalibrationRoutine):
     """Hahn echo: a refocusing π cancels static dephasing (Bylander et al., Nat. Phys. 7, 565)."""
 
     name = "t2_echo"
-    depends_on = ("rabi",)
+    # On `t1` as well as `rabi`, for the ceiling rather than for a pulse: `fit_t2` cannot
+    # tell an unconstrained decay from a long-lived one without it. See `CoherenceTimes`.
+    depends_on = ("rabi", "t1")
     updates = ()
-    reads = ("clock_freqs.f01", "rxy.amp180")
+    reads = ("clock_freqs.f01", "rxy.amp180", "coherence.t1")
 
     def measure(
         self,
@@ -555,7 +576,11 @@ class T2Echo(CalibrationRoutine):
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
-        return fit_t2(np.asarray(self._delays), signal_of(dataset))
+        return fit_t2(
+            np.asarray(self._delays),
+            signal_of(dataset),
+            t1=measured_t1(device.get_element(target)),
+        )
 
 
 class Drag(CalibrationRoutine):

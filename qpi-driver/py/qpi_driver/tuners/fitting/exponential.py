@@ -93,9 +93,48 @@ def fit_t1(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     return _fit_coherence(delays, signal, key="t1", what="T1")
 
 
-def fit_t2(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
-    """Fit a T2 echo curve. Returns ``{'t2', 'amplitude'}``."""
-    return _fit_coherence(delays, signal, key="t2", what="T2")
+#: How far past ``2*T1`` a fitted T2 may sit before it counts as an unconstrained fit
+#: rather than as a long-lived qubit.
+#:
+#: A Hahn echo refocuses static dephasing and nothing else, so ``2*T1`` is a hard ceiling
+#: rather than a typical value — a qubit with no pure dephasing left sits *at* it. Both
+#: times are fitted, though, so the ratio carries both fits' error and a genuinely
+#: T1-limited echo can read high; 1.5 leaves room for that.
+#:
+#: It still refuses the case that motivated it by a factor of two. The August 2026 B chip
+#: fitted 201 us of T2 against a 32.8 us T1 — 3.07x the ceiling — over a 100 us window,
+#: and cleared every other guard here: its curve spanned 6.7x its own residual scatter
+#: against a floor of 3, and 201 us is well inside the ten windows `require_in_range`
+#: allows. Nothing but T1 contradicts it.
+MAX_T2_OVER_T1 = 1.5
+
+
+def fit_t2(delays: np.ndarray, signal: np.ndarray, t1: float = 0.0) -> dict[str, float]:
+    """Fit a T2 echo curve. Returns ``{'t2', 'amplitude'}``.
+
+    *t1* is the relaxation time measured on the same qubit, zero when it never was. Given
+    one, a T2 past ``2*T1`` is refused — see :data:`MAX_T2_OVER_T1`.
+
+    Raises:
+        FitError: if the fit fails, or T2 lands above the ceiling *t1* puts on it.
+    """
+    fitted = _fit_coherence(delays, signal, key="t2", what="T2")
+    ceiling = 2.0 * float(t1)
+    if t1 and fitted["t2"] > ceiling * MAX_T2_OVER_T1:
+        # Not escalatable, unlike every other guard in this function. The two remediations
+        # the machinery offers are both wrong here: T1 says the decay is over well inside
+        # the window, so widening it is answering the opposite question, and `shots` is not
+        # an averaging axis escalation can move. What is left is telling the operator which
+        # two numbers cannot both be true.
+        raise FitError(
+            f"T2 fitted to {fitted['t2']:.4g} s, above the {ceiling:.4g} s ceiling that "
+            f"2*T1 puts on a Hahn echo — {fitted['t2'] / ceiling:.2f}x it, from a T1 of "
+            f"{float(t1):.4g} s. An echo cannot outlast twice the relaxation it refocuses "
+            f"through, so this is a decay the window did not constrain rather than a "
+            f"coherence time. Average more shots, or check the T1 it is measured against",
+            fit=fitted["fit"],
+        )
+    return fitted
 
 
 #: How far past the observed span the fitted amplitude may reach before the fit counts as

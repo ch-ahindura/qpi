@@ -9,6 +9,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `t2_echo` refuses a T2 above the `2*T1` ceiling a Hahn echo cannot
+  exceed, and `t1` now keeps its result on the element for it to read. A chip reported
+  201 us of T2 against a 32.8 us T1 — 3.07x the ceiling — and every other guard passed it.
 - `qpi-driver/py`: `rabi` no longer accepts a pi amplitude up to 10% above the top of its
   own sweep. A chip fitted 0.5060 against a sweep stopping at 0.5 and wrote it, where
   `ef_ladder` measured 0.1647 on the same grid — every node downstream then calibrated

@@ -61,6 +61,17 @@ class ResonatorSettings(SchedulerSubmodule):
     )
 
 
+class CoherenceTimes(SchedulerSubmodule):
+    """What `t1` measured, as the ceiling `t2_echo` checks. See the quantify twin."""
+
+    t1: float = Parameter(
+        docstring="Relaxation time in s, as fitted. 0 if not measured.",
+        unit="s",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1.0, allow_nan=True),
+    )
+
+
 class TwoStateReadout(SchedulerSubmodule):
     """The readout operating point used for discriminating. See the quantify twin."""
 
@@ -150,6 +161,9 @@ class CalibratedTransmon(BasicTransmonElement):
     )
     resonator: ResonatorSettings = Field(
         default_factory=lambda: ResonatorSettings(name="resonator")
+    )
+    coherence: CoherenceTimes = Field(
+        default_factory=lambda: CoherenceTimes(name="coherence")
     )
     measure_2state: TwoStateReadout = Field(
         default_factory=lambda: TwoStateReadout(name="measure_2state")

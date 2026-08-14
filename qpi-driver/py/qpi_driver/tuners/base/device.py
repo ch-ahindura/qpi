@@ -292,6 +292,33 @@ def resonator_linewidth_path(element: Any) -> str | None:
     return "resonator.linewidth"
 
 
+def relaxation_time_path(element: Any) -> str | None:
+    """``coherence.t1`` if this element has one, else ``None``.
+
+    The same opt-in shape as :func:`resonator_linewidth_path`.
+    """
+    submodule = getattr(element, "coherence", None)
+    if submodule is None or not hasattr(submodule, "t1"):
+        return None
+    return "coherence.t1"
+
+
+def measured_t1(element: Any, fallback: float = 0.0) -> float:
+    """What `t1` measured for this qubit, or *fallback*.
+
+    Zero means "not measured", and `fit_t2` skips its ceiling rather than comparing
+    against nothing — see :class:`CoherenceTimes`.
+    """
+    path = relaxation_time_path(element)
+    if path is None:
+        return fallback
+    try:
+        value = read_path(element, path)
+    except Exception:  # noqa: BLE001 - an unreadable field is an unmeasured one
+        return fallback
+    return float(value) if value else fallback
+
+
 def measured_linewidth(element: Any, fallback: float) -> float:
     """What `resonator_spectroscopy` measured for this resonator, or *fallback*.
 

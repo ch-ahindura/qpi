@@ -772,6 +772,64 @@ def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify
     assert raised.value.direction == "wider"
 
 
+class TestT1ReachesTheEchoThatNeedsIt:
+    """RFC 0005 §13's case one node along: a number measured here and thrown away.
+
+    `fit_t2` cannot tell a decay the window did not constrain from a long-lived qubit
+    without the ceiling ``2*T1`` puts on a Hahn echo. The August 2026 B chip wrote 201 us
+    of T2 against a 32.8 us T1 because T1 had nowhere to live.
+    """
+
+    def test_t1_writes_where_the_echo_reads(self, own_quantify_tuner):
+        from qpi_driver.tuners.base.device import measured_t1
+
+        routine("t1").apply(own_quantify_tuner.device, "q0", {"t1": 79.6e-6})
+        element = own_quantify_tuner.device.get_element("q0")
+        assert measured_t1(element) == pytest.approx(79.6e-6)
+
+    def test_the_echo_declares_the_dependency_it_reads(self):
+        assert "coherence.t1" in routine("t1").updates
+        assert "t1" in routine("t2_echo").depends_on
+        assert "coherence.t1" in routine("t2_echo").reads
+
+    def test_an_element_with_nowhere_for_t1_reads_as_unmeasured(self):
+        """A `BasicTransmonElement` opts out, and `fit_t2` then skips the ceiling."""
+        from qpi_driver.tuners.base.device import measured_t1, relaxation_time_path
+
+        class Bare:
+            pass
+
+        assert relaxation_time_path(Bare()) is None
+        assert measured_t1(Bare()) == 0.0
+
+    @pytest.mark.parametrize("scheduler", ["quantify", "qblox"])
+    def test_both_element_twins_have_somewhere_for_t1(self, scheduler):
+        """The two are kept parallel on purpose — a field on one and not the other is how
+        the qblox tuner came to be unable to finish a calibration at all (RFC 0004 §11)."""
+        from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
+        from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
+        from qpi_driver.tuners.base.device import relaxation_time_path
+
+        if scheduler == "qblox":
+            if not IS_QBLOX_SCHEDULER_INSTALLED:
+                pytest.skip("qblox-scheduler is not installed")
+            from qpi_driver.executors.qblox.elements.calibrated_transmon import (
+                CalibratedTransmon,
+            )
+
+            element = CalibratedTransmon(name="qcoh")
+        else:
+            if not IS_QUANTIFY_INSTALLED:
+                pytest.skip("quantify-scheduler is not installed")
+            from qpi_driver.executors.quantify.elements.calibrated_transmon import (
+                CalibratedTransmon,
+            )
+
+            element = CalibratedTransmon("qcoh")
+
+        assert relaxation_time_path(element) == "coherence.t1"
+
+
 class TestSweepsSizedFromTheMeasuredLinewidth:
     """RFC 0007 §5: a span derived from what was measured, not from a constant.
 
