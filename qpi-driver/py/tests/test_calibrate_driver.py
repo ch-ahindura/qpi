@@ -21,6 +21,8 @@ from qpi_driver.builtins.calibrate import (
     device_spec,
 )
 from qpi_driver.builtins.registry import Operation, devices, resolve
+import queue
+
 from qpi_driver.events import Event, EventType
 from qpi_driver.options import Options
 from qpi_driver.tuners import Tuner, resolve_tuner
@@ -398,10 +400,18 @@ class TestResultPump:
         }
         assert driver._busy.is_set()
 
-    def test_a_worker_error_is_emitted_as_an_error(self, monkeypatch):
+    def test_a_worker_error_is_emitted_as_a_failed_report(self, monkeypatch):
+        """Under `errors`, with a mode and a status — not as a bare ``error`` key.
+
+        This asserted the bare key, which is the shape QPI-UI refuses: it validates `mode`
+        and `status` against their select values and drops a report carrying neither. See
+        `TestAResultAlwaysReachesTheServer`.
+        """
         driver = _driver()
         emitted = _pump_once(driver, {"job_id": "j1", "error": "boom"}, monkeypatch)
-        assert emitted[0].payload["error"] == "boom"
+
+        assert emitted[0].payload["errors"] == ["boom"]
+        assert emitted[0].payload["status"] == "failed"
 
     def test_a_drift_follow_up_is_queued_as_a_partial_recalibration(self, monkeypatch):
         driver = _driver()
@@ -1180,3 +1190,75 @@ class TestALongScheduleRaisesItsOwnCeiling:
 
         assert coordinator.timeout_sec == 300
         assert backend.last_allowance_s == 300
+
+
+class TestAResultAlwaysReachesTheServer:
+    """The pump is the last mile, and it had two ways to lose a calibration silently.
+
+    Both matter more than they look: a report that never arrives is indistinguishable, from
+    the operator's side, from a calibration that never ran — and the chip has been retuned
+    either way.
+    """
+
+    def _driver(self, monkeypatch):
+        driver = CalibrateDriver(
+            tuner=StubTuner(), calibration_config="calibration.example.yml"
+        )
+        emitted: list[Event] = []
+        monkeypatch.setattr(driver, "emit", emitted.append)
+        driver._result_queue = queue.Queue()
+        return driver, emitted
+
+    def _pump(self, driver, *items):
+        for item in items:
+            driver._result_queue.put(item)
+        driver._result_queue.put(None)
+        driver._pump_results()
+
+    def test_a_failed_calibration_carries_the_fields_the_server_validates(
+        self, monkeypatch
+    ):
+        """QPI-UI refuses a report with no mode or status, and this used to send neither —
+        so a calibration that raised reached the dashboard as nothing at all."""
+        driver, emitted = self._driver(monkeypatch)
+
+        self._pump(driver, {"job_id": "j1", "mode": "partial", "error": "boom"})
+
+        assert len(emitted) == 1
+        payload = emitted[0].payload
+        assert payload["mode"] == "partial"
+        assert payload["status"] == "failed"
+        assert payload["errors"] == ["boom"]
+
+    def test_a_mode_it_cannot_read_still_leaves_a_valid_report(self, monkeypatch):
+        """The field may not be empty, and a wrong mode beats no record of the run."""
+        driver, emitted = self._driver(monkeypatch)
+
+        self._pump(driver, {"job_id": "j1", "error": "boom"})
+
+        assert emitted[0].payload["mode"] == "full"
+        assert emitted[0].payload["status"] == "failed"
+
+    def test_one_bad_item_does_not_take_the_pump_down_with_it(self, monkeypatch):
+        """The quiet failure: an exception here killed a daemon thread, so this
+        calibration *and every later one* were lost while `_busy` was already clear —
+        the driver went on accepting work and looked healthy."""
+        driver, emitted = self._driver(monkeypatch)
+
+        self._pump(
+            driver,
+            {"job_id": "breaks", "report": None},
+            {"job_id": "after", "mode": "full", "error": "still reported"},
+        )
+
+        assert [e.payload["job_id"] for e in emitted] == ["breaks", "after"]
+        assert emitted[0].payload["status"] == "failed"
+        assert "could not report it" in emitted[0].payload["errors"][0]
+        assert emitted[1].payload["errors"] == ["still reported"]
+
+    def test_the_fit_cap_fits_inside_what_the_server_stores(self):
+        """A cap above the field's own limit guarantees the failure it exists to prevent."""
+        from qpi_driver.tuners.base.report import MAX_FIT_PAYLOAD_BYTES
+
+        # PocketBase's DefaultJSONFieldMaxSize, which qpi-ui does not override.
+        assert MAX_FIT_PAYLOAD_BYTES < 1 << 20

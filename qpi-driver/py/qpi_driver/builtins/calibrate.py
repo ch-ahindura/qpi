@@ -172,48 +172,89 @@ class CalibrateDriver(QpiDriver):
         self._result_pump.start()
 
     def _pump_results(self) -> None:
-        """Drain the worker's reports and emit each as a CalibrationResult."""
+        """Drain the worker's reports and emit each as a CalibrationResult.
+
+        Every item is handled inside a guard, because this is a daemon thread and the
+        failure it can have is the quiet one. An unhandled exception here kills the
+        pump: the calibration that raised it is never reported, *every later one is
+        lost too*, and `_busy` has already been cleared — so the driver goes on
+        accepting work and looks healthy while nothing reaches the dashboard again.
+        What an operator sees is a calibration that finished and a UI that never
+        heard about it.
+        """
         while True:
             item = self._result_queue.get()
             if item is None:
                 log.info("Result pump received shutdown signal")
                 return
-
-            # Both before the clear below: neither is an outcome, and treating one
-            # as such would free the driver to accept another calibration.
-            if "plan" in item:
-                self._emit_queued(
-                    item["job_id"],
-                    item["mode"],
-                    item.get("target_qubits") or [],
-                    "the walk it is about to make",
-                    plan=item["plan"],
+            try:
+                self._pump_one(item)
+            except Exception:  # noqa: BLE001 - a dead pump loses every later result
+                log.exception(
+                    "Result pump failed on %s; reporting what it can and staying up",
+                    item.get("job_id", "unknown"),
                 )
-                continue
-            if "progress" in item:
-                self._emit_progress(item["job_id"], item["progress"])
-                continue
+                self._busy.clear()
+                self._report_pump_failure(item)
 
-            self._busy.clear()
-            job_id = item.get("job_id", "unknown")
-            if "error" in item:
-                self._emit_result(job_id, {"error": item["error"]})
-                continue
+    def _report_pump_failure(self, item: dict[str, Any]) -> None:
+        """Last resort: say the calibration happened, even if its report cannot go.
 
-            report = item["report"]
-            log.info("Emitting calibration result for %s: %s", job_id, report["status"])
-            self._emit_result(job_id, report)
+        Guarded in turn, because whatever broke the emit above is liable to break this
+        one — and a log line is still better than an operator left wondering whether
+        the chip was touched at all.
+        """
+        try:
+            self._emit_result(
+                item.get("job_id", "unknown"),
+                _failed_report(
+                    {
+                        **item,
+                        "error": "the driver finished this calibration but could "
+                        "not report it; see the driver log",
+                    }
+                ),
+            )
+        except Exception:  # noqa: BLE001 - nothing left to try
+            log.exception("Could not report the pump failure either")
 
-            for follow_up in item.get("follow_up", []):
-                log.info("Drift detected; queuing recalibration of %s", follow_up)
-                self._busy.set()
-                self._emit_queued(
-                    follow_up["job_id"],
-                    follow_up["mode"],
-                    follow_up.get("target_qubits") or [],
-                    f"drift measured by {job_id}",
-                )
-                self._job_queue.put(follow_up)
+    def _pump_one(self, item: dict[str, Any]) -> None:
+        """Turn one queued item into the event it describes."""
+        # Both before the clear below: neither is an outcome, and treating one
+        # as such would free the driver to accept another calibration.
+        if "plan" in item:
+            self._emit_queued(
+                item["job_id"],
+                item["mode"],
+                item.get("target_qubits") or [],
+                "the walk it is about to make",
+                plan=item["plan"],
+            )
+            return
+        if "progress" in item:
+            self._emit_progress(item["job_id"], item["progress"])
+            return
+
+        self._busy.clear()
+        job_id = item.get("job_id", "unknown")
+        if "error" in item:
+            self._emit_result(job_id, _failed_report(item))
+            return
+
+        report = item["report"]
+        log.info("Emitting calibration result for %s: %s", job_id, report["status"])
+        self._emit_result(job_id, report)
+
+        for follow_up in item.get("follow_up", []):
+            log.info("Drift detected; queuing recalibration of %s", follow_up)
+            self._busy.set()
+            self._emit_queued(
+                follow_up["job_id"],
+                follow_up["mode"],
+                follow_up.get("target_qubits") or [],
+                f"drift measured by {job_id}",
+            )
+            self._job_queue.put(follow_up)
 
     def _emit_queued(
         self,
@@ -566,7 +607,36 @@ def _execute_calibration(
         _worker_log.info("Calibration %s finished: %s", job_id, report.summary())
     except Exception as exc:
         _worker_log.exception("Calibration %s failed", job_id)
-        result_queue.put({"job_id": job_id, "error": _sanitize_exception_msg(exc)})
+        # With the mode, because `_failed_report` needs one: the server validates `mode`
+        # and `status` against their select values and refuses a payload carrying neither.
+        result_queue.put(
+            {"job_id": job_id, "mode": mode, "error": _sanitize_exception_msg(exc)}
+        )
+
+
+def _failed_report(item: dict[str, Any]) -> dict[str, Any]:
+    """A minimal report for a calibration that raised, in the shape the server accepts.
+
+    The errored path emitted ``{job_id, error}`` and nothing else. QPI-UI validates ``mode``
+    and ``status`` against their select values and refuses a report carrying neither, so a
+    failed calibration reached the dashboard as nothing at all: the driver logged the
+    failure, emitted, and the record was rejected on arrival for being blank. What an
+    operator saw was a calibration that stopped and a UI that never mentioned it.
+
+    ``full`` when the item cannot say, because the field may not be empty and a wrong mode
+    on a failed run is a far smaller lie than no record of the run.
+    """
+    from qpi_driver.tuners.base.dag import utc_timestamp
+
+    return {
+        "timestamp": utc_timestamp(),
+        "duration_s": 0.0,
+        "mode": item.get("mode") or "full",
+        "status": "failed",
+        "routine_results": [],
+        "benchmarks": [],
+        "errors": [item["error"]],
+    }
 
 
 def _queue_progress(
