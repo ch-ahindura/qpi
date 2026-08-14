@@ -6,6 +6,7 @@ it has no fidelity for the drift check to read. What a benchmark returns is a
 ``fidelity``, and that is what the periodic check compares against its threshold.
 """
 
+import logging
 import random
 from typing import Any
 
@@ -33,30 +34,38 @@ from qpi_driver.tuners.utils.clifford import (
 )
 
 
-#: The most Cliffords escalation will put in one RB schedule, across every depth and
-#: circuit.
+log = logging.getLogger(__name__)
+
+#: The most Cliffords one RB *schedule* may hold, across every depth and circuit in it.
 #:
-#: `depths` and `circuits_per_depth` both escalate, so both need the ceiling
-#: `MAX_SWEEP_POINTS` is for a scalar sweep — and RB needs its own, because its cost is per
-#: *gate* where a frequency sweep's is per acquisition. `MAX_CIRCUITS_PER_DEPTH` bounds how
-#: long the node may take; this bounds how large its program may get, which is a different
-#: limit and the one that bites.
+#: A chunk size, not a ceiling. RB's cost is per gate, so averaging harder eventually
+#: exceeds any program a sequencer will take — and the answer RFC 0007 §5 gives for a sweep
+#: too large for one schedule is to chunk it across acquisitions rather than refuse it.
+#: `RandomizedBenchmarking.acquire` splits on this number and combines the results, so the
+#: circuit count an operator asks for is honoured however large it is.
 #:
-#: **Measured, at the second attempt.** This was 2500, derived from a Clifford averaging
-#: 1.875 pulses at a couple of instructions each — near four — and the docstring said
-#: plainly that it had never been checked against a real program and should be measured if
-#: it ever bound. It bound, and it was still twice too high. On the August 2026 B chip a
-#: sweep of 2413 Cliffords compiled to a program of 1,133,426 bytes, which the driver's own
-#: error reported in its SCPI block header (``PROGram  #71133426``). At roughly 45
-#: characters a line that is some 25,000 instructions — **10.4 per Clifford**, not four —
-#: and the 12288 a sequencer accepts affords about 1180.
+#: **Measured, at the second attempt.** It was 2500, derived from a Clifford averaging 1.875
+#: pulses at a couple of instructions each — near four — and its docstring said plainly that
+#: the figure had never been checked against a real program and should be measured if it ever
+#: bound. It bound, and was still twice too high: on the August 2026 B chip a sweep of 2413
+#: Cliffords compiled to 1,133,426 bytes, which the driver's own error reported in its SCPI
+#: block header (``PROGram  #71133426``). At roughly 45 characters a line that is some 25,000
+#: instructions — **10.4 per Clifford**, not four — and the 12288 a sequencer accepts affords
+#: about 1180. 1000 leaves the 15% headroom `MAX_SWEEP_POINTS` leaves for the same reason.
 #:
-#: 1000, for the 15% headroom `MAX_SWEEP_POINTS` leaves for the same reason. The shipped
-#: default of 7 depths at 10 circuits is 1270 Cliffords and does assemble, so this sits
-#: *below* a working configuration — deliberately. It bounds widening only, never an
-#: operator's own sweep, and what it says about that config is true: there is no room to
-#: average harder without making the sequences shallower first.
+#: Circuits can be split across schedules; a single *sequence* cannot. So this also bounds
+#: the deepest sequence escalation will reach, and that one is a real ceiling — see
+#: `RandomizedBenchmarking.build_schedule`.
 MAX_RB_CLIFFORDS = 1000
+
+#: What an RB sweep is when the operator names nothing. Shared with `acquire`, which has to
+#: know the sweep before `build_schedule` has run.
+DEFAULT_RB_DEPTHS = (1, 2, 4, 8, 16, 32, 64)
+DEFAULT_RB_CIRCUITS = 10
+
+#: Seeded so a rerun benchmarks the same circuits: an unseeded RB would move under the
+#: drift check it exists to detect.
+DEFAULT_RB_SEED = 20260730
 
 
 class RandomizedBenchmarking(CalibrationRoutine):
@@ -95,35 +104,108 @@ class RandomizedBenchmarking(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s)
 
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """Run this sweep as however many schedules it takes, and combine them.
+
+        RB's cost is per gate, so a circuit count large enough to resolve a shallow decay
+        eventually exceeds the 12288 Q1ASM instructions a sequencer takes. Capping it was
+        the wrong answer twice over: the operator asked for that much averaging because
+        less of it did not resolve, and a program that will not assemble comes back as a
+        2.4 MB exception rather than a small one.
+
+        Splitting is exact here, which is what makes it the right answer rather than a
+        compromise. `analyse` reduces each depth by the mean over its circuits, and the
+        mean of a partition equals the mean of the whole — so N circuits in one schedule
+        and N circuits across four schedules give the same number. Each chunk is seeded
+        apart, or they would be four copies of the same circuits and average to nothing.
+        """
+        depths = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
+        wanted = int(config.get("circuits_per_depth", DEFAULT_RB_CIRCUITS))
+        per_schedule = max(1, MAX_RB_CLIFFORDS // max(sum(depths), 1))
+        if wanted <= per_schedule or not depths:
+            return super().acquire(target, device, config, backend, timeout_s)
+
+        seed = int(config.get("seed", DEFAULT_RB_SEED))
+        sizes = [per_schedule] * (wanted // per_schedule)
+        if wanted % per_schedule:
+            sizes.append(wanted % per_schedule)
+        log.info(
+            "%s on %s: %d circuits over depths summing %d is %d Cliffords, past the %d one "
+            "schedule holds — running %d schedules of %s",
+            self.name,
+            target,
+            wanted,
+            sum(depths),
+            wanted * sum(depths),
+            MAX_RB_CLIFFORDS,
+            len(sizes),
+            sizes,
+        )
+
+        rows = []
+        for index, size in enumerate(sizes):
+            chunk = RoutineConfig(
+                enabled=config.enabled,
+                params={
+                    **config.params,
+                    "depths": depths,
+                    "circuits_per_depth": size,
+                    # Apart, or every chunk benchmarks the same circuits.
+                    "seed": seed + index,
+                },
+            )
+            dataset = super().acquire(target, device, chunk, backend, timeout_s)
+            signal = np.asarray(signal_of(dataset), dtype=float)
+            taken = len(depths) * size
+            if signal.size < taken:
+                raise RoutineError(
+                    f"RB chunk {index + 1} of {len(sizes)} expected {taken} "
+                    f"acquisitions, got {signal.size}"
+                )
+            rows.append(signal[:taken].reshape(len(depths), size))
+
+        # Each depth's circuits from every chunk, side by side, so `analyse` reshapes it
+        # exactly as it would one schedule's worth.
+        combined = np.hstack(rows)
+        self._depths = depths
+        self._circuits = self._circuits_per_depth = int(combined.shape[1])
+        return xr.Dataset({"y0": ("acq_index", combined.reshape(-1))})
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._depths = [int(d) for d in config.get("depths", [1, 2, 4, 8, 16, 32, 64])]
+        self._depths = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
         # Named `_circuits_per_depth` as well, because escalation reads the setpoints a
         # routine actually used off `_<axis>` — see `_widened`.
         self._circuits = self._circuits_per_depth = int(
-            config.get("circuits_per_depth", 10)
+            config.get("circuits_per_depth", DEFAULT_RB_CIRCUITS)
         )
         if not self._depths or self._circuits < 1:
             raise RoutineError("RB needs at least one depth and one circuit per depth")
 
-        # How deep escalation may go, given how many circuits each depth already costs —
-        # see `MAX_RB_CLIFFORDS`. Widening builds `linear_setpoints(1, top, n)`, whose sum
-        # is `n*(1+top)/2`, so the budget inverts to a bound on `top`. Read by `_widened`
-        # off `_<axis>_ceiling`, and when it bites the config comes back unchanged and the
-        # refusal is re-raised rather than the same sweep re-run.
-        self._depths_ceiling = (
-            2.0 * MAX_RB_CLIFFORDS / (self._circuits * len(self._depths)) - 1.0
-        )
-
-        # And the same budget read the other way: how many circuits these depths afford.
-        # Escalation moves this axis when the decay is lost in scatter, and averaging is
-        # the right answer — but not past a program the sequencer will not assemble.
-        self._circuits_per_depth_ceiling = MAX_RB_CLIFFORDS / max(sum(self._depths), 1)
+        # How deep escalation may go — see `MAX_RB_CLIFFORDS`. Independent of the circuit
+        # count, which is the whole point of chunking: circuits are split across schedules
+        # by `acquire`, so only *one circuit's worth of every depth* has to fit in a
+        # program. Widening builds `linear_setpoints(1, top, n)`, whose sum is
+        # `n*(1+top)/2`, so the budget inverts to a bound on `top`. Read by `_widened` off
+        # `_<axis>_ceiling`; when it bites the config comes back unchanged and the refusal
+        # is re-raised rather than the same sweep re-run.
+        #
+        # This one is a real ceiling and cannot become a chunk size. A single sequence of
+        # depth m is m Cliffords in one program and there is nowhere to cut it: a Clifford
+        # sequence is only an RB sequence closed by its own recovery gate.
+        self._depths_ceiling = 2.0 * MAX_RB_CLIFFORDS / len(self._depths) - 1.0
 
         # Seeded so a rerun benchmarks the same circuits: an unseeded RB would
         # move under the drift check it exists to detect.
-        rng = random.Random(int(config.get("seed", 20260730)))
+        rng = random.Random(int(config.get("seed", DEFAULT_RB_SEED)))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )

@@ -23,6 +23,8 @@ import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
 from qpi_driver.tuners.base.backend import SchedulerBackend
+from qpi_driver.tuners.fitting import signal_of
+from tests.utils.simulation import StubBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
 from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS, RoutineError
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
@@ -2144,3 +2146,95 @@ def test_every_swept_axis_is_readable_from_outside(monkeypatch, own_quantify_tun
         f"escalation cannot widen them"
         for name, axes in sorted(unreachable.items())
     )
+
+
+class _CountingBackend(StubBackend):
+    """A `StubBackend` that answers `run` with zeros and records what it was asked for.
+
+    Zeros because the fit is not what is under test here — the partitioning is. What
+    matters is how many schedules `acquire` built, how many circuits each carried, and
+    that no two carried the same seed.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.circuits: list[int] = []
+        self.seeds: list[int] = []
+
+    def new_schedule(self, name, repetitions=1024):
+        return super().new_schedule(name, repetitions)
+
+    def run(self, schedule, timeout_s=None):
+        acquisitions = sum(1 for op in schedule.operations if op.kind == "Measure")
+        return xr.Dataset({"y0": ("acq_index", np.zeros(acquisitions))})
+
+
+class TestASweepTooLargeForOneScheduleIsSplit:
+    """RB's cost is per gate, so enough averaging outgrows any program a sequencer takes.
+
+    RFC 0007 §5 answers that by chunking across acquisitions rather than refusing, and this
+    is the one node that needs it. Capping the circuit count instead was wrong twice over:
+    the operator asked for that much averaging because less did not resolve, and a program
+    that will not assemble comes back from qcodes as a 2.4 MB exception — which then blew
+    the report past what the server would store, so the calibration went unreported.
+    """
+
+    DEEP = [1, 2, 4, 8, 16, 32, 64]
+
+    def _acquire(self, circuits, depths, monkeypatch):
+        """Run `acquire`, recording the circuit count and seed of each schedule built."""
+        from qpi_driver.tuners.routines import benchmarks
+
+        node = routine("rb")
+        seen: list[tuple[int, int]] = []
+        original = benchmarks.RandomizedBenchmarking.build_schedule
+
+        def recording(self, target, device, config, backend):
+            seen.append(
+                (
+                    int(
+                        config.get("circuits_per_depth", benchmarks.DEFAULT_RB_CIRCUITS)
+                    ),
+                    int(config.get("seed", benchmarks.DEFAULT_RB_SEED)),
+                )
+            )
+            return original(self, target, device, config, backend)
+
+        monkeypatch.setattr(
+            benchmarks.RandomizedBenchmarking, "build_schedule", recording
+        )
+        device = SimpleNamespace(get_element=lambda _n: SimpleNamespace(name="q0"))
+        config = RoutineConfig(
+            params={"depths": list(depths), "circuits_per_depth": circuits, "shots": 1}
+        )
+        dataset = node.acquire("q0", device, config, _CountingBackend(), 60.0)
+        return node, seen, dataset
+
+    def test_a_sweep_inside_the_budget_runs_as_one_schedule(self, monkeypatch):
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        depths = [1, 2, 4]
+        _node, seen, _ = self._acquire(10, depths, monkeypatch)
+
+        assert len(seen) == 1
+        assert 10 * sum(depths) <= MAX_RB_CLIFFORDS
+
+    def test_a_sweep_past_the_budget_is_split_and_every_piece_fits(self, monkeypatch):
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        node, seen, dataset = self._acquire(50, self.DEEP, monkeypatch)
+
+        assert len(seen) > 1, "50 circuits over these depths must not be one schedule"
+        for circuits, _seed in seen:
+            assert circuits * sum(self.DEEP) <= MAX_RB_CLIFFORDS
+        # Every circuit the operator asked for is present, and none is dropped.
+        assert sum(c for c, _ in seen) == 50
+        assert node._circuits == 50
+        assert signal_of(dataset).size == 50 * len(self.DEEP)
+
+    def test_each_piece_benchmarks_different_circuits(self, monkeypatch):
+        """Or the chunks would be copies of one another and average to nothing."""
+        _node, seen, _ = self._acquire(50, self.DEEP, monkeypatch)
+
+        seeds = [seed for _c, seed in seen]
+        assert len(set(seeds)) == len(seeds), f"chunks shared a seed: {seeds}"

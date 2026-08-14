@@ -595,11 +595,11 @@ class CalibrationDAG:
                 )
                 return True
 
-            schedule = routine.build_schedule(target, device, routine_config, backend)
-            # The ceiling goes *into* the wait rather than only being checked after
-            # it: `wait_done` blocks, so the check below can report a hang but never
-            # end one.
-            dataset = backend.run(schedule, timeout_s=allowance)
+            # Through `acquire`, so a routine whose sweep needs more than one schedule
+            # chunks it there rather than here — see `CalibrationRoutine.acquire`.
+            dataset = routine.acquire(
+                target, device, routine_config, backend, allowance
+            )
             elapsed = time.monotonic() - started
             # Against what the backend was prepared to wait for, not against the
             # configured ceiling: a schedule whose pulses outlast it raises its own

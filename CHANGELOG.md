@@ -22,9 +22,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   can actually be widened. Each kept its setpoints under a name escalation does not look
   for, so widening found nothing and the refusal named the range already swept — `drag`
   failed run after run with an optimum of -0.614 against a swept +/-0.2 and never widened.
-- `qpi-driver/py`: the Clifford budget on RB escalation is 1000, measured rather than
-  estimated. At 2500 a widened sweep compiled to 1.13 MB of Q1ASM, some 25000 instructions
-  against the 12288 a sequencer takes, and failed to assemble.
+- `qpi-driver/py`: RB runs a sweep too large for one schedule as several and combines them,
+  instead of capping how hard it may average. A sequencer takes 12288 instructions and RB's
+  cost is per gate, so 2413 Cliffords compiled to 1.13 MB of Q1ASM and would not assemble.
+  The split is exact: the mean of a partition is the mean of the whole.
+- `qpi-driver/py`: `ef_ladder` measures the sqrt(2) ladder directly, playing `rabi_12`'s own
+  pulse on the 0-1 clock so the envelope and duration cancel. It writes nothing; it says
+  whether an ef amplitude that misses the prediction misses the *ladder*.
 - `qpi-driver/py`: `t1` and `t2_echo` widen their delays when the fitted coherence time
 - `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
   It previously appeared in `routine_results` and nowhere else, so it looked like it had run

@@ -1352,10 +1352,17 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
     # diagnosed; two circuits is the configuration this test has always passed on, and
     # widening the sweep of a node that works to chase it would be the wrong order.
     "rb": {"depths": [1, 4, 16, 32, 64], "circuits_per_depth": 2},
-    "interleaved_rb": {
-        "depths": [1, 4, 10, 20, 40],
-        "circuits_per_depth": 12 if SLOW_BENCHMARKS else 4,
-    },
+    # Four, and escalation takes it from there. It could not before: the Clifford budget
+    # was a ceiling on the circuit count, so widening stopped at 13 and the decay stayed
+    # buried. It is a *chunk size* now — `RandomizedBenchmarking.acquire` splits the sweep
+    # across schedules — so averaging is bounded by MAX_CIRCUITS_PER_DEPTH and how long an
+    # operator will wait, which is what it should have been bounded by.
+    # No circuit count, deliberately. `escalating` leaves an axis the operator named
+    # alone — widening past a stated sweep would overrule a measurement with a default —
+    # so naming this one is what stopped the decay ever being averaged out of the scatter.
+    # Unset, it starts at the shipped 10 and widens as far as MAX_CIRCUITS_PER_DEPTH, with
+    # `acquire` splitting whatever that costs across schedules.
+    "interleaved_rb": {"depths": [1, 4, 10, 20, 40]},
     # Narrow, because the avoided crossing is a few MHz wide and the default grid
     # steps ~75 MHz per point — see `MIN_CHEVRON_CONTRAST`.
     "cz_chevron": {
@@ -1496,6 +1503,35 @@ class TestTheWholeDagThroughTheRealStack:
             assert amp90 == pytest.approx(amp180 / 2, rel=0.05), (
                 f"{qubit}: a linear drive makes a pi/2 exactly half a pi, but "
                 f"fine_amplitude_90 wrote {amp90:.4f} against an amp180 of {amp180:.4f}"
+            )
+
+    def test_the_ef_ladder_comes_out_at_root_two(self, fully_calibrated):
+        """`ef_ladder` measures the one form of the ladder with no pulse convention in it.
+
+        `rabi_12`'s guard has to *predict* the 1-2 pi amplitude from the 0-1 one, and that
+        prediction carries two corrections belonging to the pulses rather than the chip —
+        a Gaussian against a square, and two configurable durations. On the August 2026 B
+        chip the prediction sat 3.7x above the measurement and neither correction explained
+        it, which is a question about the corrections, not about the ladder.
+
+        So this node sweeps the *same* pulse on the ``.01`` clock. Both factors cancel and
+        what is left is ``sqrt(2)``, which the simulated transmon must reproduce because
+        its ladder falls out of the Hamiltonian rather than being written in.
+        """
+        report, _device, _simulator, _scheduler = fully_calibrated
+        measured = {
+            result.target: result.parameters
+            for result in report.routine_results
+            if result.routine_name == "ef_ladder"
+        }
+        assert measured, "ef_ladder reported nothing"
+
+        for qubit, params in measured.items():
+            assert params["ladder_agreement"] == pytest.approx(1.0, rel=0.15), (
+                f"{qubit}: the same {params['pulse_duration'] * 1e9:.0f} ns pulse turns pi "
+                f"at {params['matched_amp180']:.4g} on 0-1 and {params['ef_amp180']:.4g} "
+                f"on 1-2 — a ladder of {params['ladder_ratio']:.3f} against the "
+                f"{params['expected_ladder_ratio']:.3f} a transmon requires"
             )
 
     def test_the_dispersive_shift_is_measured_and_not_assumed(self, fully_calibrated):

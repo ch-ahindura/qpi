@@ -251,6 +251,28 @@ class CalibrationRoutine(ABC):
     #: step, three attempts reach 64 times the original extent.
     MAX_ESCALATIONS = 3
 
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """Build this routine's schedule, run it, and return the dataset.
+
+        The seam a routine overrides when one schedule cannot hold its sweep. A sequencer
+        takes 12288 Q1ASM instructions and some sweeps are simply larger than that — RFC
+        0007 §5 answers that by *chunking across acquisitions* rather than refusing, and
+        this is where a chunked routine puts the loop. `RandomizedBenchmarking` is the
+        first: its cost is per gate, so averaging harder eventually exceeds any program.
+
+        The default is exactly what both call sites did before this existed, so a routine
+        that does not override it behaves identically.
+        """
+        schedule = self.build_schedule(target, device, config, backend)
+        return backend.run(schedule, timeout_s=timeout_s)
+
     def escalating(
         self,
         target: str,
@@ -279,8 +301,7 @@ class CalibrationRoutine(ABC):
         attempted: list[str] = []
         for attempt in range(self.MAX_ESCALATIONS + 1):
             try:
-                schedule = self.build_schedule(target, device, config, backend)
-                dataset = backend.run(schedule, timeout_s=timeout_s)
+                dataset = self.acquire(target, device, config, backend, timeout_s)
                 return self.analyse(dataset, target, device, config)
             except OutOfRange as refusal:
                 attempted.append(f"{refusal.axis} x{refusal.factor**attempt:g}")

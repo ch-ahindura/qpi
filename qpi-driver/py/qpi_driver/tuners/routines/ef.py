@@ -93,6 +93,17 @@ MAX_EF_LADDER_ERROR = 2.0
 #: real and unexplained — but a resolved measurement is not the place to litigate it.
 MIN_RESOLVED_PERIODS = 1.0
 
+#: The ratio a transmon's two lowest transitions must show, at the same pulse.
+#:
+#: The 1-2 matrix element is ``sqrt(2)`` times the 0-1 one, so the *same* pulse — same
+#: shape, same length, same port — turns the same angle at ``1/sqrt(2)`` of the amplitude
+#: one rung up. This is the only form of the ladder with nothing else in it: the envelope
+#: ratio and the duration ratio both cancel when the two pulses are identical, which is
+#: what `ef_ladder` exists to arrange. See :data:`EF_ENVELOPE_AREA` for the correction
+#: `rabi_12`'s own guard needs, and which this measurement does not.
+LADDER_RATIO = math.sqrt(2.0)
+
+
 #: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
 #:
 #: They are not the same shape, which the first version of the ladder bound missed. `rxy`
@@ -182,8 +193,13 @@ def add_ef_pulse(
     duration: float,
     phase_deg: float = 0.0,
     drag: float = 0.0,
+    transition: str = "12",
 ) -> None:
-    """One pulse on the ``.12`` clock, into the port ``rxy`` uses.
+    """One pulse on the ``.<transition>`` clock, into the port ``rxy`` uses.
+
+    *transition* is ``"12"`` for every caller that calibrates the EF chain. `ef_ladder`
+    passes ``"01"`` to play this exact pulse on the lower transition instead, which is the
+    only way to measure the ladder without the pulse shape and duration in the way.
 
     Square by default, and shaped as soon as a phase or a DRAG coefficient is asked
     for — `SquarePulse` carries neither. The pulse *area* is what sets the rotation
@@ -194,7 +210,7 @@ def add_ef_pulse(
     *drag* is in the backend's own units, which differ between the two schedulers —
     see `SchedulerBackend.drag_pulse`.
     """
-    clock = f"{target}.12"
+    clock = f"{target}.{transition}"
     port = f"{target}:mw"
     if drag or phase_deg % 360.0:
         schedule.add(
@@ -745,6 +761,136 @@ class FineAmplitude12(CalibrationRoutine):
         path = ef_path(element, "ef_amp180")
         if path:
             write_path(element, path, params["ef_amp180"])
+
+
+class EfLadder(CalibrationRoutine):
+    """Measure the sqrt(2) ladder directly, with the pulse shape and duration taken out.
+
+    A characterisation, not a calibration: it writes nothing. It exists because
+    `rabi_12`'s ladder guard has to *predict* the 1-2 pi amplitude from the 0-1 one, and
+    that prediction carries two corrections which are properties of the pulses rather than
+    of the chip — `rxy` compiles to a Gaussian of area ``0.627*A*T`` where `add_ef_pulse`
+    emits a square of area ``A*T``, and the two may be configured to different lengths. On
+    the August 2026 B chip the prediction came out 3.7x above the measurement and no
+    correction accounted for it.
+
+    So this removes the corrections rather than refining them. It sweeps the *same* pulse
+    `rabi_12` sweeps — same envelope, same duration, same port, over the same amplitudes —
+    on the ``.01`` clock instead of the ``.12``. Both factors cancel identically, and what
+    is left is the ladder alone: the ratio of the two pi amplitudes must be
+    :data:`LADDER_RATIO`, and it is a statement about the transmon that no pulse convention
+    can move.
+
+    Which makes the answer diagnostic either way. Near ``sqrt(2)`` and the ladder holds, so
+    `rabi_12`'s amplitude is right and the 3.7x lives in the corrections. Far from it and
+    the two clocks are not being driven alike — the same nominal amplitude reaching the port
+    differently at 68 MHz from the LO than at 319 MHz — which is a property of the output
+    chain and not of the chip, and nothing in this graph can calibrate it away.
+    """
+
+    name = "ef_ladder"
+    depends_on = ("rabi_12",)
+    updates = ()
+    reads = (
+        "r12.ef_amp180",
+        "r12.ef_duration",
+        "rxy.duration",
+        "rxy.amp180",
+        "clock_freqs.f01",
+    )
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only where `rabi_12` had somewhere to write, since this compares against it."""
+        return has_ef_drive(device, target)
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        element = device.get_element(target)
+        self._duration = ef_duration(element, config)
+        # `rabi_12`'s own sweep, so the two amplitudes are read off the same grid. Any
+        # difference between them is then the transitions and not the sampling.
+        self._amplitudes = setpoints_of(
+            config,
+            "amplitudes",
+            linear_setpoints(0.0, min(0.5, full_scale(element, f"{EF}.ef_amp180")), 41),
+        )
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 2048))
+        )
+        for index, amplitude in enumerate(self._amplitudes):
+            schedule.add(backend.Reset(target))
+            # From the ground state and on the lower clock, so this is an ordinary Rabi —
+            # the only thing borrowed from the EF chain is the pulse itself.
+            add_ef_pulse(
+                schedule,
+                backend,
+                target,
+                float(amplitude),
+                self._duration,
+                transition="01",
+            )
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+        return schedule
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        signal = signal_of(dataset)
+        if signal.size < len(self._amplitudes):
+            raise RoutineError(
+                f"ef ladder expected {len(self._amplitudes)} acquisitions, "
+                f"got {signal.size}"
+            )
+        fitted = fit_rabi(
+            np.asarray(self._amplitudes, dtype=float), signal[: len(self._amplitudes)]
+        )
+        matched = float(fitted["amp180"])
+        measured = _measured_ef_amplitude(device, target)
+        ratio = matched / measured if measured else 0.0
+        log.info(
+            "%s on %s: the same %g ns pulse turns pi at %.4g on 0-1 and %.4g on 1-2 — "
+            "a ladder of %.3f against the %.3f a transmon's sqrt(2) requires (%.2fx out)",
+            self.name,
+            target,
+            self._duration * 1e9,
+            matched,
+            measured,
+            ratio,
+            LADDER_RATIO,
+            ratio / LADDER_RATIO if LADDER_RATIO else 0.0,
+        )
+        return {
+            "matched_amp180": matched,
+            "ef_amp180": measured,
+            "ladder_ratio": ratio,
+            "expected_ladder_ratio": LADDER_RATIO,
+            # The number to read: one means the ladder holds and the pulse conventions
+            # explain everything; anything else is the output chain.
+            "ladder_agreement": ratio / LADDER_RATIO if LADDER_RATIO else 0.0,
+            "pulse_duration": self._duration,
+            "contrast": float(fitted.get("contrast", 0.0)),
+            "fit": fitted.get("fit"),
+        }
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        """Nothing. The ladder is a property of the chip, not a setting on it."""
+
+
+def _measured_ef_amplitude(device: Any, target: str) -> float:
+    """What `rabi_12` wrote, or zero if this element has nowhere to keep it."""
+    element = device.get_element(target)
+    path = ef_path(element, "ef_amp180")
+    if not path:
+        return 0.0
+    try:
+        return float(read_path(element, path))
+    except Exception:  # noqa: BLE001 - an unreadable amplitude is not a ladder
+        return 0.0
 
 
 class Ramsey12(CalibrationRoutine):
