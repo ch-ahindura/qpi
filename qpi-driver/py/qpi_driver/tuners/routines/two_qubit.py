@@ -640,8 +640,10 @@ class ConditionalPhase(CalibrationRoutine):
 
         return {
             **parent_fit,
-            "parent_phase_correction": parent_fit["reference_phase"],
-            "child_phase_correction": child_fit["reference_phase"],
+            # The *cancelling* virtual Z, not the fringe phase itself — see
+            # `_cancelling`, which is where both conventions are set out.
+            "parent_phase_correction": parent_fit["reference_correction"],
+            "child_phase_correction": child_fit["reference_correction"],
             # The same gate seen from either qubit, so the two conditional
             # phases are a consistency check rather than two measurements.
             "conditional_phase_from_child": child_fit["conditional_phase"],
