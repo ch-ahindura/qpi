@@ -1902,6 +1902,83 @@ class TestASweepThatIsTheWrongSizeIsResized:
         # Never below two points, which is what the two-parameter fit needs.
         assert _shortened([1, 5, 9, 13], 0.01, 4) == [1, 5]
 
+    def test_a_coherence_time_past_its_window_asks_for_longer_delays(self):
+        """The B chip fitted 2.12 ms of T2 over a 100 us window — on a chip whose T1 was
+        56 us — and refused un-escalatably, because this guard named no axis."""
+        from qpi_driver.tuners.fitting.core import OutOfRange, require_in_range
+
+        with pytest.raises(OutOfRange) as raised:
+            require_in_range(2.12285e-3, 0.0, 1.0e-3, what="T2", axis="delays")
+
+        assert raised.value.axis == "delays"
+        assert raised.value.direction == "wider"
+        # 100 us widened by this reaches past the 2.12 ms it could not contain.
+        assert 100e-6 * raised.value.factor * 10 > 2.12285e-3
+
+    def test_rb_averages_harder_when_the_decay_is_lost_in_its_own_scatter(self):
+        """The axis is the circuit count, not the depths: what the guard compares is the
+        decay's span against the scatter around it, and scatter is what averaging buys
+        down. The chip's own refusal was 0.6214 against 0.3231."""
+        from qpi_driver.tuners.base.routines import (
+            MAX_CIRCUITS_PER_DEPTH,
+            _widened,
+        )
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("rb")
+        node._circuits_per_depth = 10
+        refusal = OutOfRange("x", axis="circuits_per_depth", factor=4.0)
+
+        assert _widened(node, RoutineConfig(params={}), refusal).get(
+            "circuits_per_depth"
+        ) == min(40, MAX_CIRCUITS_PER_DEPTH)
+
+    def test_rb_stops_at_the_ceiling_rather_than_running_forever(self):
+        """RB is the most expensive node in the graph and the cost is linear here."""
+        from qpi_driver.tuners.base.routines import (
+            MAX_CIRCUITS_PER_DEPTH,
+            _widened,
+        )
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("rb")
+        node._circuits_per_depth = MAX_CIRCUITS_PER_DEPTH
+        config = RoutineConfig(params={})
+        refusal = OutOfRange("x", axis="circuits_per_depth", factor=4.0)
+
+        # Unchanged, which is how `escalating` knows to re-raise instead of re-running.
+        assert _widened(node, config, refusal) is config
+
+    def test_a_benchmark_that_measures_itself_still_reaches_the_report(self):
+        """`add_benchmarks_from` was only on the branch for routines that do *not* run
+        their own loop, so giving `rb` an escalation silently emptied
+        `report.benchmarks` while leaving it in `routine_results` — it looked like it had
+        run, and the drift check compared against nothing.
+        """
+        from qpi_driver.tuners.base.report import CalibrationReport
+
+        report = CalibrationReport(timestamp="now", duration_s=0.0, mode="full")
+        report.add_benchmarks_from(
+            "rb", "q0", {"fidelity": 0.994, "error_per_gate": 0.006}
+        )
+
+        assert report.fidelities() == {"q0": 0.994}
+        # And the routines that take this path are the ones that used to lose it.
+        assert routine("rb").is_benchmark and routine("rb").measures_itself
+        assert (
+            routine("interleaved_rb").is_benchmark
+            and routine("interleaved_rb").measures_itself
+        )
+
+    def test_every_node_the_b_chip_refused_now_resizes_itself(self):
+        """The five failures of its last run, as one statement."""
+        assert routine("t2_echo").measures_itself
+        assert routine("drag").measures_itself
+        assert routine("fine_amplitude").measures_itself
+        assert routine("fine_amplitude_90").measures_itself
+        assert routine("rb").measures_itself
+        assert routine("interleaved_rb").measures_itself
+
     def test_both_fine_amplitude_nodes_resize_themselves(self):
         assert routine("fine_amplitude").measures_itself
         assert routine("fine_amplitude_90").measures_itself
@@ -1947,6 +2024,45 @@ class TestEscalationIsBoundedOnEveryAxisItMoves:
             assert circuits * sum(depths) <= MAX_RB_CLIFFORDS
         else:
             raise AssertionError("depths widened without ever reaching a ceiling")
+
+    def test_rb_circuits_stop_at_the_instruction_budget_too(self):
+        """The axis that actually broke a chip, and the one that had only a runtime bound.
+
+        `MAX_CIRCUITS_PER_DEPTH` bounds how long rb may take. Nothing bounded how large
+        its program may get: 50 circuits over the shipped depths is 6350 Cliffords, some
+        60000 Q1ASM instructions against the 12288 a sequencer takes. It failed with
+        `Syntax error (-285): Assembly failed`, qcodes returned the whole 2.4 MB program
+        in the message, and the report was then too large for the server to store — so
+        the calibration ran and was never reported.
+        """
+        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+
+        depths, circuits = [1, 2, 4, 8, 16, 32, 64], 10
+        config = RoutineConfig(params={})
+        for _ in range(4):
+            node = SimpleNamespace(
+                name="rb",
+                _circuits_per_depth=circuits,
+                _circuits_per_depth_ceiling=MAX_RB_CLIFFORDS / sum(depths),
+            )
+            widened = self._widen(node, config, "circuits_per_depth", factor=4.0)
+            if widened is config:
+                break
+            circuits = int(widened.get("circuits_per_depth"))
+            config = widened
+            assert circuits * sum(depths) <= MAX_RB_CLIFFORDS
+        else:
+            raise AssertionError("circuits widened without ever reaching a ceiling")
+
+    def test_the_runtime_bound_still_applies_on_its_own(self):
+        """An element with no Clifford ceiling keeps the bound it always had, so the two
+        are independent rather than one replacing the other."""
+        from qpi_driver.tuners.base.routines import MAX_CIRCUITS_PER_DEPTH
+
+        node = SimpleNamespace(name="rb", _circuits_per_depth=40)
+        widened = self._widen(node, RoutineConfig(params={}), "circuits_per_depth", 4.0)
+
+        assert widened.get("circuits_per_depth") == MAX_CIRCUITS_PER_DEPTH
 
     def test_a_config_at_the_ceiling_comes_back_unchanged(self):
         """Which is how `escalating` learns to re-raise rather than re-run the same sweep

@@ -36,6 +36,22 @@ GRID_NS = 1e-9
 #: centring, the resolution and the NCO band clamp all at once. See `_scalar_axis`.
 SCALAR_AXES = frozenset({"span"})
 
+#: Axes that are a *repeat count* rather than a reach — widened by averaging harder over
+#: the same sweep, not by sweeping further.
+#:
+#: Separate from `SCALAR_AXES` because that one moves ``points`` alongside ``span`` to hold
+#: the step size, and a circuit count has no step to hold. Scatter falls as ``1/sqrt(N)``,
+#: so the factor a refusal asks for is applied to the count directly.
+AVERAGING_AXES = frozenset({"circuits_per_depth"})
+
+#: The most circuits per depth escalation will ask an RB sweep for.
+#:
+#: RB is the most expensive node in the graph and the cost is linear here, so this is a
+#: ceiling on the ceiling: 50 against the shipped default of 10 is five times the runtime
+#: of a node that already takes half a minute, and past it the honest answer is that the
+#: chip's readout is too noisy to benchmark rather than that the sweep was too small.
+MAX_CIRCUITS_PER_DEPTH = 50
+
 #: Points in a span-based sweep when the operator names none. Shared with
 #: `_frequency_sweep`, which is where the grid is actually built.
 DEFAULT_SWEEP_POINTS = 51
@@ -488,6 +504,29 @@ def _widened(
     so the next attempt asks the NCO for a frequency it cannot reach. Widening ``span``
     instead leaves centring, resolution and the band clamp where they already live.
     """
+    if refusal.axis in AVERAGING_AXES:
+        current = int(
+            config.get(refusal.axis, getattr(routine, f"_{refusal.axis}", 0)) or 0
+        )
+        # Two ceilings, because they bound different things and only one of them was
+        # here. `MAX_CIRCUITS_PER_DEPTH` is about runtime — five times a node that
+        # already takes half a minute. `_<axis>_ceiling` is about the *assembler*, and
+        # this is the axis that needed it: 50 circuits over the shipped depths is 6350
+        # Cliffords in one program, some 60000 Q1ASM instructions against the 12288 a
+        # sequencer takes. It failed with `Syntax error (-285): Assembly failed`, and
+        # qcodes returned the whole 2.4 MB program in the message — which then blew the
+        # report past what the server would store, so the calibration was never
+        # reported at all. A sweep that cannot assemble is not a bigger sweep.
+        ceiling = getattr(routine, f"_{refusal.axis}_ceiling", None)
+        wanted = min(int(current * refusal.factor), MAX_CIRCUITS_PER_DEPTH)
+        if ceiling is not None:
+            wanted = min(wanted, int(ceiling))
+        if not current or wanted <= current:
+            return config
+        return RoutineConfig(
+            enabled=config.enabled, params={**config.params, refusal.axis: wanted}
+        )
+
     if refusal.direction == "shorter":
         # Owned by the routine, not by this — see `OutOfRange.direction`. Every sweep that
         # asks to be shortened is a repetition ladder, and interpolating one breaks it:

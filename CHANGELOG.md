@@ -19,8 +19,17 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   2.4 MB error, a 1.37 MB payload, and a record the server refused for exceeding the 1 MB
   its JSON field takes. The calibration had run; its request stayed `running` for ever.
 - `qpi-driver/py`: `t1` and `t2_echo` widen their delays when the fitted coherence time
+- `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
+  It previously appeared in `routine_results` and nowhere else, so it looked like it had run
+  while the drift check compared against nothing.
+- `qpi-driver/py`: a fit refused for scatter carries the sweep it refused, as the other
+  refusals already did.
+- `qpi-driver/py`: `t2_echo` and `t1` widen their delays when the fitted coherence time
   lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
   sweep and failed, because that guard named no axis for escalation to act on.
+- `qpi-driver/py`: `rb` and `interleaved_rb` average more circuits per depth when the decay
+  cannot be told from the scatter around it. "Average more circuits per depth" was already
+  the advice the refusal gave, and nothing acted on it.
 - `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
   `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
   fit that had found its answer, leaving every node after it on an uncorrected pulse.

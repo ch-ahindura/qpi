@@ -187,6 +187,21 @@ def fit_rb_decay(
             "there is no decay here to take a fidelity from. Average more circuits "
             "per depth, or extend the depths until it is visible above the noise"
         ),
+        # Escalatable, and on the averaging axis rather than the reach: what this guard
+        # compares is the decay's span against the *scatter* around it, and scatter is
+        # what more circuits per depth buys down. Depth is the other half of the same
+        # sentence and stays advice, since a chip whose decay is simply too slow is a
+        # different problem from one whose points are too noisy to see it.
+        axis="circuits_per_depth",
+        # The commonest refusal in the graph, and the one whose shape most wants seeing.
+        fit=fit_summary(
+            x,
+            y,
+            rb_model(x, *popt),
+            x_label="sequence length",
+            y_label="survival",
+            x_scale="log",
+        ),
     )
 
     # After the noise check, not before: unresolved scatter and a stopped fit both end
