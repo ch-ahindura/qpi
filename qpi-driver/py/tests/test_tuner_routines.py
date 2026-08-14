@@ -786,7 +786,6 @@ class TestRamseyResolvesTheFringeSign:
     SPECTROSCOPY_F01 = 5_313_936_744.757423
     FRINGE = 3_120_237.5951242633
     ARTIFICIAL = 1e6
-    WORKING_F01 = 5_317_994_847.971831
 
     def _pass(self, residual):
         """What `analyse` returns for a pass leaving *residual* Hz."""
@@ -826,11 +825,17 @@ class TestRamseyResolvesTheFringeSign:
         )
         assert best["detuning"] == pytest.approx(0.06e6)
 
-    def test_the_other_root_is_the_chip_s_own_calibration(self):
-        """The regression this exists for: 60 kHz from the working value, not 6.18 MHz."""
+    def test_the_two_roots_are_the_fringe_reflected_about_the_bias(self):
+        """``+/-fringe - artificial``, so they straddle by twice the fringe.
+
+        Asserted as arithmetic rather than against any reference chip's f01: which root is
+        this chip's is settled by measuring both, above, and a reference value five days old
+        is not evidence about a transmon that drifts megahertz between runs. The reference
+        is what *found* the bug; it is not what defines correct.
+        """
         fitted = self._fitted()
-        assert abs(fitted["clock_freq_01_alternative"] - self.WORKING_F01) < 100e3
-        assert abs(fitted["clock_freq_01"] - self.WORKING_F01) > 6e6
+        straddle = fitted["clock_freq_01_alternative"] - fitted["clock_freq_01"]
+        assert straddle == pytest.approx(2 * self.FRINGE)
 
     def test_a_residual_under_the_artificial_detuning_never_tries_the_other_root(self):
         """The sign is unambiguous there, so the extra sweep would be waste."""
