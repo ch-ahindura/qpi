@@ -103,6 +103,19 @@ MIN_RESOLVED_PERIODS = 1.0
 #: `rabi_12`'s own guard needs, and which this measurement does not.
 LADDER_RATIO = math.sqrt(2.0)
 
+#: Linewidths of resonator to sweep when looking for the three-state readout point.
+#:
+#: Wider than the 0.6 `readout_operating_point` uses, because the ladder it has to resolve
+#: is wider: two states sit ``2*chi`` apart and the point that tells them apart is a
+#: fraction of a linewidth off resonance, while three sit across ``4*chi`` and the point
+#: that separates all three can be a whole flank out. Borrowing the two-state coefficient
+#: broke this node outright — see :meth:`ThreeStateOperatingPoint._grid`.
+#:
+#: 1.8, which is where the 6 MHz constant this replaces came from: it reproduces it on the
+#: simulated chip's 3.31 MHz resonator to 0.7%. The constant only looked right because that
+#: was the chip it was measured on.
+SPAN_IN_LINEWIDTHS = 1.8
+
 
 #: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
 #:
@@ -400,6 +413,7 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
     reads = (
         "clock_freqs.readout",
         "measure.pulse_amp",
+        "resonator.linewidth",
         "r12.ef_amp180",
         "r12.ef_duration",
         "rxy.duration",
@@ -482,12 +496,30 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         # scatter against the 3x its guard allows — passing by nothing, on a quantity that
         # now varies with a measurement.
         #
-        # The span is not the free parameter it looks like. Placement wants more *points*,
-        # not a different width — and points are capped at five by the sequencer's
-        # single-shot registers: two amplitudes x five frequencies x three states is 30
-        # against a limit of 32, and seven points would be 42. So deriving this wants the
-        # register budget lifted first, which is not this phase's work. RFC 0007 §5.
-        span = float(config.get("span", 6e6))
+        # Derived after all, from the coefficient the note above had already found. 1.8
+        # linewidths reproduces the old 6 MHz constant on the simulated chip to 0.7%
+        # (1.8 x 3.31 MHz = 5.96 MHz), and a constant is what broke this on the second
+        # chip the graph met — the same way it broke `readout_operating_point`, whose
+        # 2 MHz was 5.4 linewidths there and put the outer setpoints off resonance.
+        #
+        # This resonator is 327 kHz wide, so 6 MHz is *eighteen* linewidths: four of the
+        # five points would sit where nothing comes back. Hand-narrowing it to 200 kHz
+        # goes wrong the other way — that is 0.61 linewidths, which is the two-state
+        # coefficient this node's docstring records as breaking it outright, and it never
+        # reaches the flank where |1> and |2> separate. Those two sit only 11 kHz apart in
+        # resonator shift (-102 against -91 kHz) against a 327 kHz linewidth, so the point
+        # that tells them apart is a flank away, not a tenth of a linewidth away.
+        #
+        # Placement still wants more *points* than the sequencer's single-shot registers
+        # allow — five, since two amplitudes x five frequencies x three states is 30
+        # against a limit of 32. That bound is unchanged; only the width now follows the
+        # chip. RFC 0007 §5.
+        span = float(
+            config.get(
+                "span",
+                SPAN_IN_LINEWIDTHS * measured_linewidth(element, 6e6 / SPAN_IN_LINEWIDTHS),
+            )
+        )
         points = int(config.get("points", 5))
         frequencies = (
             setpoints_of(config, "frequencies", [])

@@ -17,6 +17,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   of assuming the smaller one. A fringe is a magnitude, so the artificial detuning only
   signs the correction while it is the larger of the two — past that `ramsey` moved f01
   6.18 MHz off where the other root sits 60 kHz from the chip's working value.
+- `qpi-driver/py`: `three_state_operating_point` sizes its frequency sweep from the measured
+  resonator linewidth instead of a 6 MHz constant, at the 1.8 linewidths that constant
+  encoded. On a 327 kHz resonator 6 MHz is eighteen linewidths, so four of its five points
+  sat where nothing comes back — the same way a constant span once broke
+  `readout_operating_point`.
 - `qpi-driver/py`: `t2_echo` refuses a T2 above the `2*T1` ceiling a Hahn echo cannot
   exceed, and `t1` now keeps its result on the element for it to read. A chip reported
   201 us of T2 against a 32.8 us T1 — 3.07x the ceiling — and every other guard passed it.
