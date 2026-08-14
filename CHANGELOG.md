@@ -19,6 +19,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `allxy_check` reports its normalised response alongside the rms, so the
+  21 pairs can be read after the single-qubit chain finishes. `allxy` runs before
+  `fine_amplitude` and `fine_amplitude_90`, so it cannot show whether either helped.
 - `qpi-driver/py`: `fine_amplitude_90` measures the pi/2 amplitude and writes it to a new
   `fine.amp90` on `CalibratedTransmon`. Both schedulers derived a pi/2 from `amp180` by linear
   interpolation, so a drive that compresses near full scale left an AllXY error nothing could

@@ -209,8 +209,17 @@ class AllXYCheck(CalibrationRoutine):
 
         # Reported as a fidelity so the drift check compares it the same way it
         # compares RB, rather than needing a second notion of "good".
+        #
+        # The response goes out alongside it because the rms alone cannot say *which*
+        # miscalibration it is measuring, and this is the only AllXY that runs after the
+        # single-qubit chain finishes. `allxy` sits before `fine_amplitude` and
+        # `fine_amplitude_90` in the graph, so it can never show whether either helped:
+        # it is a diagnostic positioned where the thing it would diagnose has not
+        # happened yet. Same field name and same normalisation as `allxy`'s, so the two
+        # are subtractable.
         return {
             "fidelity": max(0.0, 1.0 - deviation),
             "error_per_gate": deviation,
             "rms_deviation": deviation,
+            "normalised_response": [float(value) for value in normalised],
         }
