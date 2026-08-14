@@ -193,6 +193,15 @@ def fit_rb_decay(
         # sentence and stays advice, since a chip whose decay is simply too slow is a
         # different problem from one whose points are too noisy to see it.
         axis="circuits_per_depth",
+        # The commonest refusal in the graph, and the one whose shape most wants seeing.
+        fit=fit_summary(
+            x,
+            y,
+            rb_model(x, *popt),
+            x_label="sequence length",
+            y_label="survival",
+            x_scale="log",
+        ),
     )
 
     # After the noise check, not before: unresolved scatter and a stopped fit both end

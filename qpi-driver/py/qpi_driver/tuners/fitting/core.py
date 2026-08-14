@@ -327,6 +327,7 @@ def require_resolved_curve(
     factor: float = MIN_CURVE_TO_SCATTER,
     axis: str | None = None,
     direction: str = "wider",
+    fit: dict | None = None,
 ) -> None:
     """Refuse a fit whose curve is no taller than the noise it was fitted through.
 
@@ -360,5 +361,5 @@ def require_resolved_curve(
         # curve flatter than its own noise is the signature of a window that missed, and
         # for a decay the window is nearly always too short rather than too long.
         if axis is not None:
-            raise OutOfRange(message, axis=axis, direction=direction)
-        raise FitError(message)
+            raise OutOfRange(message, axis=axis, direction=direction, fit=fit)
+        raise FitError(message, fit=fit)

@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
+  It previously appeared in `routine_results` and nowhere else, so it looked like it had run
+  while the drift check compared against nothing.
+- `qpi-driver/py`: a fit refused for scatter carries the sweep it refused, as the other
+  refusals already did.
 - `qpi-driver/py`: `t2_echo` and `t1` widen their delays when the fitted coherence time
   lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
   sweep and failed, because that guard named no axis for escalation to act on.

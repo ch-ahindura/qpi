@@ -1949,6 +1949,27 @@ class TestASweepThatIsTheWrongSizeIsResized:
         # Unchanged, which is how `escalating` knows to re-raise instead of re-running.
         assert _widened(node, config, refusal) is config
 
+    def test_a_benchmark_that_measures_itself_still_reaches_the_report(self):
+        """`add_benchmarks_from` was only on the branch for routines that do *not* run
+        their own loop, so giving `rb` an escalation silently emptied
+        `report.benchmarks` while leaving it in `routine_results` — it looked like it had
+        run, and the drift check compared against nothing.
+        """
+        from qpi_driver.tuners.base.report import CalibrationReport
+
+        report = CalibrationReport(timestamp="now", duration_s=0.0, mode="full")
+        report.add_benchmarks_from(
+            "rb", "q0", {"fidelity": 0.994, "error_per_gate": 0.006}
+        )
+
+        assert report.fidelities() == {"q0": 0.994}
+        # And the routines that take this path are the ones that used to lose it.
+        assert routine("rb").is_benchmark and routine("rb").measures_itself
+        assert (
+            routine("interleaved_rb").is_benchmark
+            and routine("interleaved_rb").measures_itself
+        )
+
     def test_every_node_the_b_chip_refused_now_resizes_itself(self):
         """The five failures of its last run, as one statement."""
         assert routine("t2_echo").measures_itself
