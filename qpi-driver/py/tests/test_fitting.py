@@ -76,10 +76,25 @@ class TestOscillatoryFits:
 
         amplitudes = np.linspace(0.0, 0.02, 41)
         signal = 0.5 * np.cos(2 * np.pi * amplitudes / (2 * 5.0)) + 0.5
-        with pytest.raises(FitError, match="past the top of the range") as raised:
+        with pytest.raises(FitError, match="past the last setpoint") as raised:
             fit_rabi(amplitudes, signal)
         assert isinstance(raised.value, OutOfRange)
         assert (raised.value.axis, raised.value.direction) == ("amplitudes", "wider")
+
+    def test_rabi_refuses_a_pi_pulse_just_past_the_last_setpoint(self):
+        """No grace band above the top: a maximum off the end was never swept through.
+
+        The August 2026 B chip fitted 0.5060 against a sweep stopping at 0.5 — 1.2% over,
+        inside the 10% this used to allow — and wrote it. `ef_ladder` measured 0.1647 on
+        the identical grid, so the accepted value was 3.07x off and every node after it
+        inherited the error.
+        """
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        amplitudes = np.linspace(0.0, 0.5, 41)
+        signal = 0.5 * np.cos(2 * np.pi * amplitudes / (2 * 0.506)) + 0.5
+        with pytest.raises(OutOfRange, match="past the last setpoint"):
+            fit_rabi(amplitudes, signal)
 
     def test_ramsey_recovers_the_detuning_and_t2_star(self):
         detuning, artificial, t2 = 0.3e6, 1e6, 8e-6

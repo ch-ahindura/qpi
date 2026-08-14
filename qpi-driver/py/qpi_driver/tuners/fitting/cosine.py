@@ -18,6 +18,16 @@ from .core import (
 
 log = logging.getLogger(__name__)
 
+#: How far past the top of its own sweep a fitted ``amp180`` may sit and still count as
+#: sitting *on* it — see :func:`fit_rabi`.
+#:
+#: A rounding tolerance, not a grace band. The pi amplitude is where the Rabi curve
+#: reaches its first extremum, so a sweep ending exactly there has resolved the whole
+#: half-period and is a measurement; the fit then lands a part in ten billion over, which
+#: is float error. One part in a million is four orders clear of that and still refuses
+#: anything a sweep genuinely failed to reach.
+AMP180_ROUNDING = 1e-6
+
 
 def decaying_cosine(
     t: np.ndarray | float,
@@ -83,16 +93,32 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     amp180 = 1.0 / (2.0 * rabi_frequency)
 
     high = float(np.max(x))
-    if amp180 > high * 1.1:
+    if amp180 > high * (1.0 + AMP180_ROUNDING):
         # Above the sweep, which is the one direction `require_in_range` cannot usefully
         # report: it fires the same way for a value too small and one that is missing
         # because the pi pulse is off the top, and only the second is fixable by sweeping
         # differently. Escalatable, so a routine can reach further rather than an operator
         # reading prose — a chip whose working amp180 was 0.5683 against a sweep stopping
         # at 0.5 returned a flat Rabi every run.
+        #
+        # `high` itself, where this used to allow 10% past it. The pi amplitude *is* the
+        # curve's first extremum, so a sweep ending on it has resolved the whole
+        # half-period — but one ending *short* of it has seen only a monotone rise, and a
+        # power-dependent background rises the same way. The two are not separable from
+        # this sweep alone, which is the whole reason to go and look rather than accept.
+        #
+        # The 10% grace made that unreachable in the band it matters most. The August 2026
+        # B chip fitted 0.5060 against a sweep stopping at 0.5 — 1.2% over, so accepted —
+        # and `ef_ladder` then measured 0.1647 on the identical grid once the readout had
+        # been tuned, 3.07x lower. `rabi` necessarily runs before `readout_operating_point`,
+        # since tuning the readout needs a pi pulse to prepare |1>, so an unresolved readout
+        # is the standing risk here and one escalation is what distinguishes it.
         raise OutOfRange(
-            f"amp180 fitted to {amp180:.4g}, above the {high:.4g} this sweep reached — "
-            "the pi pulse is past the top of the range, so there is more amplitude to try",
+            f"amp180 fitted to {amp180:.4g}, above the {high:.4g} this sweep reached — so "
+            "the curve's first extremum is past the last setpoint and this is where the "
+            "cosine extrapolates it to, not where it was seen. Either there is more "
+            "amplitude to try, or the readout is not resolving the qubit yet and the rise "
+            "is a background",
             axis="amplitudes",
             direction="wider",
         )

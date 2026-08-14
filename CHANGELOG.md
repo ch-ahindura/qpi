@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rabi` no longer accepts a pi amplitude up to 10% above the top of its
+  own sweep. A chip fitted 0.5060 against a sweep stopping at 0.5 and wrote it, where
+  `ef_ladder` measured 0.1647 on the same grid — every node downstream then calibrated
+  against a pulse turning three times too far. It escalates to a wider sweep instead.
 - `qpi-driver/py`: the CZ's virtual-Z corrections cancel the phase the gate leaves instead
   of doubling it. `conditional_phase` wrote the measured fringe phase where it needed minus
   it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as

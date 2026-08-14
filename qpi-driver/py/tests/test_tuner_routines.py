@@ -766,7 +766,7 @@ def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify
     amplitudes = np.linspace(0.0, 0.5, 41)
     # A cosine whose half period is 0.9 — a pi pulse well past the top of this sweep.
     signal = 0.5 - 0.5 * np.cos(2 * np.pi * amplitudes / 1.8)
-    with pytest.raises(OutOfRange, match="past the top of the range") as raised:
+    with pytest.raises(OutOfRange, match="past the last setpoint") as raised:
         fit_rabi(amplitudes, signal)
     assert raised.value.axis == "amplitudes"
     assert raised.value.direction == "wider"
