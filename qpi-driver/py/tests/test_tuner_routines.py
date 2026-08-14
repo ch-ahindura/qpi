@@ -772,6 +772,76 @@ def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify
     assert raised.value.direction == "wider"
 
 
+class TestRamseyResolvesTheFringeSign:
+    """A fringe oscillates at ``|residual + artificial|``, so two residuals fit it.
+
+    The artificial detuning picks between them only while it is the larger of the two. On
+    the August 2026 B chip the residual was 4.06 MHz against a 1 MHz artificial one, and the
+    root taken moved f01 to 5.311817 GHz where that chip's own working calibration says
+    5.317995 — further off than leaving it alone.
+    """
+
+    #: The B chip's numbers: `qubit_spectroscopy` left f01 4.06 MHz low, and the fringe came
+    #: back at 3.12 MHz against the 1 MHz artificial detuning.
+    SPECTROSCOPY_F01 = 5_313_936_744.757423
+    FRINGE = 3_120_237.5951242633
+    ARTIFICIAL = 1e6
+    WORKING_F01 = 5_317_994_847.971831
+
+    def _pass(self, residual):
+        """What `analyse` returns for a pass leaving *residual* Hz."""
+        return {
+            "detuning": residual,
+            "fringe_frequency": self.FRINGE,
+            "clock_freq_01": self.SPECTROSCOPY_F01 - residual,
+            "clock_freq_01_alternative": self.SPECTROSCOPY_F01
+            + (self.FRINGE + self.ARTIFICIAL),
+        }
+
+    def _fitted(self):
+        return self._pass(self.FRINGE - self.ARTIFICIAL)
+
+    def _stubbed(self, residuals):
+        """A `ramsey` whose passes leave *residuals* in order, recording what it applies."""
+        node = routine("ramsey")
+        node._detuning = self.ARTIFICIAL
+        applied, remaining = [], iter(residuals)
+        node.apply = lambda device, target, params: applied.append(
+            params["clock_freq_01"]
+        )
+        node.escalating = lambda *args, **kwargs: self._pass(next(remaining))
+        return node, applied
+
+    def test_both_roots_are_measured_and_the_better_one_kept(self):
+        node, applied = self._stubbed([4.18e6, 0.06e6])
+        best = node._resolved_root(
+            "q0", object(), RoutineConfig(params={}), None, 1.0, self._fitted()
+        )
+
+        assert applied == pytest.approx(
+            [
+                self.SPECTROSCOPY_F01 - (self.FRINGE - self.ARTIFICIAL),
+                self.SPECTROSCOPY_F01 + (self.FRINGE + self.ARTIFICIAL),
+            ]
+        )
+        assert best["detuning"] == pytest.approx(0.06e6)
+
+    def test_the_other_root_is_the_chip_s_own_calibration(self):
+        """The regression this exists for: 60 kHz from the working value, not 6.18 MHz."""
+        fitted = self._fitted()
+        assert abs(fitted["clock_freq_01_alternative"] - self.WORKING_F01) < 100e3
+        assert abs(fitted["clock_freq_01"] - self.WORKING_F01) > 6e6
+
+    def test_a_residual_under_the_artificial_detuning_never_tries_the_other_root(self):
+        """The sign is unambiguous there, so the extra sweep would be waste."""
+        node, applied = self._stubbed([0.2e6, 0.01e6, 1e3])
+        node._delays = [0.0, 24e-6]
+        node.measure("q0", object(), RoutineConfig(params={}), None)
+
+        alternative = self._fitted()["clock_freq_01_alternative"]
+        assert alternative not in applied
+
+
 class TestT1ReachesTheEchoThatNeedsIt:
     """RFC 0005 §13's case one node along: a number measured here and thrown away.
 

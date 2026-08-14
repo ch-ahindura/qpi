@@ -357,6 +357,14 @@ class Ramsey(CalibrationRoutine):
         guard that already knows how.
         """
         refined = self.escalating(target, device, config, backend, timeout_s)
+        # Zero when nothing has built a schedule yet, and then there is no bias to compare
+        # against and no sign to resolve — the same reading `_detuning_floor` gives an
+        # unswept `_delays`.
+        artificial = float(getattr(self, "_detuning", 0.0) or 0.0)
+        if artificial and abs(float(refined.get("detuning", 0.0))) >= artificial:
+            refined = self._resolved_root(
+                target, device, config, backend, timeout_s, refined
+            )
         floor = self._detuning_floor(config)
         for _attempt in range(self.MAX_REFINEMENTS):
             if abs(float(refined.get("detuning", 0.0))) <= floor:
@@ -379,6 +387,46 @@ class Ramsey(CalibrationRoutine):
                 break
             refined = again
         return refined
+
+    def _resolved_root(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        fitted: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Which of the fringe's two roots is this chip's, measured rather than assumed.
+
+        The fringe oscillates at ``|residual + artificial|``, so both ``+fringe`` and
+        ``-fringe`` solve it and only one is the chip's. The artificial detuning is what
+        picks between them — but only while it is the *larger* of the two, which is the
+        precondition nothing was checking. Once the residual exceeds it the sign is not
+        recoverable from one sweep, and the wrong root moves f01 further off than leaving
+        it alone: on the August 2026 B chip it wrote 5.311817 GHz where that chip's own
+        working calibration says 5.317995, while the other root lands 60 kHz from it.
+
+        So put f01 on each root, measure what remains, and keep the one that leaves less.
+        Costs one extra sweep, and only when the residual says the sign is in doubt.
+        """
+        others = {**fitted, "clock_freq_01": fitted["clock_freq_01_alternative"]}
+        measured = []
+        for candidate in (fitted, others):
+            self.apply(device, target, candidate)
+            measured.append(self.escalating(target, device, config, backend, timeout_s))
+        best = min(measured, key=lambda pass_: abs(float(pass_.get("detuning", 0.0))))
+        log.info(
+            "%s on %s: fringe %.0f Hz against a %.0f Hz artificial detuning leaves the "
+            "sign ambiguous; the two roots left %s Hz, keeping %.0f",
+            self.name,
+            target,
+            float(fitted.get("fringe_frequency", 0.0)),
+            self._detuning,
+            " and ".join(f"{abs(float(m.get('detuning', 0.0))):.0f}" for m in measured),
+            abs(float(best.get("detuning", 0.0))),
+        )
+        return best
 
     def _detuning_floor(self, config: RoutineConfig) -> float:
         """The smallest detuning this sweep could tell from zero, in Hz.
@@ -457,6 +505,13 @@ class Ramsey(CalibrationRoutine):
             np.asarray(self._delays), signal_of(dataset), self._detuning
         )
         fitted["clock_freq_01"] = self._current_f01 - fitted["detuning"]
+        # A fringe frequency is a magnitude, so `-fringe - artificial` is the residual
+        # just as consistently as `+fringe - artificial`. Carried alongside rather than
+        # chosen here: which root is the chip's takes another sweep to find out, and
+        # `_resolved_root` is where that happens.
+        fitted["clock_freq_01_alternative"] = self._current_f01 + (
+            fitted["fringe_frequency"] + self._detuning
+        )
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

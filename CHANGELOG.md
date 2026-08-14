@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `ramsey` measures which of the fringe's two roots is the chip's instead
+  of assuming the smaller one. A fringe is a magnitude, so the artificial detuning only
+  signs the correction while it is the larger of the two — past that `ramsey` moved f01
+  6.18 MHz off where the other root sits 60 kHz from the chip's working value.
 - `qpi-driver/py`: `t2_echo` refuses a T2 above the `2*T1` ceiling a Hahn echo cannot
   exceed, and `t1` now keeps its result on the element for it to read. A chip reported
   201 us of T2 against a 32.8 us T1 — 3.07x the ceiling — and every other guard passed it.
