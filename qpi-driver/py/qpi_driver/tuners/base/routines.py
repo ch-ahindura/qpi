@@ -491,6 +491,14 @@ def _widened(
     nothing to stretch. Every routine keeps its setpoints as ``_<axis>`` for `analyse` to
     fit against, which is what makes this readable from outside.
 
+    That name is load-bearing and was not being checked. Four routines stored their
+    setpoints under a name of their own — `drag` as ``_betas`` against an axis of
+    ``motzois``, and three more — so this found nothing, returned *config* unchanged, and
+    `escalating` re-raised. The refusal named the range it had already swept, which reads
+    exactly like a chip that has no answer in it: on the August 2026 B chip `drag` failed
+    with an optimum of -0.614 against a swept +/-0.2 and never widened once.
+    `test_every_swept_axis_is_readable_from_outside` now holds the convention.
+
     Only the setpoints move. Everything else the operator set is carried through, because
     a wider sweep is still their sweep — and the axis is stored under its own config key,
     so the next attempt reads it exactly as though it had been asked for.

@@ -520,7 +520,7 @@ class ResonatorPunchout(CalibrationRoutine):
         # some 26 dB short of what the module can emit, which is to say it cannot find it
         # at all. This is the §5 hardware bound that got the node switched off on the
         # August 2026 chips, and that §12 recorded as fixed in phase 3 when it was not.
-        self._powers = setpoints_of(
+        self._amplitudes = setpoints_of(
             config,
             "amplitudes",
             linear_setpoints(
@@ -535,7 +535,7 @@ class ResonatorPunchout(CalibrationRoutine):
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for power in self._powers:
+        for power in self._amplitudes:
             for frequency in self._frequencies:
                 schedule.add(backend.Reset(target))
                 schedule.add(
@@ -556,7 +556,7 @@ class ResonatorPunchout(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        rows = len(self._powers)
+        rows = len(self._amplitudes)
         columns = len(self._frequencies)
         if signal.size < rows * columns:
             raise RoutineError(
@@ -569,7 +569,7 @@ class ResonatorPunchout(CalibrationRoutine):
             chunk = signal[row * columns : (row + 1) * columns]
             fitted = fit_resonator_spectroscopy(self._frequencies, chunk)
             frequencies.append(fitted["readout_frequency"])
-        return fit_punchout(self._powers, frequencies)
+        return fit_punchout(self._amplitudes, frequencies)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
@@ -1383,7 +1383,7 @@ class FluxSpectroscopy(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._offsets = setpoints_of(
+        self._flux_offsets = setpoints_of(
             config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11)
         )
         self._frequencies = _frequency_sweep(
@@ -1396,7 +1396,7 @@ class FluxSpectroscopy(CalibrationRoutine):
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for offset in self._offsets:
+        for offset in self._flux_offsets:
             for frequency in self._frequencies:
                 schedule.add(backend.Reset(target))
                 schedule.add(
@@ -1422,7 +1422,7 @@ class FluxSpectroscopy(CalibrationRoutine):
         signal = signal_of(dataset)
         columns = len(self._frequencies)
         arc = []
-        for row in range(len(self._offsets)):
+        for row in range(len(self._flux_offsets)):
             chunk = signal[row * columns : (row + 1) * columns]
             if chunk.size < columns:
                 break
@@ -1434,8 +1434,8 @@ class FluxSpectroscopy(CalibrationRoutine):
 
         sweet_spot = max(range(len(arc)), key=lambda i: arc[i])
         return {
-            "flux_offsets": list(self._offsets[: len(arc)]),
+            "flux_offsets": list(self._flux_offsets[: len(arc)]),
             "frequencies": arc,
-            "sweet_spot_offset": float(self._offsets[sweet_spot]),
+            "sweet_spot_offset": float(self._flux_offsets[sweet_spot]),
             "sweet_spot_frequency": float(arc[sweet_spot]),
         }

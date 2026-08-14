@@ -1054,9 +1054,9 @@ def test_a_punchout_sweep_reaches_full_readout_scale(own_quantify_tuner):
         RoutineConfig(params={}),
         own_quantify_tuner.backend,
     )
-    assert max(node._powers) == pytest.approx(FULL_SCALE)
+    assert max(node._amplitudes) == pytest.approx(FULL_SCALE)
     # And still starts low enough to have a dressed regime to compare against.
-    assert min(node._powers) < 0.05
+    assert min(node._amplitudes) < 0.05
 
 
 class TestTheResonatorSweepWidensItself:
@@ -2087,3 +2087,60 @@ class TestEscalationIsBoundedOnEveryAxisItMoves:
         assert MAX_SHORTENINGS == 2
         # And it cannot shorten below a fittable ladder, whatever factor it is handed.
         assert len(_shortened([1, 5, 9, 13], 0.001, 4)) >= 2
+
+
+def test_every_swept_axis_is_readable_from_outside(monkeypatch, own_quantify_tuner):
+    """A routine must keep each swept axis as ``_<axis>``, or escalation cannot widen it.
+
+    `_widened` reads the setpoints a routine actually built off ``_<axis>``, because the
+    case that matters is a config that names the axis nowhere — which is exactly the config
+    whose sweep needs widening. The name is therefore load-bearing, and nothing checked it.
+
+    Four routines stored theirs under a name of their own: `drag` as ``_betas`` against an
+    axis of ``motzois``, `fine_amplitude_12` as ``_counts``, `resonator_punchout` as
+    ``_powers``, `flux_spectroscopy` as ``_offsets``. For all four `_widened` found nothing,
+    returned the config unchanged, and `escalating` re-raised — so the refusal named the
+    range it had already swept, which reads exactly like a chip with no answer in it. On the
+    August 2026 B chip `drag` failed with an optimum of -0.614 against a swept +/-0.2, run
+    after run, and never widened once.
+
+    Instrumented rather than read off the source, the way the `reads` ledger is: what
+    matters is the axis a routine passes at runtime, not the one a grep can see.
+    """
+    from qpi_driver.tuners.base import routines as routines_mod
+    from qpi_driver.tuners.routines import ef, readout, single_qubit, spectroscopy
+    from qpi_driver.tuners.routines import benchmarks, two_qubit
+
+    swept: list[str] = []
+    original = routines_mod.setpoints_of
+
+    def recording(config, axis, default=None):
+        swept.append(axis)
+        return original(config, axis, default)
+
+    for module in (
+        routines_mod,
+        ef,
+        readout,
+        single_qubit,
+        spectroscopy,
+        benchmarks,
+        two_qubit,
+    ):
+        if hasattr(module, "setpoints_of"):
+            monkeypatch.setattr(module, "setpoints_of", recording)
+
+    unreachable: dict[str, list[str]] = {}
+    for name in ROUTINE_NAMES:
+        node = routine(name)
+        swept.clear()
+        _build(node, own_quantify_tuner)
+        missing = [a for a in swept if not hasattr(node, f"_{a}")]
+        if missing:
+            unreachable[name] = missing
+
+    assert not unreachable, "\n".join(
+        f"{name} sweeps {sorted(set(axes))} but keeps them under another name, so "
+        f"escalation cannot widen them"
+        for name, axes in sorted(unreachable.items())
+    )

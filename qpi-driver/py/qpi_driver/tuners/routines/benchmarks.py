@@ -36,25 +36,27 @@ from qpi_driver.tuners.utils.clifford import (
 #: The most Cliffords escalation will put in one RB schedule, across every depth and
 #: circuit.
 #:
-#: `depths` escalates, so it needs the ceiling `MAX_SWEEP_POINTS` is for a scalar sweep —
-#: and it needs its own, because RB's cost is per *gate* where a frequency sweep's is per
-#: acquisition. Three doublings take a deepest sequence of 64 to 505, and at twelve circuits
-#: that is 28000 Cliffords in one program.
+#: `depths` and `circuits_per_depth` both escalate, so both need the ceiling
+#: `MAX_SWEEP_POINTS` is for a scalar sweep — and RB needs its own, because its cost is per
+#: *gate* where a frequency sweep's is per acquisition. `MAX_CIRCUITS_PER_DEPTH` bounds how
+#: long the node may take; this bounds how large its program may get, which is a different
+#: limit and the one that bites.
 #:
-#: Derived, and the derivation is where the uncertainty is. A single-qubit Clifford averages
-#: about 1.875 physical pulses and a pulse is a couple of Q1ASM instructions, so a Clifford
-#: is near four — against the 12288 a sequencer takes and the 14% headroom
-#: `MAX_SWEEP_POINTS` leaves for the same reason. That puts the bound around 2800 and this
-#: is 2500, because the per-Clifford figure is an average over the group rather than a
-#: measurement of this compiler. Unlike `MAX_SWEEP_POINTS` it has *not* been checked against
-#: a real program; it is a stop that keeps escalation from walking off a cliff, and if it
-#: ever binds on a chip that should have been benchmarkable, measure the real rate and
-#: raise it.
+#: **Measured, at the second attempt.** This was 2500, derived from a Clifford averaging
+#: 1.875 pulses at a couple of instructions each — near four — and the docstring said
+#: plainly that it had never been checked against a real program and should be measured if
+#: it ever bound. It bound, and it was still twice too high. On the August 2026 B chip a
+#: sweep of 2413 Cliffords compiled to a program of 1,133,426 bytes, which the driver's own
+#: error reported in its SCPI block header (``PROGram  #71133426``). At roughly 45
+#: characters a line that is some 25,000 instructions — **10.4 per Clifford**, not four —
+#: and the 12288 a sequencer accepts affords about 1180.
 #:
-#: A schedule the operator asked for is not capped — only widening is. Their depths are a
-#: statement about what they want benchmarked, and overruling it with a default would be
-#: the inversion this whole RFC exists to remove.
-MAX_RB_CLIFFORDS = 2500
+#: 1000, for the 15% headroom `MAX_SWEEP_POINTS` leaves for the same reason. The shipped
+#: default of 7 depths at 10 circuits is 1270 Cliffords and does assemble, so this sits
+#: *below* a working configuration — deliberately. It bounds widening only, never an
+#: operator's own sweep, and what it says about that config is true: there is no room to
+#: average harder without making the sequences shallower first.
+MAX_RB_CLIFFORDS = 1000
 
 
 class RandomizedBenchmarking(CalibrationRoutine):

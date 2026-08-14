@@ -669,7 +669,7 @@ class FineAmplitude12(CalibrationRoutine):
         element = device.get_element(target)
         self._amplitude = _required_ef_amplitude(element, target)
         self._duration = ef_duration(element, config)
-        self._counts = [
+        self._repetitions = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
         ]
 
@@ -678,7 +678,7 @@ class FineAmplitude12(CalibrationRoutine):
         )
         measure = open_three_state_readout(schedule, backend, target, element)
 
-        for index, count in enumerate(self._counts):
+        for index, count in enumerate(self._repetitions):
             schedule.add(backend.Reset(target))
             schedule.add(backend.X(target))
             # Half the amplitude is half the rotation: the drive is linear in it at
@@ -701,7 +701,7 @@ class FineAmplitude12(CalibrationRoutine):
         # product of contrast and rotation error is recoverable, and the error comes
         # out scaled by whatever fraction of the contrast this sweep happened to
         # cover. Note these are the *EF* subspace's two states, not |0> and |1>.
-        reference = len(self._counts)
+        reference = len(self._repetitions)
         for offset, prepare_two in enumerate((False, True)):
             schedule.add(backend.Reset(target))
             schedule.add(backend.X(target))
@@ -721,18 +721,18 @@ class FineAmplitude12(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        expected = len(self._counts) + 2
+        expected = len(self._repetitions) + 2
         if signal.size < expected:
             raise RoutineError(
                 f"fine amplitude 12 expected {expected} acquisitions, got {signal.size}"
             )
-        swept = signal[: len(self._counts)]
+        swept = signal[: len(self._repetitions)]
         in_one, in_two = (
-            float(signal[len(self._counts)]),
-            float(signal[len(self._counts) + 1]),
+            float(signal[len(self._repetitions)]),
+            float(signal[len(self._repetitions) + 1]),
         )
         fitted = fit_fine_amplitude(
-            np.asarray(self._counts, dtype=float),
+            np.asarray(self._repetitions, dtype=float),
             swept,
             self._amplitude,
             ground=in_one,

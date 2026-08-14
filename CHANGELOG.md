@@ -18,6 +18,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   value quantify sets on a sequencer is its program — so one `Assembly failed` produced a
   2.4 MB error, a 1.37 MB payload, and a record the server refused for exceeding the 1 MB
   its JSON field takes. The calibration had run; its request stayed `running` for ever.
+- `qpi-driver/py`: `drag`, `fine_amplitude_12`, `resonator_punchout` and `flux_spectroscopy`
+  can actually be widened. Each kept its setpoints under a name escalation does not look
+  for, so widening found nothing and the refusal named the range already swept — `drag`
+  failed run after run with an optimum of -0.614 against a swept +/-0.2 and never widened.
+- `qpi-driver/py`: the Clifford budget on RB escalation is 1000, measured rather than
+  estimated. At 2500 a widened sweep compiled to 1.13 MB of Q1ASM, some 25000 instructions
+  against the 12288 a sequencer takes, and failed to assemble.
 - `qpi-driver/py`: `t1` and `t2_echo` widen their delays when the fitted coherence time
 - `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
   It previously appeared in `routine_results` and nowhere else, so it looked like it had run

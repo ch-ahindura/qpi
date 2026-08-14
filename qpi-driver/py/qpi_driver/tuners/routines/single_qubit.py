@@ -596,7 +596,7 @@ class Drag(CalibrationRoutine):
         # one is nine orders of magnitude wrong for the other, and being wrong in
         # the large direction does not merely mis-fit: it pushes the derivative
         # term past full scale and the schedule stops compiling.
-        self._betas = setpoints_of(
+        self._motzois = setpoints_of(
             config,
             "motzois",
             linear_setpoints(-backend.drag_span, backend.drag_span, 31),
@@ -606,7 +606,7 @@ class Drag(CalibrationRoutine):
         )
         # X90-Y180 against Y90-X180: the two sequences are equal only at the
         # right beta, so their difference crosses zero there and is linear about it.
-        for index, beta in enumerate(self._betas):
+        for index, beta in enumerate(self._motzois):
             schedule.add(backend.Reset(target))
             override = {backend.drag_parameter: beta}
             schedule.add(backend.Rxy(theta=90, phi=0, qubit=target, **override))
@@ -630,14 +630,14 @@ class Drag(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        if signal.size < 2 * len(self._betas):
+        if signal.size < 2 * len(self._motzois):
             raise RoutineError(
-                f"DRAG expected {2 * len(self._betas)} acquisitions, got {signal.size}"
+                f"DRAG expected {2 * len(self._motzois)} acquisitions, got {signal.size}"
             )
-        paired = signal[: 2 * len(self._betas)].reshape(-1, 2)
+        paired = signal[: 2 * len(self._motzois)].reshape(-1, 2)
         # Named, so a refusal is escalatable rather than prose — see `measure`.
         return fit_drag(
-            np.asarray(self._betas), paired[:, 0] - paired[:, 1], axis="motzois"
+            np.asarray(self._motzois), paired[:, 0] - paired[:, 1], axis="motzois"
         )
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
