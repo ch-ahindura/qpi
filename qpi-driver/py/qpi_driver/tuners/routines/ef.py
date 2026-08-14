@@ -281,7 +281,13 @@ class Rabi12(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
-        _require_ef_ladder(device, target, fitted["amp180"], self._duration)
+        _require_ef_ladder(
+            device,
+            target,
+            fitted["amp180"],
+            self._duration,
+            contrast=float(fitted.get("contrast", 0.0)),
+        )
         return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -1046,7 +1052,11 @@ def _prepared_clouds(dataset: Any, states: int) -> list[np.ndarray]:
 
 
 def _require_ef_ladder(
-    device: Any, target: str, ef_amp180: float, ef_duration: float
+    device: Any,
+    target: str,
+    ef_amp180: float,
+    ef_duration: float,
+    contrast: float = 0.0,
 ) -> None:
     """Refuse a 1-2 pi amplitude the 0-1 one says cannot be a pi pulse.
 
@@ -1097,7 +1107,35 @@ def _require_ef_ladder(
         f"{1 / MAX_EF_LADDER_ERROR:.1f}-{MAX_EF_LADDER_ERROR:.0f}x a transmon's sqrt(2) "
         "ladder allows. A cosine fitted to a partial rotation reports a smaller amplitude "
         "than a pi pulse, so this is most likely a 1-2 drive too weak to turn one: check "
-        f"clock_freqs.f12 is the transition, and widen the amplitude sweep.{lengths}"
+        f"clock_freqs.f12 is the transition, and widen the amplitude sweep."
+        f"{lengths}{_contrast_reading(contrast)}"
+    )
+
+
+def _contrast_reading(contrast: float) -> str:
+    """The one reading that separates the two ways this guard can fire.
+
+    It costs nothing — `fit_rabi` already returns it — and it is not comparable to
+    anything this function can reach, since `rabi`'s contrast is a fit output rather
+    than a device parameter. So it is reported next to the name of what to put it
+    beside, which is in the same report.
+
+    The comparison is the whole diagnosis. This routine maps ``|2>`` back through a 0-1
+    pi before reading, so an oscillation genuinely on the 1-2 transition swings the
+    *full* readout contrast — the same one `rabi` measured. Much smaller, and the sweep
+    found something too weak to be a pi, which is what the message above assumes.
+    Comparable, while the amplitude is this far off the ladder, and the population is
+    moving as far as `rabi` moves it: that is not a weak drive, and the question becomes
+    which two levels it is moving between.
+    """
+    if not contrast:
+        return ""
+    return (
+        f" This sweep's contrast is {contrast:.4g}; put it beside `rabi`'s own, in the "
+        f"same report. Much smaller than it is a drive too weak to turn a pi, which is "
+        f"what the sentence above assumes. As large as it is a full population swing, "
+        f"which a drive too weak to turn a pi cannot produce — and then the question is "
+        f"which two levels are being driven, not how hard."
     )
 
 
