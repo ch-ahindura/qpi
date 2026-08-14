@@ -7,6 +7,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- `qpi-driver/py`: an EF pulse defaults to the length of the 0-1 pulse rather than to a
+  20 ns constant, and `rabi_12`'s ladder guard scales by the two durations instead of
+  assuming they match. Against an `rxy.duration` of 56 ns the old default put the 1-2 pi at
+  2.8x the 0-1 amplitude, past the top of the sweep, and the guard blamed the drive.
+- `qpi-ui`: the fidelity card shows the measured gate fidelity rather than the lowest number
+  in the payload. A run's `readout_fidelity` of 92.5% was displayed as being below the 99.9%
+  one-qubit gate threshold while randomised benchmarking sat unread beside it.
+
 ### Added
 
 - `qpi-driver/py`: `fine_amplitude_90` measures the pi/2 amplitude and writes it to a new

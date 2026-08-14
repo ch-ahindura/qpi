@@ -209,11 +209,13 @@ class EFDrive(InstrumentChannel):
             initial_value=0.0,
             vals=Numbers(min_value=-1.0, max_value=1.0, allow_nan=True),
         )
+        # Zero, not a length: a default that disagreed with `rxy.duration` would be
+        # silently wrong on any chip whose 0-1 pulse is not 20 ns. See `ef_duration`.
         self.add_parameter(
             "ef_duration",
             parameter_class=ManualParameter,
             unit="s",
-            initial_value=20e-9,
+            initial_value=0.0,
             vals=Numbers(min_value=0.0, max_value=1e-3, allow_nan=True),
         )
 

@@ -123,9 +123,9 @@ class EFDrive(SchedulerSubmodule):
         vals=Numbers(min_value=-1.0, max_value=1.0, allow_nan=True),
     )
     ef_duration: float = Parameter(
-        docstring="Length of the 1-2 pulse.",
+        docstring="Length of the 1-2 pulse. 0 takes rxy.duration.",
         unit="s",
-        initial_value=20e-9,
+        initial_value=0.0,
         vals=Numbers(min_value=0.0, max_value=1e-3, allow_nan=True),
     )
 

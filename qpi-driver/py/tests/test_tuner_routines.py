@@ -1568,23 +1568,51 @@ class TestTheEfPiPulseIsHeldToTheLadder:
 
     B_CHIP_AMP180 = 0.5757070085511985
     B_CHIP_EF = 0.06766417047411832
+    #: What `rxy` plays on that chip, against the 20 ns the ef pulse defaults to.
+    B_CHIP_RXY_DURATION = 56e-9
 
-    def _device(self, amp180: float):
-        element = SimpleNamespace(rxy=SimpleNamespace(amp180=amp180), name="q5")
+    def _device(self, amp180: float, duration: float = 20e-9):
+        element = SimpleNamespace(
+            rxy=SimpleNamespace(amp180=amp180, duration=duration), name="q5"
+        )
         return SimpleNamespace(get_element=lambda name: element)
 
     def test_the_b_chip_s_ef_pulse_is_refused(self):
         from qpi_driver.tuners.routines.ef import _require_ef_ladder
 
         with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
-            _require_ef_ladder(self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF)
+            _require_ef_ladder(
+                self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF, 20e-9
+            )
 
     def test_a_pulse_on_the_ladder_is_accepted(self):
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
 
         _require_ef_ladder(  # noqa: B018
-            self._device(0.4), "q5", 0.4 * EF_ENVELOPE_AREA / 2**0.5
+            self._device(0.4), "q5", 0.4 * EF_ENVELOPE_AREA / 2**0.5, 20e-9
         )
+
+    def test_a_shorter_ef_pulse_needs_proportionally_more_amplitude(self):
+        """Rotation follows area, so the bound has to carry the durations too.
+
+        The B chip's `rxy` is 56 ns against an ef pulse of 20, a factor of 2.8 that is
+        larger than the whole window the bound allows — so without this a chip whose ef
+        pulse was exactly right would be refused, and the message would blame the drive.
+        """
+        from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
+
+        on_the_ladder = 0.4 * (56 / 20) * EF_ENVELOPE_AREA / 2**0.5
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.4, duration=56e-9), "q5", on_the_ladder, 20e-9
+        )
+        # And what the duration-blind bound would have accepted is now refused.
+        with pytest.raises(RoutineError, match="not the same length"):
+            _require_ef_ladder(
+                self._device(0.4, duration=56e-9),
+                "q5",
+                0.4 * EF_ENVELOPE_AREA / 2**0.5,
+                20e-9,
+            )
 
     def test_the_envelopes_are_not_the_same_shape(self):
         """`rxy` is a Gaussian and the ef pulse is a square, so equal amplitudes are not
@@ -1600,7 +1628,7 @@ class TestTheEfPiPulseIsHeldToTheLadder:
 
         assert EF_ENVELOPE_AREA == pytest.approx(0.6267, rel=0.01)
         # The sqrt(2)-only prediction is 1.6x high, which is inside the window either way.
-        _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5)  # noqa: B018
+        _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5, 20e-9)  # noqa: B018
 
     @pytest.mark.parametrize("factor", (0.55, 1.9))
     def test_the_bound_is_generous_enough_for_a_differing_duration(self, factor):
@@ -1611,15 +1639,28 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA
 
         _require_ef_ladder(  # noqa: B018
-            self._device(0.4), "q5", factor * 0.4 * EF_ENVELOPE_AREA / 2**0.5
+            self._device(0.4), "q5", factor * 0.4 * EF_ENVELOPE_AREA / 2**0.5, 20e-9
         )
 
     def test_no_amp180_to_compare_against_is_not_evidence(self):
         """`rabi` may be disabled or skipped, and refusing then would be the wrong reason."""
         from qpi_driver.tuners.routines.ef import _require_ef_ladder
 
-        _require_ef_ladder(self._device(0.0), "q5", 0.0677)  # noqa: B018
-        _require_ef_ladder(SimpleNamespace(get_element=lambda n: None), "q5", 0.0677)  # noqa: B018
+        _require_ef_ladder(self._device(0.0), "q5", 0.0677, 20e-9)  # noqa: B018
+        _require_ef_ladder(  # noqa: B018
+            SimpleNamespace(get_element=lambda n: None), "q5", 0.0677, 20e-9
+        )
+
+    def test_an_unreadable_rxy_duration_is_not_evidence_either(self):
+        """The ratio needs both lengths, and half of one is not a bound."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        no_duration = SimpleNamespace(
+            get_element=lambda n: SimpleNamespace(
+                rxy=SimpleNamespace(amp180=0.5757), name="q5"
+            )
+        )
+        _require_ef_ladder(no_duration, "q5", 0.0677, 20e-9)  # noqa: B018
 
 
 class TestRamseyRefinesUntilTheResidualIsUnresolvable:

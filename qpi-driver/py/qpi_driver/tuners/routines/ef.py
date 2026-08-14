@@ -93,9 +93,10 @@ EF = "r12"
 #: And the readout point that resolves all three levels.
 THREE_STATE = "measure_3state"
 
-#: Fallback length of an EF pulse, matching the 20 ns `rxy` plays. The amplitude a
-#: sweep reports only means anything alongside a duration — "the amplitude that turns
-#: pi" is a statement about a particular pulse length.
+#: Last-resort length of an EF pulse, for an element whose ``rxy.duration`` cannot be
+#: read. The amplitude a sweep reports only means anything alongside a duration — "the
+#: amplitude that turns pi" is a statement about a particular pulse length — which is
+#: why this is a fallback rather than the default: see :func:`ef_duration`.
 DEFAULT_EF_DURATION = 20e-9
 
 
@@ -128,7 +129,21 @@ def ef_path(element: Any, name: str) -> str | None:
 
 
 def ef_duration(element: Any, config: RoutineConfig) -> float:
-    """How long an EF pulse plays, from the config, the element, or the default."""
+    """How long an EF pulse plays: the config, the element, or ``rxy.duration``.
+
+    Falling back to the 0-1 pulse's length rather than to a constant. Both defaulted to
+    20 ns, so a constant looked equivalent — but ``rxy.duration`` is configuration and
+    moves with the chip, and the amplitude a sweep reports only means anything alongside
+    a duration. Left at 20 ns against an ``rxy`` of 56, the 1-2 pi would need 2.8 times
+    the 0-1 amplitude rather than ``1/sqrt(2)`` of it — 0.71 against a sweep that stops
+    at 0.5, which no sweep of that range could ever have found. The August 2026 B chip
+    sets both to 56 ns by hand and so never hit this; the trap is that it did not have
+    to, and nothing would have said so.
+
+    Nothing measures this, so an element carrying an explicit value is stating intent
+    and keeps it. Zero means unset, which is why the element defaults to zero rather
+    than to a length that silently disagrees with ``rxy``.
+    """
     if "duration" in config:
         return float(config["duration"])
     path = ef_path(element, "ef_duration")
@@ -136,7 +151,7 @@ def ef_duration(element: Any, config: RoutineConfig) -> float:
         stored = read_path(element, path)
         if stored:
             return float(stored)
-    return DEFAULT_EF_DURATION
+    return _rxy_duration(element) or DEFAULT_EF_DURATION
 
 
 def add_ef_pulse(
@@ -198,7 +213,7 @@ class Rabi12(CalibrationRoutine):
     name = "rabi_12"
     depends_on = ("f12_spectroscopy",)
     updates = (f"{EF}.ef_amp180",)
-    reads = ("r12.ef_duration", "clock_freqs.f01", "rxy.amp180")
+    reads = ("r12.ef_duration", "rxy.duration", "clock_freqs.f01", "rxy.amp180")
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element with somewhere to keep an EF pulse."""
@@ -266,7 +281,7 @@ class Rabi12(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         fitted = fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
-        _require_ef_ladder(device, target, fitted["amp180"])
+        _require_ef_ladder(device, target, fitted["amp180"], self._duration)
         return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -334,6 +349,7 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         "measure.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -508,6 +524,7 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         "resonator.linewidth",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -610,6 +627,7 @@ class FineAmplitude12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -729,6 +747,7 @@ class Ramsey12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -841,6 +860,7 @@ class Drag12(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -958,6 +978,7 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
+        "rxy.duration",
         "clock_freqs.f01",
         "rxy.amp180",
     )
@@ -1024,7 +1045,9 @@ def _prepared_clouds(dataset: Any, states: int) -> list[np.ndarray]:
     return [values[..., index].reshape(-1) for index in range(states)]
 
 
-def _require_ef_ladder(device: Any, target: str, ef_amp180: float) -> None:
+def _require_ef_ladder(
+    device: Any, target: str, ef_amp180: float, ef_duration: float
+) -> None:
     """Refuse a 1-2 pi amplitude the 0-1 one says cannot be a pi pulse.
 
     `fit_rabi` fits a cosine and takes its half period, and a partial rotation is still a
@@ -1044,18 +1067,43 @@ def _require_ef_ladder(device: Any, target: str, ef_amp180: float) -> None:
     if not amp180:
         return
 
-    # Two corrections, and both are properties of the pulse rather than of the chip: the
-    # sqrt(2) is the transmon's 1-2 matrix element, and the envelope ratio is that `rxy` is
-    # a Gaussian where this is a square.
-    expected = amp180 * EF_ENVELOPE_AREA / math.sqrt(2.0)
+    # Three corrections, and all three are properties of the pulses rather than of the
+    # chip: the sqrt(2) is the transmon's 1-2 matrix element, the envelope ratio is that
+    # `rxy` is a Gaussian where this is a square, and the durations are whatever the two
+    # are configured to be. Rotation follows area, so a pulse half as long needs twice
+    # the amplitude — which is not a detail on a chip whose `rxy` is 56 ns against this
+    # pulse's 20, a factor of 2.8 that is larger than the whole window below.
+    rxy_duration = _rxy_duration(device.get_element(target))
+    if not rxy_duration or not ef_duration:
+        return
+    stretch = rxy_duration / ef_duration
+    expected = amp180 * stretch * EF_ENVELOPE_AREA / math.sqrt(2.0)
     ratio = ef_amp180 / expected if expected else 0.0
     if 1.0 / MAX_EF_LADDER_ERROR <= ratio <= MAX_EF_LADDER_ERROR:
         return
+    lengths = (
+        ""
+        if abs(stretch - 1.0) < 1e-9
+        else (
+            f" The two pulses are not the same length — {rxy_duration * 1e9:.0f} ns "
+            f"against {ef_duration * 1e9:.0f} ns — so the 1-2 pulse needs "
+            f"{stretch:.2g}x the amplitude for the same area; setting `rabi_12.duration` "
+            f"to the 0-1 pulse's length would put the pi at {expected / stretch:.4g}."
+        )
+    )
     raise RoutineError(
         f"the 1-2 pi amplitude fitted to {ef_amp180:.4g} against the {expected:.4g} that "
         f"the 0-1 amplitude of {amp180:.4g} implies — {ratio:.2f}x, outside the "
         f"{1 / MAX_EF_LADDER_ERROR:.1f}-{MAX_EF_LADDER_ERROR:.0f}x a transmon's sqrt(2) "
         "ladder allows. A cosine fitted to a partial rotation reports a smaller amplitude "
         "than a pi pulse, so this is most likely a 1-2 drive too weak to turn one: check "
-        "clock_freqs.f12 is the transition, and widen the amplitude sweep"
+        f"clock_freqs.f12 is the transition, and widen the amplitude sweep.{lengths}"
     )
+
+
+def _rxy_duration(element: Any) -> float:
+    """The 0-1 pulse's length, or zero if this element will not say."""
+    try:
+        return float(read_path(element, "rxy.duration"))
+    except Exception:  # noqa: BLE001 - an unreadable duration is not evidence
+        return 0.0
