@@ -91,10 +91,19 @@ def fit_readout_timing(trace: np.ndarray, sampling_rate: float) -> dict[str, flo
     swing = settled - floor
     scatter = float(np.std(magnitude[-tail:]))
     if swing <= 3.0 * scatter:
+        # Not necessarily a dead chain, which this used to assert. A trace integrates one
+        # sample where an ordinary acquisition integrates its whole window — 3600 of them
+        # at 1 GSa/s over 3.6 us, so sixty times the signal-to-noise — and only averaging
+        # buys any of it back. At 1024 averages a trace still sees 0.53x of what one
+        # integrated shot does, so a chip whose readout is fine at an integrated SNR of 1.1
+        # fails here while every other node succeeds. Naming a chain fault sent an operator
+        # looking for a broken cable.
         raise FitError(
             f"the trace never rises out of its own noise (swing {swing:.4g} against "
-            f"scatter {scatter:.4g}), so there is no arrival to time — the readout "
-            "returned no signal, which is a chain fault rather than a wrong delay"
+            f"scatter {scatter:.4g}), so there is no arrival to time. A trace carries no "
+            f"integration gain, so this wants about {(3.0 * scatter / swing) ** 2:.0f}x the "
+            f"averaging before the edge clears the noise — unless the readout is returning "
+            f"nothing at all, which the integrated nodes would show too"
         )
 
     rise = (magnitude - floor) / swing
