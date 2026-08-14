@@ -116,6 +116,11 @@ jobs:
         cache-dependency-glob: "qpi-driver/py/pyproject.toml"
 
     - name: Run Tests for '${{ matrix.extra }}'
+      # Benchmarks thoroughly rather than just correctly: more circuits per depth, so the
+      # two RB fidelities are precise as well as resolved. Off by default so a local run
+      # is quick; on here, which covers every pull request and every tag.
+      env:
+        QPI_SLOW_BENCHMARKS: '1'
       run: |
         make test-py-loop EXECUTOR=${{ matrix.extra }}
 

@@ -7,6 +7,7 @@ from scipy.optimize import curve_fit
 
 from .core import (
     FitError,
+    OutOfRange,
     align,
     fit_summary,
     require_in_range,
@@ -207,13 +208,23 @@ def fit_rb_decay(
     # After the noise check, not before: unresolved scatter and a stopped fit both end
     # here, and only one of them is fixed by deeper sequences.
     if abs(float(popt[0])) >= reach * (1.0 - 1e-6):
-        raise FitError(
+        # Escalatable on the depths, which is what this refusal already advises. The other
+        # axis is `circuits_per_depth` and belongs to the guard above: that one is about
+        # scatter, which averaging buys down, and this one is about *reach* — a decay too
+        # shallow to identify over these depths needs longer sequences, and more circuits
+        # only measures the same flat curve more precisely. Doubling rather than
+        # quadrupling because RB's cost is linear in depth and the sequences are already
+        # the longest thing the graph plays.
+        raise OutOfRange(
             f"the fitted amplitude reached {popt[0]:.4g}, the widest this fit allows for a "
             f"survival spanning {span:.3g} — so it was stopped there rather than found, "
             f"and the r of {decay:.7g} it trades against is the one that fits a straight "
             f"line, not the one the gates set. There is no resolved decay in these depths. "
             f"Average more circuits per depth, or extend the depths until the deepest "
             f"sequence has visibly decayed",
+            axis="depths",
+            direction="wider",
+            factor=2.0,
             fit=fit_summary(
                 x,
                 y,

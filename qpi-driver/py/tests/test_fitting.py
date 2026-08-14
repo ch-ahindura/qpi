@@ -1119,3 +1119,47 @@ class TestAThreeStateOperatingPointNeedsThreeStates:
         assert MIN_THREE_STATE_SEPARATION > 1.0, (
             "it must exceed what the consumer refuses at"
         )
+
+
+class TestTheCzPhaseCorrectionCancelsRatherThanDoubles:
+    """`conditional_phase` wrote the fringe phase where it needed minus it.
+
+    So every CZ left twice its own single-qubit phase on the control, plus 180 — and the
+    RB recovery gate knows nothing about a virtual Z, so `interleaved_rb` came back as
+    scatter that no amount of averaging touched. The conditional phase itself was right
+    all along, because a *difference* of two fringe phases cancels both conventions.
+    """
+
+    #: What the simulated chip measured, and what its CZ actually leaves, in degrees.
+    MEASURED_AND_TRUE = (
+        (345.8970926123802, 165.79223075716902),
+        (178.6323204994748, -1.442104015017689),
+    )
+
+    @pytest.mark.parametrize("fringe,left", MEASURED_AND_TRUE)
+    def test_the_correction_cancels_the_phase_the_cz_leaves(self, fringe, left):
+        from qpi_driver.tuners.fitting.chevron import _cancelling
+
+        residual = (left + _cancelling(fringe) + 180.0) % 360.0 - 180.0
+
+        assert abs(residual) < 0.5, f"{residual:.2f} deg left on every CZ"
+
+    @pytest.mark.parametrize("fringe,left", MEASURED_AND_TRUE)
+    def test_writing_the_fringe_phase_doubled_the_error(self, fringe, left):
+        """What it used to do, kept as the thing being fixed rather than as behaviour."""
+        residual = (left + fringe + 180.0) % 360.0 - 180.0
+
+        assert abs(residual) > 100.0
+
+    def test_it_is_reported_beside_the_phase_it_cancels(self):
+        from qpi_driver.tuners.fitting import fit_conditional_phase
+
+        phases = np.arange(0.0, 360.0, 15.0)
+        # Two fringes 180 deg apart: a conditional phase of exactly pi.
+        ground = 0.5 + 0.5 * np.cos(np.deg2rad(phases - 30.0))
+        excited = 0.5 + 0.5 * np.cos(np.deg2rad(phases - 210.0))
+        fitted = fit_conditional_phase(phases, ground, excited)
+
+        assert fitted["conditional_phase"] == pytest.approx(180.0, abs=1.0)
+        assert fitted["reference_phase"] == pytest.approx(30.0, abs=1.0)
+        assert fitted["reference_correction"] == pytest.approx(150.0, abs=1.0)
