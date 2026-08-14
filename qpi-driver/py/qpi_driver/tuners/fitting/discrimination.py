@@ -193,7 +193,57 @@ def fit_readout_operating_point(
         amplitude,
         fitted["snr"],
     )
-    return {"readout_frequency": frequency, "readout_amplitude": amplitude, **fitted}
+    return {
+        "readout_frequency": frequency,
+        "readout_amplitude": amplitude,
+        **fitted,
+        **_magnitude_contrast(settings, zeros, ones, chosen=(frequency, amplitude)),
+    }
+
+
+def _magnitude_contrast(
+    settings: list[tuple[float, float]],
+    zeros: np.ndarray,
+    ones: np.ndarray,
+    *,
+    chosen: tuple[float, float],
+) -> dict[str, float]:
+    """Where in this same sweep the two states differ most in *magnitude*.
+
+    Reported, not chosen: the point above is the right one for a discriminator, and this
+    is a different question with a different answer. Nearly every other node in the graph
+    reduces its acquisition to a magnitude — `signal_of` — and none of them can use a
+    complex separation, most of which is phase once the drive is off resonance.
+
+    The gap that makes this worth measuring is that nothing else does. `resonator_
+    spectroscopy` picks the readout frequency by where the *most signal comes back*, which
+    is not where the two states' magnitudes differ most, and those two coincide only when
+    the dispersive shift is large against the linewidth. On the August 2026 B chip it was
+    0.259 of it, and a magnitude sweep there put the pi pulse at 0.1647 against a working
+    0.3446 — 0.508x, the pi/2 — because ``|S|`` peaked at half population and came back to
+    the ``|0>`` level at the pi. A cosine fitted to that finds half the period.
+
+    Costs no acquisition: these are the shots the discriminator was already graded on.
+    """
+    per_setting: dict[tuple[float, float], tuple[float, float]] = {}
+    for setting, zero_row, one_row in zip(settings, zeros, ones):
+        low, high = np.abs(zero_row), np.abs(one_row)
+        separation = abs(float(high.mean()) - float(low.mean()))
+        scatter = float(np.mean([low.std(), high.std()]))
+        per_setting[setting] = (separation, separation / scatter if scatter else 0.0)
+
+    best = max(per_setting, key=lambda setting: per_setting[setting][1])
+    separation, snr = per_setting[best]
+    return {
+        "magnitude_frequency": best[0],
+        "magnitude_amplitude": best[1],
+        "magnitude_contrast": separation,
+        "magnitude_snr": snr,
+        # The one number that says whether the graph is reading blind: the magnitude
+        # contrast at the point the *discriminator* chose, which is the point every
+        # magnitude node inherits nothing from and every complex one uses.
+        "magnitude_snr_at_chosen": per_setting.get(chosen, (0.0, 0.0))[1],
+    }
 
 
 def _cloud_geometry(states: list[np.ndarray]) -> tuple[np.ndarray, float, float]:

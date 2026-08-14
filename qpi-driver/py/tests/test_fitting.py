@@ -631,6 +631,48 @@ def _clouds(rotation_deg: float, separation: float = 3.0, shots: int = 800):
     return ground + noise(), excited + noise()
 
 
+class TestTheMagnitudeContrastTheDiscriminatorDoesNotChoose:
+    """Nearly every node reduces its acquisition to a magnitude, and nothing measured
+    whether the readout point has any magnitude contrast at all.
+
+    The two optima are different questions. `readout_operating_point` maximises the
+    *complex* separation, most of which is phase off resonance; a magnitude sees none of
+    it. On the August 2026 B chip a magnitude sweep put the pi pulse at 0.1647 against a
+    working 0.3446 — 0.508x, the pi/2 — because ``|S|`` peaked at half population and
+    returned to the ``|0>`` level at the pi.
+    """
+
+    def _phase_only_sweep(self):
+        """Three settings; the middle one separates in phase alone."""
+        from qpi_driver.tuners.fitting import fit_readout_operating_point
+
+        rng = np.random.default_rng(20260814)
+        settings = [(7.1820e9, 0.1), (7.1821e9, 0.1), (7.1822e9, 0.1)]
+
+        def cloud(centre):
+            return centre + rng.normal(0, 0.02, 300) + 1j * rng.normal(0, 0.02, 300)
+
+        zeros, ones = [], []
+        for frequency, _amplitude in settings:
+            zeros.append(cloud(1.0 + 0.0j))
+            ones.append(cloud(-1.0 + 0.0j) if frequency == 7.1821e9 else cloud(0.4 + 0.0j))
+        return fit_readout_operating_point(settings, np.array(zeros), np.array(ones))
+
+    def test_a_phase_only_point_reports_no_magnitude_contrast(self):
+        fitted = self._phase_only_sweep()
+        assert fitted["magnitude_snr_at_chosen"] < 1.0
+
+    def test_the_magnitude_optimum_is_reported_even_when_it_is_not_chosen(self):
+        fitted = self._phase_only_sweep()
+        assert fitted["magnitude_frequency"] != fitted["readout_frequency"]
+        assert fitted["magnitude_snr"] > 10 * fitted["magnitude_snr_at_chosen"]
+
+    def test_the_chosen_point_is_still_the_discriminator_s(self):
+        """Reported, not chosen — this must not move the operating point."""
+        fitted = self._phase_only_sweep()
+        assert fitted["readout_frequency"] == 7.1821e9
+
+
 class TestTheReadoutDiscriminator:
     """The rotation and threshold that separate two IQ clouds, at any chain rotation, and what an inseparable pair refuses."""
 

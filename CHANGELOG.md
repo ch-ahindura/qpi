@@ -88,6 +88,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `readout_operating_point` reports the *magnitude* contrast across its
+  sweep, and how much of it survives at the point it picks. It optimises complex
+  separation, which is right for a discriminator and invisible to the `signal_of` magnitude
+  nearly every other node reads — and nothing measured the difference.
 - `qpi-driver/py`: a routine refused by a guard keeps the sweep behind the refusal, so the
   report carries the trace and not only the sentence. It is marked as a refusal and is not
   attributed any parameter.
