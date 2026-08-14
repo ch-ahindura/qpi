@@ -819,6 +819,50 @@ class TestTheFitOnAResult:
         # The parameters are the record of what the chip was, and they are untouched.
         assert payload["routine_results"][0]["parameters"] == {"value": 1.0}
 
+    def test_an_error_carrying_a_q1asm_program_does_not_blow_the_payload(self):
+        """The August 2026 B chip's actual failure, and the reason its results vanished.
+
+        `_run_one` interpolates the exception into the error string, and a library may put
+        anything in one. qcodes puts the *value being set* into a failed set's message, and
+        what quantify sets on a sequencer is its Q1ASM program — so a program the sequencer
+        refused to assemble came back as a 2.4 MB string. One of those made a 1.37 MB
+        payload against the 1 MB a PocketBase json field takes, and the record was refused
+        on arrival: the calibration had run, written its device config and logged its
+        report, and the request stayed `running` for ever. A restart did not help, because
+        nothing about it was transient.
+
+        `_within_fit_cap` could not catch it. There was no fit involved.
+        """
+        # Escaped, which is how a repr delivers a program and why splitlines finds none.
+        reason = "Syntax error (-285): Assembly failed., cmd='SLOT3:SEQuencer0:PROGram"
+        program = " set_mrk 1" + (r"\n" + "play 0,1,4 # play Rxy(90, 0, 'q5')") * 24000
+        report = CalibrationReport(
+            timestamp="t", duration_s=1.0, mode="partial", backend="stub"
+        )
+        for name in ("rb", "t2_echo", "drag", "fine_amplitude_90"):
+            report.errors.append(f"{name}[q5]: {reason}{program}")
+
+        payload = report.to_event_payload()
+
+        # The limit the other end actually enforces, which is what this is about.
+        assert len(json.dumps(payload)) < 1 << 20
+        # The reason survives whole; the circuit does not survive at all.
+        assert payload["errors"][0].startswith(f"rb[q5]: {reason}")
+        assert "play 0,1,4" not in payload["errors"][0]
+        assert "in the driver log" in payload["errors"][0]
+        # And nothing is lost locally: the log and the saved report keep all of it.
+        assert sum(len(e) for e in report.errors) > 3_000_000
+
+    def test_a_single_line_error_is_passed_through_untouched(self):
+        """Every error this driver composes on purpose is one line, however long — the
+        escalation guards run to about 600 characters and must arrive whole."""
+        report = CalibrationReport(
+            timestamp="t", duration_s=1.0, mode="full", backend="stub"
+        )
+        report.errors.append("rabi[q0]: the sweep is flat")
+
+        assert report.to_event_payload()["errors"] == ["rabi[q0]: the sweep is flat"]
+
     def test_a_report_inside_the_cap_keeps_every_trace(self):
         report = CalibrationReport(
             timestamp="t", duration_s=1.0, mode="full", backend="stub"

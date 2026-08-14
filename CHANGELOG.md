@@ -13,6 +13,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   of doubling it. `conditional_phase` wrote the measured fringe phase where it needed minus
   it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as
   scatter. The conditional phase itself was unaffected, being a difference of two fringes.
+- `qpi-driver/py`: an error message reaches QPI-UI without the Q1ASM program a library may
+  have embedded in it. qcodes puts the value being set into a failed set's message, and the
+  value quantify sets on a sequencer is its program — so one `Assembly failed` produced a
+  2.4 MB error, a 1.37 MB payload, and a record the server refused for exceeding the 1 MB
+  its JSON field takes. The calibration had run; its request stayed `running` for ever.
 - `qpi-driver/py`: `t1` and `t2_echo` widen their delays when the fitted coherence time
   lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
   sweep and failed, because that guard named no axis for escalation to act on.

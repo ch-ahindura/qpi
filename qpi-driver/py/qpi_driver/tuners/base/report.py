@@ -20,6 +20,13 @@ log = logging.getLogger(__name__)
 #: save is worse than a report with no chart in it.
 MAX_FIT_PAYLOAD_BYTES = 2_000_000
 
+#: A ceiling on one error message in the payload, for a message with no newline in it.
+#:
+#: Belt to `_first_line`'s braces. Nothing this driver composes comes near it — the
+#: escalation guards are the longest at about 600 characters — so a message that reaches
+#: this is one no author of it expected.
+MAX_ERROR_CHARS = 2_000
+
 #: Protocols whose ``fidelity`` is an average gate fidelity, and so comparable with each
 #: other's.
 #:
@@ -190,7 +197,7 @@ class CalibrationReport:
                 [r.to_dict() for r in self.routine_results]
             ),
             "benchmarks": [b.to_dict() for b in self.benchmarks],
-            "errors": self.errors,
+            "errors": [_within_error_cap(e) for e in self.errors],
         }
 
     def summary(self) -> str:
@@ -199,6 +206,45 @@ class CalibrationReport:
             f"duration={self.duration_s:.1f}s, routines={len(self.routine_results)}, "
             f"benchmarks={len(self.benchmarks)}, errors={len(self.errors)})"
         )
+
+
+def _within_error_cap(error: str) -> str:
+    """*error* without the program a library may have embedded in it.
+
+    An error is a string this driver writes, so its length looked like this driver's to
+    choose. It is not: `_run_one` interpolates the exception, and a library may put anything
+    in one. qcodes puts the *value being set* into a failed set's message, and what quantify
+    sets on a sequencer is its Q1ASM program — so a program the sequencer would not assemble
+    came back as a 2.4 MB error string.
+
+    On the August 2026 B chip that was the whole failure. One ``Assembly failed`` error made
+    a 1.37 MB payload against the 1 MB a PocketBase ``json`` field takes, and the record was
+    refused on arrival: the calibration had run, written its device config and logged its
+    report, and its request stayed ``running`` for ever. A restart did not help, because
+    nothing about it was transient. `_within_fit_cap` could not catch it — it caps fits, and
+    no fit was involved.
+
+    **Cut at the first newline, real or escaped.** A character cap cannot do this job: the
+    reason ends about 160 characters in and a cap anywhere past that still ships circuit —
+    236 characters of it even at 400. What separates the two is structure. A reason is one
+    line; a program is thousands, and inside a repr those arrive as the two characters
+    ``\\n`` rather than as newlines, which is why nothing that split on ``str.splitlines``
+    found them.
+
+    So the reason survives whole and the circuit does not, which is the useful half either
+    way — an operator debugging an assembly failure reads the program from the log, where it
+    still is in full, not from a dashboard field.
+    """
+    head = min(
+        (i for i in (error.find("\n"), error.find("\\n")) if i != -1),
+        default=-1,
+    )
+    kept = error if head == -1 else error[:head]
+    if len(kept) > MAX_ERROR_CHARS:
+        kept = kept[:MAX_ERROR_CHARS]
+    if len(kept) == len(error):
+        return error
+    return f"{kept}… [{len(error) - len(kept)} more characters in the driver log]"
 
 
 def _within_fit_cap(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
