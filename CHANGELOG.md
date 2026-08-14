@@ -9,6 +9,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `t2_echo` and `t1` widen their delays when the fitted coherence time
+  lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
+  sweep and failed, because that guard named no axis for escalation to act on.
+- `qpi-driver/py`: `rb` and `interleaved_rb` average more circuits per depth when the decay
+  cannot be told from the scatter around it. "Average more circuits per depth" was already
+  the advice the refusal gave, and nothing acted on it.
 - `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
   `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
   fit that had found its answer, leaving every node after it on an uncorrected pulse.

@@ -1902,6 +1902,62 @@ class TestASweepThatIsTheWrongSizeIsResized:
         # Never below two points, which is what the two-parameter fit needs.
         assert _shortened([1, 5, 9, 13], 0.01, 4) == [1, 5]
 
+    def test_a_coherence_time_past_its_window_asks_for_longer_delays(self):
+        """The B chip fitted 2.12 ms of T2 over a 100 us window — on a chip whose T1 was
+        56 us — and refused un-escalatably, because this guard named no axis."""
+        from qpi_driver.tuners.fitting.core import OutOfRange, require_in_range
+
+        with pytest.raises(OutOfRange) as raised:
+            require_in_range(2.12285e-3, 0.0, 1.0e-3, what="T2", axis="delays")
+
+        assert raised.value.axis == "delays"
+        assert raised.value.direction == "wider"
+        # 100 us widened by this reaches past the 2.12 ms it could not contain.
+        assert 100e-6 * raised.value.factor * 10 > 2.12285e-3
+
+    def test_rb_averages_harder_when_the_decay_is_lost_in_its_own_scatter(self):
+        """The axis is the circuit count, not the depths: what the guard compares is the
+        decay's span against the scatter around it, and scatter is what averaging buys
+        down. The chip's own refusal was 0.6214 against 0.3231."""
+        from qpi_driver.tuners.base.routines import (
+            MAX_CIRCUITS_PER_DEPTH,
+            _widened,
+        )
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("rb")
+        node._circuits_per_depth = 10
+        refusal = OutOfRange("x", axis="circuits_per_depth", factor=4.0)
+
+        assert _widened(node, RoutineConfig(params={}), refusal).get(
+            "circuits_per_depth"
+        ) == min(40, MAX_CIRCUITS_PER_DEPTH)
+
+    def test_rb_stops_at_the_ceiling_rather_than_running_forever(self):
+        """RB is the most expensive node in the graph and the cost is linear here."""
+        from qpi_driver.tuners.base.routines import (
+            MAX_CIRCUITS_PER_DEPTH,
+            _widened,
+        )
+        from qpi_driver.tuners.fitting.core import OutOfRange
+
+        node = routine("rb")
+        node._circuits_per_depth = MAX_CIRCUITS_PER_DEPTH
+        config = RoutineConfig(params={})
+        refusal = OutOfRange("x", axis="circuits_per_depth", factor=4.0)
+
+        # Unchanged, which is how `escalating` knows to re-raise instead of re-running.
+        assert _widened(node, config, refusal) is config
+
+    def test_every_node_the_b_chip_refused_now_resizes_itself(self):
+        """The five failures of its last run, as one statement."""
+        assert routine("t2_echo").measures_itself
+        assert routine("drag").measures_itself
+        assert routine("fine_amplitude").measures_itself
+        assert routine("fine_amplitude_90").measures_itself
+        assert routine("rb").measures_itself
+        assert routine("interleaved_rb").measures_itself
+
     def test_both_fine_amplitude_nodes_resize_themselves(self):
         assert routine("fine_amplitude").measures_itself
         assert routine("fine_amplitude_90").measures_itself
