@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rabi_12`'s ladder guard accepts a resolved oscillation however far off the
+  sqrt(2) ladder it sits, and refuses only a sweep holding less than one period. It exists to
+  catch a cosine fitted to a partial rotation, which shows fewer oscillations than the sweep
+  and never more — it had been refusing a clean three-and-a-half-period measurement.
 - `qpi-driver/py`: the fine-amplitude fit takes an intercept instead of being pinned through
   the origin, and refuses a sweep whose rotation accumulates past a radian. Two runs of an
   unchanged pi/2 pulse reported errors twelve times apart because a real baseline offset was

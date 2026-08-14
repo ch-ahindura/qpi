@@ -1637,7 +1637,11 @@ class TestTheEfPiPulseIsHeldToTheLadder:
 
         with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
             _require_ef_ladder(
-                self._device(self.B_CHIP_AMP180), "q5", self.B_CHIP_EF, 20e-9
+                self._device(self.B_CHIP_AMP180),
+                "q5",
+                self.B_CHIP_EF,
+                20e-9,
+                span=0.05,
             )
 
     def test_a_pulse_on_the_ladder_is_accepted(self):
@@ -1684,6 +1688,29 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         assert EF_ENVELOPE_AREA == pytest.approx(0.6267, rel=0.01)
         # The sqrt(2)-only prediction is 1.6x high, which is inside the window either way.
         _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5, 20e-9)  # noqa: B018
+
+    def test_a_resolved_oscillation_is_accepted_however_far_off_the_ladder(self):
+        """The failure this guard exists for has a signature, and it is the opposite one.
+
+        A drive too weak to turn a pi leaves the cosine's half period longer than the
+        sweep, so the fit extrapolates an arc — *less* than one oscillation, never more.
+        The August 2026 B chip's `rabi_12` sweep holds three and a half of them, evenly
+        spaced with a flat envelope, and the ladder refused it three runs running.
+        """
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.5622, duration=56e-9), "q5", 0.06751, 56e-9, span=0.5
+        )
+
+    def test_a_partial_rotation_this_far_off_the_ladder_is_still_refused(self):
+        """Same amplitude and same ladder violation; only the sweep is different."""
+        from qpi_driver.tuners.routines.ef import _require_ef_ladder
+
+        with pytest.raises(RoutineError, match="of an oscillation"):
+            _require_ef_ladder(
+                self._device(0.5622, duration=56e-9), "q5", 0.06751, 56e-9, span=0.05
+            )
 
     @pytest.mark.parametrize("factor", (0.55, 1.9))
     def test_the_bound_is_generous_enough_for_a_differing_duration(self, factor):
