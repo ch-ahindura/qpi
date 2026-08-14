@@ -185,7 +185,7 @@ class TestSpectroscopy:
 
         spectroscopy.build_schedule("q0", device, config, StubBackend())
         acquisition = simulator.qubit_spectroscopy(
-            spectroscopy._frequencies, spectroscopy._amplitudes
+            spectroscopy._frequencies, spectroscopy._drive_amps
         )
         fitted = spectroscopy.analyse(acquisition, "q0", device, config)
 
@@ -193,7 +193,7 @@ class TestSpectroscopy:
         # Chosen from the sweep, not from the config: the master equation broadens the
         # line at the top of the range and buries it in noise at the bottom, so a power
         # in between has to win on its own.
-        assert fitted["drive_amplitude"] in spectroscopy._amplitudes
+        assert fitted["drive_amplitude"] in spectroscopy._drive_amps
 
         # Applying it moves the device onto the true frequency.
         spectroscopy.apply(device, "q0", fitted)

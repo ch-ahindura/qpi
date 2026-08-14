@@ -165,12 +165,28 @@ class SchedulerBackend(ABC):
             needed = math.ceil(expected_s / _TIMEOUT_GRID_S) * _TIMEOUT_GRID_S
             needed += _TIMEOUT_GRID_S
             if needed > allowance:
+                # Both numbers, because they are not the same one and the difference is
+                # the whole reason this fires. 256s of pulses reads as comfortably inside
+                # a 300s ceiling and is not: it rounds up to the instrument's 60s grid,
+                # and a minute is added for upload and arming, so what has to fit is
+                # 360s. Naming only the pulse time made the warning contradict itself.
+                #
+                # And the advice names the figure an operator can act on. "Bring it under
+                # routine_timeout_s" is wrong by exactly the grid: with a 300s ceiling the
+                # pulses have to come in under 240.
                 log.warning(
-                    "schedule needs %.1fs of pulses, more than the %.0fs ceiling; "
-                    "waiting %.0fs. Lower 'shots' or the number of setpoints to bring "
-                    "it under routine_timeout_s",
+                    "schedule needs %.1fs of pulses, which is %.0fs once rounded to the "
+                    "instrument's %.0fs timeout grid with %.0fs for upload and arming — "
+                    "more than the %.0fs ceiling, so waiting %.0fs. Lower 'shots' or the "
+                    "number of setpoints to bring the pulses under %.0fs, or raise "
+                    "routine_timeout_s past %.0fs",
                     expected_s,
+                    needed,
+                    _TIMEOUT_GRID_S,
+                    _TIMEOUT_GRID_S,
                     allowance,
+                    needed,
+                    max(allowance - _TIMEOUT_GRID_S, 0.0),
                     needed,
                 )
                 allowance = needed

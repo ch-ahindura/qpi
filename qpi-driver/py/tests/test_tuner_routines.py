@@ -2148,6 +2148,27 @@ def test_every_swept_axis_is_readable_from_outside(monkeypatch, own_quantify_tun
     )
 
 
+def _grid_device():
+    """A device the 2-D spectroscopy nodes can build against."""
+    from qpi_driver.simulation.transmon import TransmonSimulator
+    from tests.utils.simulation import device_for
+
+    return device_for(TransmonSimulator(), "q0")
+
+
+class _CountingGrid(StubBackend):
+    """Answers `run` with as many points as the schedule asks for, and records the count."""
+
+    def __init__(self):
+        super().__init__()
+        self.sizes: list[int] = []
+
+    def run(self, schedule, timeout_s=None):
+        acquisitions = sum(1 for op in schedule.operations if op.kind == "Measure")
+        self.sizes.append(acquisitions)
+        return xr.Dataset({"y0": ("acq_index", np.arange(acquisitions, dtype=float))})
+
+
 class _CountingBackend(StubBackend):
     """A `StubBackend` that answers `run` with zeros and records what it was asked for.
 
@@ -2238,3 +2259,75 @@ class TestASweepTooLargeForOneScheduleIsSplit:
 
         seeds = [seed for _c, seed in seen]
         assert len(set(seeds)) == len(seeds), f"chunks shared a seed: {seeds}"
+
+
+class TestATwoDimensionalGridIsSplitByRows:
+    """`MAX_SWEEP_POINTS` bounds the points in a sweep; a 2-D schedule is rows x points.
+
+    So eleven amplitude rows of a 700-point sweep is 7700 acquisitions and some nine times
+    the 12288 instructions a sequencer takes. The guard was never wrong about the number —
+    it was counting one axis of two.
+
+    Chunked rather than capped, because a grid an operator asked for is a statement about
+    their chip: capping returns a coarser grid than was asked for, which on a frequency axis
+    means stepping over the line being looked for. And a program that will not assemble
+    comes back from qcodes carrying its own Q1ASM, which is how a 2.4 MB error once cost a
+    calibration its whole report.
+    """
+
+    ROWS = 20
+    POINTS = 101
+
+    def _acquire(self, name, rows_axis, rows):
+        from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS
+
+        node = routine(name)
+        backend = _CountingGrid()
+        config = RoutineConfig(params={rows_axis: rows, "points": self.POINTS})
+        dataset = node.acquire("q0", _grid_device(), config, backend, 60.0)
+        return node, backend.sizes, signal_of(dataset), MAX_SWEEP_POINTS
+
+    @pytest.mark.parametrize(
+        "name,rows_axis",
+        [
+            ("resonator_punchout", "amplitudes"),
+            ("flux_spectroscopy", "flux_offsets"),
+            ("qubit_spectroscopy", "drive_amps"),
+        ],
+    )
+    def test_every_piece_fits_and_nothing_is_lost(self, name, rows_axis):
+        rows = [0.02 * (i + 1) for i in range(self.ROWS)]
+        node, sizes, signal, budget = self._acquire(name, rows_axis, rows)
+
+        assert len(sizes) > 1, f"{self.ROWS}x{self.POINTS} must not be one schedule"
+        assert max(sizes) <= budget
+        # Every row swept, and the grid restored so `analyse` reshapes against it.
+        assert signal.size == self.ROWS * self.POINTS
+        assert len(getattr(node, f"_{rows_axis}")) == self.ROWS
+
+    @pytest.mark.parametrize(
+        "name,rows_axis",
+        [
+            ("resonator_punchout", "amplitudes"),
+            ("flux_spectroscopy", "flux_offsets"),
+            ("qubit_spectroscopy", "drive_amps"),
+        ],
+    )
+    def test_the_seams_fall_between_whole_rows(self, name, rows_axis):
+        """Which is why no overlap is needed. RFC 0007 §5 wants overlapping edges on a
+        chunked *band*, and is right about a band — cut a frequency axis in two and a line
+        on the seam is fitted from half its shoulders. Rows are not a band: each is an
+        independent full sweep over the same grid, so a seam costs nothing."""
+        rows = [0.02 * (i + 1) for i in range(self.ROWS)]
+        _node, sizes, _signal, _budget = self._acquire(name, rows_axis, rows)
+
+        assert all(size % self.POINTS == 0 for size in sizes), (
+            f"a schedule held a partial row: {sizes} against {self.POINTS} points"
+        )
+
+    def test_a_grid_inside_the_budget_runs_as_one_schedule(self):
+        _node, sizes, _signal, _budget = self._acquire(
+            "resonator_punchout", "amplitudes", [0.1, 0.2, 0.3]
+        )
+
+        assert len(sizes) == 1

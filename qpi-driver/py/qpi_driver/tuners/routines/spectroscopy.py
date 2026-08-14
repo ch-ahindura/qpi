@@ -511,6 +511,19 @@ class ResonatorPunchout(CalibrationRoutine):
     updates = ("measure.pulse_amp", "clock_freqs.readout")
     reads = ("clock_freqs.readout",)
 
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """A row per readout amplitude, chunked when the grid outgrows one schedule."""
+        return self.acquire_in_row_chunks(
+            target, device, config, backend, timeout_s, rows_axis="amplitudes"
+        )
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
@@ -894,6 +907,19 @@ class QubitSpectroscopy(CalibrationRoutine):
     #: span. Named because `_confirm_points` reads it too, to hold the same step.
     NARROW_SPAN = 40e6
 
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """A row per drive amplitude, chunked when the grid outgrows one schedule."""
+        return self.acquire_in_row_chunks(
+            target, device, config, backend, timeout_s, rows_axis="drive_amps"
+        )
+
     def measure(
         self,
         target: str,
@@ -970,9 +996,14 @@ class QubitSpectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         timeout_s: float,
     ) -> dict[str, Any]:
-        """The ordinary pass: build, run, fit, and refuse anything unresolved."""
-        schedule = self.build_schedule(target, device, config, backend)
-        dataset = backend.run(schedule, timeout_s=timeout_s)
+        """The ordinary pass: build, run, fit, and refuse anything unresolved.
+
+        Through `acquire`, so a power sweep of many rows is chunked rather than compiled
+        into a program no sequencer takes — this node's grid is ``drive_amps`` by points,
+        and it is the one an operator is most likely to enlarge when a line will not
+        resolve.
+        """
+        dataset = self.acquire(target, device, config, backend, timeout_s)
         return self.analyse(dataset, target, device, config)
 
     def _search(
@@ -1152,7 +1183,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         # than the one the schedule it is handed actually swept — which two passes over
         # different windows makes a live possibility rather than a theoretical one.
         self._frequencies = frequencies
-        self._amplitudes = amplitudes
+        self._drive_amps = amplitudes
 
         clock = f"{target}.01"
         # A weak drive at the calibrated pulse shape, deliberately.
@@ -1209,13 +1240,13 @@ class QubitSpectroscopy(CalibrationRoutine):
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         columns = len(self._frequencies)
-        expected = len(self._amplitudes) * columns
+        expected = len(self._drive_amps) * columns
         if signal.size < expected:
             raise RoutineError(
                 f"qubit spectroscopy expected {expected} acquisitions, got {signal.size}"
             )
-        rows = signal[:expected].reshape(len(self._amplitudes), columns)
-        fitted = fit_spectroscopy_power(self._amplitudes, self._frequencies, rows)
+        rows = signal[:expected].reshape(len(self._drive_amps), columns)
+        fitted = fit_spectroscopy_power(self._drive_amps, self._frequencies, rows)
         require_resolved_line(fitted, self._frequencies)
         return fitted
 
@@ -1379,6 +1410,19 @@ class FluxSpectroscopy(CalibrationRoutine):
         amplitude by `cz_chevron`, the node this one feeds.
         """
         return has_flux_port(device, target)
+
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """A row per flux offset, chunked when the grid outgrows one schedule."""
+        return self.acquire_in_row_chunks(
+            target, device, config, backend, timeout_s, rows_axis="flux_offsets"
+        )
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

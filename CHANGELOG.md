@@ -22,6 +22,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   can actually be widened. Each kept its setpoints under a name escalation does not look
   for, so widening found nothing and the refusal named the range already swept — `drag`
   failed run after run with an optimum of -0.614 against a swept +/-0.2 and never widened.
+- `qpi-driver/py`: `resonator_punchout`, `flux_spectroscopy` and `qubit_spectroscopy` run a
+  2-D grid as one schedule per group of rows. `MAX_SWEEP_POINTS` bounds the points in a
+  sweep, and a 2-D schedule is rows times points — eleven rows of a 700-point sweep is nine
+  times the instructions a sequencer takes.
+- `qpi-driver/py`: the timeout warning names the duration it actually compares. "needs
+  256.0s of pulses, more than the 300s ceiling" was self-contradictory: 256s rounds to the
+  instrument's 60s grid and gains a minute for arming, so what did not fit was 360s. It now
+  says so, and names the 240s the pulses have to come under rather than the 300s ceiling.
 - `qpi-driver/py`: RB runs a sweep too large for one schedule as several and combines them,
   instead of capping how hard it may average. A sequencer takes 12288 instructions and RB's
   cost is per gate, so 2413 Cliffords compiled to 1.13 MB of Q1ASM and would not assemble.

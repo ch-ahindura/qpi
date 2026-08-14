@@ -15,11 +15,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Literal
 
+import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
-from qpi_driver.tuners.fitting.core import MIN_LINE_REACH, CarriesFit, OutOfRange
+from qpi_driver.tuners.fitting.core import (
+    MIN_LINE_REACH,
+    CarriesFit,
+    OutOfRange,
+    signal_of,
+)
 
 log = logging.getLogger(__name__)
 
@@ -272,6 +278,79 @@ class CalibrationRoutine(ABC):
         """
         schedule = self.build_schedule(target, device, config, backend)
         return backend.run(schedule, timeout_s=timeout_s)
+
+    def acquire_in_row_chunks(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        *,
+        rows_axis: str,
+        columns_axis: str = "frequencies",
+    ) -> Any:
+        """A 2-D sweep as one schedule per group of rows, stitched back together.
+
+        `MAX_SWEEP_POINTS` bounds the *points* in a sweep, and for a 2-D grid the schedule
+        is ``rows * points`` — so eleven amplitude rows of a 700-point sweep is 7700
+        acquisitions and some nine times the 12288 instructions a sequencer takes. The guard
+        was never wrong about the number; it was counting one axis of two.
+
+        Chunking rather than capping, for the reason RFC 0007 exists: a grid an operator
+        asked for is a statement about their chip, and the answer to one that will not fit
+        in a program is to use more programs. Capping it instead returns a coarser grid than
+        was asked for, which on a frequency axis means stepping over the line being looked
+        for — and a program that will not assemble comes back from qcodes carrying its own
+        Q1ASM, which is how a 2.4 MB error once cost a whole calibration its report.
+
+        **Split by rows, and so no overlap is needed.** RFC 0007 §5 says a chunked band
+        wants overlapping edges, and it is right about a band: cut a frequency axis in two
+        and a line landing on the seam is fitted from half its shoulders. Rows are not a
+        band. Each row here is an independent full sweep over the same grid — a different
+        drive amplitude or flux offset — so the seam falls between whole measurements and
+        there is nothing at its edges to lose. `analyse` reshapes the result exactly as it
+        would one schedule's, because the rows arrive in the order it expects.
+        """
+        schedule = self.build_schedule(target, device, config, backend)
+        rows = list(getattr(self, f"_{rows_axis}", ()) or ())
+        columns = len(getattr(self, f"_{columns_axis}", ()) or ())
+        per_schedule = max(1, MAX_SWEEP_POINTS // max(columns, 1))
+        if len(rows) <= per_schedule:
+            return backend.run(schedule, timeout_s=timeout_s)
+
+        groups = [
+            rows[start : start + per_schedule]
+            for start in range(0, len(rows), per_schedule)
+        ]
+        log.info(
+            "%s on %s: %d %s x %d %s is %d acquisitions, past the %d one schedule holds — "
+            "running %d schedules of at most %d rows",
+            self.name,
+            target,
+            len(rows),
+            rows_axis,
+            columns,
+            columns_axis,
+            len(rows) * columns,
+            MAX_SWEEP_POINTS,
+            len(groups),
+            per_schedule,
+        )
+
+        gathered: list[Any] = []
+        for group in groups:
+            chunk = RoutineConfig(
+                enabled=config.enabled, params={**config.params, rows_axis: list(group)}
+            )
+            piece = self.build_schedule(target, device, chunk, backend)
+            dataset = backend.run(piece, timeout_s=timeout_s)
+            gathered.append(np.asarray(signal_of(dataset), dtype=float))
+
+        # The full grid restored, so `analyse` reshapes against what was actually swept
+        # rather than against the last chunk.
+        setattr(self, f"_{rows_axis}", rows)
+        return xr.Dataset({"y0": ("acq_index", np.concatenate(gathered))})
 
     def escalating(
         self,
