@@ -96,6 +96,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `rabi_12` carries its trace on success as well as on refusal, and `rb`
+  reports `decay_observed` — how much of the decay its deepest sequence actually saw, since
+  `r` is extrapolated from the rest. A chip reporting 0.15% error per gate had seen 17.6% of
+  a decay, below what its own T1 allows and 34x better than `allxy_check` on the same run.
 - `qpi-driver/py`: `readout_operating_point` reports the *magnitude* contrast across its
   sweep, and how much of it survives at the point it picks. It optimises complex
   separation, which is right for a discriminator and invisible to the `signal_of` magnitude

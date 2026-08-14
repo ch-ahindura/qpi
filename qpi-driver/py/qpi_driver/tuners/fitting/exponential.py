@@ -272,6 +272,17 @@ def fit_rb_decay(
         "fidelity": fidelity,
         "error_per_gate": error_per_gate,
         "decay_rate": decay,
+        # How much of the decay the deepest sequence actually saw. `r` is fitted from this
+        # much of the curve and extrapolated from the rest, so it says how far the reported
+        # fidelity is a measurement — a time constant is normally quoted from at least the
+        # 1/e a decay reaches at ``m = 1/(1-r)``.
+        #
+        # Reported rather than bounded, because no bound here separates the cases yet. The
+        # simulated chip sees 0.29 to 0.31 at its deepest 64 and the August 2026 B chip saw
+        # 0.176, only 1.6x apart — and that chip's 0.0015 per gate was below the 0.0025 its
+        # own 22.9 us T1 allows a 56 ns gate, against an `allxy_check` reading 34x higher.
+        # A threshold between two numbers that close would refuse healthy chips.
+        "decay_observed": 1.0 - decay ** float(np.max(x)),
         # Log x: RB depths double, and linearly the decay hugs the axis.
         "fit": fit_summary(
             x,

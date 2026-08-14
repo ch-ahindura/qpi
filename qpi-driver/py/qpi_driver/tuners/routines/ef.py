@@ -326,7 +326,16 @@ class Rabi12(CalibrationRoutine):
             fit=fitted.get("fit"),
             span=float(max(self._amplitudes)) - float(min(self._amplitudes)),
         )
-        return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
+        # The trace on success too, which only a refusal carried before. The shape is the
+        # one thing separating the two ways this node comes back wrong, and they are
+        # indistinguishable in `ef_amp180` alone: a 1-2 drive twice as strong as the ladder
+        # expects, or a sweep whose period the cosine halved. `build_schedule` records that
+        # the second has happened on this chip before.
+        return {
+            "ef_amp180": fitted["amp180"],
+            "ef_duration": self._duration,
+            "fit": fitted.get("fit"),
+        }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
