@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: an RB fidelity fitted off a straight line is refused. The amplitude is
+  bounded to 200x the survival's own span and a fit that reaches that stop is rejected: a
+  chip reported 0.9999887 and 0.9999978 — thirty to three hundred times better than its T1
+  allows — from an amplitude of -807 and -4109 on a survival normalised to [0, 1].
 - `qpi-driver/py`: `rabi_12`'s ladder guard accepts a resolved oscillation however far off the
   sqrt(2) ladder it sits, and refuses only a sweep holding less than one period. It exists to
   catch a cosine fitted to a partial rotation, which shows fewer oscillations than the sweep
