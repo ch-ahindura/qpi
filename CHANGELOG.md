@@ -23,6 +23,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a routine refused by a guard keeps the sweep behind the refusal, so the
+  report carries the trace and not only the sentence. It is marked as a refusal and is not
+  attributed any parameter.
 - `qpi-driver/py`: `allxy_check` reports its normalised response alongside the rms, so the
   21 pairs can be read after the single-qubit chain finishes. `allxy` runs before
   `fine_amplitude` and `fine_amplitude_90`, so it cannot show whether either helped.

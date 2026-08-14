@@ -332,14 +332,17 @@ class Tuner(ABC):
         is *in the file*. Recording it for a value that never reached disk would assert a
         measurement the config does not hold, and a wrong record is worse than none.
 
-        `report.routine_results` holds only the routines that succeeded — the DAG appends
-        one on the success path alone — so the gate RFC 0008 §7 asks for is already here:
-        a parameter is attributable when its producer succeeded, its guards passed, and its
-        value was persisted.
+        The gate RFC 0008 §7 asks for is `RoutineResult.failed`: a parameter is
+        attributable when its producer succeeded, its guards passed, and its value was
+        persisted. The DAG appends a result on the failure path too, carrying the sweep a
+        guard refused, and attributing a parameter to one of those would assert a
+        measurement that was rejected and never written — worse than no record at all.
         """
         store = ProvenanceStore.load(self._device_config_path)
         routines = {routine.name: routine for routine in self.routines()}
         for result in report.routine_results:
+            if result.failed:
+                continue
             routine = routines.get(result.routine_name)
             if routine is None or not routine.updates:
                 continue

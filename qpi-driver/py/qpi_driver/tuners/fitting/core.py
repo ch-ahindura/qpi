@@ -21,7 +21,28 @@ MAX_FIT_POINTS = 200
 MAX_REACH_FACTOR = 8.0
 
 
-class FitError(Exception):
+class CarriesFit:
+    """Mixin for an error that hands back the sweep it refused.
+
+    A guard rejecting a fit is the moment that fit is most worth looking at, and raising
+    used to throw it away: the report kept the sentence and lost the trace. On the August
+    2026 B chip that left three consecutive runs in which `rabi_12`'s ladder guard said the
+    amplitude was 3.8x off and nothing could show whether the sweep behind it was a real
+    oscillation or a harmonic of one — a question one glance at the trace settles.
+
+    Opt-in per guard, because only some have a fit to give: a refusal that fires before
+    anything was fitted has nothing to attach, and `fit=None` is then the honest answer.
+
+    The DAG recovers it duck-typed, off `getattr(exc, "fit", None)`, which is why this can
+    be a mixin on two unrelated exception hierarchies rather than a base class for both.
+    """
+
+    def __init__(self, *args: object, fit: dict | None = None) -> None:
+        super().__init__(*args)
+        self.fit = fit
+
+
+class FitError(CarriesFit, Exception):
     """The data could not be fitted, or the fit is not physically usable."""
 
 

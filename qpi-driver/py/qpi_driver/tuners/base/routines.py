@@ -19,7 +19,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
-from qpi_driver.tuners.fitting.core import MIN_LINE_REACH, OutOfRange
+from qpi_driver.tuners.fitting.core import MIN_LINE_REACH, CarriesFit, OutOfRange
 
 log = logging.getLogger(__name__)
 
@@ -57,12 +57,14 @@ DEFAULT_SWEEP_POINTS = 51
 MAX_SWEEP_POINTS = 700
 
 
-class RoutineError(Exception):
+class RoutineError(CarriesFit, Exception):
     """A routine could not produce a usable result.
 
     Raised rather than returned so a failure is recorded against the routine
     that caused it. A fit that silently returns zeros would be written to the
     device as though it were a measurement (RFC 0004 §10).
+
+    Carries the refused sweep where the guard has one — see `CarriesFit`.
     """
 
 

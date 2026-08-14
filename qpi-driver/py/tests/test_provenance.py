@@ -6,6 +6,8 @@ A device config is what runs circuits; this file only remembers where its number
 from, so its worst outcome must be forgetting rather than raising.
 """
 
+from types import SimpleNamespace
+
 import yaml
 
 from qpi_driver.tuners.base.provenance import (
@@ -234,3 +236,58 @@ class TestFitSummary:
 
     def test_a_routine_that_reported_no_fit_summarises_to_nothing(self):
         assert fit_summary(None) == {}
+
+
+class TestARefusedRoutineIsNotAttributedAParameter:
+    """The gate RFC 0008 §7 asks for: a parameter is attributable when its producer
+    succeeded, its guards passed, and its value was persisted.
+
+    It used to be positional — the DAG only appended a `RoutineResult` on the success
+    path, so iterating them was the check. The DAG now appends one on the failure path
+    too, carrying the sweep a guard refused, so the gate is `RoutineResult.failed` and
+    has to be tested rather than assumed.
+    """
+
+    def _tuner(self, tmp_path):
+        """Enough of a `Tuner` for `_record_provenance`, which is called unbound below.
+
+        A real one needs instruments; this needs a device config path, the routines, and
+        an element that *does* carry the path — so the only thing that can stop the record
+        is the flag under test.
+        """
+        from qpi_driver.tuners.routines import all_routines
+
+        element = SimpleNamespace(clock_freqs=SimpleNamespace(f01=5.0e9))
+        return SimpleNamespace(
+            _device_config_path=tmp_path / "device.yml",
+            device=SimpleNamespace(get_element=lambda _name: element),
+            routines=all_routines,
+        )
+
+    def _run(self, tmp_path, *, failed: bool):
+        from qpi_driver.tuners.base import Tuner
+        from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
+
+        tuner = self._tuner(tmp_path)
+        report = CalibrationReport(timestamp="run-1", duration_s=0.0, mode="full")
+        report.add_routine(
+            RoutineResult(
+                routine_name="ramsey",
+                target="q0",
+                parameters={} if failed else {"clock_freq_01": 5.0e9},
+                timestamp="2026-08-14T00:44:51Z",
+                duration_s=1.0,
+                fit={"x": [1.0], "measured": [2.0], "fitted": [2.0]},
+                failed=failed,
+            )
+        )
+        Tuner._record_provenance(tuner, report)
+        return ProvenanceStore.load(tmp_path / "device.yml").of("q0", "clock_freqs.f01")
+
+    def test_a_refused_result_records_nothing(self, tmp_path):
+        assert self._run(tmp_path, failed=True) is None
+
+    def test_the_same_result_that_succeeded_is_recorded(self, tmp_path):
+        """The positive control: what stops attribution is the flag, not the empty
+        parameters or anything else incidental to how a refusal is shaped."""
+        assert self._run(tmp_path, failed=False).routine == "ramsey"

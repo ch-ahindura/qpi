@@ -287,6 +287,7 @@ class Rabi12(CalibrationRoutine):
             fitted["amp180"],
             self._duration,
             contrast=float(fitted.get("contrast", 0.0)),
+            fit=fitted.get("fit"),
         )
         return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
 
@@ -1057,6 +1058,7 @@ def _require_ef_ladder(
     ef_amp180: float,
     ef_duration: float,
     contrast: float = 0.0,
+    fit: dict | None = None,
 ) -> None:
     """Refuse a 1-2 pi amplitude the 0-1 one says cannot be a pi pulse.
 
@@ -1101,6 +1103,9 @@ def _require_ef_ladder(
             f"to the 0-1 pulse's length would put the pi at {expected / stretch:.4g}."
         )
     )
+    # With the sweep attached: whether 0.0675 is this oscillation's fundamental or a
+    # harmonic of a non-sinusoidal readout is a question one look at the trace settles,
+    # and three runs of this refusal in a row could not answer it.
     raise RoutineError(
         f"the 1-2 pi amplitude fitted to {ef_amp180:.4g} against the {expected:.4g} that "
         f"the 0-1 amplitude of {amp180:.4g} implies — {ratio:.2f}x, outside the "
@@ -1108,7 +1113,8 @@ def _require_ef_ladder(
         "ladder allows. A cosine fitted to a partial rotation reports a smaller amplitude "
         "than a pi pulse, so this is most likely a 1-2 drive too weak to turn one: check "
         f"clock_freqs.f12 is the transition, and widen the amplitude sweep."
-        f"{lengths}{_contrast_reading(contrast)}"
+        f"{lengths}{_contrast_reading(contrast)}",
+        fit=fit,
     )
 
 

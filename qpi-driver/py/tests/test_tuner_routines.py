@@ -17,6 +17,8 @@ from typing import Any
 import numpy as np
 import xarray as xr
 import yaml
+import time
+
 import pytest
 from qpi_driver.compat.qblox import IS_QBLOX_SCHEDULER_INSTALLED
 from qpi_driver.compat.quantify import IS_QUANTIFY_INSTALLED
@@ -1552,6 +1554,59 @@ class TestEscalationStopsAtFullScale:
         )
 
         assert max(widened.get("delays")) == pytest.approx(320e-6)
+
+
+class TestARefusalKeepsItsFit:
+    """A guard rejecting a fit is when that fit most wants looking at.
+
+    Three consecutive runs of the B chip refused `rabi_12` on the sqrt(2) ladder, and none
+    of them could say whether the sweep behind the refusal was a real oscillation or a
+    harmonic of a non-sinusoidal readout — because raising discarded it. The report kept
+    the sentence and lost the trace.
+    """
+
+    def _report(self):
+        from qpi_driver.tuners.base.report import CalibrationReport
+
+        return CalibrationReport(timestamp="now", duration_s=0.0, mode="full")
+
+    def _refuse(self, report, exc):
+        from qpi_driver.tuners.base.dag import _record_refused_fit
+
+        _record_refused_fit(report, routine("rabi_12"), "q5", exc, time.monotonic())
+        return report
+
+    def test_the_refused_sweep_reaches_the_report(self):
+        sweep = {"x": [0.0, 0.1], "measured": [0.2, 0.3], "fitted": [0.2, 0.3]}
+        report = self._refuse(self._report(), RoutineError("off the ladder", fit=sweep))
+
+        assert [r.fit for r in report.routine_results] == [sweep]
+
+    def test_it_claims_no_measurement(self):
+        """Nothing was applied and nothing was written, and empty parameters say so."""
+        report = self._refuse(
+            self._report(), RoutineError("off the ladder", fit={"x": [1.0]})
+        )
+        result = report.routine_results[0]
+
+        assert result.failed
+        assert result.parameters == {}
+
+    def test_a_refusal_with_nothing_fitted_adds_nothing(self):
+        """A guard that fires before anything was fitted has no trace to give, and an
+        empty result would read as a routine that ran."""
+        report = self._refuse(self._report(), RoutineError("no line in the sweep"))
+
+        assert report.routine_results == []
+
+    def test_both_error_hierarchies_can_carry_one(self):
+        """`RoutineError` and `FitError` are unrelated, which is why the DAG recovers the
+        fit duck-typed rather than by type."""
+        from qpi_driver.tuners.fitting.core import FitError
+
+        assert RoutineError("x", fit={"a": 1}).fit == {"a": 1}
+        assert FitError("x", fit={"a": 1}).fit == {"a": 1}
+        assert RoutineError("x").fit is None
 
 
 class TestTheEfPiPulseIsHeldToTheLadder:

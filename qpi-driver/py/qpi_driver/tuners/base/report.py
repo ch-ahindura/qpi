@@ -57,6 +57,18 @@ class RoutineResult:
     #: the fact. Out of :meth:`to_dict` for the reason `CalibrationReport.notes`
     #: is out of the payload: it is one contract written twice.
     priors: tuple[str, ...] = ()
+    #: Whether this result is the *trace of a refusal* rather than a measurement.
+    #:
+    #: A guard that rejects a fit is when the fit most wants looking at, so the sweep is
+    #: kept and the parameters are not: nothing was applied and nothing was written, and
+    #: `parameters` is empty to say so. The failure itself is still reported through
+    #: `CalibrationReport.errors`, which stays the one place a run's failures are counted.
+    #:
+    #: Out of :meth:`to_dict` for the reason `priors` is: that payload is one contract
+    #: written twice and a field added on one side only would fail the tests asserting the
+    #: two against each other. The chart still reaches the card, because `fit` is in the
+    #: payload already.
+    failed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         payload = {

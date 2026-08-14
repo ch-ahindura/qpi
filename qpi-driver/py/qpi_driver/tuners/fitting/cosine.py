@@ -364,13 +364,22 @@ def fit_fine_amplitude(
 
     reached = abs(error_per_pulse) * float(np.max(counts))
     if reached > MAX_ACCUMULATED_ROTATION:
+        # With the trace: "a straight line does not describe this" is a claim about a
+        # shape, and the shape is the evidence for it.
         raise FitError(
             f"the amplified rotation reaches {reached:.2f} rad by the "
             f"{int(np.max(counts))}th pulse, past the {MAX_ACCUMULATED_ROTATION:g} where "
             f"sin(n*d) is still n*d — so the straight line fitted through it is not "
             f"measuring {error_per_pulse:.4g} rad per pulse, and the amplitude it implies "
             f"is not a calibration. Shorten the repetition counts until the largest turns "
-            f"under a radian, or fix the amplitude this is refining first"
+            f"under a radian, or fix the amplitude this is refining first",
+            fit=fit_summary(
+                counts,
+                demodulated,
+                error_per_pulse * counts + baseline,
+                x_label="pulses",
+                y_label="demodulated",
+            ),
         )
     if abs(baseline) > NOTEWORTHY_BASELINE:
         log.warning(

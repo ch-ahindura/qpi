@@ -629,7 +629,40 @@ class CalibrationDAG:
         except Exception as exc:
             log.exception("routine %s failed on %s", routine.name, target)
             report.errors.append(f"{routine.name}[{target}]: {exc}")
+            _record_refused_fit(report, routine, target, exc, started)
             return False
+
+
+def _record_refused_fit(
+    report: CalibrationReport,
+    routine: CalibrationRoutine,
+    target: str,
+    exc: BaseException,
+    started: float,
+) -> None:
+    """Keep the sweep a guard refused, where the guard handed one back.
+
+    Duck-typed off the exception rather than typed, because the two exception hierarchies
+    a routine can raise from are unrelated — see `CarriesFit`, which both mix in.
+
+    No parameters: nothing was applied and nothing was written, and an empty mapping says
+    that where a populated one would read as a measurement. The failure is still counted
+    once, through `report.errors`.
+    """
+    refused = getattr(exc, "fit", None)
+    if refused is None:
+        return
+    report.add_routine(
+        RoutineResult(
+            routine_name=routine.name,
+            target=target,
+            parameters={},
+            timestamp=utc_timestamp(),
+            duration_s=time.monotonic() - started,
+            fit=refused,
+            failed=True,
+        )
+    )
 
 
 def _over_budget(
