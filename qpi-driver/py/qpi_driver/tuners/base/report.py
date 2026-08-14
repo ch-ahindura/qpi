@@ -15,22 +15,10 @@ log = logging.getLogger(__name__)
 
 #: How much of a report's ``routine_results`` may be fit summaries before all of them
 #: are dropped (RFC 0006 §7). A full walk on five qubits is projected at ~150 kB, so
-#: this is still an order of magnitude of headroom: it is not a budget to spend but a
-#: floor under which a report is guaranteed to save. A report that will not save is worse
-#: than a report with no chart in it.
-#:
-#: 800 kB because that is what the other end takes. This was 2 MB, chosen as "generous",
-#: and QPI-UI stores `routine_results` in a PocketBase ``json`` field whose limit —
-#: ``DefaultJSONFieldMaxSize``, 1 MB — nothing here declares otherwise. So the cap was set
-#: to almost exactly twice the point at which the record is refused on arrival, which
-#: turns the one guard against an unsaveable report into a guarantee of one: the driver
-#: would trim to 1.9 MB, emit, and the insert would fail. 800 kB leaves the rest of the
-#: payload — parameters, errors, benchmarks, timestamps — a fifth of the field to sit in.
-#:
-#: Kept as a constant here rather than read from the server, because the driver cannot ask:
-#: it emits into a socket and never sees the schema. If that limit is ever raised, this is
-#: the number to raise with it.
-MAX_FIT_PAYLOAD_BYTES = 800_000
+#: this is more than an order of magnitude of headroom: it is not a budget to spend
+#: but a floor under which a report is guaranteed to save. A report that will not
+#: save is worse than a report with no chart in it.
+MAX_FIT_PAYLOAD_BYTES = 2_000_000
 
 #: Protocols whose ``fidelity`` is an average gate fidelity, and so comparable with each
 #: other's.

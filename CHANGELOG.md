@@ -9,39 +9,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
-- `qpi-driver/py`: the CZ's virtual-Z corrections cancel the phase the gate leaves instead
-  of doubling it. `conditional_phase` wrote the measured fringe phase where it needed minus
-  it, so every CZ left 151.7 degrees on the control and `interleaved_rb` came back as
-  scatter. The conditional phase itself was unaffected, being a difference of two fringes.
-- `qpi-driver/py`: `rb` deepens its sequences when the decay is too shallow to identify,
-  which is what its refusal already advised, and stops at an instruction budget rather than
-  walking three doublings out to a program no sequencer would take.
-- `qpi-driver/py`: a benchmark that runs its own measurement loop reaches `report.benchmarks`.
-  It previously appeared in `routine_results` and nowhere else, so it looked like it had run
-  while the drift check compared against nothing.
-- `qpi-driver/py`: a fit refused for scatter carries the sweep it refused, as the other
-  refusals already did.
-- `qpi-driver/py`: `t2_echo` and `t1` widen their delays when the fitted coherence time
-  lands past the window, instead of refusing. A chip fitted 2.12 ms of T2 over a 100 us
-  sweep and failed, because that guard named no axis for escalation to act on.
-- `qpi-driver/py`: `rb` and `interleaved_rb` average more circuits per depth when the decay
-  cannot be told from the scatter around it. "Average more circuits per depth" was already
-  the advice the refusal gave, and nothing acted on it.
-- `qpi-driver/py`: `drag` widens its beta sweep when the optimum lies outside it, as
-  `drag_12` already did. A chip whose optimum was -0.4803 against a swept +/-0.2 refused a
-  fit that had found its answer, leaving every node after it on an uncorrected pulse.
-- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` shorten their repetition counts
-  when the amplified rotation outruns the linearisation, instead of failing. How many
-  repetitions the fit can take depends on the error it is measuring, so no default is right
-  in advance.
-- `qpi-driver/py`: an RB fidelity fitted off a straight line is refused. The amplitude is
-  bounded to 200x the survival's own span and a fit that reaches that stop is rejected: a
-  chip reported 0.9999887 and 0.9999978 — thirty to three hundred times better than its T1
-  allows — from an amplitude of -807 and -4109 on a survival normalised to [0, 1].
-- `qpi-driver/py`: `rabi_12`'s ladder guard accepts a resolved oscillation however far off the
-  sqrt(2) ladder it sits, and refuses only a sweep holding less than one period. It exists to
-  catch a cosine fitted to a partial rotation, which shows fewer oscillations than the sweep
-  and never more — it had been refusing a clean three-and-a-half-period measurement.
 - `qpi-driver/py`: the fine-amplitude fit takes an intercept instead of being pinned through
   the origin, and refuses a sweep whose rotation accumulates past a radian. Two runs of an
   unchanged pi/2 pulse reported errors twelve times apart because a real baseline offset was

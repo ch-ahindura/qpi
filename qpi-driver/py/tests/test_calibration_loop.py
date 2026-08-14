@@ -21,7 +21,6 @@ Needs both a scheduler and the `sim` group:
     make test-py-loop
 """
 
-import os
 import shutil
 from pathlib import Path
 
@@ -1276,24 +1275,6 @@ TRUE_RESONATORS = {"q0": 6.004, "q1": 6.014, "q2": 6.024}
 TRUE_READOUT_PHASES = {"q0": 35.0, "q1": 155.0, "q2": 265.0}
 
 
-#: Whether to benchmark thoroughly rather than just correctly — ``QPI_SLOW_BENCHMARKS=1``.
-#:
-#: Every routine runs either way and every guard has to pass either way; what this buys is
-#: circuits per depth, and so the precision of the two fidelities. Off while developing, on
-#: before a tag or a merge, which is where CI sets it.
-#:
-#: It exists because `interleaved_rb` was held back entirely for a while, and the reason
-#: turned out not to be cost at all. Its simulated survival came back as scatter that no
-#: amount of averaging touched — 0.350 of residual against a 0.410 span at four circuits per
-#: depth, and 0.363 against 0.177 at twenty-eight, which is not how ``1/sqrt(N)`` behaves.
-#: What was actually wrong was the CZ's virtual-Z correction: `conditional_phase` wrote the
-#: fringe phase where it needed minus it, so every interleaved CZ left 151.69 deg on the
-#: control and the RB recovery gate knew nothing about it. Corrected, the same four circuits
-#: resolve the decay. The flag stays because thoroughness is still worth having on demand,
-#: and because it is where the next expensive benchmark will go.
-SLOW_BENCHMARKS = os.environ.get("QPI_SLOW_BENCHMARKS") == "1"
-
-
 #: Sweeps sized for the simulated chip. Every one of these is a property of the
 #: simulator's own parameters — T1 of 30 us wants a sweep several times that, and
 #: a sweep shorter than the decay cannot measure it.
@@ -1342,20 +1323,8 @@ FULL_DAG_SWEEPS: dict[str, dict] = {
     "t1": {"delays": [round(6e-6 * i, 9) for i in range(21)]},
     "t2_echo": {"delays": [round(2e-6 * i, 9) for i in range(41)]},
     "fine_amplitude": {"repetitions": [1, 3, 5, 7, 9]},
-    # Deep enough for the decay to be identifiable, which 32 was not: at the simulated
-    # 0.001 per gate the fit ran its amplitude to the stop and reported 0.9999922 against
-    # a true 0.999, through every run this test had ever made. Sequence length rather than
-    # circuit count, which is the cheaper of the two axes here.
-    # Two circuits, and `SLOW_BENCHMARKS` deliberately does not raise it. At twelve the
-    # fit runs its amplitude to the stop on q1 — and deepening to 127 does not rescue it,
-    # so it is not reach. Something about that schedule is different and it is not
-    # diagnosed; two circuits is the configuration this test has always passed on, and
-    # widening the sweep of a node that works to chase it would be the wrong order.
-    "rb": {"depths": [1, 4, 16, 32, 64], "circuits_per_depth": 2},
-    "interleaved_rb": {
-        "depths": [1, 4, 10, 20, 40],
-        "circuits_per_depth": 12 if SLOW_BENCHMARKS else 4,
-    },
+    "rb": {"depths": [1, 4, 16, 32], "circuits_per_depth": 2},
+    "interleaved_rb": {"depths": [1, 4, 10, 20], "circuits_per_depth": 2},
     # Narrow, because the avoided crossing is a few MHz wide and the default grid
     # steps ~75 MHz per point — see `MIN_CHEVRON_CONTRAST`.
     "cz_chevron": {

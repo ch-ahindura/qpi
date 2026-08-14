@@ -575,13 +575,6 @@ class CalibrationDAG:
                     raise _over_budget(elapsed, allowed, allowance, routine.name)
                 fit = params.pop("fit", None)
                 routine.apply(device, target, params)
-                # On this path too, and it was not. A benchmark that gained a `measure`
-                # silently stopped appearing in `report.benchmarks` while still appearing
-                # in `routine_results` — so it looked like it had run, and the drift check
-                # compared against nothing. `rb` gaining an escalation is what surfaced it;
-                # `allxy_check` and `interleaved_rb` would have hit the same wall.
-                if routine.is_benchmark:
-                    report.add_benchmarks_from(routine.name, target, params)
                 report.add_routine(
                     RoutineResult(
                         routine_name=routine.name,

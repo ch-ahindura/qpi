@@ -18,7 +18,6 @@ same opt-in every other addition in this RFC makes.
 
 from typing import Any
 
-import logging
 import math
 
 import numpy as np
@@ -58,8 +57,6 @@ from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
     EXCITED_SPAN_IN_LINEWIDTHS,
 )
 
-log = logging.getLogger(__name__)
-
 #: How far the fitted 1-2 pi amplitude may sit from the ladder the 0-1 one implies.
 #:
 #: A transmon's 1-2 matrix element is sqrt(2) times its 0-1 one, so at the same duration the
@@ -75,23 +72,6 @@ log = logging.getLogger(__name__)
 #: sweep reported |2> *closer* to |0> than |1> is, which no transmon does, and
 #: `three_state_discrimination` was left as the only node that refused.
 MAX_EF_LADDER_ERROR = 2.0
-
-#: How much of an oscillation the sweep must show before the ladder stops being evidence.
-#:
-#: The bound above exists for one failure and only one: `fit_rabi` fitting a *partial*
-#: rotation, where a drive too weak to turn a pi leaves the cosine's half period longer
-#: than the sweep and the fit extrapolates an arc into a smaller amplitude. That failure
-#: has a signature, and it is the opposite of what an off-ladder amplitude looks like when
-#: the drive is strong: a partial rotation shows *less* than one period, never more.
-#:
-#: The August 2026 B chip is why this is here. Its `rabi_12` sweep runs 0 to 0.5 and holds
-#: three and a half full periods — five maxima and five minima, evenly spaced, a flat
-#: envelope, a residual of 7.8% of contrast, and a peak-to-peak 1.5x `rabi`'s own, which is
-#: what |0>-|2> should give against |0>-|1>. Nothing about that is a partial rotation, and
-#: the ladder refused it three runs running on an amplitude 3.7x off. Both drives share a
-#: LO, mixer corrections and attenuation in that chip's hardware config, so the factor is
-#: real and unexplained — but a resolved measurement is not the place to litigate it.
-MIN_RESOLVED_PERIODS = 1.0
 
 #: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
 #:
@@ -308,7 +288,6 @@ class Rabi12(CalibrationRoutine):
             self._duration,
             contrast=float(fitted.get("contrast", 0.0)),
             fit=fitted.get("fit"),
-            span=float(max(self._amplitudes)) - float(min(self._amplitudes)),
         )
         return {"ef_amp180": fitted["amp180"], "ef_duration": self._duration}
 
@@ -1080,7 +1059,6 @@ def _require_ef_ladder(
     ef_duration: float,
     contrast: float = 0.0,
     fit: dict | None = None,
-    span: float = 0.0,
 ) -> None:
     """Refuse a 1-2 pi amplitude the 0-1 one says cannot be a pi pulse.
 
@@ -1115,28 +1093,6 @@ def _require_ef_ladder(
     ratio = ef_amp180 / expected if expected else 0.0
     if 1.0 / MAX_EF_LADDER_ERROR <= ratio <= MAX_EF_LADDER_ERROR:
         return
-
-    # A resolved oscillation is not the failure this guard exists for, whatever the ladder
-    # says about it — see :data:`MIN_RESOLVED_PERIODS`. Said rather than raised, because
-    # the number is measured and the discrepancy is still worth an operator's attention.
-    periods = span / (2.0 * ef_amp180) if ef_amp180 else 0.0
-    if periods >= MIN_RESOLVED_PERIODS:
-        log.warning(
-            "%s: the 1-2 pi amplitude fitted to %.4g against the %.4g a sqrt(2) ladder "
-            "implies from the 0-1 amplitude of %.4g — %.2fx. Accepted, because the sweep "
-            "resolves %.1f full oscillations and a drive too weak to turn a pi shows less "
-            "than one, never more: this is a measurement the ladder does not describe "
-            "rather than a fit of a partial rotation. Worth finding out why the 1-2 drive "
-            "is %.1fx stronger than the ladder predicts",
-            target,
-            ef_amp180,
-            expected,
-            amp180,
-            ratio,
-            periods,
-            1.0 / ratio if ratio else 0.0,
-        )
-        return
     lengths = (
         ""
         if abs(stretch - 1.0) < 1e-9
@@ -1156,10 +1112,7 @@ def _require_ef_ladder(
         f"{1 / MAX_EF_LADDER_ERROR:.1f}-{MAX_EF_LADDER_ERROR:.0f}x a transmon's sqrt(2) "
         "ladder allows. A cosine fitted to a partial rotation reports a smaller amplitude "
         "than a pi pulse, so this is most likely a 1-2 drive too weak to turn one: check "
-        f"clock_freqs.f12 is the transition, and widen the amplitude sweep. The sweep "
-        f"resolves {periods:.2f} of an oscillation, under the "
-        f"{MIN_RESOLVED_PERIODS:g} that would make this a measurement rather than an "
-        f"extrapolated arc."
+        f"clock_freqs.f12 is the transition, and widen the amplitude sweep."
         f"{lengths}{_contrast_reading(contrast)}",
         fit=fit,
     )

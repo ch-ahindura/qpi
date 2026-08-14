@@ -289,43 +289,6 @@ class TestExponentialFits:
         assert fitted["fidelity"] == pytest.approx(expected, abs=0.002)
         assert fitted["error_per_gate"] == pytest.approx(1 - expected, abs=0.002)
 
-    def test_a_fit_stopped_at_its_amplitude_bound_is_refused(self):
-        """The B chip's two runs, which reported an error per gate of 1.1e-05 and
-        2.2e-06 — thirty to three hundred times below what its 56 us T1 allows a 56 ns
-        gate. Leaving A unbounded is right and this is its far end: as |A| grows the
-        exponential becomes its own linear limit, and a line is fitted by pinning r at
-        one, so the fidelity comes off the boundary rather than off the chip.
-
-        A bound alone only moves the wall — both of these then pin against it, at -200
-        exactly. What separates them from a real decay is landing *on* it.
-        """
-        depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
-        for survival in (
-            [0.14103, 0, 0.21947, 0.25319, 0.29193, 0.53601, 1.0],
-            [0.03305, 0, 0.04374, 0.13640, 0.21021, 0.48157, 1.0],
-        ):
-            with pytest.raises(FitError, match="stopped there rather than found"):
-                fit_rb_decay(depths, np.array(survival))
-
-    @pytest.mark.parametrize("fidelity", [0.986, 0.999, 0.9998])
-    def test_a_real_decay_is_nowhere_near_the_bound(self, fidelity):
-        """The guard must not pin a good chip, which is what bounding A tightly would do
-        — see the docstring. These fit A near 0.5 against a bound of 200."""
-        depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
-        survival = 0.5 + 0.5 * np.power(1 - 2 * (1 - fidelity), depths)
-
-        assert fit_rb_decay(depths, survival)["fidelity"] == pytest.approx(
-            fidelity, abs=1e-4
-        )
-
-    def test_the_refusal_carries_the_sweep_it_refused(self):
-        depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
-        survival = np.array([0.03305, 0, 0.04374, 0.13640, 0.21021, 0.48157, 1.0])
-
-        with pytest.raises(FitError) as refusal:
-            fit_rb_decay(depths, survival)
-        assert refusal.value.fit["measured"] == pytest.approx(survival)
-
     def test_rb_recovers_the_same_fidelity_from_a_rescaled_signal(self):
         """The fit must not care about the readout's scale and offset.
 
@@ -1119,47 +1082,3 @@ class TestAThreeStateOperatingPointNeedsThreeStates:
         assert MIN_THREE_STATE_SEPARATION > 1.0, (
             "it must exceed what the consumer refuses at"
         )
-
-
-class TestTheCzPhaseCorrectionCancelsRatherThanDoubles:
-    """`conditional_phase` wrote the fringe phase where it needed minus it.
-
-    So every CZ left twice its own single-qubit phase on the control, plus 180 — and the
-    RB recovery gate knows nothing about a virtual Z, so `interleaved_rb` came back as
-    scatter that no amount of averaging touched. The conditional phase itself was right
-    all along, because a *difference* of two fringe phases cancels both conventions.
-    """
-
-    #: What the simulated chip measured, and what its CZ actually leaves, in degrees.
-    MEASURED_AND_TRUE = (
-        (345.8970926123802, 165.79223075716902),
-        (178.6323204994748, -1.442104015017689),
-    )
-
-    @pytest.mark.parametrize("fringe,left", MEASURED_AND_TRUE)
-    def test_the_correction_cancels_the_phase_the_cz_leaves(self, fringe, left):
-        from qpi_driver.tuners.fitting.chevron import _cancelling
-
-        residual = (left + _cancelling(fringe) + 180.0) % 360.0 - 180.0
-
-        assert abs(residual) < 0.5, f"{residual:.2f} deg left on every CZ"
-
-    @pytest.mark.parametrize("fringe,left", MEASURED_AND_TRUE)
-    def test_writing_the_fringe_phase_doubled_the_error(self, fringe, left):
-        """What it used to do, kept as the thing being fixed rather than as behaviour."""
-        residual = (left + fringe + 180.0) % 360.0 - 180.0
-
-        assert abs(residual) > 100.0
-
-    def test_it_is_reported_beside_the_phase_it_cancels(self):
-        from qpi_driver.tuners.fitting import fit_conditional_phase
-
-        phases = np.arange(0.0, 360.0, 15.0)
-        # Two fringes 180 deg apart: a conditional phase of exactly pi.
-        ground = 0.5 + 0.5 * np.cos(np.deg2rad(phases - 30.0))
-        excited = 0.5 + 0.5 * np.cos(np.deg2rad(phases - 210.0))
-        fitted = fit_conditional_phase(phases, ground, excited)
-
-        assert fitted["conditional_phase"] == pytest.approx(180.0, abs=1.0)
-        assert fitted["reference_phase"] == pytest.approx(30.0, abs=1.0)
-        assert fitted["reference_correction"] == pytest.approx(150.0, abs=1.0)

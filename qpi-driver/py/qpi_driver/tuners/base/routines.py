@@ -36,22 +36,6 @@ GRID_NS = 1e-9
 #: centring, the resolution and the NCO band clamp all at once. See `_scalar_axis`.
 SCALAR_AXES = frozenset({"span"})
 
-#: Axes that are a *repeat count* rather than a reach — widened by averaging harder over
-#: the same sweep, not by sweeping further.
-#:
-#: Separate from `SCALAR_AXES` because that one moves ``points`` alongside ``span`` to hold
-#: the step size, and a circuit count has no step to hold. Scatter falls as ``1/sqrt(N)``,
-#: so the factor a refusal asks for is applied to the count directly.
-AVERAGING_AXES = frozenset({"circuits_per_depth"})
-
-#: The most circuits per depth escalation will ask an RB sweep for.
-#:
-#: RB is the most expensive node in the graph and the cost is linear here, so this is a
-#: ceiling on the ceiling: 50 against the shipped default of 10 is five times the runtime
-#: of a node that already takes half a minute, and past it the honest answer is that the
-#: chip's readout is too noisy to benchmark rather than that the sweep was too small.
-MAX_CIRCUITS_PER_DEPTH = 50
-
 #: Points in a span-based sweep when the operator names none. Shared with
 #: `_frequency_sweep`, which is where the grid is actually built.
 DEFAULT_SWEEP_POINTS = 51
@@ -504,26 +488,6 @@ def _widened(
     so the next attempt asks the NCO for a frequency it cannot reach. Widening ``span``
     instead leaves centring, resolution and the band clamp where they already live.
     """
-    if refusal.axis in AVERAGING_AXES:
-        current = int(
-            config.get(refusal.axis, getattr(routine, f"_{refusal.axis}", 0)) or 0
-        )
-        wanted = min(int(current * refusal.factor), MAX_CIRCUITS_PER_DEPTH)
-        if not current or wanted <= current:
-            return config
-        return RoutineConfig(
-            enabled=config.enabled, params={**config.params, refusal.axis: wanted}
-        )
-
-    if refusal.direction == "shorter":
-        # Owned by the routine, not by this — see `OutOfRange.direction`. Every sweep that
-        # asks to be shortened is a repetition ladder, and interpolating one breaks it:
-        # halving [1, 5, 9, 13] here would give [1, 3, 5, 7], whole numbers that are no
-        # longer 4k+1, and the error being amplified stops lying along the measured axis.
-        # Returning unchanged makes `escalating` re-raise, which is what the routine
-        # catches.
-        return config
-
     scalar = _scalar_axis(routine, config, refusal)
     if scalar is not None:
         return scalar

@@ -14,11 +14,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.routines import (
-    DEFAULT_ROUTINE_TIMEOUT_S,
-    CalibrationRoutine,
-    RoutineError,
-)
+from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
 from qpi_driver.tuners.fitting import fit_rb_decay, signal_of
 from qpi_driver.tuners.routines.single_qubit import (
     ALLXY_IDEAL,
@@ -31,30 +27,6 @@ from qpi_driver.tuners.utils.clifford import (
     generate_clifford_sequence,
     sequence_with_recovery,
 )
-
-
-#: The most Cliffords escalation will put in one RB schedule, across every depth and
-#: circuit.
-#:
-#: `depths` escalates, so it needs the ceiling `MAX_SWEEP_POINTS` is for a scalar sweep —
-#: and it needs its own, because RB's cost is per *gate* where a frequency sweep's is per
-#: acquisition. Three doublings take a deepest sequence of 64 to 505, and at twelve circuits
-#: that is 28000 Cliffords in one program.
-#:
-#: Derived, and the derivation is where the uncertainty is. A single-qubit Clifford averages
-#: about 1.875 physical pulses and a pulse is a couple of Q1ASM instructions, so a Clifford
-#: is near four — against the 12288 a sequencer takes and the 14% headroom
-#: `MAX_SWEEP_POINTS` leaves for the same reason. That puts the bound around 2800 and this
-#: is 2500, because the per-Clifford figure is an average over the group rather than a
-#: measurement of this compiler. Unlike `MAX_SWEEP_POINTS` it has *not* been checked against
-#: a real program; it is a stop that keeps escalation from walking off a cliff, and if it
-#: ever binds on a chip that should have been benchmarkable, measure the real rate and
-#: raise it.
-#:
-#: A schedule the operator asked for is not capped — only widening is. Their depths are a
-#: statement about what they want benchmarked, and overruling it with a default would be
-#: the inversion this whole RFC exists to remove.
-MAX_RB_CLIFFORDS = 2500
 
 
 class RandomizedBenchmarking(CalibrationRoutine):
@@ -73,46 +45,13 @@ class RandomizedBenchmarking(CalibrationRoutine):
     #: The gate interleaved between Cliffords. None for standard RB.
     interleaved: str | None = None
 
-    def measure(
-        self,
-        target: str,
-        device: Any,
-        config: RoutineConfig,
-        backend: SchedulerBackend,
-        bias: Any = None,
-        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
-    ) -> dict[str, Any]:
-        """Average harder when the decay cannot be told from the scatter around it.
-
-        "Average more circuits per depth" was the advice this node's refusal already gave,
-        and nothing acted on it: the August 2026 B chip refused with a decay spanning
-        0.6214 against a scatter of 0.3231, and reported no fidelity at all. Scatter falls
-        as ``1/sqrt(N)``, so the axis is the circuit count and the sweep itself is
-        untouched — which matters here, because RB's depths are a statement about what the
-        operator wants benchmarked.
-        """
-        return self.escalating(target, device, config, backend, timeout_s)
-
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         self._depths = [int(d) for d in config.get("depths", [1, 2, 4, 8, 16, 32, 64])]
-        # Named `_circuits_per_depth` as well, because escalation reads the setpoints a
-        # routine actually used off `_<axis>` — see `_widened`.
-        self._circuits = self._circuits_per_depth = int(
-            config.get("circuits_per_depth", 10)
-        )
+        self._circuits = int(config.get("circuits_per_depth", 10))
         if not self._depths or self._circuits < 1:
             raise RoutineError("RB needs at least one depth and one circuit per depth")
-
-        # How deep escalation may go, given how many circuits each depth already costs —
-        # see `MAX_RB_CLIFFORDS`. Widening builds `linear_setpoints(1, top, n)`, whose sum
-        # is `n*(1+top)/2`, so the budget inverts to a bound on `top`. Read by `_widened`
-        # off `_<axis>_ceiling`, and when it bites the config comes back unchanged and the
-        # refusal is re-raised rather than the same sweep re-run.
-        self._depths_ceiling = (
-            2.0 * MAX_RB_CLIFFORDS / (self._circuits * len(self._depths)) - 1.0
-        )
 
         # Seeded so a rerun benchmarks the same circuits: an unseeded RB would
         # move under the drift check it exists to detect.

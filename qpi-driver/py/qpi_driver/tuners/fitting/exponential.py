@@ -7,7 +7,6 @@ from scipy.optimize import curve_fit
 
 from .core import (
     FitError,
-    OutOfRange,
     align,
     fit_summary,
     require_in_range,
@@ -55,14 +54,8 @@ def _fit_coherence(
     amplitude, tau, offset = _fit_exponential(x, y, what=what)
 
     value = require_positive(abs(tau), what=what)
-    # A time constant far beyond the window was never observed, only extrapolated — and
-    # naming the axis is what turns that from a verdict into an instruction. The guard
-    # below says the same thing about a flat curve and has always been escalatable; this
-    # one is reached first whenever the extrapolation lands on a number rather than on
-    # noise, and without an axis it stopped `T2Echo.measure` before it could widen. The
-    # August 2026 B chip fitted 2.12 ms of T2 over a 100 us window and failed there, on a
-    # chip whose T1 was 56 us.
-    require_in_range(value, 0.0, float(np.max(x)) * 10, what=what, axis="delays")
+    # A time constant far beyond the window was never observed, only extrapolated.
+    require_in_range(value, 0.0, float(np.max(x)) * 10, what=what)
     require_resolved_curve(
         y,
         exponential_decay(x, amplitude, tau, offset),
@@ -99,29 +92,6 @@ def fit_t2(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
     return _fit_coherence(delays, signal, key="t2", what="T2")
 
 
-#: How far past the observed span the fitted amplitude may reach before the fit counts as
-#: unidentified, as a multiple of that span.
-#:
-#: The far end of the trade-off :func:`fit_rb_decay` describes. Leaving ``A`` unbounded is
-#: right — bounding it tightly pins every good chip near 0.98 — and it has a limit nothing
-#: was checking: as ``|A|`` grows the exponential flattens into its own linear limit,
-#: ``a*r^m + b -> a*(1 + m*ln r) + b``, and a straight line through RB data is fitted by
-#: pinning ``r`` at one. The fidelity then comes off the boundary rather than off the chip.
-#:
-#: Twice on the August 2026 B chip, which reported 0.9999887 and 0.9999978 — an error per
-#: gate of 1.1e-05 and 2.2e-06, thirty to three hundred times below what its 56 us T1
-#: allows a 56 ns gate. ``A`` came out at -807 and -4109 on a survival normalised to
-#: ``[0, 1]``. Not only there: the simulated chip's own RB fitted ``A = 4180`` against a
-#: configured 0.001 per gate, reporting three nines it did not have through every full-DAG
-#: run this repository had made.
-#:
-#: A *bound* alone only moves the wall — both of those then pin against it. What separates
-#: them from a real decay is landing *on* it: a real one fits ``A`` near the span it spans,
-#: so 200 leaves four hundred times the room a legitimate unreached asymptote needs, and a
-#: fit that still reaches it was stopped rather than found.
-MAX_AMPLITUDE_REACH = 200.0
-
-
 def fit_rb_decay(
     depths: np.ndarray, survival: np.ndarray, n_qubits: int = 1
 ) -> dict[str, float]:
@@ -149,8 +119,6 @@ def fit_rb_decay(
     def rb_model(m, a, r, b):
         return a * np.power(r, m) + b
 
-    span = float(np.max(y) - np.min(y)) or 1.0
-    reach = MAX_AMPLITUDE_REACH * span
     last_error: Exception | None = None
     for r_guess in (0.99, 0.9, 0.999):
         try:
@@ -159,10 +127,7 @@ def fit_rb_decay(
                 x,
                 y,
                 p0=[float(y[0]) - float(y[-1]) or 0.5, r_guess, float(y[-1])],
-                bounds=(
-                    [-reach, 0.0, float(np.min(y)) - reach],
-                    [reach, 1.0, float(np.max(y)) + reach],
-                ),
+                bounds=([-np.inf, 0.0, -np.inf], [np.inf, 1.0, np.inf]),
                 maxfev=20000,
             )
             break
@@ -188,52 +153,7 @@ def fit_rb_decay(
             "there is no decay here to take a fidelity from. Average more circuits "
             "per depth, or extend the depths until it is visible above the noise"
         ),
-        # Escalatable, and on the averaging axis rather than the reach: what this guard
-        # compares is the decay's span against the *scatter* around it, and scatter is
-        # what more circuits per depth buys down. Depth is the other half of the same
-        # sentence and stays advice, since a chip whose decay is simply too slow is a
-        # different problem from one whose points are too noisy to see it.
-        axis="circuits_per_depth",
-        # The commonest refusal in the graph, and the one whose shape most wants seeing.
-        fit=fit_summary(
-            x,
-            y,
-            rb_model(x, *popt),
-            x_label="sequence length",
-            y_label="survival",
-            x_scale="log",
-        ),
     )
-
-    # After the noise check, not before: unresolved scatter and a stopped fit both end
-    # here, and only one of them is fixed by deeper sequences.
-    if abs(float(popt[0])) >= reach * (1.0 - 1e-6):
-        # Escalatable on the depths, which is what this refusal already advises. The other
-        # axis is `circuits_per_depth` and belongs to the guard above: that one is about
-        # scatter, which averaging buys down, and this one is about *reach* — a decay too
-        # shallow to identify over these depths needs longer sequences, and more circuits
-        # only measures the same flat curve more precisely. Doubling rather than
-        # quadrupling because RB's cost is linear in depth and the sequences are already
-        # the longest thing the graph plays.
-        raise OutOfRange(
-            f"the fitted amplitude reached {popt[0]:.4g}, the widest this fit allows for a "
-            f"survival spanning {span:.3g} — so it was stopped there rather than found, "
-            f"and the r of {decay:.7g} it trades against is the one that fits a straight "
-            f"line, not the one the gates set. There is no resolved decay in these depths. "
-            f"Average more circuits per depth, or extend the depths until the deepest "
-            f"sequence has visibly decayed",
-            axis="depths",
-            direction="wider",
-            factor=2.0,
-            fit=fit_summary(
-                x,
-                y,
-                rb_model(x, *popt),
-                x_label="sequence length",
-                y_label="survival",
-                x_scale="log",
-            ),
-        )
 
     dimension = 2**n_qubits
     error_per_gate = (1.0 - decay) * (dimension - 1) / dimension

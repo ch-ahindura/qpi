@@ -284,39 +284,7 @@ def fit_conditional_phase(
         # exist to cancel, and a different quantity from the conditional phase.
         # Reported rather than discarded because nothing else measures it.
         "reference_phase": float(low_phase),
-        "reference_correction": _cancelling(low_phase),
     }
-
-
-def _cancelling(fringe_phase: float) -> float:
-    """The virtual Z that cancels a fringe phase of *fringe_phase*, in ``[0, 360)``.
-
-    Two corrections, and `conditional_phase` used to write the raw fringe phase instead of
-    either. Both are conventions of this measurement rather than facts about a chip, which
-    is why they belong here beside the fit that sets them.
-
-    **Negated**, because a correction that cancels a phase is minus it. Writing ``+phase``
-    doubles the error rather than removing it: on the simulated chip the CZ left 165.79 deg
-    on the control and the edge was set to 345.90, for a residual of 151.69 deg on every
-    CZ played — which scrambled `interleaved_rb` into scatter no amount of averaging could
-    resolve, since the RB recovery gate knows nothing about it.
-
-    **And offset by 180**, because `_fringe_phase` fits the *excited-state population*
-    while the accumulated phase is defined on ``<sigma z>``. A Ramsey whose second pi/2 is
-    swept gives ``P1 = (1 - cos(phi - phi_acc))/2``, which is
-    ``1/2 + cos(phi - phi_acc - 180)/2``, so the fitted angle is ``phi_acc + 180`` by
-    construction. Both fringes carry it identically, which is why ``conditional_phase`` —
-    a *difference* of two fringe phases — was right all along and only this absolute one
-    was wrong.
-
-    The 180 assumes the acquisition rises with excitation. It does on the simulated chip
-    and on every readout `resonator_spectroscopy` leaves on the ground-state resonance, but
-    it is an assumption and a chip that inverts it would want the other 180. The two
-    fringes cannot tell: a global flip cancels in their difference, which is exactly what
-    makes the conditional phase robust and this number not. Orienting it needs ``|0>`` and
-    ``|1>`` reference points in the schedule, the way `fine_amplitude` does.
-    """
-    return float((180.0 - fringe_phase) % 360.0)
 
 
 def _fringe_phase(phases: np.ndarray, signal: np.ndarray) -> tuple[float, float, float]:
