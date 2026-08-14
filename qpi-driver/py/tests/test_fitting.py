@@ -169,6 +169,83 @@ class TestOscillatoryFits:
                 pre_rotation=0.0,
             )
 
+    def test_a_baseline_offset_does_not_become_a_rotation_error(self):
+        """Pinning the intercept made the slope absorb it, which is the opposite of the
+        protection it was meant to be.
+
+        The two numbers are the August 2026 B chip's consecutive runs of
+        `fine_amplitude_90`, whose pi/2 pulse did not change between them. Fitted through
+        the origin they read 0.0014 and 0.0157 rad per pulse, twelve times apart; the
+        offset is real and n-independent, and the slope was paying for it.
+        """
+        counts = np.array([1.0, 5.0, 9.0, 13.0])
+        runs = (
+            [-0.17715, -0.03549, -0.02734, 0.07494],
+            [-0.04060, 0.08831, 0.16655, 0.18722],
+        )
+        fitted = [
+            fit_fine_amplitude(
+                counts,
+                0.5 + np.asarray(demodulated) * 0.5,
+                0.284,
+                ground=0.0,
+                excited=1.0,
+                turn=np.pi / 2,
+                pre_rotation=0.0,
+            )
+            for demodulated in runs
+        ]
+
+        assert fitted[0]["error_per_pulse"] == pytest.approx(
+            fitted[1]["error_per_pulse"], rel=0.02
+        )
+        # And the offset is reported rather than absorbed, since a response that is not
+        # zero at zero pulses means the reference points are not describing the sequence.
+        assert fitted[0]["baseline"] == pytest.approx(-0.175, abs=0.01)
+
+    def test_a_rotation_amplified_past_the_linear_regime_is_refused(self):
+        """25 pulses at 0.09 rad each turn 2.3 radians, which a straight line cannot fit.
+
+        What the B chip's `fine_amplitude` did, and it wrote the result to `amp180` —
+        the amplitude every X pulse afterwards is played at.
+        """
+        counts = np.arange(1, 26, dtype=float)
+        # The chip's own trace rather than a clean sine: a clean one turns over and drags
+        # the fitted slope back under the bound, which is exactly the case that does not
+        # need catching. This one runs away.
+        demodulated = np.array(
+            [
+                -0.2798,
+                -0.6334,
+                -0.5973,
+                -0.8492,
+                -0.9948,
+                -0.9636,
+                -0.9672,
+                -0.9682,
+                -0.8698,
+                -0.7889,
+                -0.7064,
+                -0.5566,
+                -0.1242,
+                -0.2310,
+                0.2175,
+                0.1609,
+                0.6124,
+                0.6176,
+                0.9055,
+                0.8330,
+                0.9726,
+                0.9551,
+                1.0027,
+                0.8444,
+                0.7848,
+            ]
+        )
+        signal = 0.5 + demodulated * 0.5 * np.power(-1.0, counts)
+        with pytest.raises(FitError, match="past the 1 where"):
+            fit_fine_amplitude(counts, signal, 0.5712, ground=0.0, excited=1.0)
+
     def test_fine_amplitude_refuses_fractional_repetition_counts(self):
         with pytest.raises(FitError, match="whole pulse repetitions"):
             fit_fine_amplitude(

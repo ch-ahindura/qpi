@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: the fine-amplitude fit takes an intercept instead of being pinned through
+  the origin, and refuses a sweep whose rotation accumulates past a radian. Two runs of an
+  unchanged pi/2 pulse reported errors twelve times apart because a real baseline offset was
+  being absorbed into the slope.
 - `qpi-driver/py`: an EF pulse defaults to the length of the 0-1 pulse rather than to a
   20 ns constant, and `rabi_12`'s ladder guard scales by the two durations instead of
   assuming they match. Against an `rxy.duration` of 56 ns the old default put the 1-2 pi at

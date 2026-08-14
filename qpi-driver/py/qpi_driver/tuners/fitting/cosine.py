@@ -254,6 +254,24 @@ MAX_DEMODULATED = 3.0
 #: budget.
 MAX_QUADRATURE_LEAK = 1e-9
 
+#: How far the amplified rotation may accumulate before the straight line stops being
+#: the model — see :func:`fit_fine_amplitude`, which fits ``sin(n*d)`` as ``n*d``.
+#:
+#: One radian, where the linearisation is already 16% out and beyond which it is not
+#: an approximation at all. The August 2026 B chip's pi sweep ran 25 repetitions
+#: against an error of 0.09 rad per pulse, so its last point had turned 2.3 radians —
+#: a full swing of the sine, fitted as a line, and written to ``amp180``.
+MAX_ACCUMULATED_ROTATION = 1.0
+
+#: How large the demodulated signal's intercept may be before it is worth naming.
+#:
+#: The model has none: at zero pulses there is no error, so the response is zero. A real
+#: one means the two reference points are not describing the sequence they normalise —
+#: readout asymmetry, an imperfect ``|1>`` reference, relaxation during integration — and
+#: the *slope* is still the rotation error, which is why this warns rather than refuses.
+#: 0.05 is a little over the shot noise on a 1024-shot point at this chip's readout.
+NOTEWORTHY_BASELINE = 0.05
+
 
 def fit_fine_amplitude(
     repetitions: np.ndarray,
@@ -327,12 +345,40 @@ def fit_fine_amplitude(
             f"is noise and the amplitude it implies is not a calibration"
         )
 
-    # Slope through the origin: the offset is fixed by the model, so fitting one
-    # would let a baseline shift masquerade as a rotation error.
-    denominator = float(np.sum(counts**2))
-    if denominator <= 0:
-        raise FitError("fine amplitude needs at least one non-zero repetition count")
-    error_per_pulse = float(np.sum(counts * demodulated) / denominator)
+    # Slope *and* intercept, which is a reversal. This fitted through the origin on the
+    # grounds that the model has no offset there and fitting one would let a baseline
+    # shift masquerade as a rotation error. The opposite happened: on the August 2026 B
+    # chip the demodulated response carried a real offset of -0.175, and forbidding the
+    # intercept made the slope absorb it — two consecutive runs then reported 0.0014 and
+    # 0.0157 rad per pulse, a factor of twelve apart, from a pulse that had not changed.
+    # Fitting the intercept those same two runs agree to 0.4%: 0.01911 and 0.01904.
+    #
+    # A baseline cannot masquerade as a rotation error once both are free, because the
+    # two are orthogonal in n — that was the thing being protected against, and pinning
+    # the intercept was the wrong way to protect it.
+    if counts.size < 2:
+        raise FitError("fine amplitude needs at least two repetition counts to fit")
+    design = np.vstack([counts, np.ones_like(counts)]).T
+    solution, *_ = np.linalg.lstsq(design, demodulated, rcond=None)
+    error_per_pulse, baseline = float(solution[0]), float(solution[1])
+
+    reached = abs(error_per_pulse) * float(np.max(counts))
+    if reached > MAX_ACCUMULATED_ROTATION:
+        raise FitError(
+            f"the amplified rotation reaches {reached:.2f} rad by the "
+            f"{int(np.max(counts))}th pulse, past the {MAX_ACCUMULATED_ROTATION:g} where "
+            f"sin(n*d) is still n*d — so the straight line fitted through it is not "
+            f"measuring {error_per_pulse:.4g} rad per pulse, and the amplitude it implies "
+            f"is not a calibration. Shorten the repetition counts until the largest turns "
+            f"under a radian, or fix the amplitude this is refining first"
+        )
+    if abs(baseline) > NOTEWORTHY_BASELINE:
+        log.warning(
+            "fine amplitude: the demodulated response sits %+.3f from zero at n = 0, "
+            "where the model has nothing. The slope is still the rotation error, but the "
+            "two reference points are not describing this sequence",
+            baseline,
+        )
 
     if abs(error_per_pulse) >= turn / 2:
         raise FitError(
@@ -346,13 +392,16 @@ def fit_fine_amplitude(
         "amplitude": require_positive(corrected, what="corrected amplitude"),
         "amplitude_error": error_per_pulse / turn,
         "error_per_pulse": error_per_pulse,
+        # Out in the report because it is the one number that says whether the model
+        # held. See :data:`NOTEWORTHY_BASELINE`.
+        "baseline": baseline,
         # The demodulated signal rather than the raw one: the straight line through
         # the origin is the thing being fitted, and the raw sweep alternates about
         # the centre so a chart of it shows nothing.
         "fit": fit_summary(
             counts,
             demodulated,
-            error_per_pulse * counts,
+            error_per_pulse * counts + baseline,
             x_label="pulses",
             y_label="demodulated",
         ),
