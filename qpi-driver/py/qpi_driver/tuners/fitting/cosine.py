@@ -43,6 +43,28 @@ AMP180_ROUNDING = 1e-6
 #: error it is looking for.
 MIN_DRAG_RISE = 3.0
 
+#: How far an amplified sweep must rise across its repetition counts, in units of the
+#: scatter about the fitted line, before the slope is an error rather than noise — see
+#: :func:`fit_fine_amplitude`.
+#:
+#: :data:`MAX_DEMODULATED_SCATTER` bounds the scatter absolutely, which a sweep whose
+#: *signal* is smaller still passes without difficulty: four points of noise scatter little
+#: and have a slope anyway. Amplification is the whole premise of these nodes — a real
+#: per-pulse error grows with repetitions where noise does not — so an error a sweep cannot
+#: raise above its own noise is one the sweep has not measured.
+#:
+#: How many standard errors a fitted per-pulse rotation error must clear before it is
+#: applied rather than treated as zero — see :func:`fit_fine_amplitude`.
+#:
+#: Not a refusal, and deliberately. The slope *is* the quantity being calibrated, so a
+#: perfectly tuned pulse has a slope of zero and any significance test placed in front of
+#: the fit would reject the success case along with the noise. What this rejects is the
+#: *correction*: below it the sweep has not resolved one, and writing zero is both honest
+#: and harmless, where writing the noise is neither.
+#:
+#: Three, matching :data:`MIN_DRAG_RISE` and ``MIN_ALLXY_CONTRAST``.
+MIN_SLOPE_SIGMA = 3.0
+
 
 def decaying_cosine(
     t: np.ndarray | float,
@@ -501,22 +523,41 @@ def fit_fine_amplitude(
     solution, *_ = np.linalg.lstsq(design, demodulated, rcond=None)
     error_per_pulse, baseline = float(solution[0]), float(solution[1])
 
-    reached = abs(error_per_pulse) * float(np.max(counts))
-    if reached > MAX_ACCUMULATED_ROTATION:
+    # From the *span of the data*, not from the fitted slope. The slope comes out of the
+    # linear model, and a sine fitted with a line always yields a shallow one — so
+    # `slope * n_max` under-reports by exactly the amount that matters and the guard could
+    # never fire in the case it exists for. The August 2026 B chip's sweep spanned 0.920 of
+    # its own contrast, which is at least 1.17 rad of turn, while the slope claimed 0.73 and
+    # the ceiling let it through.
+    #
+    # A lower bound, because `arcsin` saturates at pi/2 and cannot see a sine that has
+    # already turned back — that same sweep had in fact turned about 3 rad. Enough to
+    # refuse on, which is what this is for, and the shortening below is sized accordingly.
+    # Only where the span is one a sine could have produced. Past two the model's own
+    # bound is broken and the contrast is the suspect, not the rotation — which is what
+    # the scatter and reach guards below are for, and they give the right remedy.
+    span = float(np.ptp(demodulated))
+    reached = float(np.arcsin(min(span, 1.0)))
+    if span <= 2.0 and reached > MAX_ACCUMULATED_ROTATION:
         # Escalatable, and downward: the caller is being told to repeat the pulse *fewer*
         # times, which is the one direction the generic widening cannot take — see
         # `FineAmplitude.measure`. With the trace too, since "a straight line does not
         # describe this" is a claim about a shape and the shape is the evidence for it.
         raise OutOfRange(
-            f"the amplified rotation reaches {reached:.2f} rad by the "
-            f"{int(np.max(counts))}th pulse, past the {MAX_ACCUMULATED_ROTATION:g} where "
-            f"sin(n*d) is still n*d — so the straight line fitted through it is not "
-            f"measuring {error_per_pulse:.4g} rad per pulse, and the amplitude it implies "
-            f"is not a calibration. Shorten the repetition counts until the largest turns "
-            f"under a radian, or fix the amplitude this is refining first",
+            f"the sweep spans {span:.3f} of its own contrast, so the amplified rotation "
+            f"has turned at least {reached:.2f} rad by the {int(np.max(counts))}th pulse — "
+            f"past the {MAX_ACCUMULATED_ROTATION:g} where sin(n*d) is still n*d. The "
+            f"straight line fitted through it is not measuring {error_per_pulse:.4g} rad "
+            f"per pulse, and the amplitude it implies is not a calibration. Shorten the "
+            f"repetition counts until the largest turns under a radian, or fix the "
+            f"amplitude this is refining first",
             axis="repetitions",
             direction="shorter",
-            factor=MAX_ACCUMULATED_ROTATION / reached,
+            # At least halved, because `reached` is a floor and taking its ratio literally
+            # barely moves a sweep that has turned several radians: the same B chip would
+            # have gone 25 -> 21 -> 17 and refused with both shortenings spent, where
+            # halving reaches 6 and lands inside the linear regime.
+            factor=min(MAX_ACCUMULATED_ROTATION / reached, 0.5),
             fit=fit_summary(
                 counts,
                 demodulated,
@@ -539,6 +580,27 @@ def fit_fine_amplitude(
                 counts, demodulated, line, x_label="pulses", y_label="demodulated"
             ),
         )
+    # A correction is only applied as far as it is resolved. The slope *is* the error
+    # here, so a well-calibrated pulse has no slope by construction and a significance test
+    # that refused an unresolved one would refuse exactly the success case. What can be
+    # refused is applying noise: when the slope does not clear its own standard error, the
+    # sweep has not measured a correction and zero is the honest one to write.
+    #
+    # The August 2026 B chip's `fine_amplitude_90` had four points, a slope of 0.0037 and a
+    # standard error of 0.0153 on it — a quarter of a sigma — and wrote an amp90 from it.
+    spread = float(np.sqrt(np.sum((counts - np.mean(counts)) ** 2)))
+    slope_error = scatter / spread if spread > 0.0 else float("inf")
+    if abs(error_per_pulse) < MIN_SLOPE_SIGMA * slope_error:
+        log.warning(
+            "fine amplitude: the fitted %.4g rad per pulse is %.1f standard errors from "
+            "zero, under the %g this needs to be a correction rather than noise — writing "
+            "no correction. Average more shots, or extend the repetition counts so a real "
+            "error has further to accumulate",
+            error_per_pulse,
+            abs(error_per_pulse) / slope_error if slope_error else 0.0,
+            MIN_SLOPE_SIGMA,
+        )
+        error_per_pulse = 0.0
     if abs(baseline) > NOTEWORTHY_BASELINE:
         log.warning(
             "fine amplitude: the demodulated response sits %+.3f from zero at n = 0, "

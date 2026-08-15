@@ -33,6 +33,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `fine_amplitude` judges whether the amplified rotation overran from the
+  span of the data rather than from its own fitted slope, which under-reported by exactly
+  the amount that made the guard necessary. A per-pulse error that does not clear its own
+  standard error is now written as no correction instead of as noise.
 - `qpi-driver/py`: `f12_spectroscopy` accepts an `anharmonicity_range` override, so a
   transmon deliberately built outside the usual -400 to -150 MHz is a config fact rather
   than a refusal.
