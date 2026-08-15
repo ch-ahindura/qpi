@@ -3,7 +3,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("qpi-driver")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.4.1"
+    __version__ = "0.4.2-rc.22"
 
 from qpi_driver.builtins import (
     DeviceBuilder,

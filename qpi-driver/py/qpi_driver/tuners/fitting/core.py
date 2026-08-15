@@ -1,6 +1,7 @@
 """Shared fitting machinery: the failure type, the range guard, and dataset access."""
 
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -304,6 +305,22 @@ def _thinned(count: int) -> np.ndarray:
 #: flat Rabi sweep wrote an `amp180`36x too small and cost six runs before anything
 #: noticed.
 MIN_CURVE_TO_SCATTER = 3.0
+
+#: What a five-parameter oscillatory fit can fake on *pure noise*, as a span-to-scatter
+#: ratio times the square root of the number of points — see :func:`require_resolved_curve`,
+#: which divides this by ``sqrt(n)`` to get the floor below which a fit is refused outright.
+#:
+#: Sixteen, measured the way :data:`MIN_LINE_REACH` was and for the same reason: a floor
+#: taken from whichever chip last misbehaved is a floor that fits that chip. Six hundred
+#: decaying-cosine fits through unit Gaussian noise at each length gave a 99th percentile
+#: of 3.53 at 21 points, 2.36 at 41 and 1.84 at 81 — which is ``16/sqrt(n)`` to within 6%.
+#:
+#: The scaling is the point. A fixed floor is wrong at both ends: at 21 points noise
+#: reaches 3.53, so the 3.0 above *admits* it, while at 81 points noise tops out at 1.84
+#: and 3.0 throws away fits that are three standard errors clear of it. What noise can
+#: counterfeit depends on how many points it had to counterfeit through, and on nothing
+#: about the chip.
+NOISE_FAKEABLE_SPAN = 16.0
 #: How far a fitted line's *curve* must travel, against the scatter left around it,
 #: before its centre counts as a frequency — the ``reach`` a Lorentzian fit reports.
 #:
@@ -359,11 +376,36 @@ def require_resolved_curve(
     if scatter <= 0.0:
         return
     span = float(np.max(curve) - np.min(curve))
-    if span < factor * scatter:
+    ratio = span / scatter
+    points = int(np.size(y))
+    floor = NOISE_FAKEABLE_SPAN / math.sqrt(points) if points > 0 else factor
+    if floor <= ratio < factor:
+        # Poor but real, so it is reported rather than refused. Above the floor the span
+        # is further from the sweep than noise of that length reaches, which makes it a
+        # measurement — an imprecise one, and the node reading it can say so on its own
+        # evidence. Refusing here instead used to take every node downstream with it,
+        # none of which had been given the chance: one `rabi_12` at 2.5 against a fixed
+        # bar of 3 cost `ef_ladder` and the whole three-state chain, four nodes that each
+        # carry their own guard.
+        log.warning(
+            "the fitted %s spans %.4g against a residual scatter of %.4g — %.1fx, under "
+            "the %.1fx a well-resolved %s shows but over the %.1fx noise fakes at %d "
+            "points. Taken as measured and degraded, not refused",
+            what,
+            span,
+            scatter,
+            ratio,
+            factor,
+            what,
+            floor,
+            points,
+        )
+        return
+    if ratio < factor:
         message = (
             f"the fitted {what} spans {span:.4g} against a residual scatter of "
-            f"{scatter:.4g} — {span / scatter:.1f}x, below the {factor:.0f}x a resolved "
-            f"{what} clears — so {consequence}"
+            f"{scatter:.4g} — {ratio:.1f}x, under the {floor:.1f}x that pure noise fakes "
+            f"over {points} points, so this is not a {what} at all — {consequence}"
         )
         # With an *axis*, the caller has said which sweep could be wrong, so this becomes
         # something a routine can act on rather than only report — see `OutOfRange`. A

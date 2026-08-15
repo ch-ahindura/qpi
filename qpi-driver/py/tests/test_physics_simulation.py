@@ -969,11 +969,17 @@ class TestTheEfLadderComesOutOfThePhysics:
         under a percent — so its value is entirely in how much readout noise the fit
         tolerates. At this level the plain sequence is refused and the mapped-back one is
         not, which is the claim the routine's comment makes.
+
+        The level is 0.5 where it was 0.3, because `require_resolved_curve` now takes its
+        refusal floor from what noise fakes at this many points rather than from a fixed
+        3x. Forty-one points tolerate more than that constant assumed, so both sequences
+        survive further and the window where they differ sits higher. The window is the
+        claim; where it sits is a property of the guard.
         """
         amplitudes = np.linspace(0.0, 0.5, 41)
 
         def fit_at(map_back: bool):
-            simulator = TransmonSimulator(shot_noise=0.3, seed=3)
+            simulator = TransmonSimulator(shot_noise=0.5, seed=3)
             signal = simulator.rabi_12(
                 amplitudes,
                 ef_duration_ns=self.PULSE_NS,

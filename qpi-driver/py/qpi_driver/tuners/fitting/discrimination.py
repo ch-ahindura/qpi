@@ -12,6 +12,7 @@ that happens to put the clouds either side of the imaginary axis.
 """
 
 import logging
+from statistics import NormalDist
 
 import numpy as np
 
@@ -45,6 +46,23 @@ MIN_ASSIGNMENT_FIDELITY = 0.6
 #: `three_state_discrimination` measured 0.86 on the same readout and refused. 1.5 leaves
 #: half a scatter of headroom.
 MIN_THREE_STATE_SEPARATION = 1.5
+
+#: The separation below which three clouds carry too little to be worth writing at all,
+#: in units of the scatter within them. Derived from :data:`MIN_ASSIGNMENT_FIDELITY`
+#: rather than chosen.
+#:
+#: Two Gaussians ``d`` scatters apart can be told apart at best ``Phi(d/2)`` of the time,
+#: so the separation at which the *confusable* pair reaches the 0.6 this file already
+#: calls the minimum worth writing is ``2*Phi^-1(0.6) = 0.51``. Below that the closest two
+#: states are nearer a coin toss than a measurement and nothing downstream recovers them.
+#:
+#: Between here and :data:`MIN_THREE_STATE_SEPARATION` the point is written anyway and
+#: marked degraded. A readout resolving its worst pair 68% of the time is poor, but it is
+#: information — and refusing it takes four nodes down with it that are each capable of
+#: judging their own data. The August 2026 B chip sat at 0.93 for six runs, which is
+#: `Phi(0.465)` = 68%, while `three_state_discrimination`, `ramsey_12`, `drag_12` and
+#: `fine_amplitude_12` never ran once.
+MIN_USABLE_SEPARATION = 2.0 * float(NormalDist().inv_cdf(MIN_ASSIGNMENT_FIDELITY))
 
 
 def fit_readout_discrimination(
@@ -300,11 +318,25 @@ def fit_three_state_discrimination(clouds: list[np.ndarray]) -> dict[str, float]
         )
 
     centres, spread, closest = _cloud_geometry(states)
-    if closest <= spread:
+    separation = closest / spread if spread > 0 else 0.0
+    if separation < MIN_USABLE_SEPARATION:
         raise FitError(
             f"the closest two of the three readout clouds are {closest:.4g} apart "
-            f"against a scatter of {spread:.4g}, which does not resolve them — there "
-            "is no three-state classifier to fit"
+            f"against a scatter of {spread:.4g} — {separation:.2f} scatters, under the "
+            f"{MIN_USABLE_SEPARATION:.2f} at which they reach even "
+            f"{MIN_ASSIGNMENT_FIDELITY:g} — so there is no three-state classifier to fit"
+        )
+    if separation < MIN_THREE_STATE_SEPARATION:
+        # Fitted rather than refused, for the reason `fit_three_state_operating_point`
+        # gives: the confusion matrix below is the honest description of a poor readout,
+        # and it is more use to whatever reads it than a refusal is. The fidelity it
+        # reports is what says how far to trust it.
+        log.warning(
+            "three-state clouds resolve to only %.2f scatters, under the %.1f a good "
+            "readout shows — the confusion matrix below is real but the classifier it "
+            "describes is weak",
+            separation,
+            MIN_THREE_STATE_SEPARATION,
         )
 
     # Rows are what was prepared, columns what it was read as.
@@ -370,26 +402,40 @@ def fit_three_state_operating_point(
         )
 
     (frequency, amplitude), separation, closest = best
-    if separation < MIN_THREE_STATE_SEPARATION:
+    if separation < MIN_USABLE_SEPARATION:
         raise FitError(
             f"the best readout setting in the sweep put its closest two clouds "
-            f"{separation:.2f} scatters apart, against the "
-            f"{MIN_THREE_STATE_SEPARATION:g} a three-state readout needs — so this point "
-            "resolves |0> from |1> at best, and writing it would hand "
-            "`three_state_discrimination` a readout it then has to refuse. Most often the "
-            "sweep never prepared |2>: check the 1-2 pi pulse before the readout"
+            f"{separation:.2f} scatters apart, under the {MIN_USABLE_SEPARATION:.2f} at "
+            f"which the confusable pair reaches even {MIN_ASSIGNMENT_FIDELITY:g} — so "
+            "this point does not resolve three states at all and nothing downstream can "
+            "recover them. Most often the sweep never prepared |2>: check the 1-2 pi "
+            "pulse before the readout"
         )
-    log.debug(
-        "three-state operating point %.6g Hz at %.4g, closest pair %.2f sigma",
-        frequency,
-        amplitude,
-        separation,
-    )
+    degraded = separation < MIN_THREE_STATE_SEPARATION
+    if degraded:
+        # Written rather than refused. This used to raise, on the grounds that a point
+        # below the bar would only be refused again by `three_state_discrimination` — but
+        # that reasoning cost more than it saved: it also took `ramsey_12`, `drag_12` and
+        # `fine_amplitude_12` down, none of which had been given a chance to judge their
+        # own data. Each of them carries its own guard and can refuse on its own evidence.
+        log.warning(
+            "three-state operating point %.6g Hz at %.4g resolves its closest pair to "
+            "only %.2f scatters, under the %.1f a good three-state readout shows — about "
+            "%.0f%% on that pair. Written and marked degraded so the 1-2 chain can run, "
+            "but treat anything it feeds as provisional",
+            frequency,
+            amplitude,
+            separation,
+            MIN_THREE_STATE_SEPARATION,
+            100.0 * NormalDist().cdf(separation / 2.0),
+        )
     return {
         "readout_frequency": frequency,
         "readout_amplitude": amplitude,
         "separation": closest,
         "snr": separation,
+        # Out in the report because every number downstream of this point inherits it.
+        "degraded": float(degraded),
     }
 
 

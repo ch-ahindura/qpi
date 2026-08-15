@@ -7,6 +7,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- `qpi-driver/py`: a guard that can tell a poor measurement from no measurement now passes
+  the poor one and marks it degraded, rather than refusing and taking every node downstream
+  with it. `require_resolved_curve` takes its floor from what noise fakes over that many
+  points instead of a fixed 3x — noise reaches 3.5 at 21 points and 1.8 at 81, so the
+  constant was wrong in both directions — and `three_state_operating_point` from the
+  separation at which its closest pair reaches `MIN_ASSIGNMENT_FIDELITY`. One `rabi_12` at
+  2.5x had been costing four nodes that each carry their own guard.
+
 ### Fixed
 
 - `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` refuse a sweep no straight line
