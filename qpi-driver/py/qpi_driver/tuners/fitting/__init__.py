@@ -19,6 +19,7 @@ from .cosine import (
 )
 from .discrimination import (
     fit_readout_discrimination,
+    fit_readout_integration_time,
     fit_readout_operating_point,
     fit_three_state_discrimination,
     fit_three_state_operating_point,
@@ -52,6 +53,7 @@ __all__ = [
     "fit_punchout",
     "fit_readout_timing",
     "fit_readout_discrimination",
+    "fit_readout_integration_time",
     "fit_readout_operating_point",
     "fit_three_state_discrimination",
     "fit_three_state_operating_point",

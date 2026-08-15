@@ -33,6 +33,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `f12_spectroscopy` accepts an `anharmonicity_range` override, so a
+  transmon deliberately built outside the usual -400 to -150 MHz is a config fact rather
+  than a refusal.
 - `qpi-driver/py`: `rb` scores survival against measured `|0>` and `X|0>` references
   instead of scaling to the sweep's own extremes, which forced one depth to exactly 0 and
   another to exactly 1 and could not tell a decay from a rise. No circuit count could fix
@@ -139,6 +142,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `readout_integration_time` calibrates `measure.integration_time` by
+  sweeping the acquisition window and taking the one that separates `|0>` and `|1>` best.
+  It was a config constant every discriminating node inherited, and it is the last free
+  parameter in readout SNR. Holds its current value when no window beats it by more than
+  shot noise.
 - `qpi-driver/py`: `rabi_12` carries its trace on success as well as on refusal, and `rb`
   reports `decay_observed` — how much of the decay its deepest sequence actually saw, since
   `r` is extrapolated from the rest. A chip reporting 0.15% error per gate had seen 17.6% of

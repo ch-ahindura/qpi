@@ -28,6 +28,7 @@ from qpi_driver.tuners.routines.ef import (
 from qpi_driver.tuners.routines.readout import (
     ReadoutDiscrimination,
     ReadoutFidelity,
+    ReadoutIntegrationTime,
     ReadoutOperatingPoint,
 )
 from qpi_driver.tuners.routines.single_qubit import (
@@ -67,6 +68,7 @@ ROUTINE_CLASSES: tuple[type[CalibrationRoutine], ...] = (
     QubitSpectroscopy,
     Rabi,
     ResonatorSpectroscopyExcited,
+    ReadoutIntegrationTime,
     ReadoutOperatingPoint,
     ReadoutDiscrimination,
     ReadoutFidelity,
@@ -143,6 +145,7 @@ __all__ = [
     "ReadoutDiscrimination",
     "ReadoutFidelity",
     "ReadoutOperatingPoint",
+    "ReadoutIntegrationTime",
     "ResonatorPunchout",
     "ResonatorRelaxation",
     "ResonatorSpectroscopy",

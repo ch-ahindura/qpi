@@ -12,6 +12,7 @@ that happens to put the clouds either side of the imaginary axis.
 """
 
 import logging
+import math
 from statistics import NormalDist
 
 import numpy as np
@@ -187,6 +188,119 @@ def fit_readout_operating_point(
             f"{zeros.shape[0]} and {ones.shape[0]} rows for {len(settings)} settings"
         )
 
+    (frequency, amplitude), fitted = _best_separating(settings, zeros, ones)
+    log.debug(
+        "readout operating point %.6g Hz at %.4g, snr %.2f",
+        frequency,
+        amplitude,
+        fitted["snr"],
+    )
+    return {
+        "readout_frequency": frequency,
+        "readout_amplitude": amplitude,
+        **fitted,
+        **_magnitude_contrast(settings, zeros, ones, chosen=(frequency, amplitude)),
+    }
+
+
+#: How many standard errors a longer window must beat the incumbent by to be worth taking.
+#:
+#: An SNR estimated from ``n`` shots carries a relative error of about ``1/sqrt(2n)``, so a
+#: sweep across a landscape that is genuinely flat still has a winner — and picking it moves
+#: the readout on noise. Every window in the sweep is a multiple of the one already in use,
+#: so the incumbent is always in it and is the right thing to fall back to.
+#:
+#: This matters most where it is hardest to notice. A simulator that does not model the
+#: acquisition window at all produces exactly a flat landscape, and without this the node
+#: shortened the simulated chip's readout fourfold on the strength of nothing.
+MIN_SNR_IMPROVEMENT_SIGMA = 3.0
+
+
+def fit_readout_integration_time(
+    windows: list[float],
+    ground: np.ndarray,
+    excited: np.ndarray,
+    *,
+    incumbent: float = 0.0,
+) -> dict[str, float]:
+    """The acquisition window whose two clouds separate best, in scatter units.
+
+    Its own node rather than a third axis on `fit_readout_operating_point`, because it is
+    the one readout parameter with an *interior* optimum that no other node can supply.
+    Signal accumulates with the window and noise only with its square root, so separation
+    climbs as ``sqrt(t)`` — until the qubit starts relaxing inside the window, after which
+    a longer one only adds shots of the wrong state. Where the two meet depends on T1 and
+    on chi, which is to say it is a property of the chip and has to be measured on it.
+
+    The ring-up `resonator_relaxation` reports is a *floor* on this and not the answer:
+    it says when the resonator has finished responding, which is a statement about the
+    resonator and mentions neither noise nor relaxation.
+
+    *windows* is one integration time in seconds per row of shots.
+    """
+    zeros = np.asarray(ground, dtype=complex)
+    ones = np.asarray(excited, dtype=complex)
+    if zeros.shape[0] != len(windows) or ones.shape[0] != len(windows):
+        raise FitError(
+            f"readout integration time expected one row of shots per window, got "
+            f"{zeros.shape[0]} and {ones.shape[0]} rows for {len(windows)} windows"
+        )
+
+    settings = [(w, 0.0) for w in windows]
+    (best, _), fitted = _best_separating(settings, zeros, ones)
+
+    # Only if it clears the incumbent by more than the shot noise on the comparison.
+    held = _incumbent_fit(settings, zeros, ones, incumbent)
+    if held is not None:
+        shots = int(np.size(zeros) // max(len(windows), 1))
+        margin = MIN_SNR_IMPROVEMENT_SIGMA / math.sqrt(2.0 * max(shots, 1))
+        if fitted["snr"] <= held["snr"] * (1.0 + margin):
+            log.info(
+                "readout integration time held at %.4g s: the best window %.4g s gains "
+                "%.1f%% of SNR, under the %.1f%% that %g sigma of shot noise on %d shots "
+                "covers",
+                incumbent,
+                best,
+                100.0 * (fitted["snr"] / held["snr"] - 1.0),
+                100.0 * margin,
+                MIN_SNR_IMPROVEMENT_SIGMA,
+                shots,
+            )
+            return {"integration_time": float(incumbent), **held}
+
+    log.debug("readout integration time %.4g s, snr %.2f", best, fitted["snr"])
+    return {"integration_time": float(best), **fitted}
+
+
+def _incumbent_fit(
+    settings: list[tuple[float, float]],
+    zeros: np.ndarray,
+    ones: np.ndarray,
+    incumbent: float,
+) -> dict[str, float] | None:
+    """The discrimination fit at the window already in use, if it was swept and separates."""
+    if not incumbent:
+        return None
+    for (window, _), zero_row, one_row in zip(settings, zeros, ones):
+        if math.isclose(window, incumbent, rel_tol=1e-9):
+            try:
+                return fit_readout_discrimination(zero_row, one_row)
+            except FitError:
+                return None
+    return None
+
+
+def _best_separating(
+    settings: list[tuple[float, float]], zeros: np.ndarray, ones: np.ndarray
+) -> tuple[tuple[float, float], dict[str, float]]:
+    """The setting whose two clouds are furthest apart, and its discrimination fit.
+
+    Settings where the clouds do not separate are skipped rather than failing the sweep:
+    at the edge of a frequency scan, at a power that has punched the resonator through,
+    or in a window too short to have accumulated anything, there is genuinely nothing to
+    discriminate and that is the measurement working. Only a sweep where *nothing*
+    separates is an error.
+    """
     best: tuple[tuple[float, float], dict[str, float]] | None = None
     skipped: list[str] = []
     for setting, zero_row, one_row in zip(settings, zeros, ones):
@@ -203,20 +317,7 @@ def fit_readout_operating_point(
             "no readout setting in the sweep separated the two states — "
             + "; ".join(skipped)
         )
-
-    (frequency, amplitude), fitted = best
-    log.debug(
-        "readout operating point %.6g Hz at %.4g, snr %.2f",
-        frequency,
-        amplitude,
-        fitted["snr"],
-    )
-    return {
-        "readout_frequency": frequency,
-        "readout_amplitude": amplitude,
-        **fitted,
-        **_magnitude_contrast(settings, zeros, ones, chosen=(frequency, amplitude)),
-    }
+    return best
 
 
 def _magnitude_contrast(

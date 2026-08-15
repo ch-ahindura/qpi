@@ -32,11 +32,13 @@ from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
     RoutineError,
+    grid_duration,
     linear_setpoints,
     setpoints_of,
 )
 from qpi_driver.tuners.fitting import (
     fit_readout_discrimination,
+    fit_readout_integration_time,
     fit_readout_operating_point,
 )
 
@@ -79,7 +81,7 @@ class ReadoutOperatingPoint(CalibrationRoutine):
     """
 
     name = "readout_operating_point"
-    depends_on = ("rabi",)
+    depends_on = ("readout_integration_time",)
     updates = (f"{TWO_STATE}.frequency", f"{TWO_STATE}.pulse_amp")
     reads = (
         "clock_freqs.readout",
@@ -198,6 +200,164 @@ class ReadoutOperatingPoint(CalibrationRoutine):
             path = _two_state_path(element, name)
             if path:
                 write_path(element, path, params[key])
+
+
+class ReadoutIntegrationTime(CalibrationRoutine):
+    """How long to integrate the readout — the last free parameter in its signal-to-noise.
+
+    Signal accumulates with the window and noise only with its square root, so separation
+    climbs as ``sqrt(t)`` until the qubit starts relaxing inside the window, after which a
+    longer one only adds shots of the wrong state. That crossing is set by T1 and chi, so
+    it is a property of the chip and cannot be a constant. Left as one it was whatever the
+    config happened to be written with, and every discriminating node inherited it.
+
+    `resonator_relaxation` measures the ring-up and deliberately does not write this — the
+    ring-up is a *floor*, a statement about the resonator that mentions neither noise nor
+    relaxation. Its docstring asks for this node by name, and the discrimination fidelity
+    it was waiting on now exists.
+
+    Ahead of the rest of the readout chain, because every node after it measures a
+    separation that this scales. Choosing it afterwards would restate the same sweeps.
+    """
+
+    name = "readout_integration_time"
+    depends_on = ("rabi",)
+    updates = ("measure.integration_time",)
+    reads = (
+        "measure.integration_time",
+        "clock_freqs.readout",
+        "clock_freqs.f01",
+        "rxy.amp180",
+    )
+
+    #: Multiples of the window the config arrived with — the only scale available before
+    #: anything has been measured on this axis. A factor of four either side brackets an
+    #: interior optimum wherever the starting guess sat relative to it, and a config that
+    #: is already right keeps its value, since 1.0 is in the ladder.
+    WINDOW_FACTORS = (0.25, 0.5, 1.0, 2.0, 4.0)
+
+    #: Longest acquisition a Qblox sequencer integrates into one bin.
+    #:
+    #: A hardware ceiling rather than a physical one — the optimum normally sits far below
+    #: it — and it is here so the sweep clamps rather than the backend raising from inside
+    #: its own allocator. Other hardware overrides it through ``max_integration_time``.
+    MAX_INTEGRATION_TIME_S = 16.384e-6
+
+    def applies_to(self, device: Any, target: str) -> bool:
+        """Only where there is an integration time to write."""
+        measure = getattr(device.get_element(target), "measure", None)
+        return measure is not None and hasattr(measure, "integration_time")
+
+    def acquire(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+    ) -> Any:
+        """One schedule per window, because a schedule may only have one of them.
+
+        Not a chunking optimisation like `rb`'s — a hardware rule. Every square
+        acquisition compiled into one Qblox program shares an integration length, and a
+        second one raises from inside the backend: "attempting to set an integration_length
+        of 500 ns, while this was previously determined to be 250". So the axis this node
+        exists to sweep is the one axis that cannot be swept within a schedule.
+
+        The windows are concatenated in order, so `analyse` unpacks them exactly as it
+        would one schedule's worth of settings.
+        """
+        windows = self._grid(device.get_element(target), config)
+        rows = []
+        for window in windows:
+            single = RoutineConfig(
+                enabled=config.enabled,
+                params={**config.params, "windows": [window]},
+            )
+            dataset = super().acquire(target, device, single, backend, timeout_s)
+            # ``(shots, 2)`` — the two prepared states of this one window. Kept 2-D,
+            # because the shots *are* the measurement here: their spread is the noise the
+            # separation is quoted in, and flattening them reads as one shot per state.
+            values = np.atleast_2d(_acquisition_values(dataset))
+            if values.shape[-1] < 2:
+                raise RoutineError(
+                    f"window {window:.4g} s returned {values.shape[-1]} acquisitions, "
+                    f"expected |0> and |1>"
+                )
+            rows.append(values[..., :2])
+        self._windows = windows
+        # Side by side, so the acquisition axis unpacks as |0>,|1> per window — the same
+        # interleaving `_swept_clouds` expects from a single-schedule sweep.
+        return xr.Dataset(
+            {"y0": (("shot", "acq_index"), np.concatenate(rows, axis=-1))}
+        )
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        """``|0>`` and ``|1>`` at *one* window — see :meth:`acquire` for why only one."""
+        windows = self._grid(device.get_element(target), config)
+        self._windows = windows[:1]
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 300))
+        )
+        for index, prepare in enumerate((0, 1)):
+            schedule.add(backend.Reset(target))
+            if prepare:
+                schedule.add(backend.X(target))
+            schedule.add(
+                backend.Measure(
+                    target,
+                    acq_index=index,
+                    bin_mode=backend.BinMode.APPEND,
+                    acq_duration=self._windows[0],
+                )
+            )
+        return schedule
+
+    def _grid(self, element: Any, config: RoutineConfig) -> list[float]:
+        if "windows" in config:
+            windows = [float(w) for w in setpoints_of(config, "windows", [])]
+        else:
+            current = float(read_path(element, "measure.integration_time"))
+            if not current:
+                raise RoutineError(
+                    "no measure.integration_time to scale a sweep from; set an explicit "
+                    "'windows' for this routine"
+                )
+            windows = [factor * current for factor in self.WINDOW_FACTORS]
+        ceiling = float(config.get("max_integration_time", self.MAX_INTEGRATION_TIME_S))
+        # Deduplicated after clamping and rounding, or a config already at the ceiling
+        # sweeps one window several times and the winner reads as a choice the ladder made.
+        windows = sorted({grid_duration(min(w, ceiling)) for w in windows if w > 0.0})
+        if not windows:
+            raise RoutineError("readout integration sweep is empty")
+        needed = 2 * len(windows)
+        if needed > ReadoutOperatingPoint.MAX_SINGLE_SHOT_ACQUISITIONS:
+            raise RoutineError(
+                f"{len(windows)} windows needs {needed} single-shot acquisitions, past "
+                f"the {ReadoutOperatingPoint.MAX_SINGLE_SHOT_ACQUISITIONS} a sequencer "
+                f"has registers for"
+            )
+        return windows
+
+    def analyse(
+        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+    ) -> dict[str, Any]:
+        ground, excited = _swept_clouds(dataset, len(self._windows))
+        return fit_readout_integration_time(
+            self._windows,
+            ground,
+            excited,
+            incumbent=float(read_path(device.get_element(target), "measure.integration_time")),
+        )
+
+    def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
+        write_path(
+            device.get_element(target),
+            "measure.integration_time",
+            params["integration_time"],
+        )
 
 
 class ReadoutDiscrimination(CalibrationRoutine):
