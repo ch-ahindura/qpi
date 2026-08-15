@@ -29,6 +29,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: the 1-2 ladder prediction was out by exactly two — `EF_ENVELOPE_AREA`
+  read quantify's `nr_sigma` as spanning the whole DRAG pulse rather than each side of
+  centre. It refused pulses sitting on the ladder; a test now pins the constant to the
+  integrated waveform instead of to the arithmetic.
 - `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` refuse a sweep no straight line
   passes through. The demodulated signal is bounded at one, so its scatter has an absolute
   scale — a chip whose points sat 0.35 off their own fitted line still reported a quarter

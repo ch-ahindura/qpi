@@ -133,19 +133,30 @@ LADDER_RATIO = math.sqrt(2.0)
 SPAN_IN_LINEWIDTHS = 1.8
 
 
+#: How many sigma quantify's DRAG envelope spans *each side* of centre.
+#:
+#: The whole point of naming it. ``nr_sigma`` is quantify's own parameter and its docstring
+#: says "after how many sigma the Gaussian is cut off" — which is per side, so a pulse of
+#: length ``T`` has ``sigma = T / (2 * nr_sigma)``, not ``T / nr_sigma``. Reading it the
+#: other way is what put :data:`EF_ENVELOPE_AREA` out by exactly two, and a factor of two
+#: is the one error this whole module is least able to see, because it is also the spacing
+#: of the cosine roots `fit_rabi` chooses between.
+RXY_NR_SIGMA = 4.0
+
 #: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
 #:
 #: They are not the same shape, which the first version of the ladder bound missed. `rxy`
-#: compiles through quantify's ``rxy_drag_pulse`` to a Gaussian of ``nr_sigma = 4``, whose
-#: area is ``A*sigma*sqrt(2*pi) = 0.627*A*T``; `add_ef_pulse` emits a `SquarePulse` of area
-#: ``A*T``. Rotation follows area, so the same *nominal* amplitude turns 1.6 times the angle
-#: on the ef transition — so comparing the two amplitudes without it centres the bound 1.6x
-#: too high. That changes no verdict on its own, since 1.6 is inside the factor of two the
-#: bound allows, but it spends most of that margin on a systematic that is known and
-#: calculable. Centred properly, the factor of two is available for what it was meant for:
-#: the ef pulse being a different length from the 0-1 one, and the ladder relation itself
-#: holding only to about 10%.
-EF_ENVELOPE_AREA = 0.25 * math.sqrt(2.0 * math.pi)
+#: compiles through quantify's ``rxy_drag_pulse`` to a Gaussian cut at
+#: :data:`RXY_NR_SIGMA`; `add_ef_pulse` emits a `SquarePulse` of area ``A*T``. Rotation
+#: follows area, so the same *nominal* amplitude turns a larger angle on the ef transition,
+#: and comparing the two amplitudes without the correction centres the bound too high.
+#:
+#: Derived rather than integrated, so it is worth saying what pins it: `test_ef_envelope_
+#: area_matches_the_real_waveform` integrates quantify's actual ``drag`` output and asserts
+#: this number. It exists because the hand-derived version was wrong by two for four days,
+#: refusing a chip whose `ef_ladder` then measured the ratio at 1.49 against sqrt(2) —
+#: 5.6%, which is the anharmonic correction and not a factor of two.
+EF_ENVELOPE_AREA = math.sqrt(2.0 * math.pi) / (2.0 * RXY_NR_SIGMA)
 
 #: Where a `CalibratedTransmon` keeps its EF pulse.
 EF = "r12"

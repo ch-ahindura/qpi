@@ -1767,17 +1767,23 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         )
         return SimpleNamespace(get_element=lambda name: element)
 
-    def test_the_b_chip_s_ef_pulse_is_refused(self):
+    def test_the_b_chip_s_ef_pulse_is_on_the_ladder(self):
+        """The 2026-08-15 run, which this guard refused at 0.47x until the constant was fixed.
+
+        `ef_ladder` measured that chip's ratio at 1.4933 against sqrt(2) — 5.6%, which is
+        the anharmonic correction, not a factor of two. The refusal was the prediction's
+        fault: :data:`EF_ENVELOPE_AREA` was derived from the wrong sigma convention. With
+        it right, the same numbers land 4.4% off.
+        """
         from qpi_driver.tuners.routines.ef import _require_ef_ladder
 
-        with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
-            _require_ef_ladder(
-                self._device(self.B_CHIP_AMP180),
-                "q5",
-                self.B_CHIP_EF,
-                20e-9,
-                span=0.05,
-            )
+        _require_ef_ladder(  # noqa: B018
+            self._device(0.3455544344910988, duration=56e-9),
+            "q5",
+            0.07317097058053129,
+            56e-9,
+            span=0.5,
+        )
 
     def test_a_pulse_on_the_ladder_is_accepted(self):
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
@@ -1812,17 +1818,43 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         """`rxy` is a Gaussian and the ef pulse is a square, so equal amplitudes are not
         equal rotations, and the bound has to carry the area ratio.
 
-        It moves the *centre* by 1.6x and does not by itself change any verdict, since 1.6
-        sits inside the factor of two the bound allows — so this asserts the arithmetic
-        rather than a refusal. What it buys is that the bound is centred on the pulse the
-        routine actually plays, which is what makes the factor of two a real margin instead
-        of most of it being spent on a known systematic.
+        It moves the centre by 3.2x, which is outside the factor of two the bound allows —
+        so leaving it out does not merely decentre the window, it refuses a pulse sitting
+        exactly on the ladder. That is a verdict, not a systematic.
         """
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, _require_ef_ladder
 
-        assert EF_ENVELOPE_AREA == pytest.approx(0.6267, rel=0.01)
-        # The sqrt(2)-only prediction is 1.6x high, which is inside the window either way.
-        _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5, 20e-9)  # noqa: B018
+        assert EF_ENVELOPE_AREA == pytest.approx(0.3133, rel=0.01)
+        with pytest.raises(RoutineError, match="sqrt.2. ladder allows"):
+            _require_ef_ladder(self._device(0.4), "q5", 0.4 / 2**0.5, 20e-9)
+
+    def test_ef_envelope_area_matches_the_real_waveform(self):
+        """Integrate what quantify actually emits, rather than re-deriving it by hand.
+
+        The hand-derived version read ``nr_sigma`` as spanning the whole pulse instead of
+        each side of centre, and was out by exactly two for four days — refusing a chip
+        whose `ef_ladder` then measured 1.49 against sqrt(2). A factor of two is the one
+        error the surrounding module is least able to catch, since it is also the spacing
+        of the cosine roots `fit_rabi` picks between, so it is pinned to the waveform here
+        rather than to the arithmetic that got it wrong.
+        """
+        import numpy as np
+        from quantify_scheduler.waveforms import drag
+
+        from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, RXY_NR_SIGMA
+
+        duration = 56e-9
+        t = np.linspace(0.0, duration, 20001)
+        envelope = drag(
+            t,
+            G_amp=1.0,
+            D_amp=0.0,
+            duration=duration,
+            nr_sigma=RXY_NR_SIGMA,
+            subtract_offset="none",
+        )
+        area = float(np.trapezoid(np.real(envelope), t) / duration)
+        assert EF_ENVELOPE_AREA == pytest.approx(area, rel=0.01)
 
     def test_a_resolved_oscillation_is_accepted_however_far_off_the_ladder(self):
         """The failure this guard exists for has a signature, and it is the opposite one.
@@ -1839,12 +1871,16 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         )
 
     def test_a_partial_rotation_this_far_off_the_ladder_is_still_refused(self):
-        """Same amplitude and same ladder violation; only the sweep is different."""
+        """Same amplitude and same ladder violation; only the sweep is different.
+
+        A quarter of the amplitude the ladder wants, over a span too short to hold one
+        oscillation — which is what a drive too weak to turn a pi looks like.
+        """
         from qpi_driver.tuners.routines.ef import _require_ef_ladder
 
         with pytest.raises(RoutineError, match="of an oscillation"):
             _require_ef_ladder(
-                self._device(0.5622, duration=56e-9), "q5", 0.06751, 56e-9, span=0.05
+                self._device(0.5622, duration=56e-9), "q5", 0.03, 56e-9, span=0.05
             )
 
     @pytest.mark.parametrize("factor", (0.55, 1.9))
