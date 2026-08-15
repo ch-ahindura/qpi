@@ -29,6 +29,20 @@ log = logging.getLogger(__name__)
 #: anything a sweep genuinely failed to reach.
 AMP180_ROUNDING = 1e-6
 
+#: How far a DRAG sweep must rise across its own beta range, in units of the scatter about
+#: the fitted line, before the line's root counts as an optimum — see :func:`fit_drag`.
+#:
+#: Relative on purpose, and to the two quantities the sweep itself supplies: neither the
+#: slope nor the signal has an absolute scale here, since both are in demodulated units
+#: that depend on readout gain, and the useful beta range differs by an order of magnitude
+#: between the 0-1 and 1-2 transitions. A ratio of the two is the only form that transfers.
+#:
+#: Three, which is where the rest of this package puts "a trend rather than noise" — the
+#: same reasoning as ``MIN_ALLXY_CONTRAST``, and a good DRAG sweep clears it by a wide
+#: margin because the whole point of the sequence is to make the signal first order in the
+#: error it is looking for.
+MIN_DRAG_RISE = 3.0
+
 
 def decaying_cosine(
     t: np.ndarray | float,
@@ -312,6 +326,25 @@ def fit_drag(
     slope, intercept = np.polyfit(x, y, 1)
     if abs(slope) < 1e-12:
         raise FitError("DRAG sweep is flat in beta — no optimum to find")
+
+    # A line through noise has a slope too, and its root is wherever the noise happened to
+    # cross. Nothing downstream can tell that from an optimum: the root lands inside the
+    # sweep either way, and `slope` alone has no scale to be judged against. So it is
+    # judged against the scatter about the line it came from — see :data:`MIN_DRAG_RISE`.
+    rise = abs(slope) * (float(np.max(x)) - float(np.min(x)))
+    scatter = float(np.std(y - (slope * x + intercept)))
+    if scatter > 0.0 and rise < MIN_DRAG_RISE * scatter:
+        raise FitError(
+            f"the DRAG sweep rises {rise:.4g} across its whole beta range against a "
+            f"scatter of {scatter:.4g} about the line — {rise / scatter:.1f}x, under the "
+            f"{MIN_DRAG_RISE:g}x that separates a trend from noise. The root of a line "
+            f"through noise is wherever the noise crossed, and it would be written to "
+            f"every pulse afterwards. Average more shots, or check that the sequence this "
+            f"sweeps is producing a beta-dependent signal at all",
+            fit=fit_summary(
+                x, y, slope * x + intercept, x_label="beta", y_label="signal"
+            ),
+        )
 
     motzoi = float(-intercept / slope)
     require_in_range(
