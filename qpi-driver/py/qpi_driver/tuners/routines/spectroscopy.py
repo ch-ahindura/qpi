@@ -6,6 +6,7 @@ the response.
 """
 
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -1275,7 +1276,7 @@ class F12Spectroscopy(CalibrationRoutine):
     name = "f12_spectroscopy"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f12",)
-    reads = ("clock_freqs.f01", "rxy.amp180")
+    reads = ("clock_freqs.f01", "rxy.amp180", "spec.amplitude")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1322,41 +1323,109 @@ class F12Spectroscopy(CalibrationRoutine):
         # pulse is already the point where `_drive_ef`'s neglected off-resonant 0-1
         # term starts to matter, and this routine only has to find the line for
         # `rabi_12` to refine.
-        amplitude = float(config.get("drive_amp", 0.10))
+        self._drive_amps = self._drive_amplitudes(config, device, target)
         duration = float(config.get("duration", 20e-9))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(self._frequencies):
-            schedule.add(backend.Reset(target))
-            # Into |1> first, which is what makes this the *ef* transition rather than
-            # a second look at 0-1.
-            schedule.add(backend.X(target))
-            schedule.add(
-                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
-            )
-            schedule.add(
-                backend.SquarePulse(
-                    amp=amplitude,
-                    duration=duration,
-                    port=f"{target}:mw",
-                    clock=clock,
+        index = 0
+        for amplitude in self._drive_amps:
+            for frequency in self._frequencies:
+                schedule.add(backend.Reset(target))
+                # Into |1> first, which is what makes this the *ef* transition rather
+                # than a second look at 0-1.
+                schedule.add(backend.X(target))
+                schedule.add(
+                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
                 )
-            )
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                schedule.add(
+                    backend.SquarePulse(
+                        amp=amplitude,
+                        duration=duration,
+                        port=f"{target}:mw",
+                        clock=clock,
+                    )
                 )
-            )
+                schedule.add(
+                    backend.Measure(
+                        target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                    )
+                )
+                index += 1
         return schedule
+
+    #: How much harder the 1-2 line has to be driven than the 0-1 one, as a ratio of the
+    #: amplitudes each is best seen at.
+    #:
+    #: The 1-2 transition is driven out of ``|1>``, which relaxes while the spectroscopy
+    #: pulse plays, so the same power leaves less population to move. Tergite-autocalibration
+    #: — which calibrates this chip family — sweeps 1e-3 to 8e-3 for 0-1 and 6e-3 to 3e-2 for
+    #: 1-2; the geometric centres are 2.8e-3 and 1.34e-2, a ratio of 4.7.
+    #:
+    #: A ratio and not an amplitude, because the absolute number is a property of the drive
+    #: chain's attenuation and nothing else. Anchoring to the amplitude `qubit_spectroscopy`
+    #: actually chose makes this follow the chip; a constant makes it follow whichever chip
+    #: it was tuned on. The 0.10 that stood here was tuned against the simulator and is 3.3x
+    #: tergite's ceiling — on the August 2026 B chip it broadened the line to 37-42 MHz,
+    #: where the intrinsic width at that chip's T2* is 4.5 kHz, and the fitted centre then
+    #: wandered 3.06 MHz between runs.
+    EF_DRIVE_RATIO = 4.7
+
+    #: Amplitudes to try, as multiples of the anchor. Three points over a factor of five,
+    #: which is the span and count tergite's own 1-2 ladder uses.
+    DRIVE_FACTORS = (1.0 / math.sqrt(5.0), 1.0, math.sqrt(5.0))
+
+    def _drive_amplitudes(
+        self, config: RoutineConfig, device: Any, target: str
+    ) -> list[float]:
+        """A ladder to sweep, rather than the one amplitude this used to fix.
+
+        Swept and chosen for the same reason `qubit_spectroscopy` sweeps its own: the
+        power that shows a line best is a property of the chip, and driving past it
+        broadens the line and moves its centre. `fit_spectroscopy_power` then drops the
+        rows that broadened and ranks what is left, which is the whole mechanism — it was
+        simply never given more than one row to choose between here.
+        """
+        if "drive_amps" in config:
+            return setpoints_of(config, "drive_amps", [])
+        if "drive_amp" in config:
+            return [float(config["drive_amp"])]
+
+        anchor = 0.10 / self.EF_DRIVE_RATIO
+        path = spectroscopy_amplitude_path(device.get_element(target))
+        if path:
+            try:
+                measured = float(read_path(device.get_element(target), path))
+            except Exception:  # noqa: BLE001 - an unreadable field is an unmeasured one
+                measured = 0.0
+            anchor = measured or anchor
+        centre = anchor * self.EF_DRIVE_RATIO
+        return [
+            min(factor * centre, MAX_SPECTROSCOPY_AMPLITUDE)
+            for factor in self.DRIVE_FACTORS
+        ]
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
-        fitted = fit_qubit_spectroscopy(self._frequencies, signal_of(dataset))
+        signal = signal_of(dataset)
+        columns = len(self._frequencies)
+        expected = len(self._drive_amps) * columns
+        if signal.size < expected:
+            raise RoutineError(
+                f"f12 spectroscopy expected {expected} acquisitions for "
+                f"{len(self._drive_amps)} amplitudes x {columns} frequencies, got "
+                f"{signal.size}"
+            )
+        fitted = fit_spectroscopy_power(
+            np.asarray(self._drive_amps),
+            np.asarray(self._frequencies),
+            signal[:expected].reshape(len(self._drive_amps), columns),
+        )
         require_resolved_line(fitted, self._frequencies)
         return {
             "clock_freq_12": fitted["clock_freq_01"],
+            "drive_amplitude": fitted["drive_amplitude"],
             "linewidth": fitted["linewidth"],
             "quality_factor": fitted["quality_factor"],
             # Reported because it is the number a reader wants and nothing else
