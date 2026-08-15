@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: `fine_amplitude_12` refines the EF pi on the ordinary 0-1 readout, by
+  mapping |1> back the way `rabi_12` already does, and `three_state_operating_point` now
+  depends on it. It used to read at the three-state point and sit *behind* that node — a
+  deadlock, since populating |2> needs the refined pi that this node produces. On one chip
+  it and the three nodes behind it never ran once in six attempts.
 - `qpi-driver/py`: a guard that can tell a poor measurement from no measurement now passes
   the poor one and marks it degraded, rather than refusing and taking every node downstream
   with it. `require_resolved_curve` takes its floor from what noise fakes over that many

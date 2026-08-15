@@ -416,7 +416,12 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
     """
 
     name = "three_state_operating_point"
-    depends_on = ("rabi_12", "readout_operating_point")
+    # On the *refined* ef pi, not the coarse one. Populating |2> is this node's whole
+    # premise — its own refusal says so, "most often the sweep never prepared |2>" — and
+    # `rabi_12` lands within a few per cent at best and on the wrong oscillation at worst.
+    # `fine_amplitude_12` amplifies the residual until it is unambiguous, and now runs on
+    # the 0-1 readout so it can sit here rather than behind this node.
+    depends_on = ("fine_amplitude_12", "readout_operating_point")
     updates = (f"{THREE_STATE}.frequency", f"{THREE_STATE}.pulse_amp")
     reads = (
         "clock_freqs.readout",
@@ -705,19 +710,30 @@ class FineAmplitude12(CalibrationRoutine):
     ``cos(n(pi+delta))``, identical at integer ``n`` for an over- and an
     under-rotation; the pre-rotation makes it a sine and the sign measurable.
 
-    Reads at the three-state point, and needs to. Its two reference states are ``|1>``
-    and ``|2>``, and at a 0-1 readout those two are all but on top of each other — the
-    same 5% wiggle that put `f12_spectroscopy` 7 MHz out before its drive was raised.
-    At the three-state point they are 14 sigma apart in magnitude alone, which is what
-    makes this measurable at all.
+    **Reads at the ordinary 0-1 point, by mapping back.** It used to read at the
+    three-state one and depend on `three_state_operating_point`, on the grounds that its
+    reference states are ``|1>`` and ``|2>`` and those sit almost on top of each other at
+    a 0-1 readout. True, and `rabi_12` solves it: a second 0-1 pi after the ef pulses
+    returns ``|1>`` to ``|0>`` and leaves ``|2>`` where it is, so the ef rotation appears
+    in the ``|0>`` population — the one quantity a 0-1 readout is already good at. The
+    same trick, one node along.
+
+    That dependency was also a deadlock. `three_state_operating_point` needs a correct ef
+    pi to populate ``|2>`` at all, and this is the node that makes the ef pi correct; on a
+    chip whose three-state clouds never separated, this and the three nodes behind it never
+    ran once in six attempts. tergite-autocalibration's equivalent, `n_rabi_12_oscillations`,
+    reads at ``qubit_state = 1`` and needs no three-state readout either.
+
+    Amplification is also what settles which oscillation `rabi_12` found. A per-pulse error
+    grows linearly with repetitions while noise does not, so an ef amplitude that is out by
+    the factor of two that chip alternates between is unmistakable by the seventh pulse,
+    where a single-pulse sweep confuses the two.
     """
 
     name = "fine_amplitude_12"
-    depends_on = ("three_state_operating_point",)
+    depends_on = ("rabi_12",)
     updates = (f"{EF}.ef_amp180",)
     reads = (
-        "measure_3state.frequency",
-        "measure_3state.pulse_amp",
         "r12.ef_amp180",
         "r12.ef_duration",
         "rxy.duration",
@@ -726,7 +742,7 @@ class FineAmplitude12(CalibrationRoutine):
     )
 
     def applies_to(self, device: Any, target: str) -> bool:
-        return has_three_state_readout(device, target)
+        return has_ef_drive(device, target)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -741,7 +757,6 @@ class FineAmplitude12(CalibrationRoutine):
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        measure = open_three_state_readout(schedule, backend, target, element)
 
         for index, count in enumerate(self._repetitions):
             schedule.add(backend.Reset(target))
@@ -753,31 +768,39 @@ class FineAmplitude12(CalibrationRoutine):
             )
             for _ in range(count):
                 add_ef_pulse(schedule, backend, target, self._amplitude, self._duration)
+            # Back to |0> if the ef pulses left the qubit in |1>, and untouched in |2>.
+            # See the class docstring: this is what puts the accumulated ef error into
+            # the |0> population and lets a 0-1 readout resolve it.
+            schedule.add(backend.X(target))
             schedule.add(
                 backend.Measure(
                     target,
                     acq_index=index,
                     bin_mode=backend.BinMode.AVERAGE,
-                    **measure,
                 )
             )
 
-        # |1> and |2>, so the fit knows the full contrast. Without them only the
-        # product of contrast and rotation error is recoverable, and the error comes
-        # out scaled by whatever fraction of the contrast this sweep happened to
-        # cover. Note these are the *EF* subspace's two states, not |0> and |1>.
+        # The EF subspace's two states, measured through the *same* map-back as the sweep
+        # above — otherwise the contrast the fit divides by is not the contrast the sweep
+        # traversed. Without them only the product of contrast and rotation error is
+        # recoverable, and the error comes out scaled by whatever fraction of the contrast
+        # this sweep happened to cover.
+        #
+        # So both references end with the mapping pi: no ef pulse leaves |1>, which maps to
+        # |0>, and one ef pi leaves |2>, which does not. They are the two ends of the
+        # population axis this sweep actually moves along.
         reference = len(self._repetitions)
         for offset, prepare_two in enumerate((False, True)):
             schedule.add(backend.Reset(target))
             schedule.add(backend.X(target))
             if prepare_two:
                 add_ef_pulse(schedule, backend, target, self._amplitude, self._duration)
+            schedule.add(backend.X(target))
             schedule.add(
                 backend.Measure(
                     target,
                     acq_index=reference + offset,
                     bin_mode=backend.BinMode.AVERAGE,
-                    **measure,
                 )
             )
         return schedule
