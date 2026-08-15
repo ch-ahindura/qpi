@@ -79,6 +79,18 @@ ALLXY_PAIRS: tuple[tuple[tuple[float, float], tuple[float, float]], ...] = (
 #: The staircase AllXY should produce, normalised to [0, 1].
 ALLXY_IDEAL: tuple[float, ...] = (0.0,) * 5 + (0.5,) * 12 + (1.0,) * 4
 
+#: Last-resort coherence sweep, for a chip with no measured T1 to scale one from.
+DEFAULT_COHERENCE_WINDOW_S = 100e-6
+
+#: Multiples of T1 to sweep a Hahn echo over — see :meth:`T2Echo._window`.
+#:
+#: A Hahn echo refocuses static dephasing and nothing else, so ``T2 <= 2*T1`` bounds it and
+#: a window has to clear that bound to constrain the fit rather than truncate it. Three
+#: puts the ceiling at 2/3 of the sweep, leaving the decay visibly flattened before the
+#: last point on any chip whose T2 is anywhere in its allowed range — which is the property
+#: a fixed duration cannot have, since it is right only for the T1 it was chosen against.
+T2_WINDOW_IN_T1 = 3.0
+
 #: How far AllXY's ``|0>`` and ``|1>`` reference plateaus must stand apart, in units of the
 #: scatter *within* the plateaus, before the sequence is measuring anything.
 #:
@@ -556,7 +568,9 @@ class T1(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._delays = setpoints_of(config, "delays", linear_setpoints(0.0, 100e-6, 41))
+        self._delays = setpoints_of(
+            config, "delays", linear_setpoints(0.0, DEFAULT_COHERENCE_WINDOW_S, 41)
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
@@ -617,7 +631,9 @@ class T2Echo(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._delays = setpoints_of(config, "delays", linear_setpoints(0.0, 100e-6, 41))
+        self._delays = setpoints_of(
+            config, "delays", linear_setpoints(0.0, self._window(device, target), 41)
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
@@ -643,6 +659,22 @@ class T2Echo(CalibrationRoutine):
             signal_of(dataset),
             t1=measured_t1(device.get_element(target)),
         )
+
+    def _window(self, device: Any, target: str) -> float:
+        """How long to sweep, in units of the relaxation this echo refocuses through.
+
+        A fixed window measures whatever the chip in front of it happens to have. An echo
+        can reach ``2*T1`` and a decay is only constrained once the sweep passes it, so a
+        window has to be a multiple of T1 rather than a duration: on a 60 us T1 the 100 us
+        constant here stops before ``2*T1``, and `fit_t2` then refuses an unbounded decay
+        that more shots cannot bound. The same argument RFC 0005 §13 makes for sizing the
+        readout sweep in linewidths.
+
+        Falls back to the constant when `t1` has not run, which is also what makes this
+        safe on an element with nowhere to keep one.
+        """
+        t1 = measured_t1(device.get_element(target))
+        return T2_WINDOW_IN_T1 * t1 if t1 else DEFAULT_COHERENCE_WINDOW_S
 
 
 class Drag(CalibrationRoutine):
