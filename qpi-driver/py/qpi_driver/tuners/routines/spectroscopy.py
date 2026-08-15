@@ -1276,7 +1276,6 @@ class QubitSpectroscopy(CalibrationRoutine):
 
 class F12Spectroscopy(CalibrationRoutine):
     """Find the ``|1>``-``|2>`` transition, by driving it from ``|1>``.
-
     Depends on `rabi` because the transition starts from ``|1>``: without a calibrated
     pi pulse there is no population to drive out of, and the sweep comes back flat.
     That is the same straddle `readout_discrimination` sits in — part of the chip's
@@ -1291,7 +1290,7 @@ class F12Spectroscopy(CalibrationRoutine):
     name = "f12_spectroscopy"
     depends_on = ("rabi",)
     updates = ("clock_freqs.f12",)
-    reads = ("clock_freqs.f01", "rxy.amp180", "spec.amplitude")
+    reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1374,54 +1373,43 @@ class F12Spectroscopy(CalibrationRoutine):
                 index += 1
         return schedule
 
-    #: How much harder the 1-2 line has to be driven than the 0-1 one, as a ratio of the
-    #: amplitudes each is best seen at.
+    #: Amplitudes to try, as fractions of the ceiling below.
     #:
-    #: The 1-2 transition is driven out of ``|1>``, which relaxes while the spectroscopy
-    #: pulse plays, so the same power leaves less population to move. Tergite-autocalibration
-    #: — which calibrates this chip family — sweeps 1e-3 to 8e-3 for 0-1 and 6e-3 to 3e-2 for
-    #: 1-2; the geometric centres are 2.8e-3 and 1.34e-2, a ratio of 4.7.
+    #: Downward only, and that is deliberate rather than timid. The failure this node has
+    #: is saturation — a drive past the line's own width broadens it and drags the fitted
+    #: centre — so the rows worth adding are *weaker* ones, and `fit_spectroscopy_power`
+    #: keeps the narrowest credible of the set. A ladder that can only reduce power cannot
+    #: do worse than the single amplitude it replaces; one that could raise it did, badly.
     #:
-    #: A ratio and not an amplitude, because the absolute number is a property of the drive
-    #: chain's attenuation and nothing else. Anchoring to the amplitude `qubit_spectroscopy`
-    #: actually chose makes this follow the chip; a constant makes it follow whichever chip
-    #: it was tuned on. The 0.10 that stood here was tuned against the simulator and is 3.3x
-    #: tergite's ceiling — on the August 2026 B chip it broadened the line to 37-42 MHz,
-    #: where the intrinsic width at that chip's T2* is 4.5 kHz, and the fitted centre then
-    #: wandered 3.06 MHz between runs.
-    EF_DRIVE_RATIO = 4.7
-
-    #: Amplitudes to try, as multiples of the anchor. Three points over a factor of five,
-    #: which is the span and count tergite's own 1-2 ladder uses.
-    DRIVE_FACTORS = (1.0 / math.sqrt(5.0), 1.0, math.sqrt(5.0))
+    #: **Anchoring this to `spec.amplitude` was tried in August 2026 and reverted.** The
+    #: reasoning was tergite's: it sweeps 1e-3 to 8e-3 for 0-1 and 6e-3 to 3e-2 for 1-2, a
+    #: ratio of 4.7 between the two optima, and a ratio travels between chips where an
+    #: amplitude does not. But that ratio holds between two *unsaturated* optima. On a chip
+    #: whose 0-1 line is only visible at 0.3 — saturated itself — 4.7x lands at full scale,
+    #: and there f12 fitted a 55 MHz line at an anharmonicity of -329 MHz where every run
+    #: before it agreed on -250. Multiplying a saturated anchor compounds the saturation.
+    DRIVE_FACTORS = (0.2, 1.0 / math.sqrt(5.0), 1.0)
 
     def _drive_amplitudes(
         self, config: RoutineConfig, device: Any, target: str
     ) -> list[float]:
         """A ladder to sweep, rather than the one amplitude this used to fix.
 
-        Swept and chosen for the same reason `qubit_spectroscopy` sweeps its own: the
-        power that shows a line best is a property of the chip, and driving past it
-        broadens the line and moves its centre. `fit_spectroscopy_power` then drops the
-        rows that broadened and ranks what is left, which is the whole mechanism — it was
-        simply never given more than one row to choose between here.
+        Swept and chosen for the same reason `qubit_spectroscopy` sweeps its own: the power
+        that shows a line best is a property of the chip, and driving past it broadens the
+        line and moves its centre. `fit_spectroscopy_power` drops the rows that broadened
+        and ranks what is left — it was simply never given more than one row here.
+
+        The top of the ladder is the amplitude this node used to fix, so the strongest row
+        is exactly what it drove before and the two added rows are weaker. Any chip this
+        already worked on keeps a row that worked; a chip it saturated gains two chances not
+        to be.
         """
         if "drive_amps" in config:
             return setpoints_of(config, "drive_amps", [])
-        if "drive_amp" in config:
-            return [float(config["drive_amp"])]
-
-        anchor = 0.10 / self.EF_DRIVE_RATIO
-        path = spectroscopy_amplitude_path(device.get_element(target))
-        if path:
-            try:
-                measured = float(read_path(device.get_element(target), path))
-            except Exception:  # noqa: BLE001 - an unreadable field is an unmeasured one
-                measured = 0.0
-            anchor = measured or anchor
-        centre = anchor * self.EF_DRIVE_RATIO
+        ceiling = float(config.get("drive_amp", 0.10))
         return [
-            min(factor * centre, MAX_SPECTROSCOPY_AMPLITUDE)
+            min(factor * ceiling, MAX_SPECTROSCOPY_AMPLITUDE)
             for factor in self.DRIVE_FACTORS
         ]
 
