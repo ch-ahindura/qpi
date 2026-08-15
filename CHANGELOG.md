@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: the 1-2 ladder guard drops its factor-of-two special case and judges a
+  resolved sweep on periods and population swing alone — both properties of the sweep
+  rather than of any chip. `ef_ladder` measures the same relation directly, so the modelled
+  prediction is deliberately the weaker witness.
 - `qpi-driver/py`: `rabi_12` now judges an off-ladder 1-2 pi by how much population it
   swings — `rabi` records its own contrast for the comparison — instead of refusing every
   amplitude a factor of two off the sqrt(2) ladder. A resolved sweep that moves the full
@@ -29,6 +33,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rb` scores survival against measured `|0>` and `X|0>` references
+  instead of scaling to the sweep's own extremes, which forced one depth to exactly 0 and
+  another to exactly 1 and could not tell a decay from a rise. No circuit count could fix
+  it — the endpoints were arithmetic.
+- `qpi-driver/py`: `t2_echo` sizes its delays from the measured T1 rather than a fixed
+  100 us window. A Hahn echo can reach `2*T1`, so a fixed window truncates the decay on any
+  chip whose T1 outruns it and `fit_t2` then refuses a decay more shots cannot bound.
+- `qpi-driver/py`: `fit_drag` refuses a sweep whose rise across its whole beta range is
+  under three times the scatter about the fitted line. The root of a line through noise
+  landed inside the sweep and was written to every pulse afterwards.
 - `qpi-driver/py`: the 1-2 ladder prediction was out by exactly two — `EF_ENVELOPE_AREA`
   read quantify's `nr_sigma` as spanning the whole DRAG pulse rather than each side of
   centre. It refused pulses sitting on the ladder; a test now pins the constant to the

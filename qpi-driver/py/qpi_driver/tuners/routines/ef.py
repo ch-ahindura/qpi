@@ -133,14 +133,20 @@ LADDER_RATIO = math.sqrt(2.0)
 SPAN_IN_LINEWIDTHS = 1.8
 
 
-#: How many sigma quantify's DRAG envelope spans *each side* of centre.
+#: How many sigma the scheduler's DRAG envelope spans *each side* of centre.
 #:
-#: The whole point of naming it. ``nr_sigma`` is quantify's own parameter and its docstring
-#: says "after how many sigma the Gaussian is cut off" — which is per side, so a pulse of
-#: length ``T`` has ``sigma = T / (2 * nr_sigma)``, not ``T / nr_sigma``. Reading it the
-#: other way is what put :data:`EF_ENVELOPE_AREA` out by exactly two, and a factor of two
-#: is the one error this whole module is least able to see, because it is also the spacing
+#: The whole point of naming it. ``nr_sigma`` is the scheduler's own parameter and its
+#: docstring says "after how many sigma the Gaussian is cut off" — which is per side, so a
+#: pulse of length ``T`` has ``sigma = T / (2 * nr_sigma)``, not ``T / nr_sigma``. Reading
+#: it the other way is what put :data:`EF_ENVELOPE_AREA` out by exactly two, and a factor
+#: of two is the one error this module is least able to see, because it is also the spacing
 #: of the cosine roots `fit_rabi` chooses between.
+#:
+#: A library convention rather than a chip's, and the executors do not override it — they
+#: construct ``DRAGPulse`` without it, so this is that default. Written here because the
+#: tuner layer has no scheduler to ask, and asserted against the emitted pulse in
+#: `test_ef_envelope_area_matches_the_real_waveform` so an upstream change fails loudly
+#: instead of recentring every ef bound.
 RXY_NR_SIGMA = 4.0
 
 #: Area of `rxy`'s envelope against the ef pulse's, at equal amplitude.
@@ -1387,25 +1393,20 @@ def _require_ef_ladder(
     # says about it — see :data:`MIN_RESOLVED_PERIODS`. Said rather than raised, because
     # the number is measured and the discrepancy is still worth an operator's attention.
     #
-    # A factor of two used to be excluded from that benefit, because the August 2026 B chip
-    # resolved clean oscillations at 1.81x the ladder while `resonator_spectroscopy_second_
-    # excited` put |2>'s dispersive shift at -35 kHz against |1>'s -100 — |2> was not being
-    # populated, so the oscillation was real and was not the 1-2 transition. That inference
-    # came from another node. Once `rabi_12` maps |2> back through a 0-1 pi it can be made
-    # here, from this sweep, against `rabi`'s own contrast — which is what *swing* is.
+    # Two independent readings, and both are properties of this sweep rather than of any
+    # chip: whether it holds a whole oscillation, and whether it moves as much population
+    # as `rabi` does. A drive too weak to turn a pi fails both by construction — it shows
+    # less than one period and moves a fraction — so passing them together is what a pi
+    # looks like, wherever the ladder says the amplitude should have been.
     #
-    # It is the sharper test. A drive too weak to turn a pi cannot move the full population
-    # however the ladder reads, and a drive that moves it is turning one somewhere. The same
-    # B chip then swung 1.42x `rabi`'s contrast at 0.47x the ladder, between the two levels
-    # the |0> and |2> readout magnitudes predict, with the sweep's second minimum exactly
-    # at twice the fitted amplitude — a full 2-pi, so the first maximum is a pi and not a
-    # pi/2. On that evidence the ladder constant is what is wrong, and refusing costs four
-    # nodes to protect a prediction.
+    # `expected` is a *model* of the pulse chain: matrix element, envelope areas, durations.
+    # `ef_ladder` measures the same relation directly, one node on, by playing the identical
+    # pulse on both transitions so the envelope and duration cancel. Where the two disagree
+    # the measurement is the better witness, and this guard is deliberately the weaker one.
     periods = span / (2.0 * ef_amp180) if ef_amp180 else 0.0
     swing = contrast / reference_contrast if reference_contrast and contrast else 0.0
     resolved = periods >= MIN_RESOLVED_PERIODS
-    doubled = 1.6 <= ratio <= 2.5 or 0.4 <= ratio <= 0.625
-    if resolved and (swing >= MIN_LADDER_SWING or not (doubled or swing)):
+    if resolved and (swing >= MIN_LADDER_SWING or not swing):
         log.warning(
             "%s: the 1-2 pi amplitude fitted to %.4g against the %.4g a sqrt(2) ladder "
             "implies from the 0-1 amplitude of %.4g — %.2fx. Accepted, because the sweep "
