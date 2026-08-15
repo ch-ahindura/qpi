@@ -999,13 +999,23 @@ class QubitSpectroscopy(CalibrationRoutine):
     ) -> dict[str, Any]:
         """The ordinary pass: build, run, fit, and refuse anything unresolved.
 
-        Through `acquire`, so a power sweep of many rows is chunked rather than compiled
-        into a program no sequencer takes — this node's grid is ``drive_amps`` by points,
-        and it is the one an operator is most likely to enlarge when a line will not
-        resolve.
+        Through `escalating`, which is `acquire` then `analyse` with a retry: a power
+        sweep of many rows is still chunked rather than compiled into a program no
+        sequencer takes, and a refusal that names ``drive_amps`` now climbs the ladder
+        instead of ending the node.
+
+        That retry is what makes :data:`DEFAULT_AMPLITUDES` a starting bracket rather
+        than a ceiling. Its own note assumed this — "a chip that needs more than this
+        says so by refusing, and the refusal names the axis" — but no refusal in
+        `fit_spectroscopy_power` named one, so the ladder was a hard limit and a chip
+        whose drive chain is more attenuated than the one it was tuned on died here.
+        The August 2026 B chip did, and its operator hand-wrote ``drive_amps`` up to 0.3;
+        one escalation from the default now reaches 0.305 on its own.
+
+        An operator who sets ``drive_amps`` keeps it: `escalating` leaves an axis the
+        config names alone, so this only ever moves a default.
         """
-        dataset = self.acquire(target, device, config, backend, timeout_s)
-        return self.analyse(dataset, target, device, config)
+        return self.escalating(target, device, config, backend, timeout_s)
 
     def _search(
         self,
@@ -1185,6 +1195,11 @@ class QubitSpectroscopy(CalibrationRoutine):
         # different windows makes a live possibility rather than a theoretical one.
         self._frequencies = frequencies
         self._drive_amps = amplitudes
+        # Recorded for `_widened` to clamp against, under the `_<axis>` convention it
+        # reads setpoints by. Without it escalation walks straight past full scale and
+        # the compiler refuses the waveform — `Rabi` carries the same line for the same
+        # reason. A drive amplitude is a fraction of full scale, so that is the bound.
+        self._drive_amps_ceiling = MAX_SPECTROSCOPY_AMPLITUDE
 
         clock = f"{target}.01"
         # A weak drive at the calibrated pulse shape, deliberately.
@@ -1324,6 +1339,11 @@ class F12Spectroscopy(CalibrationRoutine):
         # term starts to matter, and this routine only has to find the line for
         # `rabi_12` to refine.
         self._drive_amps = self._drive_amplitudes(config, device, target)
+        # Recorded for `_widened` to clamp against, under the `_<axis>` convention it
+        # reads setpoints by. Without it escalation walks straight past full scale and
+        # the compiler refuses the waveform — `Rabi` carries the same line for the same
+        # reason. A drive amplitude is a fraction of full scale, so that is the bound.
+        self._drive_amps_ceiling = MAX_SPECTROSCOPY_AMPLITUDE
         duration = float(config.get("duration", 20e-9))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))

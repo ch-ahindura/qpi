@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 from .core import (
     MIN_LINE_REACH,
     FitError,
+    OutOfRange,
     align,
     fit_summary,
     require_in_range,
@@ -220,10 +221,20 @@ def fit_spectroscopy_power(
         fits.append((float(power), fit))
 
     if not fits:
-        raise FitError(
+        # Escalatable on the *power* axis, which is what the ladder's own note assumes
+        # when it says a chip needing more than the default "says so by refusing, and the
+        # refusal names the axis". It did not: this was a plain `FitError` naming nothing,
+        # so the ladder was a hard ceiling and a chip whose drive chain is more attenuated
+        # than the one it was tuned on simply died here. The absolute power a line needs is
+        # a property of that chain, so the only chip-independent way to find it is to start
+        # low, where a line is narrow and its centre honest, and climb only when the chip
+        # says it cannot be seen.
+        raise OutOfRange(
             "no drive power in the sweep resolved a line; the range may be entirely "
             "below the noise, or the sweep too coarse for this chip's linewidth — "
-            + "; ".join(skipped)
+            + "; ".join(skipped),
+            axis="drive_amps",
+            direction="wider",
         )
 
     # Only a row that shows a line may *be* the reference the others are judged against.
@@ -242,13 +253,20 @@ def fit_spectroscopy_power(
     # it — at 200 MHz a 6.24 MHz row took the same role and rejected three good ones.
     credible = [(power, fit) for power, fit in fits if fit["reach"] >= MIN_LINE_REACH]
     if not credible:
-        raise FitError(
+        # Escalatable for the same reason as above, and this is the branch that fires on a
+        # chip too attenuated for the ladder: the rows converge and clear the step, they
+        # are simply too faint. The August 2026 B chip reached 3.33x at 0.08 against the
+        # 5x needed, which is why its operator had to hand-write `drive_amps` up to 0.3 —
+        # a number nobody could have known in advance and which is wrong for the next chip.
+        raise OutOfRange(
             "no drive power in the sweep showed a line above its own scatter — the "
             "strongest reached "
             f"{max(fit['reach'] for _power, fit in fits):.2f}x against the "
             f"{MIN_LINE_REACH:g}x a measured line clears. Either the sweep does not "
             "bracket the transition, or none of these powers drives it hard enough to "
-            "see"
+            "see",
+            axis="drive_amps",
+            direction="wider",
         )
 
     narrowest = min(fit["linewidth"] for _power, fit in credible)
