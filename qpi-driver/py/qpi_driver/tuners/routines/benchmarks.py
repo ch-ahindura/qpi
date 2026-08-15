@@ -67,6 +67,14 @@ DEFAULT_RB_CIRCUITS = 10
 #: drift check it exists to detect.
 DEFAULT_RB_SEED = 20260730
 
+#: ``|0>`` and ``X|0>``, played before the sequences and read on the same axis.
+#:
+#: Two acquisitions against several hundred, and they are what make the rest a *survival*
+#: rather than a shape. The same references `fine_amplitude` and `rabi`'s check already
+#: measure, for the same reason: without them the only scale available is the sweep's own
+#: range, which forces its extremes to 0 and 1 and cannot see which way the decay runs.
+REFERENCE_ACQUISITIONS = 2
+
 
 class RandomizedBenchmarking(CalibrationRoutine):
     """Standard Clifford RB (Magesan et al., PRL 106, 180504).
@@ -150,6 +158,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         )
 
         rows = []
+        references = []
         for index, size in enumerate(sizes):
             chunk = RoutineConfig(
                 enabled=config.enabled,
@@ -164,19 +173,32 @@ class RandomizedBenchmarking(CalibrationRoutine):
             dataset = super().acquire(target, device, chunk, backend, timeout_s)
             signal = np.asarray(signal_of(dataset), dtype=float)
             taken = len(depths) * size
-            if signal.size < taken:
+            expected = taken + REFERENCE_ACQUISITIONS
+            if signal.size < expected:
                 raise RoutineError(
-                    f"RB chunk {index + 1} of {len(sizes)} expected {taken} "
+                    f"RB chunk {index + 1} of {len(sizes)} expected {expected} "
                     f"acquisitions, got {signal.size}"
                 )
-            rows.append(signal[:taken].reshape(len(depths), size))
+            # Every chunk carries its own pair, so averaging them is free shots on the
+            # scale the whole fit divides by — and drift between chunks shows up in it.
+            references.append(signal[:REFERENCE_ACQUISITIONS])
+            rows.append(signal[REFERENCE_ACQUISITIONS:expected].reshape(len(depths), size))
 
         # Each depth's circuits from every chunk, side by side, so `analyse` reshapes it
-        # exactly as it would one schedule's worth.
+        # exactly as it would one schedule's worth, references included.
         combined = np.hstack(rows)
         self._depths = depths
         self._circuits = self._circuits_per_depth = int(combined.shape[1])
-        return xr.Dataset({"y0": ("acq_index", combined.reshape(-1))})
+        return xr.Dataset(
+            {
+                "y0": (
+                    "acq_index",
+                    np.concatenate(
+                        [np.mean(references, axis=0), combined.reshape(-1)]
+                    ),
+                )
+            }
+        )
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -210,7 +232,19 @@ class RandomizedBenchmarking(CalibrationRoutine):
             self.name, repetitions=int(config.get("shots", 1024))
         )
 
-        index = 0
+        # |0> and X|0> first, so the decay is read as a survival probability rather than
+        # scaled against its own extremes — see :meth:`analyse`.
+        for index, prepare in enumerate((0, 1)):
+            schedule.add(backend.Reset(target))
+            if prepare:
+                schedule.add(backend.X(target))
+            schedule.add(
+                backend.Measure(
+                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                )
+            )
+
+        index = REFERENCE_ACQUISITIONS
         for depth in self._depths:
             for _ in range(self._circuits):
                 sequence = sequence_with_recovery(
@@ -250,23 +284,37 @@ class RandomizedBenchmarking(CalibrationRoutine):
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        expected = len(self._depths) * self._circuits
+        circuits = len(self._depths) * self._circuits
+        expected = circuits + REFERENCE_ACQUISITIONS
         if signal.size < expected:
             raise RoutineError(
                 f"RB expected {expected} acquisitions, got {signal.size}"
             )
 
+        ground, excited = float(signal[0]), float(signal[1])
+        contrast = ground - excited
+        if abs(contrast) < 1e-12:
+            raise RoutineError(
+                "RB's |0> and X|0> references read the same, so no sequence can be scored "
+                "against them — the qubit is not responding, or the readout cannot tell "
+                "the two states apart"
+            )
+
         # Average the circuits at each depth; the decay is over depth, and the
         # spread within a depth is what averaging is for.
-        survival = signal[:expected].reshape(len(self._depths), self._circuits)
+        survival = signal[REFERENCE_ACQUISITIONS:expected].reshape(
+            len(self._depths), self._circuits
+        )
         mean = survival.mean(axis=1)
 
-        # Normalise so the fit sees a survival probability rather than raw
-        # demodulated units, which is what the RB model is written in.
-        low, high = float(np.min(mean)), float(np.max(mean))
-        if high - low < 1e-12:
-            raise RoutineError("RB response is flat across depths — nothing to fit")
-        normalised = (mean - low) / (high - low)
+        # Against the references, not against the sweep's own extremes. Scaling to the
+        # extremes pins the shallowest and deepest points to exactly 1 and 0 whatever they
+        # measured, which is a straight line through two invented values: it cannot see
+        # that a survival is *rising*, and it destroys the amplitude the fit reports its
+        # confidence through. The 2026-08-15 B chip returned 0 at depth 2 and 1 at depth
+        # 64 with the decay running the wrong way, and no number of circuits per depth
+        # could have changed either — the endpoints were arithmetic, not measurement.
+        normalised = (mean - excited) / contrast
 
         fitted = fit_rb_decay(np.asarray(self._depths, dtype=float), normalised)
         fitted["depths"] = list(self._depths)

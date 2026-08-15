@@ -1839,18 +1839,26 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         rather than to the arithmetic that got it wrong.
         """
         import numpy as np
+        from quantify_scheduler.operations import pulse_library
         from quantify_scheduler.waveforms import drag
 
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, RXY_NR_SIGMA
 
+        # Off the pulse the executor actually emits, not off our own constant, so a change
+        # to quantify's default lands here rather than silently recentring every ef bound.
         duration = 56e-9
+        emitted = pulse_library.DRAGPulse(
+            G_amp=1.0, D_amp=0.0, phase=0.0, port="p", duration=duration, clock="c"
+        ).data["pulse_info"][0]
+        assert emitted["nr_sigma"] == RXY_NR_SIGMA
+
         t = np.linspace(0.0, duration, 20001)
         envelope = drag(
             t,
             G_amp=1.0,
             D_amp=0.0,
             duration=duration,
-            nr_sigma=RXY_NR_SIGMA,
+            nr_sigma=emitted["nr_sigma"],
             subtract_offset="none",
         )
         area = float(np.trapezoid(np.real(envelope), t) / duration)
@@ -2447,6 +2455,34 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         dataset = node.acquire("q0", device, config, _CountingBackend(), 60.0)
         return node, seen, dataset
 
+    def test_survival_is_scored_against_the_references_not_the_sweep(self):
+        """A decay running the wrong way has to survive normalisation to be caught.
+
+        Scaling to the sweep's own extremes pins its ends to exactly 1 and 0 whatever they
+        measured, which makes every dataset look like a decay from 1 — including one that
+        rises. The 2026-08-15 B chip returned exactly 0 at depth 2 and exactly 1 at depth
+        64, and no circuit count could have moved either: they were arithmetic. Against
+        ``|0>`` and ``X|0>`` the numbers keep their meaning and `fit_rb_decay` sees what
+        the sequences actually did.
+        """
+        from qpi_driver.tuners.fitting.core import FitError
+        from qpi_driver.tuners.routines.benchmarks import REFERENCE_ACQUISITIONS
+
+        node = routine("rb")
+        node._depths = [1, 2, 4]
+        node._circuits = 1
+        # |0> reads 1.0 and |1> reads 0.0, then a survival that *rises* with depth.
+        signal = np.array([1.0, 0.0, 0.30, 0.45, 0.60])
+        assert signal.size == REFERENCE_ACQUISITIONS + 3
+
+        with pytest.raises((RoutineError, FitError)):
+            node.analyse(
+                xr.Dataset({"y0": ("acq_index", signal)}),
+                "q0",
+                SimpleNamespace(get_element=lambda _n: SimpleNamespace(name="q0")),
+                RoutineConfig(params={}),
+            )
+
     def test_a_sweep_inside_the_budget_runs_as_one_schedule(self, monkeypatch):
         from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
 
@@ -2457,7 +2493,10 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         assert 10 * sum(depths) <= MAX_RB_CLIFFORDS
 
     def test_a_sweep_past_the_budget_is_split_and_every_piece_fits(self, monkeypatch):
-        from qpi_driver.tuners.routines.benchmarks import MAX_RB_CLIFFORDS
+        from qpi_driver.tuners.routines.benchmarks import (
+            MAX_RB_CLIFFORDS,
+            REFERENCE_ACQUISITIONS,
+        )
 
         node, seen, dataset = self._acquire(50, self.DEEP, monkeypatch)
 
@@ -2467,7 +2506,10 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         # Every circuit the operator asked for is present, and none is dropped.
         assert sum(c for c, _ in seen) == 50
         assert node._circuits == 50
-        assert signal_of(dataset).size == 50 * len(self.DEEP)
+        # Plus the |0> and X|0> references, which `analyse` reads off the front.
+        assert (
+            signal_of(dataset).size == REFERENCE_ACQUISITIONS + 50 * len(self.DEEP)
+        )
 
     def test_each_piece_benchmarks_different_circuits(self, monkeypatch):
         """Or the chunks would be copies of one another and average to nothing."""
