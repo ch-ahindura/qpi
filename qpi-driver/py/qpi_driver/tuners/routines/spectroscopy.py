@@ -1307,14 +1307,19 @@ class F12Spectroscopy(CalibrationRoutine):
         centre = config.get("centre_frequency")
         if centre is None:
             offset = float(config.get("anharmonicity_prior", -300e6))
-            low, high = ANHARMONICITY_RANGE_HZ
+            # Overridable, because the range is a prior over the transmon *family* and a
+            # device deliberately built outside it is a chip fact, which belongs in a
+            # config. The guard is against a placeholder, not against an unusual design.
+            low, high = (
+                float(v) for v in config.get("anharmonicity_range", ANHARMONICITY_RANGE_HZ)
+            )
             if not low <= offset <= high:
                 raise RoutineError(
-                    f"`anharmonicity_prior` is {offset / 1e6:.0f} MHz, which is not an "
-                    f"anharmonicity a transmon has — they run {low / 1e6:.0f} to "
-                    f"{high / 1e6:.0f} MHz and are negative, the 1-2 transition sitting "
-                    f"below the 0-1 one. Searching around f01 plus this would look where "
-                    f"no transition is"
+                    f"`anharmonicity_prior` is {offset / 1e6:.0f} MHz, outside the "
+                    f"{low / 1e6:.0f} to {high / 1e6:.0f} MHz a transmon's anharmonicity "
+                    f"runs to — negative, the 1-2 transition sitting below the 0-1 one. "
+                    f"Searching around f01 plus this would look where no transition is. "
+                    f"Set `anharmonicity_range` for a device built outside it"
                 )
             centre = self._f01 + offset
         span = float(config.get("span", 400e6))

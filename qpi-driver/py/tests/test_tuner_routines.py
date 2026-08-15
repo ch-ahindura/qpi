@@ -1000,7 +1000,7 @@ class TestAnAnharmonicityHasToBeATransmons:
 
                 return _Element
 
-        with pytest.raises(RoutineError, match="not an anharmonicity a transmon has"):
+        with pytest.raises(RoutineError, match="outside the .* a transmon's anharmonicity"):
             node.build_schedule(
                 "q0",
                 _Device,
