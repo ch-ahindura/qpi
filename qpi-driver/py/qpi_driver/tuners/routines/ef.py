@@ -329,7 +329,15 @@ class Rabi12(CalibrationRoutine):
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
     ) -> dict[str, Any]:
-        fitted = fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
+        # Seeded with what the ladder predicts, not checked against it afterwards. The two
+        # cosines that fit a thin 1-2 sweep differ by a factor of two in period and the
+        # data often cannot separate them; `_best_rabi_fit` keeps the physical one only
+        # while that stays true, so this steers the fit without deciding it.
+        fitted = fit_rabi(
+            np.asarray(self._amplitudes),
+            signal_of(dataset),
+            expected_amp180=ladder_amplitude(device, target, self._duration) or None,
+        )
         _require_ef_ladder(
             device,
             target,
@@ -1260,6 +1268,31 @@ def _prepared_clouds(dataset: Any, states: int) -> list[np.ndarray]:
     return [values[..., index].reshape(-1) for index in range(states)]
 
 
+def ladder_amplitude(device: Any, target: str, ef_duration: float) -> float:
+    """The 1-2 pi amplitude the sqrt(2) ladder predicts, or 0 when it cannot be formed.
+
+    Three corrections, and all three are properties of the pulses rather than of the chip:
+    the ``sqrt(2)`` is the transmon's 1-2 matrix element, the envelope ratio is that `rxy`
+    is a Gaussian where the ef pulse is a square, and the durations are whatever the two
+    are configured to be. Rotation follows area, so a pulse half as long needs twice the
+    amplitude — not a detail on a chip whose `rxy` is 56 ns against an ef pulse of 20.
+
+    Public because two callers need the same number for different reasons: `_require_ef_
+    ladder` checks a fitted amplitude against it afterwards, and `rabi_12` seeds its fit
+    with it beforehand, so a sweep whose cosine has two near-degenerate minima lands in the
+    one physics expects rather than the one the frequency estimator happened to guess.
+    """
+    try:
+        amp180 = float(read_path(device.get_element(target), "rxy.amp180"))
+    except Exception:  # noqa: BLE001 - an unreadable amp180 is not evidence
+        return 0.0
+    rxy_duration = _rxy_duration(device.get_element(target))
+    if not amp180 or not rxy_duration or not ef_duration:
+        return 0.0
+    stretch = rxy_duration / ef_duration
+    return amp180 * stretch * EF_ENVELOPE_AREA / math.sqrt(2.0)
+
+
 def _require_ef_ladder(
     device: Any,
     target: str,
@@ -1281,33 +1314,34 @@ def _require_ef_ladder(
     skipped, and inventing a comparison against nothing would refuse a chip for the wrong
     reason.
     """
-    try:
-        amp180 = float(read_path(device.get_element(target), "rxy.amp180"))
-    except Exception:  # noqa: BLE001 - an unreadable amp180 is not evidence
+    expected = ladder_amplitude(device, target, ef_duration)
+    if not expected:
         return
-    if not amp180:
-        return
-
-    # Three corrections, and all three are properties of the pulses rather than of the
-    # chip: the sqrt(2) is the transmon's 1-2 matrix element, the envelope ratio is that
-    # `rxy` is a Gaussian where this is a square, and the durations are whatever the two
-    # are configured to be. Rotation follows area, so a pulse half as long needs twice
-    # the amplitude — which is not a detail on a chip whose `rxy` is 56 ns against this
-    # pulse's 20, a factor of 2.8 that is larger than the whole window below.
-    rxy_duration = _rxy_duration(device.get_element(target))
-    if not rxy_duration or not ef_duration:
-        return
+    element = device.get_element(target)
+    amp180 = float(read_path(element, "rxy.amp180"))
+    rxy_duration = _rxy_duration(element)
     stretch = rxy_duration / ef_duration
-    expected = amp180 * stretch * EF_ENVELOPE_AREA / math.sqrt(2.0)
-    ratio = ef_amp180 / expected if expected else 0.0
+    ratio = ef_amp180 / expected
     if 1.0 / MAX_EF_LADDER_ERROR <= ratio <= MAX_EF_LADDER_ERROR:
         return
 
     # A resolved oscillation is not the failure this guard exists for, whatever the ladder
     # says about it — see :data:`MIN_RESOLVED_PERIODS`. Said rather than raised, because
     # the number is measured and the discrepancy is still worth an operator's attention.
+    #
+    # Except at a factor of two, which is no longer given that benefit. The August 2026 B
+    # chip resolved two clean oscillations at 1.81x the ladder on three separate runs, and
+    # every time it did, ``resonator_spectroscopy_second_excited`` measured |2>'s dispersive
+    # shift at -35 kHz against |1>'s -100 — |2> was not being populated at all — and
+    # `three_state_operating_point` collapsed to 0.11 where the ladder-consistent runs gave
+    # 0.93. The oscillation is real and it is not the 1-2 transition; forcing the fit to the
+    # ladder period describes that data 1.2x worse, so it cannot be recovered by refitting.
+    #
+    # Writing it costs four nodes downstream and surfaces as an unexplained three-state
+    # collapse two nodes later. Refused here it is one message naming the drive.
     periods = span / (2.0 * ef_amp180) if ef_amp180 else 0.0
-    if periods >= MIN_RESOLVED_PERIODS:
+    doubled = 1.6 <= ratio <= 2.5 or 0.4 <= ratio <= 0.625
+    if periods >= MIN_RESOLVED_PERIODS and not doubled:
         log.warning(
             "%s: the 1-2 pi amplitude fitted to %.4g against the %.4g a sqrt(2) ladder "
             "implies from the 0-1 amplitude of %.4g — %.2fx. Accepted, because the sweep "

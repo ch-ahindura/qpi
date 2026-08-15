@@ -1,6 +1,7 @@
 """Oscillatory fits: Rabi, Ramsey, DRAG and fine-amplitude."""
 
 import logging
+import math
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -42,7 +43,12 @@ def decaying_cosine(
 
 
 def _fit_decaying_cosine(
-    x: np.ndarray, y: np.ndarray, *, what: str, decays: bool
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    what: str,
+    decays: bool,
+    freq_guess: float | None = None,
 ) -> tuple[float, ...]:
     """Fit :func:`decaying_cosine`, returning the optimal parameters.
 
@@ -53,7 +59,7 @@ def _fit_decaying_cosine(
     span = float(x[-1] - x[0]) or 1.0
     amplitude_guess = (float(np.max(y)) - float(np.min(y))) / 2 or 1.0
     offset_guess = float(np.mean(y))
-    freq_guess = estimate_frequency(x, y)
+    freq_guess = estimate_frequency(x, y) if freq_guess is None else float(freq_guess)
     tau_guess = span / 2.0 if decays else span * 100.0
 
     last_error: Exception | None = None
@@ -73,7 +79,68 @@ def _fit_decaying_cosine(
     raise FitError(f"could not fit {what}: {last_error}")
 
 
-def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
+def _best_rabi_fit(
+    x: np.ndarray, y: np.ndarray, expected_amp180: float | None
+) -> tuple[float, ...]:
+    """The fit the data supports, with *expected_amp180* breaking a tie it cannot.
+
+    A cosine fitted to a noisy sweep has more than one local minimum, and the ones that
+    matter differ by a factor of two in period: half the true frequency describes the same
+    points almost as well when the contrast is thin. `curve_fit` returns whichever its seed
+    fell into, so on a marginal sweep the answer is decided by `estimate_frequency`'s guess
+    rather than by the chip. The August 2026 B chip alternated between 0.0737 and 0.1333
+    for its 1-2 pi across six runs — a factor of 1.81 — with each fit correctly describing
+    its own data.
+
+    So fit twice: once from the usual seed and once seeded at the frequency *expected_amp180*
+    implies, then keep the physics-seeded one **unless the data can actually tell them
+    apart**. The margin is the standard error on an rms residual over ``n`` points,
+    ``1/sqrt(2n)``, so a fit that is worse by more than the noise on the comparison loses on
+    its own evidence and the prediction is overruled.
+
+    That ordering is the whole point. A prediction may break a tie; it may not overturn a
+    measurement. Where the sweep is clean both seeds converge to the same minimum and this
+    changes nothing.
+    """
+    default = _fit_decaying_cosine(x, y, what="Rabi oscillation", decays=False)
+    if not expected_amp180 or float(expected_amp180) <= 0:
+        return default
+    try:
+        seeded = _fit_decaying_cosine(
+            x,
+            y,
+            what="Rabi oscillation",
+            decays=False,
+            freq_guess=1.0 / (2.0 * float(expected_amp180)),
+        )
+    except FitError:
+        return default
+
+    def residual(popt: tuple[float, ...]) -> float:
+        return float(np.sqrt(np.mean((y - decaying_cosine(x, *popt)) ** 2)))
+
+    plain, physical = residual(default), residual(seeded)
+    margin = 1.0 / math.sqrt(2 * max(x.size, 1))
+    if physical <= plain * (1.0 + margin):
+        if abs(1.0 / (2.0 * seeded[1]) - 1.0 / (2.0 * default[1])) > 1e-12:
+            log.info(
+                "Rabi: two fits describe this sweep to within %.0f%% (%.4g against %.4g "
+                "residual) and they differ in period; keeping the one consistent with an "
+                "expected pi of %.4g",
+                100 * margin,
+                physical,
+                plain,
+                float(expected_amp180),
+            )
+        return seeded
+    return default
+
+
+def fit_rabi(
+    amplitudes: np.ndarray,
+    signal: np.ndarray,
+    expected_amp180: float | None = None,
+) -> dict[str, float]:
     """Fit a Rabi amplitude sweep.
 
     The π-pulse amplitude is half the oscillation period: a full period drives
@@ -85,9 +152,7 @@ def fit_rabi(amplitudes: np.ndarray, signal: np.ndarray) -> dict[str, float]:
         FitError: if the fit fails, or ``amp180`` lands outside the swept range.
     """
     x, y = align(amplitudes, signal, what="Rabi")
-    amplitude, freq, phase, tau, offset = _fit_decaying_cosine(
-        x, y, what="Rabi oscillation", decays=False
-    )
+    amplitude, freq, phase, tau, offset = _best_rabi_fit(x, y, expected_amp180)
 
     rabi_frequency = require_positive(abs(freq), what="Rabi frequency")
     amp180 = 1.0 / (2.0 * rabi_frequency)
