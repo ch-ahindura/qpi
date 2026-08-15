@@ -292,6 +292,17 @@ def resonator_linewidth_path(element: Any) -> str | None:
     return "resonator.linewidth"
 
 
+def readout_contrast_path(element: Any) -> str | None:
+    """``resonator.contrast`` if this element has one, else ``None``.
+
+    The same opt-in shape as :func:`resonator_linewidth_path`.
+    """
+    submodule = getattr(element, "resonator", None)
+    if submodule is None or not hasattr(submodule, "contrast"):
+        return None
+    return "resonator.contrast"
+
+
 def relaxation_time_path(element: Any) -> str | None:
     """``coherence.t1`` if this element has one, else ``None``.
 
@@ -310,6 +321,22 @@ def measured_t1(element: Any, fallback: float = 0.0) -> float:
     against nothing — see :class:`CoherenceTimes`.
     """
     path = relaxation_time_path(element)
+    if path is None:
+        return fallback
+    try:
+        value = read_path(element, path)
+    except Exception:  # noqa: BLE001 - an unreadable field is an unmeasured one
+        return fallback
+    return float(value) if value else fallback
+
+
+def measured_contrast(element: Any, fallback: float = 0.0) -> float:
+    """The peak-to-peak swing `rabi` fitted between ``|0>`` and ``|1>``, or *fallback*.
+
+    Zero means "not measured", and `rabi_12`'s ladder guard falls back to judging the
+    fitted amplitude alone rather than comparing against nothing.
+    """
+    path = readout_contrast_path(element)
     if path is None:
         return fallback
     try:

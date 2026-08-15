@@ -22,6 +22,7 @@ from qpi_driver.tuners.base.device import (
     drag_parameter_name,
     measured_t1,
     read_path,
+    readout_contrast_path,
     relaxation_time_path,
     write_path,
 )
@@ -154,7 +155,7 @@ class Rabi(CalibrationRoutine):
 
     name = "rabi"
     depends_on = ("qubit_spectroscopy",)
-    updates = ("rxy.amp180",)
+    updates = ("rxy.amp180", "resonator.contrast")
     reads = ("clock_freqs.f01",)
 
     def measure(
@@ -216,7 +217,13 @@ class Rabi(CalibrationRoutine):
         return fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
-        write_path(device.get_element(target), "rxy.amp180", params["amp180"])
+        element = device.get_element(target)
+        write_path(element, "rxy.amp180", params["amp180"])
+        # For `rabi_12`'s ladder guard, which cannot otherwise tell a 1-2 drive too weak
+        # to turn a pi from one whose pi is simply not where the ladder predicts.
+        path = readout_contrast_path(element)
+        if path is not None and params.get("contrast"):
+            write_path(element, path, float(params["contrast"]))
 
     #: Where a `CalibratedTransmon` keeps its separately measured pi/2 amplitude.
 

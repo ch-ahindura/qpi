@@ -59,6 +59,12 @@ class ResonatorSettings(SchedulerSubmodule):
         initial_value=0.0,
         vals=Numbers(min_value=0.0, max_value=1e9, allow_nan=True),
     )
+    contrast: float = Parameter(
+        docstring="Peak-to-peak |0>-to-|1> magnitude, as `rabi` fitted it. 0 if not measured.",
+        unit="",
+        initial_value=0.0,
+        vals=Numbers(min_value=0.0, max_value=1e3, allow_nan=True),
+    )
 
 
 class CoherenceTimes(SchedulerSubmodule):

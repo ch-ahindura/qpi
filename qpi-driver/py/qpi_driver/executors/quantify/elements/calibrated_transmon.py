@@ -77,6 +77,13 @@ class ResonatorSettings(InstrumentChannel):
     be hand-tuned to recover (RFC 0007 §1). The number was measured two nodes earlier and
     thrown away, which is what this fixes — RFC 0005 §13 asked for it.
 
+    The contrast is the same kind of number one node later: the peak-to-peak magnitude
+    `rabi` swings between ``|0>`` and ``|1>`` at this readout. `rabi_12` maps ``|2>`` back
+    through a 0-1 pi before reading, so its own sweep should swing at least as far — and
+    that comparison is the only thing separating a 1-2 drive too weak to turn a pi from
+    one whose pi lands where the sqrt(2) ladder does not predict. Both fit a small
+    amplitude; only the second moves the whole population.
+
     Zero means "not measured", and a routine reading it falls back to its own default
     rather than sizing a sweep from nothing.
     """
@@ -90,6 +97,13 @@ class ResonatorSettings(InstrumentChannel):
             unit="Hz",
             initial_value=0.0,
             vals=Numbers(min_value=0.0, max_value=1e9, allow_nan=True),
+        )
+        self.add_parameter(
+            "contrast",
+            parameter_class=ManualParameter,
+            unit="",
+            initial_value=0.0,
+            vals=Numbers(min_value=0.0, max_value=1e3, allow_nan=True),
         )
 
 

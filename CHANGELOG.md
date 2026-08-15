@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: `rabi_12` now judges an off-ladder 1-2 pi by how much population it
+  swings — `rabi` records its own contrast for the comparison — instead of refusing every
+  amplitude a factor of two off the sqrt(2) ladder. A resolved sweep that moves the full
+  population is turning a pi somewhere, so the ladder constant is the likelier thing to be
+  wrong; refusing it cost four downstream nodes on a chip that measured cleanly.
 - `qpi-driver/py`: `fine_amplitude_12` refines the EF pi on the ordinary 0-1 readout, by
   mapping |1> back the way `rabi_12` already does, and `three_state_operating_point` now
   depends on it. It used to read at the three-state point and sit *behind* that node — a

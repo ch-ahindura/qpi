@@ -27,6 +27,7 @@ import xarray as xr
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.device import (
+    measured_contrast,
     measured_linewidth,
     read_path,
     write_path,
@@ -92,6 +93,21 @@ MAX_EF_LADDER_ERROR = 2.0
 #: LO, mixer corrections and attenuation in that chip's hardware config, so the factor is
 #: real and unexplained — but a resolved measurement is not the place to litigate it.
 MIN_RESOLVED_PERIODS = 1.0
+
+#: The fraction of `rabi`'s contrast a 1-2 sweep must swing to count as turning a pi.
+#:
+#: `rabi_12` maps ``|2>`` back through a 0-1 pi before reading, so its two extremes are
+#: ``|0>`` and ``|2>`` — a wider dispersive separation than the ``|0>``-``|1>`` one `rabi`
+#: measures, which is why chips come in *above* 1.0 rather than at it. A drive too weak to
+#: turn a pi cannot reach here at all: it moves a fraction of the population by definition,
+#: and the fraction is what the fitted amplitude is short by.
+#:
+#: So this separates the two failures the ladder ratio alone cannot, and it does so without
+#: a number taken from any chip: it is a ratio of two contrasts measured on the same qubit
+#: through the same readout, minutes apart. 0.7 leaves room for the ``|2>`` shift being
+#: sub-linear and for readout drift between the two nodes, and still sits far above the
+#: fraction a partial rotation can produce.
+MIN_LADDER_SWING = 0.7
 
 #: The ratio a transmon's two lowest transitions must show, at the same pulse.
 #:
@@ -262,7 +278,13 @@ class Rabi12(CalibrationRoutine):
     name = "rabi_12"
     depends_on = ("f12_spectroscopy",)
     updates = (f"{EF}.ef_amp180",)
-    reads = ("r12.ef_duration", "rxy.duration", "clock_freqs.f01", "rxy.amp180")
+    reads = (
+        "r12.ef_duration",
+        "rxy.duration",
+        "clock_freqs.f01",
+        "rxy.amp180",
+        "resonator.contrast",
+    )
 
     def applies_to(self, device: Any, target: str) -> bool:
         """Only to an element with somewhere to keep an EF pulse."""
@@ -344,6 +366,7 @@ class Rabi12(CalibrationRoutine):
             fitted["amp180"],
             self._duration,
             contrast=float(fitted.get("contrast", 0.0)),
+            reference_contrast=measured_contrast(device.get_element(target)),
             fit=fitted.get("fit"),
             span=float(max(self._amplitudes)) - float(min(self._amplitudes)),
         )
@@ -1322,6 +1345,7 @@ def _require_ef_ladder(
     ef_amp180: float,
     ef_duration: float,
     contrast: float = 0.0,
+    reference_contrast: float = 0.0,
     fit: dict | None = None,
     span: float = 0.0,
 ) -> None:
@@ -1352,33 +1376,41 @@ def _require_ef_ladder(
     # says about it — see :data:`MIN_RESOLVED_PERIODS`. Said rather than raised, because
     # the number is measured and the discrepancy is still worth an operator's attention.
     #
-    # Except at a factor of two, which is no longer given that benefit. The August 2026 B
-    # chip resolved two clean oscillations at 1.81x the ladder on three separate runs, and
-    # every time it did, ``resonator_spectroscopy_second_excited`` measured |2>'s dispersive
-    # shift at -35 kHz against |1>'s -100 — |2> was not being populated at all — and
-    # `three_state_operating_point` collapsed to 0.11 where the ladder-consistent runs gave
-    # 0.93. The oscillation is real and it is not the 1-2 transition; forcing the fit to the
-    # ladder period describes that data 1.2x worse, so it cannot be recovered by refitting.
+    # A factor of two used to be excluded from that benefit, because the August 2026 B chip
+    # resolved clean oscillations at 1.81x the ladder while `resonator_spectroscopy_second_
+    # excited` put |2>'s dispersive shift at -35 kHz against |1>'s -100 — |2> was not being
+    # populated, so the oscillation was real and was not the 1-2 transition. That inference
+    # came from another node. Once `rabi_12` maps |2> back through a 0-1 pi it can be made
+    # here, from this sweep, against `rabi`'s own contrast — which is what *swing* is.
     #
-    # Writing it costs four nodes downstream and surfaces as an unexplained three-state
-    # collapse two nodes later. Refused here it is one message naming the drive.
+    # It is the sharper test. A drive too weak to turn a pi cannot move the full population
+    # however the ladder reads, and a drive that moves it is turning one somewhere. The same
+    # B chip then swung 1.42x `rabi`'s contrast at 0.47x the ladder, between the two levels
+    # the |0> and |2> readout magnitudes predict, with the sweep's second minimum exactly
+    # at twice the fitted amplitude — a full 2-pi, so the first maximum is a pi and not a
+    # pi/2. On that evidence the ladder constant is what is wrong, and refusing costs four
+    # nodes to protect a prediction.
     periods = span / (2.0 * ef_amp180) if ef_amp180 else 0.0
+    swing = contrast / reference_contrast if reference_contrast and contrast else 0.0
+    resolved = periods >= MIN_RESOLVED_PERIODS
     doubled = 1.6 <= ratio <= 2.5 or 0.4 <= ratio <= 0.625
-    if periods >= MIN_RESOLVED_PERIODS and not doubled:
+    if resolved and (swing >= MIN_LADDER_SWING or not (doubled or swing)):
         log.warning(
             "%s: the 1-2 pi amplitude fitted to %.4g against the %.4g a sqrt(2) ladder "
             "implies from the 0-1 amplitude of %.4g — %.2fx. Accepted, because the sweep "
-            "resolves %.1f full oscillations and a drive too weak to turn a pi shows less "
-            "than one, never more: this is a measurement the ladder does not describe "
-            "rather than a fit of a partial rotation. Worth finding out why the 1-2 drive "
-            "is %.1fx stronger than the ladder predicts",
+            "resolves %.1f full oscillations and swings %s of `rabi`'s contrast: a drive "
+            "too weak to turn a pi shows less than one oscillation, never more, and cannot "
+            "move the population that far however the ladder reads. This is a measurement "
+            "the ladder does not describe rather than a fit of a partial rotation, so the "
+            "ladder is the more likely thing to be wrong. `fine_amplitude_12` amplifies "
+            "what is left",
             target,
             ef_amp180,
             expected,
             amp180,
             ratio,
             periods,
-            1.0 / ratio if ratio else 0.0,
+            f"{swing:.2f}x" if swing else "an unmeasured fraction",
         )
         return
     lengths = (
@@ -1404,35 +1436,38 @@ def _require_ef_ladder(
         f"resolves {periods:.2f} of an oscillation, under the "
         f"{MIN_RESOLVED_PERIODS:g} that would make this a measurement rather than an "
         f"extrapolated arc."
-        f"{lengths}{_contrast_reading(contrast)}",
+        f"{lengths}{_contrast_reading(contrast, reference_contrast)}",
         fit=fit,
     )
 
 
-def _contrast_reading(contrast: float) -> str:
+def _contrast_reading(contrast: float, reference_contrast: float) -> str:
     """The one reading that separates the two ways this guard can fire.
 
-    It costs nothing — `fit_rabi` already returns it — and it is not comparable to
-    anything this function can reach, since `rabi`'s contrast is a fit output rather
-    than a device parameter. So it is reported next to the name of what to put it
-    beside, which is in the same report.
+    This routine maps ``|2>`` back through a 0-1 pi before reading, so an oscillation
+    genuinely turning a 1-2 pi swings the *full* readout contrast — the same one `rabi`
+    measured. Much smaller, and the sweep found something too weak to be a pi, which is
+    what the refusal above assumes. Comparable, and the population is moving as far as
+    `rabi` moves it, which a weak drive cannot do at any ladder ratio.
 
-    The comparison is the whole diagnosis. This routine maps ``|2>`` back through a 0-1
-    pi before reading, so an oscillation genuinely on the 1-2 transition swings the
-    *full* readout contrast — the same one `rabi` measured. Much smaller, and the sweep
-    found something too weak to be a pi, which is what the message above assumes.
-    Comparable, while the amplitude is this far off the ladder, and the population is
-    moving as far as `rabi` moves it: that is not a weak drive, and the question becomes
-    which two levels it is moving between.
+    Said here rather than acted on, because reaching this function means the swing was
+    already too small to accept — see :data:`MIN_LADDER_SWING`. What is left is telling
+    an operator by how much, and against what.
     """
     if not contrast:
         return ""
+    if not reference_contrast:
+        return (
+            f" This sweep's contrast is {contrast:.4g}, and `rabi` did not record its own "
+            f"to compare against — so whether this is a weak drive or a pi the ladder "
+            f"mispredicts cannot be settled from here. Re-run `rabi` first."
+        )
     return (
-        f" This sweep's contrast is {contrast:.4g}; put it beside `rabi`'s own, in the "
-        f"same report. Much smaller than it is a drive too weak to turn a pi, which is "
-        f"what the sentence above assumes. As large as it is a full population swing, "
-        f"which a drive too weak to turn a pi cannot produce — and then the question is "
-        f"which two levels are being driven, not how hard."
+        f" This sweep swings {contrast:.4g} against `rabi`'s {reference_contrast:.4g} — "
+        f"{contrast / reference_contrast:.2f}x, under the {MIN_LADDER_SWING:.2f}x that "
+        f"would make it a full population transfer. So the drive is not turning a pi "
+        f"between any two levels, which is why the amplitude is being read as too weak "
+        f"rather than as a chip the ladder does not describe."
     )
 
 
