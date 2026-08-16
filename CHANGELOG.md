@@ -33,6 +33,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `t2_echo` snaps its delays so that half of one lands on the hardware
+  grid, which a window scaled from a measured T1 otherwise misses — the schedule compiled
+  until qblox refused a time value.
+- `qpi-driver/py`: `fit_rb_decay` refuses an amplitude a hundred times its own span rather
+  than two hundred. A degenerate fit was squeezing under the old wall and reporting a
+  per-gate error three orders below what AllXY measured on the same chip.
 - `qpi-driver/py`: `fine_amplitude` judges whether the amplified rotation overran from the
   span of the data rather than from its own fitted slope, which under-reported by exactly
   the amount that made the guard necessary. A per-pulse error that does not clear its own

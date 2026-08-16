@@ -1,12 +1,14 @@
 """Exponential fits: T1, T2 echo, and randomized-benchmarking decay."""
 
 import logging
+import math
 
 import numpy as np
 from scipy.optimize import curve_fit
 
 from .core import (
     FitError,
+    OutOfRange,
     align,
     fit_summary,
     require_in_range,
@@ -155,9 +157,28 @@ def fit_t2(delays: np.ndarray, signal: np.ndarray, t1: float = 0.0) -> dict[str,
 #:
 #: A *bound* alone only moves the wall — both of those then pin against it. What separates
 #: them from a real decay is landing *on* it: a real one fits ``A`` near the span it spans,
-#: so 200 leaves four hundred times the room a legitimate unreached asymptote needs, and a
-#: fit that still reaches it was stopped rather than found.
-MAX_AMPLITUDE_REACH = 200.0
+#: and a fit that still reaches the wall was stopped rather than found.
+#:
+#: A hundred rather than the two hundred this began at, because two hundred left room to
+#: squeeze *under*. The 2026-08-15 B chip fitted ``A`` at 199 times its span — one part in
+#: two hundred inside the bound, so nothing fired — with an asymptote of -16.94 for a
+#: survival, and reported 3.0e-05 per Clifford against the 9.5% AllXY measured on the same
+#: chip in the same run. Measured against clean decays fitted over the same depths: ``p =
+#: 0.9`` lands at 1.1, ``p = 0.99`` at 2.2 and ``p = 0.9998`` — slow enough that the curve
+#: has barely bent — at 50. A hundred is twice the slowest of those and half the degenerate
+#: one, and the gap between them is two orders wide.
+MAX_AMPLITUDE_REACH = 100.0
+
+#: How far the deepest RB sequence must have decayed before the fit's rate means anything.
+#:
+#: `a` and `r` separate only once the curve bends. Below this the exponential is the
+#: straight line through it, only the product ``a*(1-r)`` sets the slope, and `r` — with
+#: the fidelity read off it — is assumed rather than measured. It equals ``span / |a|``,
+#: so this is the bound :data:`MAX_AMPLITUDE_REACH` was reaching for, at a value a
+#: degenerate fit cannot sit under: the 2026-08-15 B chip fitted ``a = 17.85`` on a
+#: survival spanning 0.090, one part in two hundred inside that cap, and reported 3.0e-05
+#: per gate against the 9.5% AllXY measured on the same chip in the same run.
+#:
 
 
 def fit_rb_decay(

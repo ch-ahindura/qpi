@@ -631,9 +631,16 @@ class T2Echo(CalibrationRoutine):
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        self._delays = setpoints_of(
-            config, "delays", linear_setpoints(0.0, self._window(device, target), 41)
-        )
+        # Snapped so that *half* a delay lands on the grid, because that is what `idle`
+        # is given. A window scaled from a measured T1 divides into steps of no particular
+        # length — 73.82 us of T1 gave 5536.857838 ns — and the schedule then compiles
+        # right up until qblox refuses a time value, in a routine that looks fine.
+        self._delays = [
+            2.0 * grid_duration(delay / 2.0)
+            for delay in setpoints_of(
+                config, "delays", linear_setpoints(0.0, self._window(device, target), 41)
+            )
+        ]
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
