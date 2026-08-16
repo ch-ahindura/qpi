@@ -515,7 +515,7 @@ def grid_duration(seconds: float) -> float:
 
 def require_resolved_line(
     fitted: dict[str, Any], frequencies: list[float], *, axis: str | None = None
-) -> None:
+) -> float:
     """Refuse a line the sweep could not have seen, or that is not above the noise.
 
     Two ways a Lorentzian fit reports a confident centre for a line that was never
@@ -548,6 +548,17 @@ def require_resolved_line(
     Left ``None`` both stay a plain `RoutineError`, which is what a caller with no sweep to
     change should see.
 
+    **Too wide for the sweep.** The third shape, and the only one reported rather than
+    refused: a Lorentzian broader than the window it was fitted in. The centre may still be
+    right — a power-broadened line is a real line, and `ramsey` refines f01 afterwards
+    regardless — but its *width* was never in the data, so the linewidth and everything
+    derived from it are extrapolation. The 2026-08-16 B chip fitted 107 MHz across a 20 MHz
+    sweep, and reported a quality factor and an SNR of 163 off the back of it.
+
+    Returns:
+        1.0 when the line is wider than the sweep, 0.0 otherwise — a quality flag for the
+        caller to publish beside its numbers, never a reason to withhold them.
+
     Raises:
         RoutineError: naming the number that failed and what to change, since a
             too-narrow line wants a finer sweep and a too-shallow one wants more
@@ -569,7 +580,7 @@ def require_resolved_line(
         )
 
     if len(frequencies) < 2:
-        return
+        return 0.0
     step = abs(frequencies[1] - frequencies[0])
     linewidth = float(fitted["linewidth"])
     if linewidth < step:
@@ -584,6 +595,19 @@ def require_resolved_line(
             axis=axis,
             direction="finer",
         )
+
+    span = abs(max(frequencies) - min(frequencies))
+    if span and linewidth > span:
+        log.warning(
+            "fitted linewidth %.4g Hz is wider than the %.4g Hz swept, so the width was "
+            "never in the data — the centre may still be sound, but the linewidth and the "
+            "quality factor and SNR taken from it are extrapolation. Widen the span, or "
+            "drive at a lower amplitude where the line is not power-broadened",
+            linewidth,
+            span,
+        )
+        return 1.0
+    return 0.0
 
 
 def _unresolved(message: str, *, axis: str | None, direction: str) -> Exception:

@@ -45,6 +45,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a Hahn echo is flagged past 2.4x T1 rather than 3x, and a spectroscopy
+  line fitted wider than the window it was swept in is flagged too. Both were reporting
+  numbers no measurement supports — a T2 of exactly 3x T1, and a 107 MHz linewidth across a
+  20 MHz sweep — without saying so.
 - `qpi-driver/py`: `readout_integration_time` stops the window at the readout pulse plus a
   couple of resonator ring-down times, rather than at the instrument's limit. Integrating
   past the pulse adds noise with no signal; on one chip it chose twice the pulse length and

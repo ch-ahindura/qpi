@@ -1263,8 +1263,12 @@ class QubitSpectroscopy(CalibrationRoutine):
             )
         rows = signal[:expected].reshape(len(self._drive_amps), columns)
         fitted = fit_spectroscopy_power(self._drive_amps, self._frequencies, rows)
-        require_resolved_line(fitted, self._frequencies)
-        return fitted
+        # The centre is still written — `ramsey` refines it either way — but a line wider
+        # than the window it was fitted in has a linewidth nobody measured.
+        return {
+            **fitted,
+            "unresolved": require_resolved_line(fitted, self._frequencies),
+        }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)

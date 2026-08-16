@@ -102,14 +102,18 @@ def fit_t1(delays: np.ndarray, signal: np.ndarray) -> dict[str, float]:
 #: A Hahn echo refocuses static dephasing and nothing else, so ``2*T1`` is a hard ceiling
 #: rather than a typical value — a qubit with no pure dephasing left sits *at* it. Both
 #: times are fitted, though, so the ratio carries both fits' error and a genuinely
-#: T1-limited echo can read high; 1.5 leaves room for that.
+#: T1-limited echo can read a little high.
 #:
-#: It still refuses the case that motivated it by a factor of two. The August 2026 B chip
-#: fitted 201 us of T2 against a 32.8 us T1 — 3.07x the ceiling — over a 100 us window,
-#: and cleared every other guard here: its curve spanned 6.7x its own residual scatter
-#: against a floor of 3, and 201 us is well inside the ten windows `require_in_range`
-#: allows. Nothing but T1 contradicts it.
-MAX_T2_OVER_T1 = 1.5
+#: A little. 1.5 was chosen to leave room and left far too much: it puts the bar at
+#: ``3*T1``, half again past a bound nothing can exceed, and the 2026-08-16 B chip walked
+#: under it by six hundred picoseconds — 148.17 us of T2 against a 49.41 us T1, exactly
+#: three times it, reported unflagged as though it were a coherence time. A decay fitted
+#: over two time constants does not carry 50% of error; 20% is generous for one that does.
+#:
+#: What sits past this is not a long-lived qubit but a fit describing something else, and
+#: drift across a sweep that takes minutes is the usual candidate — it looks exactly like
+#: a slow decay and has no reason to respect T1.
+MAX_T2_OVER_T1 = 1.2
 
 
 def fit_t2(delays: np.ndarray, signal: np.ndarray, t1: float = 0.0) -> dict[str, float]:
