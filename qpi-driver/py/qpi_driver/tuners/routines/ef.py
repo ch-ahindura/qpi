@@ -571,7 +571,8 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         span = float(
             config.get(
                 "span",
-                SPAN_IN_LINEWIDTHS * measured_linewidth(element, 6e6 / SPAN_IN_LINEWIDTHS),
+                SPAN_IN_LINEWIDTHS
+                * measured_linewidth(element, 6e6 / SPAN_IN_LINEWIDTHS),
             )
         )
         points = int(config.get("points", 5))

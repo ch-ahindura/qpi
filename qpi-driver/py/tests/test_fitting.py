@@ -154,9 +154,7 @@ class TestOscillatoryFits:
         counts = np.arange(1, 41, dtype=float)
         noise = np.random.default_rng(4).normal(0.0, 0.5, counts.size)
         with pytest.raises(FitError, match="no straight line describes this sweep"):
-            fit_fine_amplitude(
-                counts, 0.5 + noise, 0.2, ground=0.0, excited=1.0
-            )
+            fit_fine_amplitude(counts, 0.5 + noise, 0.2, ground=0.0, excited=1.0)
 
     def test_fine_amplitude_accepts_a_sweep_at_the_shot_noise_floor(self):
         """1024 shots scatter about 0.03, well inside the bound."""
@@ -707,7 +705,9 @@ class TestTheMagnitudeContrastTheDiscriminatorDoesNotChoose:
         zeros, ones = [], []
         for frequency, _amplitude in settings:
             zeros.append(cloud(1.0 + 0.0j))
-            ones.append(cloud(-1.0 + 0.0j) if frequency == 7.1821e9 else cloud(0.4 + 0.0j))
+            ones.append(
+                cloud(-1.0 + 0.0j) if frequency == 7.1821e9 else cloud(0.4 + 0.0j)
+            )
         return fit_readout_operating_point(settings, np.array(zeros), np.array(ones))
 
     def test_a_phase_only_point_reports_no_magnitude_contrast(self):

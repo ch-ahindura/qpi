@@ -1315,7 +1315,8 @@ class F12Spectroscopy(CalibrationRoutine):
             # device deliberately built outside it is a chip fact, which belongs in a
             # config. The guard is against a placeholder, not against an unusual design.
             low, high = (
-                float(v) for v in config.get("anharmonicity_range", ANHARMONICITY_RANGE_HZ)
+                float(v)
+                for v in config.get("anharmonicity_range", ANHARMONICITY_RANGE_HZ)
             )
             if not low <= offset <= high:
                 raise RoutineError(
@@ -1449,7 +1450,9 @@ class F12Spectroscopy(CalibrationRoutine):
             #
             # Only where there is a prior. On a chip that has never resolved this line
             # there is nothing to fall back on and the refusal is the whole answer.
-            prior = float(read_path(device.get_element(target), "clock_freqs.f12") or 0.0)
+            prior = float(
+                read_path(device.get_element(target), "clock_freqs.f12") or 0.0
+            )
             if not prior:
                 raise
             log.warning(

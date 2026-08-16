@@ -1000,7 +1000,9 @@ class TestAnAnharmonicityHasToBeATransmons:
 
                 return _Element
 
-        with pytest.raises(RoutineError, match="outside the .* a transmon's anharmonicity"):
+        with pytest.raises(
+            RoutineError, match="outside the .* a transmon's anharmonicity"
+        ):
             node.build_schedule(
                 "q0",
                 _Device,
@@ -1839,8 +1841,12 @@ class TestTheEfPiPulseIsHeldToTheLadder:
         rather than to the arithmetic that got it wrong.
         """
         import numpy as np
-        from quantify_scheduler.operations import pulse_library
-        from quantify_scheduler.waveforms import drag
+
+        pulse_library = pytest.importorskip(
+            "quantify_scheduler.operations.pulse_library",
+            reason="the envelope is quantify's, so this needs the [quantify] extra",
+        )
+        drag = pytest.importorskip("quantify_scheduler.waveforms").drag
 
         from qpi_driver.tuners.routines.ef import EF_ENVELOPE_AREA, RXY_NR_SIGMA
 
@@ -2373,11 +2379,30 @@ def test_every_swept_axis_is_readable_from_outside(monkeypatch, own_quantify_tun
 
 
 def _grid_device():
-    """A device the 2-D spectroscopy nodes can build against."""
-    from qpi_driver.simulation.transmon import TransmonSimulator
-    from tests.utils.simulation import device_for
+    """A device the 2-D spectroscopy nodes can build against.
 
-    return device_for(TransmonSimulator(), "q0")
+    Literal frequencies rather than `device_for(TransmonSimulator())`, which is where this
+    started. Nothing here runs physics — these tests count acquisitions per schedule and
+    check the seams fall between whole rows — but constructing the simulator imports
+    `scqubits`, and `scqubits` lives in the ``sim`` extra. `test-py-driver` installs one
+    executor extra and never ``sim``, so under every leg of that matrix these tests failed
+    on the import rather than on anything they assert.
+
+    The numbers are the simulator's own defaults so the sweeps come out the same size.
+    """
+    from tests.utils.simulation import FakeDevice, FakeElement
+
+    return FakeDevice(
+        {
+            "q0": FakeElement(
+                name="q0",
+                clock_freqs={"f01": 5.0e9, "f12": 4.75e9, "readout": 7.1e9},
+                rxy={"amp180": 0.18, "motzoi": 0.0},
+                measure={"pulse_amp": 0.25},
+            )
+        },
+        {},
+    )
 
 
 class _CountingGrid(StubBackend):
@@ -2507,9 +2532,7 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         assert sum(c for c, _ in seen) == 50
         assert node._circuits == 50
         # Plus the |0> and X|0> references, which `analyse` reads off the front.
-        assert (
-            signal_of(dataset).size == REFERENCE_ACQUISITIONS + 50 * len(self.DEEP)
-        )
+        assert signal_of(dataset).size == REFERENCE_ACQUISITIONS + 50 * len(self.DEEP)
 
     def test_each_piece_benchmarks_different_circuits(self, monkeypatch):
         """Or the chunks would be copies of one another and average to nothing."""

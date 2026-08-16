@@ -182,7 +182,9 @@ class RandomizedBenchmarking(CalibrationRoutine):
             # Every chunk carries its own pair, so averaging them is free shots on the
             # scale the whole fit divides by — and drift between chunks shows up in it.
             references.append(signal[:REFERENCE_ACQUISITIONS])
-            rows.append(signal[REFERENCE_ACQUISITIONS:expected].reshape(len(depths), size))
+            rows.append(
+                signal[REFERENCE_ACQUISITIONS:expected].reshape(len(depths), size)
+            )
 
         # Each depth's circuits from every chunk, side by side, so `analyse` reshapes it
         # exactly as it would one schedule's worth, references included.
@@ -193,9 +195,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
             {
                 "y0": (
                     "acq_index",
-                    np.concatenate(
-                        [np.mean(references, axis=0), combined.reshape(-1)]
-                    ),
+                    np.concatenate([np.mean(references, axis=0), combined.reshape(-1)]),
                 )
             }
         )

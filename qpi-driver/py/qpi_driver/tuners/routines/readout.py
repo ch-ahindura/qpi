@@ -434,7 +434,9 @@ class ReadoutIntegrationTime(CalibrationRoutine):
             self._windows,
             ground,
             excited,
-            incumbent=float(read_path(device.get_element(target), "measure.integration_time")),
+            incumbent=float(
+                read_path(device.get_element(target), "measure.integration_time")
+            ),
         )
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

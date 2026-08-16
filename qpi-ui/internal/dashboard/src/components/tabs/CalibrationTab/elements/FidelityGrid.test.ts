@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { worstComparable } from "./FidelityGrid";
+import { worstComparable } from "./fidelity";
 import type { BenchmarkResult } from "@/types";
 
 function benchmark(

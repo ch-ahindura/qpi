@@ -653,12 +653,16 @@ class T2Echo(CalibrationRoutine):
         # widen past what physics allows — see :data:`MAX_ECHO_WINDOW_IN_T1`.
         t1 = measured_t1(device.get_element(target))
         self._delays_ceiling = (
-            MAX_ECHO_WINDOW_IN_T1 * t1 if t1 else MAX_ECHO_WINDOW_IN_T1 * DEFAULT_COHERENCE_WINDOW_S / T2_WINDOW_IN_T1
+            MAX_ECHO_WINDOW_IN_T1 * t1
+            if t1
+            else MAX_ECHO_WINDOW_IN_T1 * DEFAULT_COHERENCE_WINDOW_S / T2_WINDOW_IN_T1
         )
         self._delays = [
             2.0 * grid_duration(delay / 2.0)
             for delay in setpoints_of(
-                config, "delays", linear_setpoints(0.0, self._window(device, target), 41)
+                config,
+                "delays",
+                linear_setpoints(0.0, self._window(device, target), 41),
             )
         ]
         schedule = backend.new_schedule(
@@ -1047,8 +1051,13 @@ class FineAmplitude(CalibrationRoutine):
 
     def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
         current = float(read_path(device.get_element(target), "rxy.amp180"))
-        return {"amp180": current, "amplitude": current, "error_per_pulse": 0.0,
-                "amplitude_error": 0.0, "unresolved": 1.0}
+        return {
+            "amp180": current,
+            "amplitude": current,
+            "error_per_pulse": 0.0,
+            "amplitude_error": 0.0,
+            "unresolved": 1.0,
+        }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
@@ -1256,8 +1265,13 @@ class FineAmplitude90(CalibrationRoutine):
 
     def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
         current = float(read_path(device.get_element(target), AMP90_PATH))
-        return {"amp90": current, "amplitude": current, "error_per_pulse": 0.0,
-                "amplitude_error": 0.0, "unresolved": 1.0}
+        return {
+            "amp90": current,
+            "amplitude": current,
+            "error_per_pulse": 0.0,
+            "amplitude_error": 0.0,
+            "unresolved": 1.0,
+        }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), AMP90_PATH, params["amp90"])

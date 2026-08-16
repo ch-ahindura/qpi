@@ -9,7 +9,6 @@ from scipy.optimize import curve_fit
 from .core import (
     FitError,
     NOISE_FAKEABLE_SPAN,
-    OutOfRange,
     align,
     fit_summary,
     require_in_range,
