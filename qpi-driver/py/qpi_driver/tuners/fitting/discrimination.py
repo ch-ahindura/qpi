@@ -268,6 +268,17 @@ def fit_readout_integration_time(
             )
             return {"integration_time": float(incumbent), **held}
 
+    if len(windows) > 1 and best >= max(windows):
+        # Not a refusal — it is the best of what was reachable, and writing it is right.
+        # But it is the edge of the sweep rather than a bracketed optimum, and on this axis
+        # the edge is the instrument's own limit, so nothing further can be swept.
+        log.warning(
+            "readout integration time chose %.4g s, the longest window the hardware "
+            "integrates into one bin — so the separation was still improving where the "
+            "sweep ran out and this is a ceiling rather than an optimum. More readout SNR "
+            "on this chip needs a change of hardware, not of window",
+            best,
+        )
     log.debug("readout integration time %.4g s, snr %.2f", best, fitted["snr"])
     return {"integration_time": float(best), **fitted}
 

@@ -230,11 +230,24 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         "rxy.amp180",
     )
 
-    #: Multiples of the window the config arrived with — the only scale available before
-    #: anything has been measured on this axis. A factor of four either side brackets an
-    #: interior optimum wherever the starting guess sat relative to it, and a config that
-    #: is already right keeps its value, since 1.0 is in the ladder.
-    WINDOW_FACTORS = (0.25, 0.5, 1.0, 2.0, 4.0)
+    #: How far below the window the config arrived with the ladder starts, and the ratio
+    #: between its rungs. It runs from there to the hardware ceiling.
+    #:
+    #: Spanning the whole reachable range rather than a fixed few factors either side. A
+    #: ladder that stops short can only report its own top rung, which is not a measured
+    #: optimum but the edge of where it looked — and that is what the 2026-08-15 B chip
+    #: returned, choosing 3.6 us at the top of a ladder reaching exactly 3.6 us.
+    #:
+    #: Nothing forbids the width here: each rung is its own schedule, because a Qblox
+    #: program takes one integration length, so the two-acquisition register budget that
+    #: bounds every other sweep in this file does not apply across rungs. What it costs is
+    #: one short schedule per rung, and the whole reachable range is six or seven of them.
+    WINDOW_FLOOR_FACTOR = 0.25
+    WINDOW_STEP = 2.0
+
+    #: A bound on runtime rather than on physics, for a config whose window is so far under
+    #: the ceiling that doubling to it would take all afternoon.
+    MAX_WINDOWS = 12
 
     #: Longest acquisition a Qblox sequencer integrates into one bin.
     #:
@@ -316,6 +329,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         return schedule
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[float]:
+        ceiling = float(config.get("max_integration_time", self.MAX_INTEGRATION_TIME_S))
         if "windows" in config:
             windows = [float(w) for w in setpoints_of(config, "windows", [])]
         else:
@@ -325,8 +339,14 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                     "no measure.integration_time to scale a sweep from; set an explicit "
                     "'windows' for this routine"
                 )
-            windows = [factor * current for factor in self.WINDOW_FACTORS]
-        ceiling = float(config.get("max_integration_time", self.MAX_INTEGRATION_TIME_S))
+            # Doubling from below the incumbent up to the ceiling, so the chosen rung is an
+            # optimum the sweep bracketed rather than the edge it stopped at.
+            windows = []
+            window = current * self.WINDOW_FLOOR_FACTOR
+            while window <= ceiling and len(windows) < self.MAX_WINDOWS:
+                windows.append(window)
+                window *= self.WINDOW_STEP
+            windows.append(ceiling)
         # Deduplicated after clamping and rounding, or a config already at the ceiling
         # sweeps one window several times and the winner reads as a choice the ladder made.
         windows = sorted({grid_duration(min(w, ceiling)) for w in windows if w > 0.0})

@@ -9,6 +9,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: `readout_integration_time` sweeps the whole reachable range of windows
+  rather than a few factors either side of the configured one, so the window it writes is
+  an optimum it bracketed instead of the edge it stopped at — and it says so when the best
+  window is the hardware ceiling.
 - `qpi-driver/py`: the 1-2 ladder guard drops its factor-of-two special case and judges a
   resolved sweep on periods and population swing alone — both properties of the sweep
   rather than of any chip. `ef_ladder` measures the same relation directly, so the modelled
