@@ -5,7 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project follows versions of format `{year}.{month}.{patch_number}`.
 
-## [Unreleased]
+## [0.4.2] - 2026-08-16
+
+### Added
+
+- `qpi-driver/py`: `readout_integration_time` calibrates `measure.integration_time` by
+  sweeping the acquisition window and taking the one that separates `|0>` and `|1>` best.
+  It was a config constant every discriminating node inherited, and it is the last free
+  parameter in readout SNR. Holds its current value when no window beats it by more than
+  shot noise.
+- `qpi-driver/py`: `rabi_12` carries its trace on success as well as on refusal, and `rb`
+  reports `decay_observed` — how much of the decay its deepest sequence actually saw, since
+  `r` is extrapolated from the rest. A chip reporting 0.15% error per gate had seen 17.6% of
+  a decay, below what its own T1 allows and 34x better than `allxy_check` on the same run.
+- `qpi-driver/py`: `readout_operating_point` reports the *magnitude* contrast across its
+  sweep, and how much of it survives at the point it picks. It optimises complex
+  separation, which is right for a discriminator and invisible to the `signal_of` magnitude
+  nearly every other node reads — and nothing measured the difference.
+- `qpi-driver/py`: a routine refused by a guard keeps the sweep behind the refusal, so the
+  report carries the trace and not only the sentence. It is marked as a refusal and is not
+  attributed any parameter.
+- `qpi-driver/py`: `allxy_check` reports its normalised response alongside the rms, so the
+  21 pairs can be read after the single-qubit chain finishes. `allxy` runs before
+  `fine_amplitude` and `fine_amplitude_90`, so it cannot show whether either helped.
+- `qpi-driver/py`: `fine_amplitude_90` measures the pi/2 amplitude and writes it to a new
+  `fine.amp90` on `CalibratedTransmon`. Both schedulers derived a pi/2 from `amp180` by linear
+  interpolation, so a drive that compresses near full scale left an AllXY error nothing could
+  correct.
+- `qpi-driver/py`: the simulator has three-level physics for the 1-2 transition, so `rabi_12`
+  can be tested without a chip. The sqrt(2) ladder between the two transitions comes out of
+  the model rather than being written into it.
+- `qpi-driver/py`: a routine may set its own `timeout_s` in `calibration.yml`, overriding the
+  global `routine_timeout_s`. One ceiling had to be set for the slowest node, so it could not
+  also catch a fast one hanging.
+- `qpi-driver/py`: a quantify routine logs how long its schedule should take before
+  running it, and its Q1ASM at debug level. A timeout previously gave no way to tell a
+  schedule that needed longer from one that was stuck.
+- `qpi-driver/py`: a timed-out quantify routine names the module and sequencer that did
+  not stop, its state and its flags. qblox-instruments raises with a bare sequencer
+  index, so the operator could not tell which of twelve modules had hung.
+- `qpi-driver/py`: an end-to-end test asserts the benchmarked gate error against the one
+  the simulator was given, so a calibration that leaves a gate wrong now fails the suite
+  instead of clearing a fixed fidelity threshold.
+- `qpi-driver/py`: a calibration writes a `*.provenance.yml` beside the device config
+  recording which routine last measured each parameter, and when. A device config could
+  not say whether a value was measured or typed in, so every reader had to assume the
+  better case.
+- `qpi-driver/py`: a calibration report names the inputs nothing has ever measured, per
+  target and per routine. A run built on a hand-supplied frequency previously read exactly
+  like one built on a measured one.
+- `qpi-driver/py`: a skipped routine reports which parameters it left unconfirmed and when
+  they were last measured, and a run whose producer for a never-measured parameter is
+  switched off says so before the walk starts.
 
 ### Changed
 
@@ -42,6 +93,27 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   constant was wrong in both directions — and `three_state_operating_point` from the
   separation at which its closest pair reaches `MIN_ASSIGNMENT_FIDELITY`. One `rabi_12` at
   2.5x had been costing four nodes that each carry their own guard.
+- `qpi-driver/py`: a schedule whose pulses outlast `routine_timeout_s` raises its own
+  wait rather than failing, and says so. The ceiling bounds a sequencer that never
+  stops; a 59 s punchout under a 30 s ceiling was failing for being large.
+- `qpi-driver/py`: a routine running several schedules under one ceiling is judged on
+  their summed allowance rather than the last one's. `qubit_spectroscopy`'s search is
+  three acquisitions, and the last alone would fail a routine that never exceeded its
+  allowance once.
+- `qpi-driver/py`: every routine reads the device before its acquisition rather than
+  after it (RFC 0007 §11). Six nodes read a parameter in `analyse`, which describes a
+  sweep that had already happened and is too late to check as a prerequisite.
+- `qpi-driver/py`: a routine declares the device parameters it `reads`, the counterpart
+  of the `updates` it already declared (RFC 0007 §11). A test derives the true set from
+  an instrumented `read_path` and fails a declaration that is short of it.
+- `qpi-driver/py`: the walk skips a routine whose input this run failed to produce,
+  naming the routine to blame, instead of measuring an uncalibrated chip (RFC 0007 §11).
+  One failed `qubit_spectroscopy` cost six runs of debugging six downstream nodes that
+  had each fitted the noise of a qubit still in its ground state.
+- `repo`: Cleaned up and refactored `Makefile`.
+- `repo`: Cleaned up `.github/workflows/ci.yml`.
+- `qpi-driver/py`: Optimized `test-py-loop` execution speed with
+`@functools.lru_cache` to `_cached_scqubits_eigenvals` in `transmon.py`.
 
 ### Fixed
 
@@ -177,60 +249,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-ui`: the fidelity card shows the measured gate fidelity rather than the lowest number
   in the payload. A run's `readout_fidelity` of 92.5% was displayed as being below the 99.9%
   one-qubit gate threshold while randomised benchmarking sat unread beside it.
-
-### Added
-
-- `qpi-driver/py`: `readout_integration_time` calibrates `measure.integration_time` by
-  sweeping the acquisition window and taking the one that separates `|0>` and `|1>` best.
-  It was a config constant every discriminating node inherited, and it is the last free
-  parameter in readout SNR. Holds its current value when no window beats it by more than
-  shot noise.
-- `qpi-driver/py`: `rabi_12` carries its trace on success as well as on refusal, and `rb`
-  reports `decay_observed` — how much of the decay its deepest sequence actually saw, since
-  `r` is extrapolated from the rest. A chip reporting 0.15% error per gate had seen 17.6% of
-  a decay, below what its own T1 allows and 34x better than `allxy_check` on the same run.
-- `qpi-driver/py`: `readout_operating_point` reports the *magnitude* contrast across its
-  sweep, and how much of it survives at the point it picks. It optimises complex
-  separation, which is right for a discriminator and invisible to the `signal_of` magnitude
-  nearly every other node reads — and nothing measured the difference.
-- `qpi-driver/py`: a routine refused by a guard keeps the sweep behind the refusal, so the
-  report carries the trace and not only the sentence. It is marked as a refusal and is not
-  attributed any parameter.
-- `qpi-driver/py`: `allxy_check` reports its normalised response alongside the rms, so the
-  21 pairs can be read after the single-qubit chain finishes. `allxy` runs before
-  `fine_amplitude` and `fine_amplitude_90`, so it cannot show whether either helped.
-- `qpi-driver/py`: `fine_amplitude_90` measures the pi/2 amplitude and writes it to a new
-  `fine.amp90` on `CalibratedTransmon`. Both schedulers derived a pi/2 from `amp180` by linear
-  interpolation, so a drive that compresses near full scale left an AllXY error nothing could
-  correct.
-- `qpi-driver/py`: the simulator has three-level physics for the 1-2 transition, so `rabi_12`
-  can be tested without a chip. The sqrt(2) ladder between the two transitions comes out of
-  the model rather than being written into it.
-- `qpi-driver/py`: a routine may set its own `timeout_s` in `calibration.yml`, overriding the
-  global `routine_timeout_s`. One ceiling had to be set for the slowest node, so it could not
-  also catch a fast one hanging.
-- `qpi-driver/py`: a quantify routine logs how long its schedule should take before
-  running it, and its Q1ASM at debug level. A timeout previously gave no way to tell a
-  schedule that needed longer from one that was stuck.
-- `qpi-driver/py`: a timed-out quantify routine names the module and sequencer that did
-  not stop, its state and its flags. qblox-instruments raises with a bare sequencer
-  index, so the operator could not tell which of twelve modules had hung.
-- `qpi-driver/py`: an end-to-end test asserts the benchmarked gate error against the one
-  the simulator was given, so a calibration that leaves a gate wrong now fails the suite
-  instead of clearing a fixed fidelity threshold.
-- `qpi-driver/py`: a calibration writes a `*.provenance.yml` beside the device config
-  recording which routine last measured each parameter, and when. A device config could
-  not say whether a value was measured or typed in, so every reader had to assume the
-  better case.
-- `qpi-driver/py`: a calibration report names the inputs nothing has ever measured, per
-  target and per routine. A run built on a hand-supplied frequency previously read exactly
-  like one built on a measured one.
-- `qpi-driver/py`: a skipped routine reports which parameters it left unconfirmed and when
-  they were last measured, and a run whose producer for a never-measured parameter is
-  switched off says so before the walk starts.
-
-### Fixed
-
 - `qpi-driver/py`: `rabi_12` maps the qubit back to the ground state before measuring, so the
   1-2 oscillation appears in the population the readout is tuned to resolve. It previously
   asked a 0-1 discriminator to tell the two upper levels apart, and fitted a pi pulse six
@@ -389,30 +407,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   reaches the couplers rather than the qubits, instead of failing with
   `KeyError: 'q0:fl was not found in the connectivity.'`. `cz_chevron` was missing the
   architecture test both its parametric counterparts already make.
-
-### Changed
-
-- `qpi-driver/py`: a schedule whose pulses outlast `routine_timeout_s` raises its own
-  wait rather than failing, and says so. The ceiling bounds a sequencer that never
-  stops; a 59 s punchout under a 30 s ceiling was failing for being large.
-- `qpi-driver/py`: a routine running several schedules under one ceiling is judged on
-  their summed allowance rather than the last one's. `qubit_spectroscopy`'s search is
-  three acquisitions, and the last alone would fail a routine that never exceeded its
-  allowance once.
-- `qpi-driver/py`: every routine reads the device before its acquisition rather than
-  after it (RFC 0007 §11). Six nodes read a parameter in `analyse`, which describes a
-  sweep that had already happened and is too late to check as a prerequisite.
-- `qpi-driver/py`: a routine declares the device parameters it `reads`, the counterpart
-  of the `updates` it already declared (RFC 0007 §11). A test derives the true set from
-  an instrumented `read_path` and fails a declaration that is short of it.
-- `qpi-driver/py`: the walk skips a routine whose input this run failed to produce,
-  naming the routine to blame, instead of measuring an uncalibrated chip (RFC 0007 §11).
-  One failed `qubit_spectroscopy` cost six runs of debugging six downstream nodes that
-  had each fitted the noise of a qubit still in its ground state.
-- `repo`: Cleaned up and refactored `Makefile`.
-- `repo`: Cleaned up `.github/workflows/ci.yml`.
-- `qpi-driver/py`: Optimized `test-py-loop` execution speed with
-`@functools.lru_cache` to `_cached_scqubits_eigenvals` in `transmon.py`.
 
 ## [0.4.1] - 2026-08-07
 
