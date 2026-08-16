@@ -212,9 +212,29 @@ def fit_rb_decay(
     Returns ``{'fidelity', 'error_per_gate', 'decay_rate'}``.
     """
     x, y = align(depths, survival, what="RB decay")
+    floor = 1.0 / (2**n_qubits)
 
-    def rb_model(m, a, r, b):
-        return a * np.power(r, m) + b
+    # The asymptote is not fitted. A depolarised n-qubit state survives with probability
+    # ``1/2^n``, and `rb` normalises against measured ``|0>`` and ``X|0>`` references, so
+    # that number is where this curve ends — by construction, not by assumption.
+    #
+    # Pinning it is what makes the rate measurable at all. With `b` free the model is
+    # degenerate below one bend: only the product ``a*(1-r)`` sets the slope, so the fit
+    # slides along that direction until a bound stops it, and the bound then decides the
+    # answer. On the 2026-08-16 B chip every bound tried pinned — 100x the span, 10x, 3x,
+    # 1.5x — reporting 3.6e-05 through 3.4e-03 per Clifford as it went, with `b` running to
+    # -20.3 at the loosest. A survival does not decay to minus twenty.
+    #
+    # Fixed, the same data gives 2.19e-03 per Clifford with ``a = 0.443``, so survival at
+    # zero depth is 0.94 — which is where a readout of 0.87 fidelity puts it. The physics
+    # then agrees with itself: `allxy_check` measured 6.6e-02 per gate on that run and RB
+    # 1.1e-03, and the gap is what RB is *for* — random sequences average a coherent
+    # miscalibration into the depolarising rate, so the two measure different errors.
+    #
+    # This became available only when `rb` stopped min-max normalising its survival. Under
+    # that scheme the asymptote was wherever the sweep's extremes happened to fall.
+    def rb_model(m, a, r):
+        return a * np.power(r, m) + floor
 
     span = float(np.max(y) - np.min(y)) or 1.0
     reach = MAX_AMPLITUDE_REACH * span
@@ -225,11 +245,8 @@ def fit_rb_decay(
                 rb_model,
                 x,
                 y,
-                p0=[float(y[0]) - float(y[-1]) or 0.5, r_guess, float(y[-1])],
-                bounds=(
-                    [-reach, 0.0, float(np.min(y)) - reach],
-                    [reach, 1.0, float(np.max(y)) + reach],
-                ),
+                p0=[float(y[0]) - floor or 0.5, r_guess],
+                bounds=([-reach, 0.0], [reach, 1.0]),
                 maxfev=20000,
             )
             break

@@ -45,6 +45,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `rb` pins its decay asymptote at `1/2^n` instead of fitting it, which
+  is what makes the rate measurable — with it free the amplitude and the rate are
+  inseparable and the answer comes off whatever bound stops the fit. `t2_echo` can no
+  longer widen its delays past six times T1, where a rising signal is drift rather than an
+  echo.
 - `qpi-driver/py`: a Hahn echo is flagged past 2.4x T1 rather than 3x, and a spectroscopy
   line fitted wider than the window it was swept in is flagged too. Both were reporting
   numbers no measurement supports — a T2 of exactly 3x T1, and a 107 MHz linewidth across a

@@ -392,6 +392,14 @@ class TestFidelityAgainstWhatTheSimulatorInjected:
     `test_rb_recovers_a_known_gate_error` does one tier down: a calibration good enough to
     benchmark recovers the injected error, and one that left a gate miscalibrated reports
     worse than it. Both hold at any injected level, so neither depends on the tuning.
+
+    The 20% is the accuracy of the fit, and it widened from 15% when `fit_rb_decay` pinned
+    its asymptote at ``1/2^n``. That is a real trade and worth naming: with the asymptote
+    free the fit was more accurate *here* and unusable on hardware, where the amplitude and
+    the rate are inseparable and every bound produced a different answer — the 2026-08-16 B
+    chip reported 3.6e-05 per Clifford against a physical 2.2e-03. Pinning costs a few per
+    cent on a shallow simulated decay, where an imperfect asymptote biases the rate a
+    little, and buys three orders of magnitude on a real one.
     """
 
     def test_rb_recovers_the_injected_error_after_calibrating(self, tmp_path):
@@ -404,7 +412,7 @@ class TestFidelityAgainstWhatTheSimulatorInjected:
 
         assert report.status == "success", report.errors
         assert _rb_error_per_gate(report) == pytest.approx(
-            _average_gate_error(injected), rel=0.15
+            _average_gate_error(injected), rel=0.20
         )
 
     def test_a_worse_chip_benchmarks_worse(self, tmp_path):
@@ -422,7 +430,7 @@ class TestFidelityAgainstWhatTheSimulatorInjected:
 
         assert measured[0.004] < measured[0.05]
         for injected, error in measured.items():
-            assert error == pytest.approx(_average_gate_error(injected), rel=0.15)
+            assert error == pytest.approx(_average_gate_error(injected), rel=0.20)
 
 
 def _average_gate_error(per_primitive: float) -> float:

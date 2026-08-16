@@ -82,6 +82,20 @@ ALLXY_IDEAL: tuple[float, ...] = (0.0,) * 5 + (0.5,) * 12 + (1.0,) * 4
 #: Last-resort coherence sweep, for a chip with no measured T1 to scale one from.
 DEFAULT_COHERENCE_WINDOW_S = 100e-6
 
+#: The longest echo sweep worth running, in multiples of T1 — the ceiling escalation may
+#: widen the delays to.
+#:
+#: Six, which is three time constants of the *longest T2 physics allows*: a Hahn echo
+#: cannot outlast ``2*T1``, so a window past ``3 * 2*T1`` cannot be resolving the echo
+#: however unresolved the fit still looks. What lives out there is drift — a readout
+#: wandering over a sweep that takes minutes looks exactly like a slow decay and has no
+#: reason to respect T1.
+#:
+#: Without it, escalation walked the 2026-08-16 B chip's window from 148 us to 355 us
+#: chasing a curve it could resolve, found one, and reported 148 us of T2 against a
+#: 49.4 us T1 — three times a bound nothing can exceed.
+MAX_ECHO_WINDOW_IN_T1 = 6.0
+
 #: Multiples of T1 to sweep a Hahn echo over — see :meth:`T2Echo._window`.
 #:
 #: A Hahn echo refocuses static dephasing and nothing else, so ``T2 <= 2*T1`` bounds it and
@@ -635,6 +649,12 @@ class T2Echo(CalibrationRoutine):
         # is given. A window scaled from a measured T1 divides into steps of no particular
         # length — 73.82 us of T1 gave 5536.857838 ns — and the schedule then compiles
         # right up until qblox refuses a time value, in a routine that looks fine.
+        # Read by `_widened` under the `_<axis>_ceiling` convention, so escalation cannot
+        # widen past what physics allows — see :data:`MAX_ECHO_WINDOW_IN_T1`.
+        t1 = measured_t1(device.get_element(target))
+        self._delays_ceiling = (
+            MAX_ECHO_WINDOW_IN_T1 * t1 if t1 else MAX_ECHO_WINDOW_IN_T1 * DEFAULT_COHERENCE_WINDOW_S / T2_WINDOW_IN_T1
+        )
         self._delays = [
             2.0 * grid_duration(delay / 2.0)
             for delay in setpoints_of(

@@ -408,34 +408,48 @@ class TestExponentialFits:
         assert fitted["unresolved"] == 1.0
         assert fitted["fit"]["measured"] == pytest.approx(survival)
 
-    def test_rb_recovers_the_same_fidelity_from_a_rescaled_signal(self):
-        """The fit must not care about the readout's scale and offset.
+    def test_rb_needs_the_reference_scale_and_says_so_in_its_answer(self):
+        """Scale invariance is gone, and it was traded for the thing that made RB work.
 
-        This is what the `rb` routine hands it: the acquisition rescaled to span
-        [0, 1], from a decay that has not reached its asymptote by the deepest
-        sequence. Bounding the model's amplitude used to make that case come out at
-        0.988 whatever the truth was, so every chip better than about 3% error per
-        Clifford measured the same — permanently below the default drift threshold.
+        This fit used to be invariant to the readout's scale and offset, because it fitted
+        the asymptote. That freedom is exactly what made `a` and `r` inseparable: below one
+        bend only their product sets the slope, and the fit slid along the degeneracy until
+        a bound stopped it. Every bound tried on the 2026-08-16 B chip pinned, reporting
+        3.6e-05 through 3.4e-03 per Clifford depending only on where the wall was.
+
+        The asymptote is not free. A depolarised n-qubit state survives with probability
+        ``1/2^n``, and `rb` normalises against measured ``|0>`` and ``X|0>``, so the curve
+        ends there by construction. Pinning it breaks the degeneracy — and gives up
+        invariance to a rescaling the routine no longer performs.
+
+        So: right on the reference scale, wrong on a rescaled one. That is the trade, and
+        it is worth asserting in both directions.
         """
         decay = 0.999
         depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
         survival = 0.5 * decay**depths + 0.5
-        rescaled = (survival - survival.min()) / (survival.max() - survival.min())
 
-        assert fit_rb_decay(depths, rescaled)["decay_rate"] == pytest.approx(
-            fit_rb_decay(depths, survival)["decay_rate"], abs=1e-4
+        assert fit_rb_decay(depths, survival)["fidelity"] == pytest.approx(
+            1.0 - (1.0 - decay) / 2, abs=1e-4
         )
-        assert fit_rb_decay(depths, rescaled)["fidelity"] == pytest.approx(
+        # Min-max rescaling moves the asymptote off a half, and the rate goes with it.
+        rescaled = (survival - survival.min()) / (survival.max() - survival.min())
+        assert fit_rb_decay(depths, rescaled)["fidelity"] != pytest.approx(
             1.0 - (1.0 - decay) / 2, abs=1e-4
         )
 
     def test_rb_uses_the_right_dimension_for_two_qubits(self):
-        """d = 2^n, so a two-qubit decay maps to a worse fidelity than a one-qubit one."""
+        """d = 2^n, so a two-qubit decay maps to a worse fidelity than a one-qubit one.
+
+        Each is given a survival decaying to its *own* asymptote, ``1/2^n``, because that
+        is what the fit now pins — a two-qubit register depolarises to a quarter, not a
+        half, and handing the one-qubit curve to both would be asking the second to fit a
+        floor its data never approaches.
+        """
         decay = 0.99
         depths = np.array([1, 2, 4, 8, 16, 32], dtype=float)
-        survival = 0.5 * decay**depths + 0.5
-        one = fit_rb_decay(depths, survival, n_qubits=1)
-        two = fit_rb_decay(depths, survival, n_qubits=2)
+        one = fit_rb_decay(depths, 0.5 * decay**depths + 0.5, n_qubits=1)
+        two = fit_rb_decay(depths, 0.75 * decay**depths + 0.25, n_qubits=2)
         assert two["error_per_gate"] > one["error_per_gate"]
         assert two["error_per_gate"] == pytest.approx((1 - decay) * 3 / 4, abs=0.002)
 
@@ -478,12 +492,16 @@ class TestExponentialFits:
         A chip good enough that depth 64 has used only six percent of its decay is the
         chip most worth benchmarking, and its span-to-scatter is large precisely
         because the decay is clean rather than because it is deep.
+
+        On the reference-normalised scale `rb` now hands over, where a depolarised qubit
+        sits at a half. Rescaling to the sweep's own extremes — which this test used to do,
+        and which the routine used to do — moves the asymptote somewhere arbitrary, and the
+        rate is only recoverable because that asymptote is known.
         """
         depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
         survival = 0.5 * 0.999**depths + 0.5
-        rescaled = (survival - survival.min()) / (survival.max() - survival.min())
 
-        fitted = fit_rb_decay(depths, rescaled + _noise(len(depths), 0.01))
+        fitted = fit_rb_decay(depths, survival + _noise(len(depths), 0.002))
         assert fitted["fidelity"] == pytest.approx(1.0 - (1.0 - 0.999) / 2, abs=0.002)
 
 
