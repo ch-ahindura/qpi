@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 
 from .core import (
     FitError,
+    NOISE_FAKEABLE_SPAN,
     OutOfRange,
     align,
     fit_summary,
@@ -112,31 +113,34 @@ MAX_T2_OVER_T1 = 1.5
 
 
 def fit_t2(delays: np.ndarray, signal: np.ndarray, t1: float = 0.0) -> dict[str, float]:
-    """Fit a T2 echo curve. Returns ``{'t2', 'amplitude'}``.
+    """Fit a T2 echo curve. Returns ``{'t2', 'amplitude', 'unresolved'}``.
 
     *t1* is the relaxation time measured on the same qubit, zero when it never was. Given
-    one, a T2 past ``2*T1`` is refused — see :data:`MAX_T2_OVER_T1`.
+    one, a T2 past ``2*T1`` is *reported* and flagged — see :data:`MAX_T2_OVER_T1`.
 
     Raises:
-        FitError: if the fit fails, or T2 lands above the ceiling *t1* puts on it.
+        FitError: if the curve cannot be fitted at all.
     """
     fitted = _fit_coherence(delays, signal, key="t2", what="T2")
     ceiling = 2.0 * float(t1)
-    if t1 and fitted["t2"] > ceiling * MAX_T2_OVER_T1:
-        # Not escalatable, unlike every other guard in this function. The two remediations
-        # the machinery offers are both wrong here: T1 says the decay is over well inside
-        # the window, so widening it is answering the opposite question, and `shots` is not
-        # an averaging axis escalation can move. What is left is telling the operator which
-        # two numbers cannot both be true.
-        raise FitError(
-            f"T2 fitted to {fitted['t2']:.4g} s, above the {ceiling:.4g} s ceiling that "
-            f"2*T1 puts on a Hahn echo — {fitted['t2'] / ceiling:.2f}x it, from a T1 of "
-            f"{float(t1):.4g} s. An echo cannot outlast twice the relaxation it refocuses "
-            f"through, so this is a decay the window did not constrain rather than a "
-            f"coherence time. Average more shots, or check the T1 it is measured against",
-            fit=fitted["fit"],
+    unresolved = bool(t1) and fitted["t2"] > ceiling * MAX_T2_OVER_T1
+    if unresolved:
+        # Said, not raised. `t2_echo` writes nothing, so an unconstrained coherence time
+        # corrupts no later node — and a Hahn echo that outruns 2*T1 is still a measurement
+        # of something, namely that the window did not contain the decay. Refusing it
+        # reported nothing at all about the qubit's dephasing, which is worse than
+        # reporting a bound with the reason it is only a bound.
+        log.warning(
+            "T2 fitted to %.4g s, above the %.4g s that 2*T1 allows a Hahn echo — %.2fx "
+            "it, from a T1 of %.4g s. An echo cannot outlast twice the relaxation it "
+            "refocuses through, so this is a lower bound set by the window rather than a "
+            "coherence time. Lengthen the delays, or check the T1 it is measured against",
+            fitted["t2"],
+            ceiling,
+            fitted["t2"] / ceiling,
+            float(t1),
         )
-    return fitted
+    return {**fitted, "unresolved": float(unresolved)}
 
 
 #: How far past the observed span the fitted amplitude may reach before the fit counts as
@@ -234,54 +238,38 @@ def fit_rb_decay(
     if not 0.0 < decay <= 1.0:
         raise FitError(f"RB decay parameter {decay:.6g} is outside (0, 1]")
 
-    # The decay has to be deeper than the scatter it was drawn through, or the
-    # fidelity is a number read off the noise. Compared as a span rather than by the
-    # sign of the amplitude: the `rb` routine rescales its acquisition to [0, 1]
-    # without orienting it, so a chip whose readout brightens with excitation returns
-    # a rising survival, and that is a readout convention rather than a bad fit.
-    require_resolved_curve(
-        y,
-        rb_model(x, *popt),
-        what="RB decay",
-        consequence=(
-            "there is no decay here to take a fidelity from. Average more circuits "
-            "per depth, or extend the depths until it is visible above the noise"
-        ),
-        # Escalatable, and on the averaging axis rather than the reach: what this guard
-        # compares is the decay's span against the *scatter* around it, and scatter is
-        # what more circuits per depth buys down. Depth is the other half of the same
-        # sentence and stays advice, since a chip whose decay is simply too slow is a
-        # different problem from one whose points are too noisy to see it.
-        axis="circuits_per_depth",
-        # The commonest refusal in the graph, and the one whose shape most wants seeing.
-        fit=fit_summary(
-            x,
-            y,
-            rb_model(x, *popt),
-            x_label="sequence length",
-            y_label="survival",
-            x_scale="log",
-        ),
-    )
-
-    # After the noise check, not before: unresolved scatter and a stopped fit both end
-    # here, and only one of them is fixed by deeper sequences.
-    if abs(float(popt[0])) >= reach * (1.0 - 1e-6):
-        raise FitError(
-            f"the fitted amplitude reached {popt[0]:.4g}, the widest this fit allows for a "
-            f"survival spanning {span:.3g} — so it was stopped there rather than found, "
-            f"and the r of {decay:.7g} it trades against is the one that fits a straight "
-            f"line, not the one the gates set. There is no resolved decay in these depths. "
-            f"Average more circuits per depth, or extend the depths until the deepest "
-            f"sequence has visibly decayed",
-            fit=fit_summary(
-                x,
-                y,
-                rb_model(x, *popt),
-                x_label="sequence length",
-                y_label="survival",
-                x_scale="log",
-            ),
+    # Reported, never refused. `rb` writes nothing — it exists to say what the gates do,
+    # and "0.9% per Clifford, poorly constrained" is that answer. Withholding it because the
+    # error bar is wide is withholding the measurement, and there is no downstream parameter
+    # it could corrupt: a calibration is a picture of the chip, not a verdict on it.
+    #
+    # Two things make a rate unconstrained and they are separate. The curve may be lost in
+    # scatter, which more circuits per depth fixes. Or `a` and `r` may be unidentifiable —
+    # below one bend only their product sets the slope, so the fit slides along the
+    # degeneracy until the amplitude bound stops it. The 2026-08-16 B chip did the second at
+    # every bound tried: 100x span, 20x, 5x and 3x each pinned, the answer moving from
+    # 3.7e-05 to 1.4e-03 per Clifford while the residual went 0.0123 to 0.0131. There is no
+    # minimum there to find, and any number a tighter bound produced would be an artefact of
+    # the bound.
+    residual = float(np.sqrt(np.mean((y - rb_model(x, *popt)) ** 2)))
+    pinned = abs(float(popt[0])) >= reach * (1.0 - 1e-6)
+    # Against the span pure noise fakes over this many points, not a flat multiple of the
+    # scatter: a seven-point sweep of noise spans about six times its own residual, so a
+    # bare 3x lets it through — which is how two of the three dead-readout runs on record
+    # still came back looking resolved.
+    ratio = float(np.ptp(y)) / residual if residual > 0 else float("inf")
+    unresolved = pinned or ratio < NOISE_FAKEABLE_SPAN / math.sqrt(max(x.size, 1))
+    if unresolved:
+        log.warning(
+            "RB decay is not constrained by these depths: amplitude %.4g against a survival "
+            "spanning %.3g, scatter %.4g. The %.3g per Clifford reported is the fit's best "
+            "guess along a direction the data does not pin down, and its error bar spans "
+            "orders. Average more circuits per depth, or extend the depths until the "
+            "deepest sequence has visibly decayed",
+            float(popt[0]),
+            span,
+            residual,
+            1.0 - decay,
         )
 
     dimension = 2**n_qubits
@@ -304,6 +292,9 @@ def fit_rb_decay(
         # own 22.9 us T1 allows a 56 ns gate, against an `allxy_check` reading 34x higher.
         # A threshold between two numbers that close would refuse healthy chips.
         "decay_observed": 1.0 - decay ** float(np.max(x)),
+        # 1 when the depths did not pin the rate down — see the warning above. A number
+        # beside the fidelity rather than in place of it, so a report can show both.
+        "unresolved": float(unresolved),
         # Log x: RB depths double, and linearly the decay hugs the axis.
         "fit": fit_summary(
             x,

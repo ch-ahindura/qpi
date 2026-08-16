@@ -166,6 +166,19 @@ class CalibrationRoutine(ABC):
                 the range that produced it.
         """
 
+    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+        """This node's parameters with no correction applied — the prior, reported as such.
+
+        For a refining node whose sweep could not be described by its own model. The value
+        it would have refined is still the best available, so it is republished unchanged
+        with ``unresolved`` set, and the node succeeds: a calibration is a picture of the
+        chip, and "this could not be refined further" is part of the picture. Only nodes
+        reached through `amplified` need it.
+        """
+        raise NotImplementedError(
+            f"{self.name} has no uncorrected result to fall back on"
+        )
+
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         """Write the fitted parameters back to the in-memory device.
 

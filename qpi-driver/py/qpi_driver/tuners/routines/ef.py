@@ -889,6 +889,18 @@ class FineAmplitude12(CalibrationRoutine):
         )
         return {"ef_amp180": fitted["amplitude"], **fitted}
 
+    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+        element = device.get_element(target)
+        path = ef_path(element, "ef_amp180")
+        current = float(read_path(element, path)) if path else 0.0
+        return {
+            "ef_amp180": current,
+            "amplitude": current,
+            "error_per_pulse": 0.0,
+            "amplitude_error": 0.0,
+            "unresolved": 1.0,
+        }
+
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
         path = ef_path(element, "ef_amp180")
@@ -1250,8 +1262,13 @@ class Drag12(CalibrationRoutine):
                 f"drag_12 expected {2 * len(self._drags)} acquisitions, got {signal.size}"
             )
         paired = signal[: 2 * len(self._drags)].reshape(-1, 2)
+        element = device.get_element(target)
+        path = ef_path(element, "ef_motzoi")
         fitted = fit_drag(
-            np.asarray(self._drags), paired[:, 0] - paired[:, 1], axis="drags"
+            np.asarray(self._drags),
+            paired[:, 0] - paired[:, 1],
+            axis="drags",
+            current=float(read_path(element, path)) if path else 0.0,
         )
         return {"ef_motzoi": fitted["motzoi"], **fitted}
 

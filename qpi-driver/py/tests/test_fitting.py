@@ -319,18 +319,23 @@ class TestExponentialFits:
         with pytest.raises(FitError):
             fit_t1(delays, np.linspace(1.0, 0.999999, 41))
 
-    def test_t2_is_refused_above_the_ceiling_2t1_puts_on_an_echo(self):
+    def test_t2_above_the_ceiling_2t1_puts_on_an_echo_is_flagged(self):
         """The August 2026 B chip's 201 us of T2 against a 32.8 us T1 — 3.07x the ceiling.
 
         A Hahn echo refocuses static dephasing and nothing else, so it cannot outlast twice
         the relaxation it refocuses through. Nothing else in `fit_t2` contradicted this one:
         its curve spanned 6.7x its own scatter and 201 us is inside the ten windows
         `require_in_range` allows.
+
+        Reported rather than refused, because `t2_echo` writes no device parameter. A T2
+        past 2*T1 is still a measurement — of a window that did not contain the decay — and
+        refusing it published nothing at all about this qubit's dephasing.
         """
         delays = np.linspace(0.0, 100e-6, 41)
         signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
-        with pytest.raises(FitError, match="ceiling that 2\\*T1 puts on a Hahn echo"):
-            fit_t2(delays, signal, t1=32.8e-6)
+        fitted = fit_t2(delays, signal, t1=32.8e-6)
+        assert fitted["unresolved"] == 1.0
+        assert fitted["t2"] > 2 * 32.8e-6
 
     def test_t2_at_the_t1_limit_is_accepted(self):
         """T2 = 2*T1 is where a qubit with no pure dephasing left sits, not an error."""
@@ -350,13 +355,11 @@ class TestExponentialFits:
         signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
         assert fit_t2(delays, signal)["t2"] > 100e-6
 
-    def test_a_refused_t2_carries_its_trace(self):
+    def test_a_flagged_t2_carries_its_trace(self):
         delays = np.linspace(0.0, 100e-6, 41)
         signal = exponential_decay(delays, 1.0, 201e-6, 0.05)
-        with pytest.raises(FitError) as raised:
-            fit_t2(delays, signal, t1=32.8e-6)
-        assert raised.value.fit is not None
-        assert raised.value.fit["x_label"] == "delay (s)"
+        fitted = fit_t2(delays, signal, t1=32.8e-6)
+        assert fitted["fit"]["x_label"] == "delay (s)"
 
     def test_rb_recovers_a_known_fidelity(self):
         decay = 0.995
@@ -367,23 +370,24 @@ class TestExponentialFits:
         assert fitted["fidelity"] == pytest.approx(expected, abs=0.002)
         assert fitted["error_per_gate"] == pytest.approx(1 - expected, abs=0.002)
 
-    def test_a_fit_stopped_at_its_amplitude_bound_is_refused(self):
+    def test_a_fit_stopped_at_its_amplitude_bound_is_flagged(self):
         """The B chip's two runs, which reported an error per gate of 1.1e-05 and
         2.2e-06 — thirty to three hundred times below what its 56 us T1 allows a 56 ns
         gate. Leaving A unbounded is right and this is its far end: as |A| grows the
         exponential becomes its own linear limit, and a line is fitted by pinning r at
         one, so the fidelity comes off the boundary rather than off the chip.
 
-        A bound alone only moves the wall — both of these then pin against it, at -200
-        exactly. What separates them from a real decay is landing *on* it.
+        A bound alone only moves the wall — both of these then pin against it. What
+        separates them from a real decay is landing *on* it, and what that earns is the
+        flag rather than a refusal: `rb` writes nothing, so the number still has to be
+        published, with `unresolved` saying the bound produced it.
         """
         depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
         for survival in (
             [0.14103, 0, 0.21947, 0.25319, 0.29193, 0.53601, 1.0],
             [0.03305, 0, 0.04374, 0.13640, 0.21021, 0.48157, 1.0],
         ):
-            with pytest.raises(FitError, match="stopped there rather than found"):
-                fit_rb_decay(depths, np.array(survival))
+            assert fit_rb_decay(depths, np.array(survival))["unresolved"] == 1.0
 
     @pytest.mark.parametrize("fidelity", [0.986, 0.999, 0.9998])
     def test_a_real_decay_is_nowhere_near_the_bound(self, fidelity):
@@ -396,13 +400,13 @@ class TestExponentialFits:
             fidelity, abs=1e-4
         )
 
-    def test_the_refusal_carries_the_sweep_it_refused(self):
+    def test_an_unresolved_fit_still_carries_the_sweep(self):
         depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
         survival = np.array([0.03305, 0, 0.04374, 0.13640, 0.21021, 0.48157, 1.0])
 
-        with pytest.raises(FitError) as refusal:
-            fit_rb_decay(depths, survival)
-        assert refusal.value.fit["measured"] == pytest.approx(survival)
+        fitted = fit_rb_decay(depths, survival)
+        assert fitted["unresolved"] == 1.0
+        assert fitted["fit"]["measured"] == pytest.approx(survival)
 
     def test_rb_recovers_the_same_fidelity_from_a_rescaled_signal(self):
         """The fit must not care about the readout's scale and offset.
@@ -451,16 +455,22 @@ class TestExponentialFits:
     )
 
     @pytest.mark.parametrize("reported,survival", NOISE_FROM_A_DEAD_READOUT)
-    def test_rb_refuses_a_decay_it_cannot_see_above_the_noise(self, reported, survival):
-        """A confident number from noise is the one answer worse than no answer.
+    def test_rb_flags_a_decay_it_cannot_see_above_the_noise(self, reported, survival):
+        """A confident number from noise still has to be reported — but never silently.
 
         These went unremarked through five calibration runs and into the drift check,
-        which compares them against a threshold. `reported` is what each one used to
-        return, and is here to say what the guard is worth rather than to be asserted.
+        which compares them against a threshold. `reported` is what each one returned
+        then, with nothing to say it was noise.
+
+        `rb` writes no device parameter: it exists to say what the gates do, so refusing
+        publishes nothing about the chip and blocks the report a run is *for*. The fix is
+        the flag, not the refusal — the number comes back and `unresolved` says how far to
+        trust it.
         """
         depths = np.array([1, 2, 4, 8, 16, 32, 64], dtype=float)
-        with pytest.raises(FitError, match="no decay here"):
-            fit_rb_decay(depths, np.asarray(survival))
+        fitted = fit_rb_decay(depths, np.asarray(survival))
+        assert fitted["unresolved"] == 1.0
+        assert 0.0 <= fitted["fidelity"] <= 1.0
 
     def test_rb_still_accepts_a_decay_that_has_not_reached_its_asymptote(self):
         """The case the guard must not catch — see the rescaled-signal test above.

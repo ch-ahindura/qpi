@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: a node that measured something imprecise now reports it and flags
+  `unresolved`, instead of refusing. `rb` and `t2_echo` write no device parameter, so a
+  wide error bar is a fact about the chip and withholding it published nothing; `drag` and
+  the fine-amplitude nodes keep the value they would have refined rather than writing a
+  correction their own model could not describe.
 - `qpi-driver/py`: `readout_integration_time` sweeps the whole reachable range of windows
   rather than a few factors either side of the configured one, so the window it writes is
   an optimum it bracketed instead of the edge it stopped at — and it says so when the best

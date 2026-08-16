@@ -762,8 +762,14 @@ class Drag(CalibrationRoutine):
             )
         paired = signal[: 2 * len(self._motzois)].reshape(-1, 2)
         # Named, so a refusal is escalatable rather than prose — see `measure`.
+        element = device.get_element(target)
+        # ``rxy.motzoi`` under quantify, ``rxy.beta`` under qblox — see `apply`.
+        name = drag_parameter_name(element)
         return fit_drag(
-            np.asarray(self._motzois), paired[:, 0] - paired[:, 1], axis="motzois"
+            np.asarray(self._motzois),
+            paired[:, 0] - paired[:, 1],
+            axis="motzois",
+            current=float(read_path(element, f"rxy.{name}")) if name else 0.0,
         )
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -862,13 +868,31 @@ def amplified(
                 )
             ]
             shorter = _shortened(counts, refusal.factor, step)
+            if refusal.direction != "shorter":
+                raise
             if (
-                refusal.direction != "shorter"
-                or attempt == MAX_SHORTENINGS
+                attempt == MAX_SHORTENINGS
                 or len(shorter) < MIN_FIT_POINTS
                 or shorter == counts
             ):
-                raise
+                # Out of ladder, not out of measurement. The rotation outran the linear
+                # model at every length this can reach, which says the pulse under test is
+                # far enough off that amplification saturates immediately — a real finding
+                # about the chip. What it does *not* license is a correction, since the
+                # slope it would come from is the one the model could not describe.
+                #
+                # So the prior stands and the node reports. Refusing instead published
+                # nothing and took every node behind it down: `fine_amplitude_12` refused
+                # on all six runs of the August 2026 B chip, and `r12`'s pi went unrefined
+                # the whole time for want of a number this already had.
+                log.warning(
+                    "%s on %s: %s — keeping the existing amplitude rather than correcting "
+                    "from a fit its own model does not describe",
+                    routine.name,
+                    target,
+                    refusal,
+                )
+                return routine.uncorrected(device, target)
             log.info(
                 "%s on %s: %s — repeating %d times instead of %d (%d of %d)",
                 routine.name,
@@ -1000,6 +1024,11 @@ class FineAmplitude(CalibrationRoutine):
             excited=float(signal[count + 1]),
         )
         return {"amp180": fitted["amplitude"], **fitted}
+
+    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+        current = float(read_path(device.get_element(target), "rxy.amp180"))
+        return {"amp180": current, "amplitude": current, "error_per_pulse": 0.0,
+                "amplitude_error": 0.0, "unresolved": 1.0}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), "rxy.amp180", params["amp180"])
@@ -1204,6 +1233,11 @@ class FineAmplitude90(CalibrationRoutine):
             pre_rotation=0.0,
         )
         return {"amp90": fitted["amplitude"], **fitted}
+
+    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+        current = float(read_path(device.get_element(target), AMP90_PATH))
+        return {"amp90": current, "amplitude": current, "error_per_pulse": 0.0,
+                "amplitude_error": 0.0, "unresolved": 1.0}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         write_path(device.get_element(target), AMP90_PATH, params["amp90"])

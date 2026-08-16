@@ -43,16 +43,6 @@ AMP180_ROUNDING = 1e-6
 #: error it is looking for.
 MIN_DRAG_RISE = 3.0
 
-#: How far an amplified sweep must rise across its repetition counts, in units of the
-#: scatter about the fitted line, before the slope is an error rather than noise — see
-#: :func:`fit_fine_amplitude`.
-#:
-#: :data:`MAX_DEMODULATED_SCATTER` bounds the scatter absolutely, which a sweep whose
-#: *signal* is smaller still passes without difficulty: four points of noise scatter little
-#: and have a slope anyway. Amplification is the whole premise of these nodes — a real
-#: per-pulse error grows with repetitions where noise does not — so an error a sweep cannot
-#: raise above its own noise is one the sweep has not measured.
-#:
 #: How many standard errors a fitted per-pulse rotation error must clear before it is
 #: applied rather than treated as zero — see :func:`fit_fine_amplitude`.
 #:
@@ -334,7 +324,11 @@ def fit_ramsey(
 
 
 def fit_drag(
-    betas: np.ndarray, signal: np.ndarray, *, axis: str | None = None
+    betas: np.ndarray,
+    signal: np.ndarray,
+    *,
+    axis: str | None = None,
+    current: float = 0.0,
 ) -> dict[str, float]:
     """Fit a DRAG (Motzoi) sweep.
 
@@ -356,17 +350,31 @@ def fit_drag(
     rise = abs(slope) * (float(np.max(x)) - float(np.min(x)))
     scatter = float(np.std(y - (slope * x + intercept)))
     if scatter > 0.0 and rise < MIN_DRAG_RISE * scatter:
-        raise FitError(
-            f"the DRAG sweep rises {rise:.4g} across its whole beta range against a "
-            f"scatter of {scatter:.4g} about the line — {rise / scatter:.1f}x, under the "
-            f"{MIN_DRAG_RISE:g}x that separates a trend from noise. The root of a line "
-            f"through noise is wherever the noise crossed, and it would be written to "
-            f"every pulse afterwards. Average more shots, or check that the sequence this "
-            f"sweeps is producing a beta-dependent signal at all",
-            fit=fit_summary(
+        # Kept, not refused. The sweep has measured something real — that this sequence's
+        # response does not depend on beta above its own noise — and the answer that
+        # follows is "no correction", which is *current*, not a failure. Writing the root
+        # of a line through noise would be the error; declining to report is a different
+        # one, and it takes every node behind this with it.
+        log.warning(
+            "the DRAG sweep rises %.4g across its whole beta range against a scatter of "
+            "%.4g about the line — %.1fx, under the %g that separates a trend from noise. "
+            "Keeping the existing %.4g rather than the root of a line fitted through "
+            "noise. Average more shots, or check that this sequence produces a "
+            "beta-dependent signal at all",
+            rise,
+            scatter,
+            rise / scatter,
+            MIN_DRAG_RISE,
+            current,
+        )
+        return {
+            "motzoi": float(current),
+            "slope": float(slope),
+            "unresolved": 1.0,
+            "fit": fit_summary(
                 x, y, slope * x + intercept, x_label="beta", y_label="signal"
             ),
-        )
+        }
 
     motzoi = float(-intercept / slope)
     require_in_range(
@@ -380,6 +388,7 @@ def fit_drag(
     return {
         "motzoi": motzoi,
         "slope": float(slope),
+        "unresolved": 0.0,
         "fit": fit_summary(
             x, y, slope * x + intercept, x_label="beta", y_label="signal"
         ),
