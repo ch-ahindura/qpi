@@ -55,6 +55,7 @@ from qpi_driver.tuners.fitting import (
 
 #: Shared with `resonator_spectroscopy_excited`: the same experiment one rung up wants
 #: the same window, and two constants that must agree are one written twice.
+from qpi_driver.tuners.routines.single_qubit import amplified  # noqa: E402
 from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
     EXCITED_SPAN_IN_LINEWIDTHS,
 )
@@ -783,6 +784,26 @@ class FineAmplitude12(CalibrationRoutine):
 
     def applies_to(self, device: Any, target: str) -> bool:
         return has_ef_drive(device, target)
+
+    def measure(
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, Any]:
+        """Shorten the sweep when 25 repetitions turn further than the fit can linearise.
+
+        The same reach `fine_amplitude` has, and this node needs it more: how far a ladder
+        may run depends on the per-pulse error, which is what is being measured, and the ef
+        pi starts from a coarser `rabi_12` than the 0-1 pi starts from `rabi`. Without it
+        the refusal names a shortening nothing applies — the 2026-08-15 B chip's sweep
+        spanned 1.707 of its contrast, asked to be shortened, and was refused outright on
+        every run because this method was not here.
+        """
+        return amplified(self, target, device, config, backend, timeout_s, step=1)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

@@ -829,7 +829,7 @@ class AllXY(CalibrationRoutine):
 MAX_SHORTENINGS = 2
 
 
-def _amplified(
+def amplified(
     routine: CalibrationRoutine,
     target: str,
     device: Any,
@@ -933,7 +933,7 @@ class FineAmplitude(CalibrationRoutine):
         On the August 2026 B chip they turned 2.3 radians — a full swing of the sine,
         fitted as a straight line, and written to the amplitude every X pulse plays at.
         """
-        return _amplified(self, target, device, config, backend, timeout_s, step=1)
+        return amplified(self, target, device, config, backend, timeout_s, step=1)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
@@ -1131,7 +1131,7 @@ class FineAmplitude90(CalibrationRoutine):
         # overran could only be cut to something `align` refuses. On 2 the same four points
         # become [1, 3, 5, 7] — 0.81 rad where 13 pulses gave 1.51, which is the difference
         # between refining this pulse and refusing it.
-        return _amplified(self, target, device, config, backend, timeout_s, step=2)
+        return amplified(self, target, device, config, backend, timeout_s, step=2)
 
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend

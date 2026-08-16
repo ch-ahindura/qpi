@@ -37,6 +37,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `fine_amplitude_12` can act on the shortening its own refusal asks for,
+  as `fine_amplitude` already could. Without it the refusal named a remedy nothing applied
+  and the node could never run on a chip whose ef sweep overran.
 - `qpi-driver/py`: `t2_echo` snaps its delays so that half of one lands on the hardware
   grid, which a window scaled from a measured T1 otherwise misses — the schedule compiled
   until qblox refused a time value.
