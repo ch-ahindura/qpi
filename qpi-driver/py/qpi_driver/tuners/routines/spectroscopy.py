@@ -1435,7 +1435,31 @@ class F12Spectroscopy(CalibrationRoutine):
             np.asarray(self._frequencies),
             signal[:expected].reshape(len(self._drive_amps), columns),
         )
-        require_resolved_line(fitted, self._frequencies)
+        try:
+            require_resolved_line(fitted, self._frequencies)
+        except (FitError, RoutineError) as unresolved:
+            # The prior stands. Nothing here can invent an f12, but the last one measured
+            # is still the best available, and every ef node reads `clock_freqs.f12` — so
+            # refusing publishes nothing *and* leaves them reading the same stale value
+            # they would have read anyway, minus the report saying so.
+            #
+            # Only where there is a prior. On a chip that has never resolved this line
+            # there is nothing to fall back on and the refusal is the whole answer.
+            prior = float(read_path(device.get_element(target), "clock_freqs.f12") or 0.0)
+            if not prior:
+                raise
+            log.warning(
+                "%s: %s — keeping the f12 of %.6g Hz already measured on this qubit",
+                target,
+                unresolved,
+                prior,
+            )
+            return {
+                "clock_freq_12": prior,
+                "anharmonicity": prior - self._f01,
+                "unresolved": 1.0,
+                "fit": fitted.get("fit"),
+            }
         return {
             "clock_freq_12": fitted["clock_freq_01"],
             "drive_amplitude": fitted["drive_amplitude"],
@@ -1447,6 +1471,7 @@ class F12Spectroscopy(CalibrationRoutine):
             "anharmonicity": self._require_transmon_anharmonicity(
                 fitted["clock_freq_01"] - self._f01, target
             ),
+            "unresolved": 0.0,
         }
 
     @staticmethod

@@ -9,6 +9,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- `qpi-driver/py`: `f12_spectroscopy` keeps the f12 already measured on a qubit when no
+  drive power in the sweep resolves the line, rather than refusing. Only where a prior
+  exists — a chip that has never resolved it still fails, because there is nothing to keep.
 - `qpi-driver/py`: a node that measured something imprecise now reports it and flags
   `unresolved`, instead of refusing. `rb` and `t2_echo` write no device parameter, so a
   wide error bar is a fact about the chip and withholding it published nothing; `drag` and
