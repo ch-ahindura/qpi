@@ -18,6 +18,8 @@ answer.
 
 from typing import Any
 
+import math
+
 import numpy as np
 import xarray as xr
 
@@ -225,6 +227,9 @@ class ReadoutIntegrationTime(CalibrationRoutine):
     updates = ("measure.integration_time",)
     reads = (
         "measure.integration_time",
+        "measure.pulse_duration",
+        "measure.acq_delay",
+        "resonator.linewidth",
         "clock_freqs.readout",
         "clock_freqs.f01",
         "rxy.amp180",
@@ -248,6 +253,26 @@ class ReadoutIntegrationTime(CalibrationRoutine):
     #: A bound on runtime rather than on physics, for a config whose window is so far under
     #: the ceiling that doubling to it would take all afternoon.
     MAX_WINDOWS = 12
+
+    #: How far past the readout pulse a window may still reach, in resonator time constants.
+    #:
+    #: The real ceiling on this axis is not the instrument, it is the pulse: once the drive
+    #: stops there is no more signal to integrate, only the resonator ringing down and then
+    #: noise. Integrating past it lowers SNR — the numerator stops growing and the
+    #: denominator does not.
+    #:
+    #: The 2026-08-16 run is what this is for. q5's readout pulse is 3.8 us behind a 200 ns
+    #: delay, so 3.6 us is every sample that carries anything, and the sweep — reaching to
+    #: the instrument's 16.384 us because nothing told it otherwise — chose 7.2. Half of
+    #: that window was noise. Discrimination still improved, because it came from 0.9 us and
+    #: gained more signal than it lost, but every *magnitude* node paid: contrast fell 27%,
+    #: `qubit_spectroscopy` fitted a 573 MHz linewidth on a transmon whose anharmonicity is
+    #: 253, and `f12_spectroscopy` stopped seeing its line at all.
+    #:
+    #: Two time constants of headroom rather than none, because the ring-down does carry
+    #: signal: a 322 kHz linewidth rings for about a microsecond, and cutting exactly at the
+    #: pulse would throw that away.
+    RINGDOWN_TIME_CONSTANTS = 2.0
 
     #: Longest acquisition a Qblox sequencer integrates into one bin.
     #:
@@ -329,7 +354,9 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         return schedule
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[float]:
-        ceiling = float(config.get("max_integration_time", self.MAX_INTEGRATION_TIME_S))
+        ceiling = float(
+            config.get("max_integration_time", self._usable_window(element))
+        )
         if "windows" in config:
             windows = [float(w) for w in setpoints_of(config, "windows", [])]
         else:
@@ -347,9 +374,20 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                 windows.append(window)
                 window *= self.WINDOW_STEP
             windows.append(ceiling)
-        # Deduplicated after clamping and rounding, or a config already at the ceiling
-        # sweeps one window several times and the winner reads as a choice the ladder made.
-        windows = sorted({grid_duration(min(w, ceiling)) for w in windows if w > 0.0})
+        # Clamped first, then the incumbent joins *unclamped* — which is the whole point of
+        # it being here. A config integrating past its own pulse is exactly what this node
+        # should shorten, and it can only shorten on evidence if the value being replaced
+        # was measured beside the alternatives. Clamp it and the change becomes an
+        # assumption, while the tie-hold that protects a flat landscape loses the one rung
+        # it compares against: the simulated chip integrates 1 us behind a 300 ns pulse, and
+        # with the incumbent clamped away the sweep quartered it on nothing but noise.
+        #
+        # Deduplicated after rounding, or a config already at the ceiling sweeps one window
+        # twice and the winner reads as a choice the ladder made.
+        windows = [min(w, ceiling) for w in windows if w > 0.0]
+        if "windows" not in config:
+            windows.append(float(read_path(element, "measure.integration_time")))
+        windows = sorted({grid_duration(w) for w in windows if w > 0.0})
         if not windows:
             raise RoutineError("readout integration sweep is empty")
         needed = 2 * len(windows)
@@ -360,6 +398,33 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                 f"has registers for"
             )
         return windows
+
+    def _usable_window(self, element: Any) -> float:
+        """The longest window that still carries signal, and the instrument's own limit.
+
+        The pulse is the real ceiling here — see :attr:`RINGDOWN_TIME_CONSTANTS`. Reading it
+        rather than assuming it, because it is a chip fact: a 3.8 us pulse and a 1 us one
+        want windows an octave apart, and neither is wrong.
+
+        Falls back to the instrument limit when the element cannot say, which keeps this
+        working on a `BasicTransmonElement` and on any config predating these fields.
+        """
+        instrument = self.MAX_INTEGRATION_TIME_S
+        try:
+            pulse = float(read_path(element, "measure.pulse_duration"))
+            delay = float(read_path(element, "measure.acq_delay"))
+        except Exception:  # noqa: BLE001 - an unreadable pulse is not a shorter one
+            return instrument
+        if pulse <= 0.0:
+            return instrument
+        driven = pulse - max(delay, 0.0)
+        if driven <= 0.0:
+            return instrument
+        linewidth = measured_linewidth(element, 0.0)
+        ringdown = (
+            self.RINGDOWN_TIME_CONSTANTS / (math.pi * linewidth) if linewidth else 0.0
+        )
+        return min(instrument, driven + ringdown)
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig

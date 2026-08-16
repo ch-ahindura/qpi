@@ -37,6 +37,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: `readout_integration_time` stops the window at the readout pulse plus a
+  couple of resonator ring-down times, rather than at the instrument's limit. Integrating
+  past the pulse adds noise with no signal; on one chip it chose twice the pulse length and
+  every magnitude-based node lost contrast for it.
 - `qpi-driver/py`: `fine_amplitude_12` can act on the shortening its own refusal asks for,
   as `fine_amplitude` already could. Without it the refusal named a remedy nothing applied
   and the node could never run on a chip whose ef sweep overran.
