@@ -1257,6 +1257,111 @@ def amplified(
     )
 
 
+def _readout(
+    backend: SchedulerBackend, targets: Sequence[str], index: int
+) -> list[Any]:
+    """One averaged measurement per target at acquisition *index*, each on its own channel."""
+    return [
+        backend.Measure(
+            target,
+            acq_channel=channel,
+            acq_index=index,
+            bin_mode=backend.BinMode.AVERAGE,
+        )
+        for channel, target in enumerate(targets)
+    ]
+
+
+def _add_references(
+    schedule: Any, backend: SchedulerBackend, targets: Sequence[str], at: int
+) -> None:
+    """Append the ``|0>`` and ``|1>`` calibration points a fine-amplitude fit needs."""
+    for offset, excite in enumerate((False, True)):
+        anchor = add_together(schedule, [backend.Reset(t) for t in targets])
+        if excite:
+            anchor = add_together(schedule, [backend.X(t) for t in targets])
+        add_after(schedule, _readout(backend, targets, at + offset), anchor)
+
+
+def amplified_group(
+    routine: CalibrationRoutine,
+    targets: Sequence[str],
+    device: Any,
+    config: RoutineConfig,
+    backend: SchedulerBackend,
+    timeout_s: float,
+    sweeps: Mapping[str, Sweep],
+    step: int,
+) -> dict[str, dict[str, Any] | Exception]:
+    """`amplified` over a group: shorten only the ladders that outran their own model.
+
+    The group counterpart of `amplified`, and the same argument as
+    `CalibrationRoutine.escalating_group`: how far a ladder can be amplified depends on how
+    large the error turns out to be, so it is per target. Shortening the group would cut
+    the ladders that were fine, and a shorter ladder measures a smaller error less
+    precisely.
+
+    A shortening therefore splits the group, and targets asking for the same ladder are
+    measured together. A target that runs out of ladder keeps its prior and reports, which
+    is what `amplified` does for the same reason: the finding is real and the correction
+    is not.
+    """
+    outcomes: dict[str, dict[str, Any] | Exception] = {}
+    pending: list[tuple[RoutineConfig, list[str]]] = [(config, list(targets))]
+
+    for attempt in range(MAX_SHORTENINGS + 1):
+        if not pending:
+            break
+        shortened_next: dict[str, tuple[RoutineConfig, list[str]]] = {}
+        for shared, subgroup in pending:
+            measured = routine.escalating_group(
+                subgroup, device, shared, backend, timeout_s, sweeps
+            )
+            for target, result in measured.items():
+                if not isinstance(result, OutOfRange) or result.direction != "shorter":
+                    outcomes[target] = result
+                    continue
+                counts = [
+                    int(n)
+                    for n in (
+                        shared.get("repetitions")
+                        or sweeps[target].get("repetitions", ())
+                    )
+                ]
+                shorter = _shortened(counts, result.factor, step) if counts else []
+                if attempt == MAX_SHORTENINGS or not shorter or shorter == counts:
+                    log.warning(
+                        "%s on %s: %s — keeping the existing amplitude rather than "
+                        "correcting from a fit its own model does not describe",
+                        routine.name,
+                        target,
+                        result,
+                    )
+                    outcomes[target] = routine.uncorrected(
+                        device, target, sweeps[target]
+                    )
+                    continue
+                log.info(
+                    "%s on %s: %s — repeating %d times instead of %d (%d of %d)",
+                    routine.name,
+                    target,
+                    result,
+                    max(shorter),
+                    max(counts),
+                    attempt + 1,
+                    MAX_SHORTENINGS,
+                )
+                narrower = RoutineConfig(
+                    enabled=shared.enabled,
+                    params={**shared.params, "repetitions": shorter},
+                )
+                slot = shortened_next.setdefault(repr(shorter), (narrower, []))
+                slot[1].append(target)
+        pending = list(shortened_next.values())
+
+    return outcomes
+
+
 def _shortened(counts: list[int], factor: float, step: int) -> list[int]:
     """*counts* rebuilt no longer than *factor* of their reach, on the same ladder.
 
@@ -1307,6 +1412,21 @@ class FineAmplitude(CalibrationRoutine):
             self, target, device, config, backend, timeout_s, sweep, step=1
         )
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same shortening, applied only to the ladders that outran their model."""
+        return amplified_group(
+            self, targets, device, config, backend, timeout_s, sweeps, step=1
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -1315,47 +1435,50 @@ class FineAmplitude(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        sweep["repetitions"] = [
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The amplified pi ladder on every target at once, read out per channel.
+
+        The ladder is the same on every target, so the group never splits: the counts come
+        from the config or from a constant, not from the chip.
+        """
+        repetitions = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
         ]
-        # The amplitude this run refines, read before the acquisition rather than after
-        # it — it is what every X below is played at, so reading it later described a
-        # sweep that had already happened.
-        sweep["current_amp180"] = float(
-            read_path(device.get_element(target), "rxy.amp180")
-        )
+        for target in targets:
+            sweeps[target]["repetitions"] = repetitions
+            # The amplitude this run refines, read before the acquisition rather than
+            # after it — it is what every X below is played at, so reading it later
+            # described a sweep that had already happened.
+            sweeps[target]["current_amp180"] = float(
+                read_path(device.get_element(target), "rxy.amp180")
+            )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, count in enumerate(sweep["repetitions"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
+        for index, count in enumerate(repetitions):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            anchor = add_together(
+                schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
+            )
             for _ in range(count):
-                schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
-            )
+                anchor = add_together(schedule, [backend.X(t) for t in targets])
+            add_after(schedule, _readout(backend, targets, index), anchor)
 
-        # Two reference points, |0> and |1>, so the fit knows the full contrast.
-        # Without them only the product of contrast and rotation error is
-        # recoverable, and the error comes out scaled by whatever fraction of
-        # the contrast this sweep happened to cover.
-        reference = len(sweep["repetitions"])
-        schedule.add(backend.Reset(target))
-        schedule.add(
-            backend.Measure(
-                target, acq_index=reference, bin_mode=backend.BinMode.AVERAGE
-            )
-        )
-        schedule.add(backend.Reset(target))
-        schedule.add(backend.X(target))
-        schedule.add(
-            backend.Measure(
-                target, acq_index=reference + 1, bin_mode=backend.BinMode.AVERAGE
-            )
-        )
+        # Two reference points, |0> and |1>, so the fit knows the full contrast. Without
+        # them only the product of contrast and rotation error is recoverable, and the
+        # error comes out scaled by whatever fraction of the contrast this sweep covered.
+        _add_references(schedule, backend, targets, len(repetitions))
         return schedule
 
     def analyse(
@@ -1530,6 +1653,21 @@ class FineAmplitude90(CalibrationRoutine):
             self, target, device, config, backend, timeout_s, sweep, step=2
         )
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same shortening, applied only to the ladders that outran their model."""
+        return amplified_group(
+            self, targets, device, config, backend, timeout_s, sweeps, step=2
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -1538,51 +1676,50 @@ class FineAmplitude90(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        sweep["repetitions"] = [
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The amplified pi/2 ladder on every target at once, read out per channel."""
+        repetitions = [
             int(n)
             for n in setpoints_of(
                 config, "repetitions", list(DEFAULT_AMP90_REPETITIONS)
             )
         ]
-        # What the compiler will actually play for a 90, which is not amp180/2 once this
-        # has run once. Read before the acquisition rather than after it, for the reason
-        # `fine_amplitude` states: it is the amplitude every pulse below is played at.
-        element = device.get_element(target)
-        sweep["current_amp90"] = amplitude_for_angle(
-            QUARTER_TURN_DEGREES,
-            float(read_path(element, "rxy.amp180")),
-            float(read_path(element, AMP90_PATH) or 0.0),
-        )
-
+        for target in targets:
+            sweeps[target]["repetitions"] = repetitions
+            # What the compiler will actually play for a 90, which is not amp180/2 once
+            # this has run once. Read before the acquisition, for the reason
+            # `fine_amplitude` states: it is the amplitude every pulse below is played at.
+            element = device.get_element(target)
+            sweeps[target]["current_amp90"] = amplitude_for_angle(
+                QUARTER_TURN_DEGREES,
+                float(read_path(element, "rxy.amp180")),
+                float(read_path(element, AMP90_PATH) or 0.0),
+            )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, count in enumerate(sweep["repetitions"]):
-            schedule.add(backend.Reset(target))
+        for index, count in enumerate(repetitions):
+            anchor = add_together(schedule, [backend.Reset(t) for t in targets])
             for _ in range(count):
-                schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
+                anchor = add_together(
+                    schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
                 )
-            )
+            add_after(schedule, _readout(backend, targets, index), anchor)
 
-        # |0> and |1>, so the fit knows the full contrast rather than whatever fraction
-        # of it this sweep reached. See `fit_fine_amplitude`.
-        reference = len(sweep["repetitions"])
-        schedule.add(backend.Reset(target))
-        schedule.add(
-            backend.Measure(
-                target, acq_index=reference, bin_mode=backend.BinMode.AVERAGE
-            )
-        )
-        schedule.add(backend.Reset(target))
-        schedule.add(backend.X(target))
-        schedule.add(
-            backend.Measure(
-                target, acq_index=reference + 1, bin_mode=backend.BinMode.AVERAGE
-            )
-        )
+        # |0> and |1>, so the fit knows the full contrast rather than whatever fraction of
+        # it this sweep reached. See `fit_fine_amplitude`.
+        _add_references(schedule, backend, targets, len(repetitions))
         return schedule
 
     def analyse(

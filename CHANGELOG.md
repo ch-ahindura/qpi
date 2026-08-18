@@ -27,6 +27,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` measure a group at once, and a
+  ladder that outran the fit's linearisation is shortened for that target alone — cutting
+  the group would shorten the ladders that were fine, and a shorter ladder measures a
+  smaller error less precisely.
 - `qpi-driver/py`: `rabi` and `drag` measure a group at once. `rabi` splits the group when
   two elements have different amplitude ceilings, since the grid is half of full scale;
   `drag`'s span is the backend's own, so it never splits.

@@ -1,6 +1,6 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Partially implemented. Phases 1–3 done; phase 4's mechanism done with 8 of
+- **Status:** Partially implemented. Phases 1–3 done; phase 4's mechanism done with 10 of
   33 routines converted; phases 5–6 open. §9 records what each phase covers and the
   status line under it says where each stands.
 - **Author:** Martin Ahindura
@@ -629,9 +629,9 @@ Six phases. Each is separately valuable and separately revertable.
 routines are converted (`allxy`, `allxy_check`, `readout_discrimination`,
 `readout_fidelity`). Phase 4's mechanism is done — the per-target `Sweep`, group-aware
 `escalating`, the `measure_group` hook and the `compatible_groups` split — with `t1`,
-`t2_echo`, `rabi` and `drag` converted of the eleven that measure themselves; the
-remaining seven are mechanical applications of it and each wants its own group schedule
-and test. Phases 5 and 6 are open. Grouping is off unless
+`t2_echo`, `rabi`, `drag`, `fine_amplitude` and `fine_amplitude_90` converted of the
+eleven that measure themselves; the remaining five are mechanical applications of it and
+each wants its own group schedule and test. Phases 5 and 6 are open. Grouping is off unless
 `calibration.yml` says otherwise, so none of this changes an existing chip's walk until
 an operator turns it on.
 
