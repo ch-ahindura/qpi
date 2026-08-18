@@ -10,9 +10,11 @@ DOCS_SITE_VENV := bin/.docs-site-venv
 DOCS_SITE_OUT := bin/.docs-site
 
 # The framework modules the coverage floor applies to: the SDK, the CLI, the device
-# registry and its options, and the executors that need no hardware. Everything else
-# is reported but not gated — see cov-py.
-PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py
+# registry and its options, the executors that need no hardware, and the calibration
+# grouping. The last qualifies where the routines do not: it is pure functions over a
+# config with no instrument behind them. Everything else is reported but not gated —
+# see cov-py.
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py,qpi_driver/tuners/base/grouping.py
 PY_COV_MIN := 96
 
 # `uv sync` reinstalls qblox_instruments, and macOS strips the code signature

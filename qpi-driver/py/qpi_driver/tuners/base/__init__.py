@@ -18,6 +18,7 @@ from qpi_driver.tuners.base.config import (
     CalibrationConfig,
     ConfigError,
     MonitoringConfig,
+    ParallelConfig,
     RoutineConfig,
 )
 from qpi_driver.tuners.base.dag import CalibrationDAG, ProgressSink, utc_timestamp
@@ -69,6 +70,7 @@ __all__ = [
     "CalibrationConfig",
     "ConfigError",
     "MonitoringConfig",
+    "ParallelConfig",
     "RoutineConfig",
     "CalibrationDAG",
     "CalibrationReport",

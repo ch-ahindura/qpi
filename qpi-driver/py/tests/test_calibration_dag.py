@@ -701,6 +701,8 @@ class TestThePlan:
             "is_benchmark": False,
             "has_check": True,
             "updates": ["rxy.amp180"],
+            # One per target unless `parallel.enabled` — see test_calibration_grouping.
+            "groups": [["q0"], ["q1"]],
         }
 
     def test_an_excluded_routine_is_still_sent_marked_unplanned(self):

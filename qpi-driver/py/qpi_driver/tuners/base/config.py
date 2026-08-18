@@ -23,6 +23,19 @@ import yaml
 #: an instrument would otherwise hang the worker for the life of the driver.
 DEFAULT_ROUTINE_TIMEOUT_S = 900.0
 
+#: Hops that must separate two qubits measured at once. Two excludes adjacent pairs,
+#: which leaves an idle qubit between every pair in a group — conservative against what
+#: the simultaneous-benchmarking literature does routinely, and the right default until
+#: a chip has measured its own penalty (RFC 0009 §5.6).
+DEFAULT_QUBIT_SPACING = 2
+
+#: The same for couplers, where one asks only that two of them share no qubit.
+DEFAULT_EDGE_SPACING = 1
+
+#: The most targets in one group. A ceiling on the sequencers one schedule can ask
+#: for, before the per-output checks in `grouping.readout_misfit` narrow it further.
+DEFAULT_MAX_GROUP = 8
+
 
 class ConfigError(ValueError):
     """``calibration.yml`` is not usable as written."""
@@ -72,6 +85,65 @@ class MonitoringConfig:
 
 
 @dataclass
+class ParallelConfig:
+    """Which targets a walk may measure at once (RFC 0009 §5.3).
+
+    Off unless the file says otherwise, which is the opposite of `RoutineConfig`'s
+    default and deliberately so: a missing `routines` entry cannot make a run measure
+    nothing, whereas defaulting this to on would silently change how every existing
+    chip calibrates.
+    """
+
+    enabled: bool = False
+    qubit_spacing: int = DEFAULT_QUBIT_SPACING
+    edge_spacing: int = DEFAULT_EDGE_SPACING
+    max_group: int = DEFAULT_MAX_GROUP
+    #: Pairs never grouped, whatever the spacing allows.
+    exclude: list[list[str]] = field(default_factory=list)
+    #: Explicit classes per kind, which skip the colouring entirely. For a chip whose
+    #: measured crosstalk does not follow its topology.
+    groups: dict[str, list[list[str]]] = field(default_factory=dict)
+
+    def spacing_for(self, kind: str) -> int:
+        """The radius that applies to *kind* — ``"qubits"`` or ``"edges"``."""
+        return self.edge_spacing if kind == "edges" else self.qubit_spacing
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "ParallelConfig":
+        if not isinstance(data, dict):
+            raise ConfigError(f"'parallel' must be a mapping, got {type(data)}")
+
+        # Checked before any falsy coalescing, or `groups: []` reads as "none given"
+        # rather than as the mistake it is.
+        exclude = data.get("exclude")
+        if exclude is not None and not isinstance(exclude, (list, tuple)):
+            raise ConfigError("parallel.exclude must be a list of target pairs")
+        for pair in exclude or []:
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                raise ConfigError(
+                    f"parallel.exclude takes pairs of target names, got {pair!r}"
+                )
+        groups = data.get("groups")
+        if groups is not None and not isinstance(groups, dict):
+            raise ConfigError("parallel.groups must be a mapping of kind to groups")
+        groups = groups or {}
+        unknown = sorted(set(groups) - {"qubits", "edges"})
+        if unknown:
+            raise ConfigError(
+                f"parallel.groups knows 'qubits' and 'edges', not {', '.join(unknown)}"
+            )
+
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            qubit_spacing=_positive(data, "qubit_spacing", DEFAULT_QUBIT_SPACING),
+            edge_spacing=_positive(data, "edge_spacing", DEFAULT_EDGE_SPACING),
+            max_group=_positive(data, "max_group", DEFAULT_MAX_GROUP),
+            exclude=[list(pair) for pair in exclude or []],
+            groups={kind: [list(g) for g in gs] for kind, gs in groups.items()},
+        )
+
+
+@dataclass
 class CalibrationConfig:
     """The whole of ``calibration.yml``."""
 
@@ -80,6 +152,7 @@ class CalibrationConfig:
     routines: dict[str, RoutineConfig] = field(default_factory=dict)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
     routine_timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S
+    parallel: ParallelConfig = field(default_factory=ParallelConfig)
 
     def is_enabled(self, routine_name: str) -> bool:
         """Whether *routine_name* should run. Absent means yes — see the module docstring."""
@@ -200,6 +273,7 @@ class CalibrationConfig:
             routine_timeout_s=float(
                 data.get("routine_timeout_s", DEFAULT_ROUTINE_TIMEOUT_S)
             ),
+            parallel=ParallelConfig.from_dict(data.get("parallel") or {}),
         )
 
     @classmethod
@@ -209,6 +283,21 @@ class CalibrationConfig:
         if data is None:
             raise ConfigError(f"{path} is empty")
         return cls.from_dict(data)
+
+
+def _positive(data: dict[str, Any], key: str, default: int) -> int:
+    """*key* as a whole number of at least one, so a typo is a startup error."""
+    if key not in data:
+        return default
+    try:
+        value = int(data[key])
+    except (TypeError, ValueError):
+        raise ConfigError(
+            f"parallel.{key} must be a whole number, got {data[key]!r}"
+        ) from None
+    if value < 1:
+        raise ConfigError(f"parallel.{key} must be at least 1, got {value}")
+    return value
 
 
 def _routine_timeout(name: str, routine_data: dict[str, Any]) -> float | None:

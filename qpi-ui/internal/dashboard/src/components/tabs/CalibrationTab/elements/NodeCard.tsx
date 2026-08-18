@@ -15,6 +15,8 @@ interface NodeCardProps {
   status: CalibrationNodeStatus;
   done: number;
   total: number;
+  /** Targets in flight, for the node the walk is on (RFC 0009 §7.2). */
+  running?: string[];
   plan: CalibrationPlan;
   /** The report this run produced, once it has landed. */
   report?: CalibrationResult;
@@ -25,6 +27,7 @@ const STATUS_LABELS: Record<CalibrationNodeStatus, string> = {
   running: "running",
   done: "done",
   partial: "some targets failed",
+  blocked: "prerequisite never measured",
   failed: "failed",
   pending: "not yet run",
   skipped: "applies to nothing configured here",
@@ -41,12 +44,15 @@ export const NodeCard: React.FC<NodeCardProps> = ({
   status,
   done,
   total,
+  running,
   plan,
   report,
   onSelect,
 }) => {
   const dependents = dependentsOf(node.name, plan);
   const outcomes = outcomesFor(node.name, node.targets, report);
+  const groups = node.groups ?? [];
+  const inFlight = running ?? [];
 
   return (
     <aside
@@ -78,7 +84,21 @@ export const NodeCard: React.FC<NodeCardProps> = ({
         <Tag>per {node.kind === "edges" ? "edge" : "qubit"}</Tag>
         {node.is_benchmark && <Tag>benchmark</Tag>}
         {node.has_check && <Tag>has a drift check</Tag>}
+        {/* Only when grouping bought something, or every node claims one group each. */}
+        {groups.length > 0 && groups.length < node.targets.length && (
+          <Tag>
+            {groups.length} group{groups.length > 1 ? "s" : ""} at once
+          </Tag>
+        )}
       </p>
+
+      {inFlight.length > 0 && (
+        <Section title="Being calibrated now">
+          <p className="font-mono text-xs text-blue-700 dark:text-blue-300">
+            {inFlight.join(", ")}
+          </p>
+        </Section>
+      )}
 
       <Section title="Writes">
         {node.updates.length === 0 ? (

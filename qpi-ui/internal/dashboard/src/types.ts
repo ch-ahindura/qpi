@@ -302,6 +302,10 @@ export interface CalibrationPlanNode {
   /** Device-config paths this routine writes, e.g. `rxy.amp180`. Empty for the
    * twelve routines that measure without tuning. */
   updates: string[];
+  /** The targets in the sets they will be measured in (RFC 0009 §5). One target per
+   * group unless `parallel` is enabled, so this is how the drawing can say where a
+   * run's parallelism went before it starts. Absent on a driver predating it. */
+  groups?: string[][];
 }
 
 /** The graph a calibration walks, as its driver resolved it. Absent on a drift

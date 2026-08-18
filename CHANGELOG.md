@@ -17,6 +17,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets
+  that can be measured at once, coloured from the coupling graph — `qubit_spacing`,
+  `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says
+  otherwise, and for now only computed and published on the plan, so the dashboard can
+  show where a run's parallelism will go before it starts.
 - `docs`: RFC 0009 — Parallel Calibration. Designs grouping a routine's targets into sets
   that can be measured in one schedule, from a colouring of the coupling graph rather than
   a hand-written list, and records why concurrent submission to one cluster cannot work —

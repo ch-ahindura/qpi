@@ -168,11 +168,12 @@ out of scope, and not a prerequisite for anything below.
 **D2 — A group is a colouring of a conflict graph, computed from the coupling graph.**
 
 Not a hand-written list, because a hand-written list is wrong the first time a coupler is
-added and nothing checks it. Not a solver, because greedy colouring reaches the
-known-optimal answer on the topologies anyone builds: two groups for single-qubit
-routines on any bipartite lattice, and Δ or Δ+1 for couplers by Vizing — which is what
-Sycamore's four coupler patterns are. Explicit groups remain available as an override
-(§5.3), for a chip whose measured crosstalk does not follow its topology.
+added and nothing checks it. Not a solver, because greedy colouring is optimal where it
+matters: two groups for single-qubit routines on any bipartite lattice at the default
+spacing, and Δ for couplers — Vizing's lower bound, and what Sycamore's four coupler
+patterns are. It is *not* optimal everywhere, and §5.5 records where it is not rather
+than claiming otherwise. Explicit groups remain available as an override (§5.3), for a
+chip whose measured crosstalk does not follow its topology.
 
 **D3 — Grouping needs the coupling graph, not chip geometry. No layout file here.**
 
@@ -358,14 +359,24 @@ edges costs `Rq·N + Re·E` acquisitions. Grouped it costs `Rq·Gq + Re·Ge`, wh
 | Topology | `Gq` at spacing 2 | `Gq` at spacing 3 | `Ge` at `edge_spacing: 1` |
 | --- | --- | --- | --- |
 | linear chain | 2 | 3 | 2 |
-| square lattice (Δ=4) | 2 | 5 | 4 |
+| square lattice (Δ=4) | 2 | 6–7 | 4 |
 | heavy-hex (Δ≤3) | 2 | 4 | 3 |
 
+Measured against the implementation, not derived — see `tests/utils/chips.py`.
+
 Every `Gq` at the default spacing is 2, because each of these graphs is bipartite; `Ge`
-is Δ by Vizing. So the grouped cost is a constant — `27·2 + 6·Ge` — for a chain of five
-qubits and a lattice of five hundred alike, while the sequential cost grows with both `N`
-and `E`. **The speedup is therefore not a fixed number to quote but `N/Gq`,** which is
-the whole reason to build this rather than buy a faster fridge.
+is Δ, Vizing's lower bound, on all three. So the grouped cost is a constant —
+`27·2 + 6·Ge` — for a chain of five qubits and a lattice of five hundred alike, while
+the sequential cost grows with both `N` and `E`. **The speedup is therefore not a fixed
+number to quote but `N/Gq`,** which is the whole reason to build this rather than buy a
+faster fridge.
+
+**Greedy is exact at the default spacing and not at spacing 3.** The five-colour Lee
+tiling is the optimum for an infinite lattice; greedy colouring reaches six on a small
+one and seven at 5×5. That costs runtime and never correctness, and the default spacing
+is the case where greedy provably cannot do worse — two classes on a bipartite graph.
+Closing the gap is graph colouring, which is NP-hard, and not worth it for one class on
+a non-default setting.
 
 Setting `qubit_spacing: 1` collapses `Gq` to 1 and is what the SRB literature does
 routinely; §5.6 is how a chip earns it.

@@ -13,7 +13,8 @@ from typing import Any
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig
-from qpi_driver.tuners.base.device import component_for, has_path
+from qpi_driver.tuners.base.device import component_for, edge_names, has_path
+from qpi_driver.tuners.base.grouping import couplings_of, groups_of
 from qpi_driver.tuners.base.provenance import ProvenanceStore
 from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
 from qpi_driver.tuners.base.routines import (
@@ -281,6 +282,7 @@ class CalibrationDAG:
                     "is_benchmark": self.routines[name].is_benchmark,
                     "has_check": self.routines[name].has_check,
                     "updates": list(self.routines[name].updates),
+                    "groups": self.groups_for(name, config, device),
                 }
                 for name in order
                 + [name for name in self.routines if name not in planned]
@@ -350,6 +352,43 @@ class CalibrationDAG:
             if paths & set(routine.updates)
         }
         return ", ".join(sorted(producers))
+
+    def groups_for(
+        self, name: str, config: CalibrationConfig, device: Any = None
+    ) -> list[list[str]]:
+        """Routine *name*'s targets, in the sets that may be measured at once (RFC 0009 §5).
+
+        One target per group unless ``parallel.enabled``, which is what keeps this
+        additive: every caller sees the sequential shape until a config asks for
+        another.
+
+        Explicit ``parallel.groups`` are filtered to the targets this run actually
+        walks rather than used as given — a config naming a qubit the run excludes
+        would otherwise put it back.
+        """
+        targets = self._targets_for(name, config, device)
+        parallel = config.parallel
+        if not parallel.enabled or len(targets) < 2:
+            return [[target] for target in targets]
+
+        kind = self.routines[name].targets
+        named = parallel.groups.get(kind)
+        if named is not None:
+            wanted = set(targets)
+            grouped = [[t for t in group if t in wanted] for group in named]
+            claimed = {t for group in grouped for t in group}
+            # Whatever the config forgot still has to be calibrated.
+            return [group for group in grouped if group] + [
+                [t] for t in targets if t not in claimed
+            ]
+
+        return groups_of(
+            targets,
+            adjacency=couplings_of(edge_names(device) or config.target_edges),
+            spacing=parallel.spacing_for(kind),
+            exclude=parallel.exclude,
+            max_group=parallel.max_group,
+        )
 
     def _targets_for(
         self, name: str, config: CalibrationConfig, device: Any = None

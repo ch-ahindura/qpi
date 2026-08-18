@@ -397,6 +397,7 @@ const GraphSection: React.FC<{
             status={statusOf(node, reported)}
             done={reported?.done ?? 0}
             total={reported?.total || node.targets.length}
+            running={reported?.running}
             plan={plan}
             report={report}
             onSelect={setSelected}
