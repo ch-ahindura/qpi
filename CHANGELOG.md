@@ -17,11 +17,17 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a grouped routine measures its targets in one schedule, so a group
+  costs one arm-and-wait cycle instead of one per target. Each target names its own
+  acquisition channel and is fitted from that channel alone, so no routine's `analyse`
+  changed. `allxy` and `allxy_check` have opted in; the rest keep running one target at a
+  time until they do.
 - `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets
   that can be measured at once, coloured from the coupling graph — `qubit_spacing`,
   `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says
-  otherwise, and for now only computed and published on the plan, so the dashboard can
-  show where a run's parallelism will go before it starts.
+  otherwise. A group is narrowed further when the instruments cannot play it at once —
+  readout clocks outside one LO band, amplitudes that would clip, more clocks than the
+  module has sequencers — with the measured figure and the ceiling in the message.
 - `docs`: RFC 0009 — Parallel Calibration. Designs grouping a routine's targets into sets
   that can be measured in one schedule, from a colouring of the coupling graph rather than
   a hand-written list, and records why concurrent submission to one cluster cannot work —

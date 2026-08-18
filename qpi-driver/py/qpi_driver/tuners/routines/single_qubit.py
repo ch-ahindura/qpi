@@ -7,12 +7,14 @@ device parameter — except AllXY, which is a diagnostic and writes none.
 from typing import Any
 
 import logging
+from collections.abc import Sequence
 import math
 
 import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
+from qpi_driver.tuners.base.fusion import add_after, add_together
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.executors.base.rotations import (
     QUARTER_TURN_DEGREES,
@@ -814,23 +816,45 @@ class AllXY(CalibrationRoutine):
     updates = ()
     reads = ("clock_freqs.f01", "rxy.amp180")
 
-    def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
     ) -> Any:
+        """The 21 pairs on every target at once — the sequence is the same on each."""
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
         for index, (first, second) in enumerate(ALLXY_PAIRS):
-            schedule.add(backend.Reset(target))
+            anchor = add_together(schedule, [backend.Reset(t) for t in targets])
             for theta, phi in (first, second):
                 if theta:
-                    schedule.add(backend.Rxy(theta=theta, phi=phi, qubit=target))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
+                    anchor = add_after(
+                        schedule,
+                        [backend.Rxy(theta=theta, phi=phi, qubit=t) for t in targets],
+                        anchor,
+                    )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
+
+    def build_schedule(
+        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+    ) -> Any:
+        return self.build_group_schedule([target], device, config, backend)
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig

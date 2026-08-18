@@ -7,14 +7,27 @@ entirely from each routine's ``depends_on``; nothing else encodes the sequence.
 import logging
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import CalibrationConfig
-from qpi_driver.tuners.base.device import component_for, edge_names, has_path
-from qpi_driver.tuners.base.grouping import couplings_of, groups_of
+from qpi_driver.tuners.base.device import (
+    component_for,
+    edge_names,
+    has_path,
+    read_path,
+)
+from qpi_driver.tuners.base.fusion import channels_of
+from qpi_driver.tuners.base.grouping import (
+    by_output,
+    couplings_of,
+    groups_of,
+    outputs_of,
+    readout_misfit,
+    split_to_fit,
+)
 from qpi_driver.tuners.base.provenance import ProvenanceStore
 from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
 from qpi_driver.tuners.base.routines import (
@@ -32,6 +45,11 @@ log = logging.getLogger(__name__)
 #: Reporting is best-effort — see :meth:`CalibrationDAG.run` — so a sink may
 #: raise without ending a calibration.
 ProgressSink = Callable[[dict[str, Any]], None]
+
+#: Sequencers on one Qblox RF module, which bounds how many clocks an output can carry
+#: at once. A constant rather than a config walk: every RF module in the family has six,
+#: and `parallel.max_group` is the knob for a chip that disagrees.
+SEQUENCERS_PER_MODULE = 6
 
 
 def _worse_than(candidate: CheckOutcome, incumbent: CheckOutcome) -> bool:
@@ -354,7 +372,11 @@ class CalibrationDAG:
         return ", ".join(sorted(producers))
 
     def groups_for(
-        self, name: str, config: CalibrationConfig, device: Any = None
+        self,
+        name: str,
+        config: CalibrationConfig,
+        device: Any = None,
+        backend: SchedulerBackend | None = None,
     ) -> list[list[str]]:
         """Routine *name*'s targets, in the sets that may be measured at once (RFC 0009 §5).
 
@@ -378,17 +400,55 @@ class CalibrationDAG:
             grouped = [[t for t in group if t in wanted] for group in named]
             claimed = {t for group in grouped for t in group}
             # Whatever the config forgot still has to be calibrated.
-            return [group for group in grouped if group] + [
+            groups = [group for group in grouped if group] + [
                 [t] for t in targets if t not in claimed
             ]
+        else:
+            groups = groups_of(
+                targets,
+                adjacency=couplings_of(edge_names(device) or config.target_edges),
+                spacing=parallel.spacing_for(kind),
+                exclude=parallel.exclude,
+                max_group=parallel.max_group,
+            )
+        return self._fitted(groups, device, backend)
 
-        return groups_of(
-            targets,
-            adjacency=couplings_of(edge_names(device) or config.target_edges),
-            spacing=parallel.spacing_for(kind),
-            exclude=parallel.exclude,
-            max_group=parallel.max_group,
-        )
+    def _fitted(
+        self, groups: list[list[str]], device: Any, backend: SchedulerBackend | None
+    ) -> list[list[str]]:
+        """*groups* narrowed to what the instruments can actually play at once (§5.4).
+
+        Bisected rather than refused, and only when both a device and a backend are to
+        hand — a bare `plan` call has neither and gets the colouring as it stands.
+        """
+        if device is None or backend is None:
+            return groups
+        wiring = outputs_of(device)
+        band_hz = float(getattr(backend, "if_limit_hz", 0.0) or 0.0)
+        if not band_hz:
+            return groups
+
+        def misfit(group: Sequence[str]) -> str | None:
+            # Per output, because targets behind different ones share no LO and no DAC
+            # and constrain each other not at all.
+            for shared in by_output(list(group), wiring, "res").values():
+                readouts = [_readout_of(device, target) for target in shared]
+                usable = [pair for pair in readouts if pair is not None]
+                if len(usable) < 2:
+                    continue
+                reason = readout_misfit(
+                    [clock for clock, _ in usable],
+                    [amplitude for _, amplitude in usable],
+                    band_hz=band_hz,
+                    sequencers=SEQUENCERS_PER_MODULE,
+                )
+                if reason is not None:
+                    return reason
+            return None
+
+        return [
+            narrowed for group in groups for narrowed in split_to_fit(group, misfit)
+        ]
 
     def _targets_for(
         self, name: str, config: CalibrationConfig, device: Any = None
@@ -488,11 +548,25 @@ class CalibrationDAG:
                 log.info("%s skipped: no %s it applies to", label, routine.targets)
                 continue
 
-            log.info("%s running on %s", label, ", ".join(targets))
+            groups = self.groups_for(routine_name, config, device, backend)
+            if len(groups) < len(targets):
+                log.info(
+                    "%s running on %s in %d group(s): %s",
+                    label,
+                    ", ".join(targets),
+                    len(groups),
+                    " | ".join(" ".join(group) for group in groups),
+                )
+            else:
+                log.info("%s running on %s", label, ", ".join(targets))
             head = {"step": position, "total": len(order), "routine": routine_name}
-            for target in targets:
-                blocked = ledger.blockers(routine, target)
-                if blocked:
+            for group in groups:
+                runnable: list[str] = []
+                for target in group:
+                    blocked = ledger.blockers(routine, target)
+                    if not blocked:
+                        runnable.append(target)
+                        continue
                     # Not run and not failed: it has nothing to measure against, so
                     # running it would report a confident number off an uncalibrated
                     # chip, and failing it would invent an error that never happened.
@@ -516,25 +590,30 @@ class CalibrationDAG:
                         on_progress,
                         {**head, **_tally(report, skipped, started), "target": target},
                     )
+
+                if not runnable:
                     continue
 
                 # Before the work, so the graph can colour the node it is on rather than
-                # the node it has just left. RFC 0009 §7.1.
+                # the node it has just left, and name every target in flight. RFC 0009 §7.
                 _report_progress(
                     on_progress,
-                    {**head, **_tally(report, skipped, started), "running": [target]},
+                    {**head, **_tally(report, skipped, started), "running": runnable},
                 )
                 ran_any = True
-                target_started = time.monotonic()
+                group_started = time.monotonic()
                 # Before the run, not after: the ledger records what this routine
                 # produced, and a routine that refines its own input would otherwise
                 # look as though it had been given a measured one.
-                priors = ledger.priors(
-                    routine, target, component_for(device, target, routine.targets)
-                )
-                succeeded = self._run_one(
+                priors = {
+                    target: ledger.priors(
+                        routine, target, component_for(device, target, routine.targets)
+                    )
+                    for target in runnable
+                }
+                outcomes = self._run_group(
                     routine,
-                    target,
+                    runnable,
                     device,
                     backend,
                     routine_config,
@@ -542,21 +621,23 @@ class CalibrationDAG:
                     report,
                     priors,
                 )
-                if succeeded:
-                    ledger.produced(routine, target)
-                else:
-                    ledger.unsatisfied(routine, target)
+                for target in runnable:
+                    if outcomes.get(target):
+                        ledger.produced(routine, target)
+                    else:
+                        ledger.unsatisfied(routine, target)
                 log.info(
                     "%s %s %s in %s",
                     label,
-                    target,
-                    "ok" if succeeded else "FAILED",
-                    _human_duration(time.monotonic() - target_started),
+                    ", ".join(runnable),
+                    "ok" if all(outcomes.get(t) for t in runnable) else "FAILED",
+                    _human_duration(time.monotonic() - group_started),
                 )
-                _report_progress(
-                    on_progress,
-                    {**head, **_tally(report, skipped, started), "target": target},
-                )
+                for target in runnable:
+                    _report_progress(
+                        on_progress,
+                        {**head, **_tally(report, skipped, started), "target": target},
+                    )
 
         if not ran_any:
             report.status = "failed"
@@ -579,6 +660,145 @@ class CalibrationDAG:
             skipped,
         )
         return report
+
+    def _run_group(
+        self,
+        routine: CalibrationRoutine,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        routine_config: Any,
+        config: CalibrationConfig,
+        report: CalibrationReport,
+        priors: dict[str, tuple[str, ...]],
+    ) -> dict[str, bool]:
+        """Run *routine* over *targets*, fused into one acquisition where it can be.
+
+        A group of one, or a routine that has not opted into fusion, goes through
+        `_run_one` exactly as it did before any of this existed — which is what keeps
+        every unconverted routine's behaviour identical.
+        """
+        if len(targets) == 1 or not routine.fusable:
+            return {
+                target: self._run_one(
+                    routine,
+                    target,
+                    device,
+                    backend,
+                    routine_config,
+                    config,
+                    report,
+                    priors.get(target, ()),
+                )
+                for target in targets
+            }
+        return self._run_fused(
+            routine, targets, device, backend, routine_config, config, report, priors
+        )
+
+    def _run_fused(
+        self,
+        routine: CalibrationRoutine,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        routine_config: Any,
+        config: CalibrationConfig,
+        report: CalibrationReport,
+        priors: dict[str, tuple[str, ...]],
+    ) -> dict[str, bool]:
+        """One schedule over every target, then one fit per target (RFC 0009 §6.2).
+
+        The acquisition is shared and the analysis is not: each target gets its own
+        channel of the dataset and its own `analyse`, so a refused fit is that target's
+        failure and the rest of the group still lands.
+        """
+        outcomes = {target: False for target in targets}
+        started = time.monotonic()
+        backend.start_accounting()
+        allowance = config.timeout_for(routine.name)
+        try:
+            schedule = routine.build_group_schedule(
+                targets, device, routine_config, backend
+            )
+            dataset = backend.run(schedule, timeout_s=allowance)
+            elapsed = time.monotonic() - started
+            # One arm-and-wait cycle for the whole group, so the ceiling bounds the
+            # group — the sequencers played concurrently and the pulses were one
+            # target's.
+            allowed = max(allowance, backend.total_allowance_s)
+            if elapsed > allowed:
+                raise _over_budget(elapsed, allowed, allowance, routine.name)
+        except Exception as exc:
+            # The acquisition is shared, so its failure is every target's. Recorded once
+            # each, because a routine-and-target is what the report accounts for.
+            log.exception(
+                "routine %s failed on the group %s", routine.name, ", ".join(targets)
+            )
+            for target in targets:
+                report.errors.append(f"{routine.name}[{target}]: {exc}")
+                _record_refused_fit(report, routine, target, exc, started)
+            return outcomes
+
+        sliced = channels_of(dataset, targets)
+        for target in targets:
+            acquisition = sliced.get(target)
+            if acquisition is None:
+                message = "the fused acquisition carried no channel for it"
+                log.error("routine %s on %s: %s", routine.name, target, message)
+                report.errors.append(f"{routine.name}[{target}]: {message}")
+                continue
+            outcomes[target] = self._fit_one(
+                routine,
+                target,
+                acquisition,
+                device,
+                routine_config,
+                report,
+                started,
+                priors.get(target, ()),
+            )
+        return outcomes
+
+    def _fit_one(
+        self,
+        routine: CalibrationRoutine,
+        target: str,
+        dataset: Any,
+        device: Any,
+        routine_config: Any,
+        report: CalibrationReport,
+        started: float,
+        priors: tuple[str, ...] = (),
+    ) -> bool:
+        """Analyse one target's acquisition and record what it produced.
+
+        The tail of `_run_one` from the fit onwards, shared so a fused target is
+        recorded exactly as a sequential one is.
+        """
+        try:
+            params = routine.analyse(dataset, target, device, routine_config)
+            fit = params.pop("fit", None)
+            routine.apply(device, target, params)
+            if routine.is_benchmark:
+                report.add_benchmarks_from(routine.name, target, params)
+            report.add_routine(
+                RoutineResult(
+                    routine_name=routine.name,
+                    target=target,
+                    parameters=params,
+                    timestamp=utc_timestamp(),
+                    duration_s=time.monotonic() - started,
+                    fit=fit,
+                    priors=priors,
+                )
+            )
+            return True
+        except Exception as exc:
+            log.exception("routine %s failed on %s", routine.name, target)
+            report.errors.append(f"{routine.name}[{target}]: {exc}")
+            _record_refused_fit(report, routine, target, exc, started)
+            return False
 
     def _run_one(
         self,
@@ -741,9 +961,25 @@ def utc_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
-def _tally(
-    report: CalibrationReport, skipped: int, started: float
-) -> dict[str, Any]:
+def _readout_of(device: Any, target: str) -> tuple[float, float] | None:
+    """*target*'s readout frequency and pulse amplitude, or ``None`` if either is absent.
+
+    Absent leaves the group as it was: an element with nowhere to keep a readout is not
+    an element whose readout collides with anyone's.
+    """
+    element = component_for(device, target)
+    if element is None:
+        return None
+    try:
+        return (
+            float(read_path(element, "clock_freqs.readout")),
+            float(read_path(element, "measure.pulse_amp")),
+        )
+    except Exception:  # noqa: BLE001 - an unreadable readout imposes no constraint
+        return None
+
+
+def _tally(report: CalibrationReport, skipped: int, started: float) -> dict[str, Any]:
     """The walk's running totals, which every progress event carries.
 
     On the start event too, not only the finish: the server reads whether a target

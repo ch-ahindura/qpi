@@ -94,10 +94,19 @@ of the sweep-size guards move.
 `self._amplitudes_ceiling`, the latter from `full_scale(device.get_element(target), ...)`.
 `escalating` widens a `RoutineConfig` that belongs to the routine, not to a target.
 
-**Eleven routines override `measure`.** `rabi`, `ramsey`, `t1`, `t2_echo`, `drag`,
-`fine_amplitude`, `fine_amplitude_90`, `resonator_spectroscopy`, `rb`,
-`fine_amplitude_12`, `drag_12` — nine of them only to call `escalating`. This is where
-most of a walk's time goes, and §6.5 is about it.
+**Fourteen routines override `measure`.** `resonator_spectroscopy`,
+`qubit_spectroscopy`, `rabi`, `ramsey`, `t1`, `t2_echo`, `drag`, `fine_amplitude`,
+`fine_amplitude_90`, `rb`, `drag_12`, `fine_amplitude_12`, `coupler_anticrossing`,
+`interleaved_rb` — most of them only to call `escalating`. This is where most of a walk's
+time goes, and §6.5 is about it. (An earlier draft said eleven, from a grep that
+truncated.)
+
+**A routine's sweep setpoints are per-routine state, not per-target.** `build_schedule`
+writes `self._frequencies`, `self._amplitudes` and friends, and `analyse` reads them
+back. For a sweep centred on a per-qubit value — every frequency sweep in the graph —
+the grid *differs* between targets, so a fused group would leave `analyse` fitting every
+target against the last one's grid. This is the constraint that decides what can be
+converted, and §6.6 is about it.
 
 **The device config has a coupling graph and no geometry.** A device config names
 elements and edges (an edge carrying `parent_element_name`/`child_element_name`); the
@@ -498,6 +507,23 @@ acquisitions, and `qubit_spectroscopy`, whose next window depends on what the la
 found. Neither is a limitation to design around — a chip has one bias source, and a
 search that branches per qubit is a different experiment per qubit.
 
+### 6.6 What can be converted, and what needs more than a hook
+
+Measured across the graph: **eight** routines store no per-target sweep state and can be
+converted as they stand — `allxy`, `allxy_check`, `readout_discrimination`,
+`readout_fidelity`, `three_state_discrimination`, plus the four edge routines whose grids
+are target-independent (`cz_spectroscopy`, `cz_parametrization`, `conditional_phase`, and
+`cz_chevron`). **Ten** more on the plain path centre a grid on a per-qubit value —
+`resonator_spectroscopy_excited`, `f12_spectroscopy`, `rabi_12`, `ramsey_12`,
+`flux_spectroscopy` and the rest — and need their setpoints moved from routine state to
+per-target state before they can fuse. That is a mechanical but broad change, and it is
+the real content of the phase-4 work rather than the escalation loop alone.
+
+The order matters and was not obvious when §9 was written: **per-target setpoint state is
+a prerequisite for fusing most of the graph**, and `escalating` needs it too, since
+widening a refused target's axis means holding a different grid for that target than for
+its group. §9's phases 3 and 4 are re-scoped accordingly.
+
 ## 7. The dashboard
 
 ### 7.1 The running node has never been drawn
@@ -591,13 +617,17 @@ default, so the walk is unchanged and the phase is provable by unit test and by 
 output. Answers "which components can run together" before anything depends on it being
 right.
 
-**Phase 3 — fusion on the plain path.** `build_group_schedule`, `channel_of`, the group
-loop in `dag.py`, and conversion of the routines that do not override `measure`. The
-value is not the speedup — the expensive nodes are all in phase 4 — it is that the
-channels, the alignment and the demultiplexing are proven on cheap nodes first.
+**Phase 3 — the fusion mechanism, and the routines that need only the hook.**
+`build_group_schedule`, `add_together`/`add_after`, `channel_of`, the group loop and the
+per-output narrowing in `dag.py`, and conversion of the routines with no per-target sweep
+state (§6.6). The value is not the speedup — the expensive nodes come later — it is that
+the channels, the alignment and the demultiplexing are proven first.
 
-**Phase 4 — the eleven that escalate.** §6.5. Group-aware `escalating` with per-subset
-widening. This is where the bulk of the saving arrives.
+**Phase 4 — per-target setpoint state, then the routines that escalate.** §6.6 and §6.5.
+Move each routine's swept setpoints off the routine and onto the target, which is what
+unblocks the ten remaining plain-path nodes *and* group-aware `escalating` with
+per-subset widening. This is where the bulk of the saving arrives, and it is a larger
+piece of work than phase 3.
 
 **Phase 5 — edges.** `edge_spacing`, and fusion for the six edge routines. Last because a
 CZ occupies both its qubits and a flux line, so it has the most conflicts and the least
@@ -633,8 +663,11 @@ Not "the code runs". Each of these is a way the feature can be wrong:
   message carries both figures; one whose amplitudes sum past full scale is split; one
   needing more sequencers than the module has is split.
 - **Fusion.** A fused schedule's per-target operations share a start time — asserted on
-  the compiled schedule's timing, not on the calls made to build it. A group of one
-  compiles identically to today's schedule for that target.
+  the schedule's own timing, not on the calls made to build it, which is why the test
+  harness's schedule stand-in had to start tracking when each operation begins. A group
+  of one goes down the path it did before fusion existed. And a following stage starts
+  after the *longest* operation of the last, since a group whose targets have different
+  pulse durations would otherwise overlap.
 - **Demultiplexing.** Each target's `analyse` receives its own channel. The test that
   matters is the adversarial one: fuse two targets whose correct answers differ, and
   assert each fit lands on its own. A demultiplexer wired to channel zero passes every

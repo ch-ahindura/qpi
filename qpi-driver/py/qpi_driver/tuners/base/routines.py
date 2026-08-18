@@ -12,6 +12,7 @@ the same routine runs under quantify-scheduler and qblox-scheduler alike.
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -154,6 +155,41 @@ class CalibrationRoutine(ABC):
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
         """Compose the schedule for this experiment over *target*."""
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+    ) -> Any:
+        """This experiment over every target in *targets*, in one schedule (RFC 0009 §6.1).
+
+        A fusable routine implements this and lets :meth:`build_schedule` delegate to it
+        with a single target; the default here goes the other way, so a routine not yet
+        converted keeps working and declines a group. :attr:`fusable` is how the walk
+        tells which it has.
+
+        An implementation owes two things `build_schedule` does not. Every target's
+        operations must start together, which `fusion.add_together` does — appending
+        them would make the schedule as long as the sequential run it replaces. And each
+        target's `Measure` must name its own ``acq_channel``, its position in *targets*,
+        because an element's own channel defaults to zero on all of them and the walk
+        slices the result back apart by position.
+        """
+        if len(targets) == 1:
+            return self.build_schedule(targets[0], device, config, backend)
+        raise RoutineError(
+            f"{self.name} cannot measure {len(targets)} targets in one schedule"
+        )
+
+    @property
+    def fusable(self) -> bool:
+        """Whether this routine overrides :meth:`build_group_schedule`."""
+        return (
+            type(self).build_group_schedule
+            is not CalibrationRoutine.build_group_schedule
+        )
 
     @abstractmethod
     def analyse(

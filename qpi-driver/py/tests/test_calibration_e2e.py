@@ -160,7 +160,15 @@ class TestAFullCalibration:
         _execute_calibration({"mode": "full", "job_id": "job-1"}, tuner, config, queue)
 
         reported = [item for item in queue.items if "progress" in item]
-        updates = [item["progress"] for item in reported]
+        # Finishes only. A walk also reports each target *before* it runs (RFC 0009
+        # §7.1), and those carry `running` instead of `target`.
+        updates = [
+            item["progress"] for item in reported if "target" in item["progress"]
+        ]
+        starting = [
+            item["progress"] for item in reported if "running" in item["progress"]
+        ]
+        assert [u["routine"] for u in starting] == [u["routine"] for u in updates]
         assert [u["routine"] for u in updates] == [
             r["routine_name"] for r in queue.items[-1]["report"]["routine_results"]
         ]
