@@ -22,6 +22,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `rabi` and `drag` measure a group at once. `rabi` splits the group when
+  two elements have different amplitude ceilings, since the grid is half of full scale;
+  `drag`'s span is the backend's own, so it never splits.
 - `qpi-driver/py`: `t2_echo` measures a group at once, and a routine whose sweep is derived
   per target splits the group into the subgroups that agree on it. The echo window is
   scaled from each qubit's measured T1 and an idle is dead time on every port at once, so

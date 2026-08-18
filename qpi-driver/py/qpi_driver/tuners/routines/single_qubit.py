@@ -14,7 +14,11 @@ import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
-from qpi_driver.tuners.base.fusion import add_after, add_together
+from qpi_driver.tuners.base.fusion import (
+    add_after,
+    add_together,
+    grouped_by_grid,
+)
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.executors.base.rotations import (
     QUARTER_TURN_DEGREES,
@@ -200,6 +204,39 @@ class Rabi(CalibrationRoutine):
         """Reach further when the fit says the pi pulse was above the sweep."""
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same reaching, widened only for the targets whose pi pulse was above it."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """Targets whose amplitude grid agrees — the ceiling is the element's own."""
+        return grouped_by_grid(targets, lambda t: self._amplitudes(device, t, config))
+
+    def _amplitudes(
+        self, device: Any, target: str, config: RoutineConfig
+    ) -> list[float]:
+        """This target's amplitude grid, half scale by default. See `build_group_schedule`."""
+        return setpoints_of(
+            config,
+            "amplitudes",
+            linear_setpoints(
+                0.0, 0.5 * full_scale(device.get_element(target), "rxy.amp180"), 41
+            ),
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -227,24 +264,49 @@ class Rabi(CalibrationRoutine):
         # a waveform past it clips.
         # Recorded for `_widened` to clamp against, under the same `_<axis>` convention it
         # already reads setpoints by. Without it escalation walks straight past full scale.
-        sweep["amplitudes_ceiling"] = full_scale(
-            device.get_element(target), "rxy.amp180"
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
         )
-        sweep["amplitudes"] = setpoints_of(
-            config,
-            "amplitudes",
-            linear_setpoints(0.0, 0.5 * sweep["amplitudes_ceiling"], 41),
-        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One amplitude sweep driving every target at once, read out per channel."""
+        amplitudes = self._amplitudes(device, targets[0], config)
+        for target in targets:
+            sweeps[target]["amplitudes_ceiling"] = full_scale(
+                device.get_element(target), "rxy.amp180"
+            )
+            sweeps[target]["amplitudes"] = amplitudes
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, amplitude in enumerate(sweep["amplitudes"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.Rxy(theta=180, phi=0, qubit=target, amp180=amplitude))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
+        for index, amplitude in enumerate(amplitudes):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            anchor = add_together(
+                schedule,
+                [
+                    backend.Rxy(theta=180, phi=0, qubit=t, amp180=amplitude)
+                    for t in targets
+                ],
+            )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
 
@@ -761,11 +823,7 @@ class T2Echo(CalibrationRoutine):
         no per-target time axis to give them. Grouped by window, so the qubits that do
         agree are still measured together.
         """
-        by_window: dict[tuple[float, ...], list[str]] = {}
-        for target in targets:
-            grid = tuple(self._delays(device, target, config))
-            by_window.setdefault(grid, []).append(target)
-        return list(by_window.values())
+        return grouped_by_grid(targets, lambda t: self._delays(device, t, config))
 
     def _delays(self, device: Any, target: str, config: RoutineConfig) -> list[float]:
         """This target's echo delays.
@@ -913,6 +971,21 @@ class Drag(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same widening, for the targets whose optimum fell outside the sweep."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -928,34 +1001,61 @@ class Drag(CalibrationRoutine):
         # one is nine orders of magnitude wrong for the other, and being wrong in
         # the large direction does not merely mis-fit: it pushes the derivative
         # term past full scale and the schedule stops compiling.
-        sweep["motzois"] = setpoints_of(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Both sequences on every target at once, two acquisitions per setpoint.
+
+        The grid is the backend's own span either side of zero, so it is the same on every
+        target and the group never splits.
+        """
+        motzois = setpoints_of(
             config,
             "motzois",
             linear_setpoints(-backend.drag_span, backend.drag_span, 31),
         )
+        for target in targets:
+            sweeps[target]["motzois"] = motzois
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
         # X90-Y180 against Y90-X180: the two sequences are equal only at the
         # right beta, so their difference crosses zero there and is linear about it.
-        for index, beta in enumerate(sweep["motzois"]):
-            schedule.add(backend.Reset(target))
+        for index, beta in enumerate(motzois):
             override = {backend.drag_parameter: beta}
-            schedule.add(backend.Rxy(theta=90, phi=0, qubit=target, **override))
-            schedule.add(backend.Rxy(theta=180, phi=90, qubit=target, **override))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=2 * index, bin_mode=backend.BinMode.AVERAGE
+            for offset, pair in enumerate((((90, 0), (180, 90)), ((90, 90), (180, 0)))):
+                add_together(schedule, [backend.Reset(t) for t in targets])
+                anchor = None
+                for theta, phi in pair:
+                    anchor = add_together(
+                        schedule,
+                        [
+                            backend.Rxy(theta=theta, phi=phi, qubit=t, **override)
+                            for t in targets
+                        ],
+                    )
+                add_after(
+                    schedule,
+                    [
+                        backend.Measure(
+                            target,
+                            acq_channel=channel,
+                            acq_index=2 * index + offset,
+                            bin_mode=backend.BinMode.AVERAGE,
+                        )
+                        for channel, target in enumerate(targets)
+                    ],
+                    anchor,
                 )
-            )
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.Rxy(theta=90, phi=90, qubit=target, **override))
-            schedule.add(backend.Rxy(theta=180, phi=0, qubit=target, **override))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=2 * index + 1, bin_mode=backend.BinMode.AVERAGE
-                )
-            )
         return schedule
 
     def analyse(

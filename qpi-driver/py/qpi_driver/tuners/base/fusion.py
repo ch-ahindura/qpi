@@ -12,7 +12,7 @@ shape it already reads. No fit learns that it ran in company.
 """
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -84,6 +84,24 @@ def channel_of(dataset: Any, channel: int) -> Any:
     raise KeyError(
         f"the acquisition has no channel {channel}; it carries {variables or 'nothing'}"
     )
+
+
+def grouped_by_grid(
+    targets: Iterable[str], grid_of: Callable[[str], Iterable[float]]
+) -> list[list[str]]:
+    """*targets* partitioned by the grid each one resolves (RFC 0009 D7).
+
+    What `CalibrationRoutine.compatible_groups` is usually built from: a routine whose
+    sweep is derived per target hands the grid function in and gets back the subgroups
+    that agree. Partitioned rather than isolating the odd one out, so three qubits that
+    agree are still measured together when a fourth does not.
+
+    Order is the targets' own, so the same config always produces the same subgroups.
+    """
+    by_grid: dict[tuple[float, ...], list[str]] = {}
+    for target in targets:
+        by_grid.setdefault(tuple(grid_of(target)), []).append(target)
+    return list(by_grid.values())
 
 
 def channels_of(dataset: Any, targets: Sequence[str]) -> dict[str, Any]:
