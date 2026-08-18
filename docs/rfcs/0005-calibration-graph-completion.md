@@ -518,7 +518,7 @@ came after the machinery. §14 records where the result diverged from §6 and §
      mechanism every calibration routine already uses to sweep a readout, and the same
      one the EF subspace's `ro2`/`ro_3st_opt` will need.
 
-     **What it is worth on this chip, honestly.** The frequency optimum sits about
+     **What it is worth on the simulated chip, honestly.** The frequency optimum sits about
      200 kHz off the resonance — a tenth of a linewidth — so the frequency axis
      contributes almost nothing here, and the node earns its place through the
      amplitude, where signal grows linearly with drive while punch-through only bends

@@ -16,7 +16,7 @@ driver measured, and a value somebody typed in.
 
 That is all "provenance" means here; §2 says it at more length.
 
-The August 2026 chip carried `clock_freqs.f01: 4735509751.238763`. Nine significant
+The August 2026 bring-up carried `clock_freqs.f01: 4735509751.238763`. Nine significant
 figures, so it reads as a measurement, and the qubit was 302 MHz away; the line had
 never been there. Six calibration runs were spent on the consequences. Precision is not
 provenance, and a file that cannot say which it is holding forces every reader, human or
@@ -142,7 +142,7 @@ Not *how old* the measurement is — see §8.
 **Corrected while implementing phase 4: this must not relax the blocking rule.** The
 tempting reading is that a node blocked because its input failed *this* run should run
 anyway when an earlier run measured that input — the device does hold a real number. It is
-wrong, and the August 2026 chip is the counterexample: a failure to *measure* f01 is
+wrong, and the August 2026 bring-up is the counterexample: a failure to *measure* f01 is
 evidence against whatever f01 the file holds, because the usual reason spectroscopy finds
 no line is that the qubit is not where the file says. Running the six nodes behind it
 against last week's value fits the same noise, whatever the value's pedigree. So a failed

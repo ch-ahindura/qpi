@@ -66,7 +66,7 @@ a search but is never required to make one possible.
 | Decision | Resolution |
 |---|---|
 | New operation or event type? | **No.** `calibrate` carries this. Python driver only. |
-| What a `RoutineConfig` means | **Changed, and this is the core of the RFC.** Today a sweep parameter is often load-bearing: omit it and the node cannot work on this chip. After this, every sweep has a derived default that works on any chip the hardware can address; config may only *narrow* a search to save time. A node that cannot run without an operator-supplied range is a bug. |
+| What a `RoutineConfig` means | **Changed, and this is the core of the RFC.** Today a sweep parameter is often load-bearing: omit it and the node cannot work on a given chip. After this, every sweep has a derived default that works on any chip the hardware can address; config may only *narrow* a search to save time. A node that cannot run without an operator-supplied range is a bug. |
 | Where a bound comes from | Hardware config for instrument limits, upstream measurements for physical ones, escalation for the rest. New `tuners/base/limits.py`; the hardware config is already reachable from a routine via `device.hardware_config()`, as `has_flux_port` shows. |
 | Guards as signals | **Changed.** The six "your window is wrong" guards added in August 2026 raise prose. They gain a structured form the caller can act on, so the same detection drives a retry instead of a failure. §6. |
 | Routine interface | **Unchanged.** `measure` already absorbs a routine whose setpoints depend on an earlier acquisition — `qubit_spectroscopy` is the second implementor. No third interface. |
@@ -118,7 +118,7 @@ codebase and was applied once.
 `f12_spectroscopy` centres on `f01 + anharmonicity_prior` and **ignores the config's
 `f12` entirely** — a physical relationship beats an unmeasured field, and its docstring
 says so. That is exactly the pattern this RFC generalises. It is also why that node was
-the only one that ever found the August 2026 chip's qubit: it was the only node
+the only one that ever found the qubit in the August 2026 bring-up: it was the only node
 searching from physics rather than from a prior.
 
 `conditional_phase` sweeps 0–360°. A phase has no range to guess at, so it never had
@@ -268,7 +268,7 @@ Two changes, both cheap:
   and `fit_spectroscopy_power` already fits every row; today it picks the best row and
   discards the rest. Requiring the chosen centre to agree with a second row to within a
   linewidth costs nothing, since the data is already acquired, and noise does not
-  reproduce across powers. On the August 2026 chip this would have refused run one rather
+  reproduce across powers. In the August 2026 bring-up this would have refused run one rather
   than run six: its three rows fitted 782.7 kHz, 8.5 kHz and 28 kHz, which no real line
   does.
 
@@ -412,8 +412,8 @@ after the two classes that need no loop at all.
    register budget, not for a better coefficient.
 
    `drag` is deliberately untouched: §5 proposed centring it on the measured
-   anharmonicity, and nothing measured says the symmetric sweep is wrong. Its failure on
-   the August 2026 chip was contrast, not placement.
+   anharmonicity, and nothing measured says the symmetric sweep is wrong. Its failure in
+   the August 2026 bring-up was contrast, not placement.
 5. **Escalation — done.** `OutOfRange` carries the axis and the direction; `escalating`
    follows it, bounded at three attempts, and leaves an operator who named the axis alone.
    Two directions turned out to be needed rather than one: a flat *decay* wants a longer
@@ -431,7 +431,7 @@ pulled into scope — the accept side of the guards is §6.2.
 
 **A prior is still indistinguishable from a measurement.** After this RFC the driver finds
 the qubit wherever it is, but nothing says whether `clock_freqs.f01` was measured by this
-driver or typed in from a design document. The August 2026 chip carried
+driver or typed in from a design document. The August 2026 bring-up carried
 `f01: 4735509751.238763` — nine significant figures, and the line was never there.
 
 Three things here want that distinction: §2's definition of a prior, §11's "no
@@ -461,7 +461,7 @@ not an index over one.
 ## 11. Skipping what cannot succeed
 
 A node whose prerequisite was never produced cannot measure anything, and running it
-anyway is how one failure became six. The August 2026 chip is the worked example:
+anyway is how one failure became six. The August 2026 bring-up is the worked example:
 `qubit_spectroscopy` failed, and `rabi`, `resonator_spectroscopy_excited`,
 `readout_discrimination`, `allxy`, `drag` and `readout_fidelity` all then measured a
 qubit still in `|0⟩` and reported confident numbers from its noise. Six failures with
@@ -480,7 +480,7 @@ plainly wrong. Twelve of the thirty-three nodes write nothing at all, so nothing
 depend on their output, and some are still depended on in the walk order.
 
 **Disabled is not failed.** `qubit_spectroscopy` depends on `resonator_punchout`, which
-is switched off on the August 2026 chip because its amplitude grid never reaches
+was switched off in the August 2026 bring-up because its amplitude grid never reaches
 punch-through, which phase 3 fixes (§12). `time_of_flight` is off too, and under naive
 propagation disabling either would skip the entire graph beneath it — which is to say,
 everything. That both are off *because* of range bugs this RFC fixes does not help: the
@@ -542,8 +542,8 @@ and `drag` can legitimately run — as can `allxy`, `fine_amplitude`, `rb` and
   produced by design" from "producer switched off". Two read paths —
   `measure.integration_time` and `r12.ef_duration` — have no producer anywhere in the
   graph and are supplied by hand on every chip, so a sole-producer rule fires on them
-  every run; and the August 2026 chip disables `time_of_flight` while its
-  `measure.acq_delay` is a perfectly good hand-set 200 ns. Nothing is lost by waiting:
+  every run; and the August 2026 bring-up disabled `time_of_flight` while its
+  `measure.acq_delay` was a perfectly good hand-set 200 ns. Nothing is lost by waiting:
   the parameter view below already declines to block on either case.
   **Reinstated by RFC 0008 as a report, not an error.** Provenance splits the three cases
   the rule could not: a prior a routine in this run will measure, a prior whose producer is
