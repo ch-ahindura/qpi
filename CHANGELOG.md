@@ -32,6 +32,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   acquisition channel and is fitted from that channel alone, so no routine's `analyse`
   changed. `allxy`, `allxy_check`, `readout_discrimination` and `readout_fidelity` have
   opted in; the rest keep running one target at a time until they do.
+- `qpi-driver/py`: grouping refuses to guess when no coupling graph is readable. With no
+  edges to read, every qubit sat at infinite distance and the colouring returned one group
+  — the most aggressive setting there is, reached by accident. Such a walk now runs its
+  targets one at a time and logs what to configure.
 - `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets
   that can be measured at once, coloured from the coupling graph — `qubit_spacing`,
   `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says

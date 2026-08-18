@@ -390,3 +390,29 @@ class TestTheGroupsAWalkPublishes:
         dag, config = self._dag(enabled=True)
 
         assert dag.groups_for("nope", config) == []
+
+
+class TestAnUnreadableCouplingGraph:
+    """No adjacency must not read as nothing being adjacent (RFC 0009 §5.2)."""
+
+    def _groups(self, targets, edges):
+        config = CalibrationConfig(
+            target_qubits=list(targets),
+            target_edges=list(edges),
+            parallel=ParallelConfig(enabled=True),
+        )
+        dag = CalibrationDAG([StubRoutine("a")], config)
+        return dag.groups_for("a", config)
+
+    def test_targets_run_one_at_a_time_when_nothing_says_what_couples(self):
+        """Otherwise every qubit sits at infinite distance and lands in one group — the
+        most aggressive setting there is, arrived at by accident."""
+        assert self._groups(["q0", "q1", "q2"], []) == [["q0"], ["q1"], ["q2"]]
+
+    def test_one_target_needs_no_coupling_graph(self):
+        assert self._groups(["q0"], []) == [["q0"]]
+
+    def test_a_configured_edge_is_enough_to_group_from(self):
+        groups = self._groups(["q0", "q1", "q2"], ["q0_q1", "q1_q2"])
+
+        assert sorted(sorted(g) for g in groups) == [["q0", "q2"], ["q1"]]

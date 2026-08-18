@@ -961,7 +961,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.backend,
             sweep,
         )
-        assert self._span_of(node) == pytest.approx(
+        assert self._span_of(sweep) == pytest.approx(
             SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
         )
 
@@ -981,7 +981,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.backend,
             sweep,
         )
-        assert self._span_of(node) == pytest.approx(
+        assert self._span_of(sweep) == pytest.approx(
             EXCITED_SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
         )
 
@@ -999,7 +999,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.backend,
             sweep,
         )
-        assert self._span_of(node) > 0.0
+        assert self._span_of(sweep) > 0.0
 
 
 class TestAnAnharmonicityHasToBeATransmons:

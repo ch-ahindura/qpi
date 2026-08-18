@@ -408,9 +408,23 @@ class CalibrationDAG:
                 [t] for t in targets if t not in claimed
             ]
         else:
+            adjacency = couplings_of(edge_names(device) or config.target_edges)
+            if len(targets) > 1 and not adjacency:
+                # No adjacency is not the same as nothing being adjacent. A device whose
+                # edges cannot be read, or a config that targets none, would otherwise
+                # put every qubit at infinite distance and so in one group — the most
+                # aggressive setting available, arrived at by accident.
+                log.warning(
+                    "%s: no coupling graph is readable, so %d targets cannot be grouped "
+                    "safely — running them one at a time. Configure 'target_edges', or "
+                    "name the groups under 'parallel.groups'",
+                    name,
+                    len(targets),
+                )
+                return [[target] for target in targets]
             groups = groups_of(
                 targets,
-                adjacency=couplings_of(edge_names(device) or config.target_edges),
+                adjacency=adjacency,
                 spacing=parallel.spacing_for(kind),
                 exclude=parallel.exclude,
                 max_group=parallel.max_group,

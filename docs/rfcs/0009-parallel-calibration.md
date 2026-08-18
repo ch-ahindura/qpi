@@ -321,6 +321,13 @@ config's target order), so the same config always produces the same groups and a
 reproducible. `max_group` caps a class, which is what keeps a wide chip inside its
 sequencer count.
 
+**Added while implementing phase 2: an unreadable coupling graph is not an empty one.**
+With no edges to read — a config targeting none, or a scheduler whose device no longer
+exposes them — every qubit sits at infinite distance from every other and the colouring
+returns a single group, which is the most aggressive setting available arrived at by
+accident. So a walk with more than one target and no adjacency runs them one at a time
+and says why.
+
 ### 5.3 The configuration
 
 ```yaml
