@@ -21,6 +21,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
+from qpi_driver.tuners.base.fusion import channels_of
 from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting.core import (
     MIN_LINE_REACH,
@@ -483,6 +484,160 @@ class CalibrationRoutine(ABC):
             f"{self.name} exhausted its escalations on {target}: {', '.join(attempted)}"
         )
 
+    def escalating_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """`escalating` over a group: one acquisition for all, re-fused for the refused.
+
+        The saving is that the common case — nothing refuses — is a single acquisition for
+        the whole group. What makes it more than a loop is what happens when one target
+        does refuse: widening for the group would re-sweep the satisfied targets over a
+        range chosen for a different qubit, and `Rabi` documents why that is not free.
+        So only the refused subset is widened, and only it is measured again.
+
+        A widening therefore splits the group, since a config belongs to the targets that
+        asked for it and a fused schedule needs one grid (RFC 0009 D7). Subsequent
+        attempts fuse whatever targets are still on the same config, which on a chip where
+        two qubits refuse the same axis is still one acquisition rather than two.
+
+        Bounded exactly as `escalating` is, per subset: `MAX_ESCALATIONS` attempts, an axis
+        the operator named is left alone, and a widening that cannot move re-raises. Each
+        target's outcome is its own — fitted parameters, or the exception that refused it,
+        so one bad qubit does not cost the group its results (RFC 0009 D8).
+        """
+        # Captured once, before any widening puts its own setpoints into a config: asking
+        # afterwards would find this method's own work and read it as an instruction.
+        operator_set = frozenset(config.params)
+        results: dict[str, dict[str, Any] | Exception] = {}
+        pending: list[tuple[RoutineConfig, list[str]]] = [(config, list(targets))]
+
+        for attempt in range(self.MAX_ESCALATIONS + 1):
+            if not pending:
+                break
+            widened_next: dict[str, tuple[RoutineConfig, list[str]]] = {}
+            for shared, subgroup in pending:
+                fitted, refused = self._fused_pass(
+                    subgroup, device, shared, backend, timeout_s, sweeps
+                )
+                results.update(fitted)
+                for target, refusal in refused.items():
+                    wider = (
+                        None
+                        if attempt == self.MAX_ESCALATIONS
+                        or not isinstance(refusal, OutOfRange)
+                        or refusal.axis in operator_set
+                        else _widened(self, shared, refusal, sweeps[target])
+                    )
+                    if wider is None or wider is shared:
+                        results[target] = refusal
+                        continue
+                    log.info(
+                        "%s on %s: %s — widening %s by %gx and trying again (%d of %d)",
+                        self.name,
+                        target,
+                        refusal,
+                        refusal.axis,
+                        refusal.factor,
+                        attempt + 1,
+                        self.MAX_ESCALATIONS,
+                    )
+                    # Keyed on the config's *contents*, not its identity: `_widened`
+                    # returns a fresh object per call, so two targets refusing the same
+                    # axis by the same factor would otherwise be measured one after the
+                    # other despite asking for exactly the same sweep.
+                    slot = widened_next.setdefault(_axes_key(wider), (wider, []))
+                    slot[1].append(target)
+            pending = list(widened_next.values())
+
+        return results
+
+    def _fused_pass(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, Exception]]:
+        """One fused acquisition, analysed per target. Returns what fitted and what did not.
+
+        A failure of the *acquisition* is every target's, since they shared it; a failure
+        of a fit is only that target's.
+        """
+        try:
+            schedule = self.build_group_schedule(
+                targets, device, config, backend, sweeps
+            )
+            dataset = backend.run(schedule, timeout_s=timeout_s)
+        except Exception as exc:  # noqa: BLE001 - recorded against every target below
+            return {}, {target: exc for target in targets}
+
+        fitted: dict[str, dict[str, Any]] = {}
+        refused: dict[str, Exception] = {}
+        sliced = channels_of(dataset, targets)
+        for target in targets:
+            acquisition = sliced.get(target)
+            if acquisition is None:
+                refused[target] = RoutineError(
+                    "the fused acquisition carried no channel for it"
+                )
+                continue
+            try:
+                fitted[target] = self.analyse(
+                    acquisition, target, device, config, sweeps[target]
+                )
+            except Exception as exc:  # noqa: BLE001 - one target's refusal, not the group's
+                refused[target] = exc
+        return fitted, refused
+
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """This routine's own measurement loop over a group (RFC 0009 §6.5).
+
+        The counterpart of `build_group_schedule` for a routine that overrides `measure`.
+        The default declines a group and delegates a group of one, so a routine that has
+        not opted in behaves exactly as it did.
+        """
+        if len(targets) == 1:
+            target = targets[0]
+            try:
+                return {
+                    target: self.measure(
+                        target,
+                        device,
+                        config,
+                        backend,
+                        sweeps[target],
+                        bias,
+                        timeout_s=timeout_s,
+                    )
+                }
+            except Exception as exc:  # noqa: BLE001 - the walk records it per target
+                return {target: exc}
+        raise RoutineError(
+            f"{self.name} cannot measure {len(targets)} targets in one loop"
+        )
+
+    @property
+    def measures_group(self) -> bool:
+        """Whether this routine overrides :meth:`measure_group`."""
+        return type(self).measure_group is not CalibrationRoutine.measure_group
+
     @property
     def measures_itself(self) -> bool:
         """Whether this routine overrides :meth:`measure`."""
@@ -681,6 +836,15 @@ def _unresolved(message: str, *, axis: str | None, direction: str) -> Exception:
     if axis is None:
         return RoutineError(message)
     return OutOfRange(message, axis=axis, direction=direction, factor=2.0)
+
+
+def _axes_key(config: RoutineConfig) -> str:
+    """A config's sweep parameters as a comparable key, for grouping equal sweeps.
+
+    ``repr`` rather than a frozenset because the values are setpoint *lists*, which are
+    unhashable — and equal lists must produce equal keys, which is the whole point.
+    """
+    return repr(sorted((axis, repr(value)) for axis, value in config.params.items()))
 
 
 def _widened(

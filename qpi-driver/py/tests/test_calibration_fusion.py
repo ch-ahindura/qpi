@@ -17,7 +17,7 @@ from qpi_driver.tuners.base.fusion import (
     channels_of,
 )
 from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
-from qpi_driver.tuners.fitting.core import signal_of
+from qpi_driver.tuners.fitting.core import OutOfRange, signal_of
 from qpi_driver.tuners.routines import ROUTINE_CLASSES
 from tests.utils.simulation import FakeDevice, FakeElement, StubBackend
 from qpi_driver.tuners.base.sweep import Sweep
@@ -153,7 +153,7 @@ class TestSlicingTheAcquisitionApart:
 
 class TestTheHook:
     def test_an_unconverted_routine_declines_a_group(self):
-        routine = _routine("t1")
+        routine = _routine("resonator_relaxation")
         assert not routine.fusable
 
         with pytest.raises(RoutineError, match="cannot measure 3 targets"):
@@ -323,3 +323,110 @@ class TestAFusedWalk:
 
         starts = [u["running"] for u in updates if "running" in u]
         assert starts == [["q0", "q1", "q2"]]
+
+
+class TestEscalationOverAGroup:
+    """RFC 0009 §6.5 — one acquisition for the group, re-fused only for the refused."""
+
+    def _grouped(self, *qubits):
+        """The `_grouped` device, with a backend that answers and counts."""
+        device, _stub = _grouped(*qubits)
+        return device, ChannelBackend([1.0] * len(qubits))
+
+    def _node(self, refuse_until):
+        """A fusable routine whose fit refuses *refuse_until* on the named targets."""
+
+        class Widening(FusableProbe):
+            name = "widening"
+            attempts: list[tuple[str, float]] = []
+
+            def build_group_schedule(self, targets, device, config, backend, sweeps):
+                # A real setpoint list, because that is what `_widened` stretches.
+                reach = [float(r) for r in config.get("reach", [0.0, 1.0])]
+                for target in targets:
+                    sweeps[target]["reach"] = reach
+                return super().build_group_schedule(
+                    targets, device, config, backend, sweeps
+                )
+
+            def analyse(self, dataset, target, device, config, sweep):
+                reach = max(sweep["reach"])
+                self.attempts.append((target, reach))
+                if reach < refuse_until.get(target, 0.0):
+                    raise OutOfRange("too short", axis="reach", factor=4.0)
+                return {"reach": reach}
+
+        node = Widening()
+        node.attempts = []
+        return node
+
+    def test_a_group_that_all_fits_is_one_acquisition(self):
+        node = self._node({})
+        device, backend = self._grouped("q0", "q1", "q2")
+        targets = ["q0", "q1", "q2"]
+
+        results = node.escalating_group(
+            targets, device, RoutineConfig(), backend, 60.0, _sweeps(targets)
+        )
+
+        assert set(results) == set(targets)
+        assert len(backend.runs) == 1, (
+            "nothing refused, so nothing should be re-measured"
+        )
+
+    def test_only_the_refused_target_is_measured_again(self):
+        node = self._node({"q1": 3.0})
+        device, backend = self._grouped("q0", "q1", "q2")
+        targets = ["q0", "q1", "q2"]
+
+        results = node.escalating_group(
+            targets, device, RoutineConfig(), backend, 60.0, _sweeps(targets)
+        )
+
+        assert results["q1"]["reach"] == pytest.approx(4.0)
+        # q0 and q2 fitted on the first pass and were not swept over q1's wider range.
+        assert [t for t, _ in node.attempts if t == "q0"] == ["q0"]
+        assert [t for t, _ in node.attempts if t == "q2"] == ["q2"]
+        assert len(backend.runs) == 2
+
+    def test_two_targets_refusing_the_same_axis_are_refused_together(self):
+        node = self._node({"q0": 3.0, "q2": 3.0})
+        device, backend = self._grouped("q0", "q1", "q2")
+        targets = ["q0", "q1", "q2"]
+
+        node.escalating_group(
+            targets, device, RoutineConfig(), backend, 60.0, _sweeps(targets)
+        )
+
+        # One widened acquisition for both, not one each.
+        assert len(backend.runs) == 2
+
+    def test_a_target_that_never_fits_carries_its_refusal_and_the_rest_land(self):
+        node = self._node({"q1": 1e9})
+        device, backend = self._grouped("q0", "q1")
+        targets = ["q0", "q1"]
+
+        results = node.escalating_group(
+            targets, device, RoutineConfig(), backend, 60.0, _sweeps(targets)
+        )
+
+        assert isinstance(results["q1"], OutOfRange)
+        assert results["q0"]["reach"] == pytest.approx(1.0)
+
+    def test_an_axis_the_operator_named_is_left_alone(self):
+        """RFC 0007 §7 — a named axis is a statement about the chip."""
+        node = self._node({"q0": 3.0})
+        device, backend = self._grouped("q0")
+        targets = ["q0"]
+
+        results = node.escalating_group(
+            targets,
+            device,
+            RoutineConfig(params={"reach": [0.0, 1.0]}),
+            backend,
+            60.0,
+            _sweeps(targets),
+        )
+
+        assert isinstance(results["q0"], OutOfRange)
+        assert len(backend.runs) == 1, "it must not widen an axis the operator set"

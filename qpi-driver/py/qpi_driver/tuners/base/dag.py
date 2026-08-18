@@ -682,6 +682,17 @@ class CalibrationDAG:
         `_run_one` exactly as it did before any of this existed — which is what keeps
         every unconverted routine's behaviour identical.
         """
+        if len(targets) > 1 and routine.measures_group:
+            return self._run_measured_group(
+                routine,
+                targets,
+                device,
+                backend,
+                routine_config,
+                config,
+                report,
+                priors,
+            )
         if len(targets) == 1 or not routine.fusable:
             return {
                 target: self._run_one(
@@ -699,6 +710,105 @@ class CalibrationDAG:
         return self._run_fused(
             routine, targets, device, backend, routine_config, config, report, priors
         )
+
+    def _run_measured_group(
+        self,
+        routine: CalibrationRoutine,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        routine_config: Any,
+        config: CalibrationConfig,
+        report: CalibrationReport,
+        priors: dict[str, tuple[str, ...]],
+    ) -> dict[str, bool]:
+        """A group whose routine runs its own loop — escalation included (RFC 0009 §6.5).
+
+        The loop is the routine's, so unlike `_run_fused` this cannot slice one dataset:
+        a widening splits the group and the pieces are measured separately. What comes back
+        is one outcome per target, fitted parameters or the refusal that ended it.
+        """
+        started = time.monotonic()
+        backend.start_accounting()
+        allowance = config.timeout_for(routine.name)
+        sweeps = {target: Sweep(target) for target in targets}
+        try:
+            measured = routine.measure_group(
+                targets,
+                device,
+                routine_config,
+                backend,
+                sweeps,
+                self.bias,
+                timeout_s=allowance,
+            )
+        except Exception as exc:  # noqa: BLE001 - the loop itself failed, so all of them did
+            log.exception(
+                "routine %s failed on the group %s", routine.name, ", ".join(targets)
+            )
+            for target in targets:
+                report.errors.append(f"{routine.name}[{target}]: {exc}")
+                _record_refused_fit(report, routine, target, exc, started)
+            return {target: False for target in targets}
+
+        # The whole loop under one ceiling, as the sequential path judges `measure`.
+        allowed = max(allowance, backend.total_allowance_s)
+        elapsed = time.monotonic() - started
+        over = (
+            _over_budget(elapsed, allowed, allowance, routine.name)
+            if elapsed > allowed
+            else None
+        )
+
+        outcomes: dict[str, bool] = {}
+        for target in targets:
+            result = over or measured.get(
+                target, RoutineError(f"{routine.name} reported nothing for {target}")
+            )
+            if isinstance(result, Exception):
+                log.error("routine %s on %s: %s", routine.name, target, result)
+                report.errors.append(f"{routine.name}[{target}]: {result}")
+                _record_refused_fit(report, routine, target, result, started)
+                outcomes[target] = False
+                continue
+            outcomes[target] = self._record_measured(
+                routine, target, device, result, report, started, priors.get(target, ())
+            )
+        return outcomes
+
+    def _record_measured(
+        self,
+        routine: CalibrationRoutine,
+        target: str,
+        device: Any,
+        params: dict[str, Any],
+        report: CalibrationReport,
+        started: float,
+        priors: tuple[str, ...],
+    ) -> bool:
+        """Write back and record what a routine's own loop measured for one target."""
+        try:
+            fit = params.pop("fit", None)
+            routine.apply(device, target, params)
+            if routine.is_benchmark:
+                report.add_benchmarks_from(routine.name, target, params)
+            report.add_routine(
+                RoutineResult(
+                    routine_name=routine.name,
+                    target=target,
+                    parameters=params,
+                    timestamp=utc_timestamp(),
+                    duration_s=time.monotonic() - started,
+                    fit=fit,
+                    priors=priors,
+                )
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001 - a write-back failure is this target's
+            log.exception("routine %s could not apply on %s", routine.name, target)
+            report.errors.append(f"{routine.name}[{target}]: {exc}")
+            _record_refused_fit(report, routine, target, exc, started)
+            return False
 
     def _run_fused(
         self,

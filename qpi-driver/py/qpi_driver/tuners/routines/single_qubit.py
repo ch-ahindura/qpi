@@ -620,6 +620,21 @@ class T1(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same escalation over a group, widening only for the targets that refuse."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -628,20 +643,47 @@ class T1(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        sweep["delays"] = setpoints_of(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Excite every target, wait, and read them all out on their own channel.
+
+        The delays are one grid for the group, which is what lets it be one schedule: an
+        idle is dead time on every port at once, so there is nothing per-target to sweep.
+        """
+        delays = setpoints_of(
             config, "delays", linear_setpoints(0.0, DEFAULT_COHERENCE_WINDOW_S, 41)
         )
+        for target in targets:
+            sweeps[target]["delays"] = delays
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(sweep["delays"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
+        for index, delay in enumerate(delays):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            anchor = add_together(schedule, [backend.X(t) for t in targets])
             backend.idle(schedule, delay)
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
 

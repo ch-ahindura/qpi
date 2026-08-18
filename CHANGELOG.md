@@ -22,6 +22,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a routine that runs its own escalation loop can run it over a group.
+  One acquisition serves every target, and a fit that refuses widens the sweep for that
+  target alone — widening the group would re-sweep the satisfied targets over a range
+  chosen for a different qubit. Targets refusing the same axis are measured together.
+  `t1` is the first converted.
 - `qpi-driver/py`: a grouped routine measures its targets in one schedule, so a group
   costs one arm-and-wait cycle instead of one per target. Each target names its own
   acquisition channel and is fitted from that channel alone, so no routine's `analyse`
