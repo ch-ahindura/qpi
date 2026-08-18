@@ -14,7 +14,7 @@ DOCS_SITE_OUT := bin/.docs-site
 # grouping and fusion. The last two qualify where the routines do not: they are pure
 # functions over a config and a dataset, with no instrument behind them. Everything else is reported but not gated —
 # see cov-py.
-PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py,qpi_driver/tuners/base/grouping.py,qpi_driver/tuners/base/fusion.py
+PY_COV_INCLUDE := qpi_driver/cli.py,qpi_driver/sdk.py,qpi_driver/events.py,qpi_driver/paths.py,qpi_driver/options.py,qpi_driver/builtins/*.py,qpi_driver/executors/__init__.py,qpi_driver/executors/base/*.py,qpi_driver/executors/mock/*.py,qpi_driver/tuners/base/grouping.py,qpi_driver/tuners/base/fusion.py,qpi_driver/tuners/base/sweep.py
 PY_COV_MIN := 96
 
 # `uv sync` reinstalls qblox_instruments, and macOS strips the code signature

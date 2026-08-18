@@ -13,7 +13,6 @@ build to the fit. Keyed by axis name rather than held as attributes because that
 that axis and no other.
 """
 
-from collections.abc import Iterator
 from typing import Any
 
 
@@ -46,17 +45,8 @@ class Sweep:
     def __contains__(self, axis: str) -> bool:
         return axis in self.axes
 
-    def __iter__(self) -> Iterator[str]:
-        return iter(self.axes)
-
-    def __len__(self) -> int:
-        return len(self.axes)
-
     def get(self, axis: str, default: Any = None) -> Any:
         return self.axes.get(axis, default)
-
-    def setdefault(self, axis: str, setpoints: Any) -> Any:
-        return self.axes.setdefault(axis, setpoints)
 
     def __repr__(self) -> str:
         return f"Sweep({self.target!r}, {', '.join(sorted(self.axes))})"
