@@ -1,6 +1,8 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Draft
+- **Status:** Partially implemented. Phases 1–3 done; phase 4's mechanism done with 5 of
+  33 routines converted; phases 5–6 open. §9 records what each phase covers and the
+  status line under it says where each stands.
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-18
 - **Depends on:** RFC 0004 (the walk, the progress event, the report), RFC 0005 (the
@@ -605,6 +607,15 @@ want one, because physical distance is the wrong metric for the question groupin
 ## 9. Implementation plan
 
 Six phases. Each is separately valuable and separately revertable.
+
+**Where this stands.** Phases 1 and 2 are done. Phase 3's mechanism is done and four
+routines are converted (`allxy`, `allxy_check`, `readout_discrimination`,
+`readout_fidelity`). Phase 4's mechanism is done — the per-target `Sweep`, group-aware
+`escalating`, and the `measure_group` hook — with `t1` converted as the first of the
+eleven that measure themselves; the other ten are mechanical applications of it and each
+wants its own group schedule and test. Phases 5 and 6 are open. Grouping is off unless
+`calibration.yml` says otherwise, so none of this changes an existing chip's walk until
+an operator turns it on.
 
 **Phase 1 — the node in flight.** §7.1. A pre-work progress event in `dag.py`, a
 completion event for a skipped target, the `running` branch in `advanceNodes`, the field
