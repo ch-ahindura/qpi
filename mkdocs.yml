@@ -60,6 +60,9 @@ nav:
       - 0003 Driver Extensibility: rfcs/0003-driver-extensibility.md
       - 0004 Calibration Tuners: rfcs/0004-calibration-tuners.md
       - 0005 Calibration Graph Completion: rfcs/0005-calibration-graph-completion.md
+      - 0006 The Calibration Graph in the Dashboard: rfcs/0006-calibration-graph-in-the-dashboard.md
+      - 0007 Calibration Without Priors: rfcs/0007-calibration-without-priors.md
+      - 0008 Parameter Provenance: rfcs/0008-parameter-provenance.md
   - Changelog: changelog.md
 
 markdown_extensions:
