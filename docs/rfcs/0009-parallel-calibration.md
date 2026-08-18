@@ -511,9 +511,9 @@ search that branches per qubit is a different experiment per qubit.
 
 Measured across the graph: **eight** routines store no per-target sweep state and can be
 converted as they stand — `allxy`, `allxy_check`, `readout_discrimination`,
-`readout_fidelity`, `three_state_discrimination`, plus the four edge routines whose grids
-are target-independent (`cz_spectroscopy`, `cz_parametrization`, `conditional_phase`, and
-`cz_chevron`). **Ten** more on the plain path centre a grid on a per-qubit value —
+`readout_fidelity` and `three_state_discrimination`, plus the four edge routines whose
+grids are target-independent (`cz_spectroscopy`, `cz_parametrization`,
+`conditional_phase`, `cz_chevron`), which phase 5 takes. The first four are converted. **Ten** more on the plain path centre a grid on a per-qubit value —
 `resonator_spectroscopy_excited`, `f12_spectroscopy`, `rabi_12`, `ramsey_12`,
 `flux_spectroscopy` and the rest — and need their setpoints moved from routine state to
 per-target state before they can fuse. That is a mechanical but broad change, and it is

@@ -19,12 +19,14 @@ answer.
 from typing import Any
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
+from qpi_driver.tuners.base.fusion import add_after, add_together
 from qpi_driver.tuners.base.device import (
     measured_linewidth,
     read_path,
@@ -470,39 +472,60 @@ class ReadoutDiscrimination(CalibrationRoutine):
         "rxy.amp180",
     )
 
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+    ) -> Any:
+        """|0> and |1> on every target at once — the preparation is the same on each."""
+        shots = int(config.get("shots", 2000))
+        schedule = backend.new_schedule(f"{self.name}", repetitions=shots)
+        points = {
+            target: _operating_point(device.get_element(target)) for target in targets
+        }
+        for target, point in points.items():
+            if point:
+                # At the point that will be used, not at the one the calibration reads
+                # on. A line fitted where the clouds are not is a line fitted somewhere
+                # else, which is the whole reason this depends on
+                # `readout_operating_point`.
+                schedule.add(
+                    backend.SetClockFrequency(
+                        clock=f"{target}.ro", clock_freq_new=point["frequency"]
+                    )
+                )
+        # Single shots, not an average: the whole measurement is the *distribution* of
+        # each cloud, and its width is what sets the threshold and the fidelity.
+        for index, prepare in enumerate((0, 1)):
+            anchor = add_together(schedule, [backend.Reset(t) for t in targets])
+            if prepare:
+                anchor = add_after(schedule, [backend.X(t) for t in targets], anchor)
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.APPEND,
+                        **(
+                            {"pulse_amp": points[target]["pulse_amp"]}
+                            if points[target]
+                            else {}
+                        ),
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
+            )
+        return schedule
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        shots = int(config.get("shots", 2000))
-        schedule = backend.new_schedule(f"{self.name}", repetitions=shots)
-        point = _operating_point(device.get_element(target))
-        if point:
-            # At the point that will be used, not at the one the calibration reads on.
-            # A line fitted where the clouds are not is a line fitted somewhere else,
-            # which is the whole reason this depends on `readout_operating_point`.
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=point["frequency"]
-                )
-            )
-        measure_kwargs = {"pulse_amp": point["pulse_amp"]} if point else {}
-        # Single shots, not an average: the whole measurement is the *distribution* of
-        # each cloud, and its width is what sets the threshold and the fidelity. An
-        # averaged acquisition gives two points and no way to say how often they are
-        # confused.
-        for index, prepare in enumerate((0, 1)):
-            schedule.add(backend.Reset(target))
-            if prepare:
-                schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.APPEND,
-                    **measure_kwargs,
-                )
-            )
-        return schedule
+        return self.build_group_schedule([target], device, config, backend)
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
@@ -619,35 +642,59 @@ class ReadoutFidelity(CalibrationRoutine):
         "rxy.amp180",
     )
 
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+    ) -> Any:
+        """|0> and |1> on every target at once — the preparation is the same on each."""
+        shots = int(config.get("shots", 2000))
+        schedule = backend.new_schedule(self.name, repetitions=shots)
+        points = {
+            target: _operating_point(device.get_element(target)) for target in targets
+        }
+        for target, point in points.items():
+            if point:
+                # Where the discriminator was fitted, which is where the shots it
+                # grades will be taken. Reading anywhere else measures a line against
+                # clouds it was not drawn for.
+                schedule.add(
+                    backend.SetClockFrequency(
+                        clock=f"{target}.ro", clock_freq_new=point["frequency"]
+                    )
+                )
+        # Single shots, not an average: the whole measurement is the *distribution* of
+        # each cloud, and its width is what sets the threshold and the fidelity.
+        for index, prepare in enumerate((0, 1)):
+            anchor = add_together(schedule, [backend.Reset(t) for t in targets])
+            if prepare:
+                anchor = add_after(schedule, [backend.X(t) for t in targets], anchor)
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.APPEND,
+                        **(
+                            {"pulse_amp": points[target]["pulse_amp"]}
+                            if points[target]
+                            else {}
+                        ),
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
+            )
+        return schedule
+
     def build_schedule(
         self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
     ) -> Any:
-        shots = int(config.get("shots", 2000))
-        schedule = backend.new_schedule(self.name, repetitions=shots)
-        point = _operating_point(device.get_element(target))
-        if point:
-            # Where the discriminator was fitted, which is where the shots it grades
-            # will be taken. Reading anywhere else measures a line against clouds it
-            # was not drawn for.
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=point["frequency"]
-                )
-            )
-        measure_kwargs = {"pulse_amp": point["pulse_amp"]} if point else {}
-        for index, prepare in enumerate((0, 1)):
-            schedule.add(backend.Reset(target))
-            if prepare:
-                schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.APPEND,
-                    **measure_kwargs,
-                )
-            )
-        return schedule
+        return self.build_group_schedule([target], device, config, backend)
 
     def analyse(
         self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig

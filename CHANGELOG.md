@@ -20,8 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - `qpi-driver/py`: a grouped routine measures its targets in one schedule, so a group
   costs one arm-and-wait cycle instead of one per target. Each target names its own
   acquisition channel and is fitted from that channel alone, so no routine's `analyse`
-  changed. `allxy` and `allxy_check` have opted in; the rest keep running one target at a
-  time until they do.
+  changed. `allxy`, `allxy_check`, `readout_discrimination` and `readout_fidelity` have
+  opted in; the rest keep running one target at a time until they do.
 - `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets
   that can be measured at once, coloured from the coupling graph — `qubit_spacing`,
   `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says
