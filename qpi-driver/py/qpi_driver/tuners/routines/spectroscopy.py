@@ -194,7 +194,7 @@ class _ReadoutTraceRoutine(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
-        self._restore = {
+        sweep["restore"] = {
             "measure.acq_delay": read_path(element, "measure.acq_delay"),
             "measure.integration_time": read_path(element, "measure.integration_time"),
         }
@@ -233,7 +233,7 @@ class _ReadoutTraceRoutine(CalibrationRoutine):
             # and the long window this routine set to make its own measurement
             # possible. `apply` writes the calibrated value over the restored one.
             element = device.get_element(target)
-            for path, value in self._restore.items():
+            for path, value in sweep["restore"].items():
                 write_path(element, path, value)
 
 
@@ -364,15 +364,15 @@ class ResonatorSpectroscopy(CalibrationRoutine):
     ) -> Any:
         # Recorded for escalation to read back, under the `_<axis>` convention `_widened`
         # already uses for setpoint lists.
-        self._span = float(config.get("span", self.SPAN))
-        self._frequencies = _frequency_sweep(
+        sweep["span"] = float(config.get("span", self.SPAN))
+        sweep["frequencies"] = _frequency_sweep(
             config, device, target, "readout", default_span=self.SPAN, backend=backend
         )
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(self._frequencies):
+        for index, frequency in enumerate(sweep["frequencies"]):
             schedule.add(backend.Reset(target))
             schedule.add(
                 backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
@@ -392,14 +392,14 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        fitted = fit_resonator_spectroscopy(sweep["frequencies"], signal_of(dataset))
         # The root of the graph, and the one frequency every other node reads at.
         # It had no guard: a 72% dip confined to one 400 kHz bin was fitted as a
         # 2379 Hz linewidth at Q = 2.9 million, and the centre it wrote was 47 kHz
         # off the deepest sample it had actually measured.
         # span so a flat window widens and a line thinner than the grid gets a
         # finer one, instead of both ending the run (RFC 0007 §11.2).
-        require_resolved_line(fitted, self._frequencies, axis="span")
+        require_resolved_line(fitted, sweep["frequencies"], axis="span")
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -454,14 +454,14 @@ class ResonatorSpectroscopy(CalibrationRoutine):
             config, device, target
         )
         centre = _current_clock(device, target, "readout")
-        self._check_frequencies = [centre - span / 2, centre, centre + span / 2]
-        self._check_span = span
+        sweep["check_frequencies"] = [centre - span / 2, centre, centre + span / 2]
+        sweep["check_span"] = span
 
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
             f"{self.name}_check", repetitions=int(config.get("check_shots", 1024))
         )
-        for index, frequency in enumerate(self._check_frequencies):
+        for index, frequency in enumerate(sweep["check_frequencies"]):
             schedule.add(backend.Reset(target))
             schedule.add(
                 backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
@@ -487,7 +487,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
                 f"readout check expected 3 acquisitions, got {signal.size}"
             )
         low, centre, high = (float(signal[i]) for i in range(3))
-        step = self._check_span / 2.0
+        step = sweep["check_span"] / 2.0
 
         # Vertex of the parabola through the three points, in units of *step*.
         denominator = low - 2.0 * centre + high
@@ -572,14 +572,14 @@ class ResonatorPunchout(CalibrationRoutine):
         # some 26 dB short of what the module can emit, which is to say it cannot find it
         # at all. This is the §5 hardware bound that got the node switched off on the
         # August 2026 chips, and that §12 recorded as fixed in phase 3 when it was not.
-        self._amplitudes = setpoints_of(
+        sweep["amplitudes"] = setpoints_of(
             config,
             "amplitudes",
             linear_setpoints(
                 0.01, full_scale(device.get_element(target), "measure.pulse_amp"), 11
             ),
         )
-        self._frequencies = _frequency_sweep(
+        sweep["frequencies"] = _frequency_sweep(
             config, device, target, "readout", default_span=20e6, backend=backend
         )
         clock = f"{target}.ro"
@@ -587,8 +587,8 @@ class ResonatorPunchout(CalibrationRoutine):
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for power in self._amplitudes:
-            for frequency in self._frequencies:
+        for power in sweep["amplitudes"]:
+            for frequency in sweep["frequencies"]:
                 schedule.add(backend.Reset(target))
                 schedule.add(
                     backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
@@ -613,8 +613,8 @@ class ResonatorPunchout(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        rows = len(self._amplitudes)
-        columns = len(self._frequencies)
+        rows = len(sweep["amplitudes"])
+        columns = len(sweep["frequencies"])
         if signal.size < rows * columns:
             raise RoutineError(
                 f"punchout expected {rows * columns} acquisitions, got {signal.size}"
@@ -624,9 +624,9 @@ class ResonatorPunchout(CalibrationRoutine):
         frequencies = []
         for row in range(rows):
             chunk = signal[row * columns : (row + 1) * columns]
-            fitted = fit_resonator_spectroscopy(self._frequencies, chunk)
+            fitted = fit_resonator_spectroscopy(sweep["frequencies"], chunk)
             frequencies.append(fitted["readout_frequency"])
-        return fit_punchout(self._amplitudes, frequencies)
+        return fit_punchout(sweep["amplitudes"], frequencies)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
@@ -665,13 +665,13 @@ class ResonatorPunchout(CalibrationRoutine):
         """
         element = device.get_element(target)
         power = float(read_path(element, "measure.pulse_amp"))
-        self._check_powers = [power, power / 2.0]
+        sweep["check_powers"] = [power, power / 2.0]
         centre = _current_clock(device, target, "readout")
         span = float(config.get("check_span", 0.0)) or 6.0 * self._check_linewidth(
             config, device, target
         )
         points = int(config.get("check_points", 8))
-        self._check_frequencies = linear_setpoints(
+        sweep["check_frequencies"] = linear_setpoints(
             centre - span / 2, centre + span / 2, points
         )
 
@@ -680,8 +680,8 @@ class ResonatorPunchout(CalibrationRoutine):
             f"{self.name}_check", repetitions=int(config.get("check_shots", 512))
         )
         index = 0
-        for probe in self._check_powers:
-            for frequency in self._check_frequencies:
+        for probe in sweep["check_powers"]:
+            for frequency in sweep["check_frequencies"]:
                 schedule.add(backend.Reset(target))
                 schedule.add(
                     backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
@@ -714,14 +714,14 @@ class ResonatorPunchout(CalibrationRoutine):
         sweep: Sweep,
     ) -> CheckOutcome:
         signal = signal_of(dataset)
-        columns = len(self._check_frequencies)
+        columns = len(sweep["check_frequencies"])
         if signal.size < 2 * columns:
             raise RoutineError(
                 f"punchout check expected {2 * columns} acquisitions, got {signal.size}"
             )
         resonances = [
             fit_resonator_spectroscopy(
-                self._check_frequencies, signal[row * columns : (row + 1) * columns]
+                sweep["check_frequencies"], signal[row * columns : (row + 1) * columns]
             )["readout_frequency"]
             for row in range(2)
         ]
@@ -774,7 +774,7 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
-        self._frequencies = _frequency_sweep(
+        sweep["frequencies"] = _frequency_sweep(
             config,
             device,
             target,
@@ -785,12 +785,12 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         )
         # The reference `analyse` differences against, read here rather than there: a
         # prerequisite has to be readable before the acquisition to be one at all.
-        self._ground = _current_clock(device, target, "readout")
+        sweep["ground"] = _current_clock(device, target, "readout")
         clock = f"{target}.ro"
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(self._frequencies):
+        for index, frequency in enumerate(sweep["frequencies"]):
             schedule.add(backend.Reset(target))
             schedule.add(backend.X(target))
             schedule.add(
@@ -811,10 +811,10 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
-        require_resolved_line(fitted, self._frequencies)
+        fitted = fit_resonator_spectroscopy(sweep["frequencies"], signal_of(dataset))
+        require_resolved_line(fitted, sweep["frequencies"])
         excited = fitted["readout_frequency"]
-        ground = self._ground
+        ground = sweep["ground"]
         shift = 0.5 * (excited - ground)
         linewidth = float(fitted["linewidth"])
         # The one place the X gate is checked against a resonance instead of against
@@ -1028,7 +1028,7 @@ class QubitSpectroscopy(CalibrationRoutine):
                 float(config.get("search_span", self.SEARCH_SPAN)) / 1e6,
             )
 
-        found, width = self._search(target, device, config, backend, timeout_s)
+        found, width = self._search(target, device, config, backend, timeout_s, sweep)
         confirming = RoutineConfig(
             enabled=config.enabled,
             params={
@@ -1090,6 +1090,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> tuple[float, float]:
         """Where the strongest line in a wide window is, and roughly how wide.
 
@@ -1137,6 +1138,7 @@ class QubitSpectroscopy(CalibrationRoutine):
             [amplitude],
             backend,
             int(config.get("search_shots", 256)),
+            sweep,
         )
         signal = signal_of(backend.run(schedule, timeout_s=timeout_s))
 
@@ -1251,6 +1253,7 @@ class QubitSpectroscopy(CalibrationRoutine):
             self._drive_amplitudes(config, device, target),
             backend,
             int(config.get("shots", 1024)),
+            sweep,
         )
 
     def _probe_schedule(
@@ -1260,17 +1263,18 @@ class QubitSpectroscopy(CalibrationRoutine):
         amplitudes: list[float],
         backend: SchedulerBackend,
         shots: int,
+        sweep: Sweep,
     ) -> Any:
         # Recorded here rather than by each caller, so `analyse` cannot read a grid other
         # than the one the schedule it is handed actually swept — which two passes over
         # different windows makes a live possibility rather than a theoretical one.
-        self._frequencies = frequencies
-        self._drive_amps = amplitudes
+        sweep["frequencies"] = frequencies
+        sweep["drive_amps"] = amplitudes
         # Recorded for `_widened` to clamp against, under the `_<axis>` convention it
         # reads setpoints by. Without it escalation walks straight past full scale and
         # the compiler refuses the waveform — `Rabi` carries the same line for the same
         # reason. A drive amplitude is a fraction of full scale, so that is the bound.
-        self._drive_amps_ceiling = MAX_SPECTROSCOPY_AMPLITUDE
+        sweep["drive_amps_ceiling"] = MAX_SPECTROSCOPY_AMPLITUDE
 
         clock = f"{target}.01"
         # A weak drive at the calibrated pulse shape, deliberately.
@@ -1331,19 +1335,19 @@ class QubitSpectroscopy(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        columns = len(self._frequencies)
-        expected = len(self._drive_amps) * columns
+        columns = len(sweep["frequencies"])
+        expected = len(sweep["drive_amps"]) * columns
         if signal.size < expected:
             raise RoutineError(
                 f"qubit spectroscopy expected {expected} acquisitions, got {signal.size}"
             )
-        rows = signal[:expected].reshape(len(self._drive_amps), columns)
-        fitted = fit_spectroscopy_power(self._drive_amps, self._frequencies, rows)
+        rows = signal[:expected].reshape(len(sweep["drive_amps"]), columns)
+        fitted = fit_spectroscopy_power(sweep["drive_amps"], sweep["frequencies"], rows)
         # The centre is still written — `ramsey` refines it either way — but a line wider
         # than the window it was fitted in has a linewidth nobody measured.
         return {
             **fitted,
-            "unresolved": require_resolved_line(fitted, self._frequencies),
+            "unresolved": require_resolved_line(fitted, sweep["frequencies"]),
         }
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -1410,7 +1414,7 @@ class F12Spectroscopy(CalibrationRoutine):
             centre = self._f01 + offset
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
-        self._frequencies = setpoints_of(
+        sweep["frequencies"] = setpoints_of(
             config,
             "frequencies",
             linear_setpoints(centre - span / 2, centre + span / 2, points),
@@ -1428,19 +1432,19 @@ class F12Spectroscopy(CalibrationRoutine):
         # pulse is already the point where `_drive_ef`'s neglected off-resonant 0-1
         # term starts to matter, and this routine only has to find the line for
         # `rabi_12` to refine.
-        self._drive_amps = self._drive_amplitudes(config, device, target)
+        sweep["drive_amps"] = self._drive_amplitudes(config, device, target)
         # Recorded for `_widened` to clamp against, under the `_<axis>` convention it
         # reads setpoints by. Without it escalation walks straight past full scale and
         # the compiler refuses the waveform — `Rabi` carries the same line for the same
         # reason. A drive amplitude is a fraction of full scale, so that is the bound.
-        self._drive_amps_ceiling = MAX_SPECTROSCOPY_AMPLITUDE
+        sweep["drive_amps_ceiling"] = MAX_SPECTROSCOPY_AMPLITUDE
         duration = float(config.get("duration", 20e-9))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
         index = 0
-        for amplitude in self._drive_amps:
-            for frequency in self._frequencies:
+        for amplitude in sweep["drive_amps"]:
+            for frequency in sweep["frequencies"]:
                 schedule.add(backend.Reset(target))
                 # Into |1> first, which is what makes this the *ef* transition rather
                 # than a second look at 0-1.
@@ -1513,21 +1517,21 @@ class F12Spectroscopy(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        columns = len(self._frequencies)
-        expected = len(self._drive_amps) * columns
+        columns = len(sweep["frequencies"])
+        expected = len(sweep["drive_amps"]) * columns
         if signal.size < expected:
             raise RoutineError(
                 f"f12 spectroscopy expected {expected} acquisitions for "
-                f"{len(self._drive_amps)} amplitudes x {columns} frequencies, got "
+                f"{len(sweep['drive_amps'])} amplitudes x {columns} frequencies, got "
                 f"{signal.size}"
             )
         fitted = fit_spectroscopy_power(
-            np.asarray(self._drive_amps),
-            np.asarray(self._frequencies),
-            signal[:expected].reshape(len(self._drive_amps), columns),
+            np.asarray(sweep["drive_amps"]),
+            np.asarray(sweep["frequencies"]),
+            signal[:expected].reshape(len(sweep["drive_amps"]), columns),
         )
         try:
-            require_resolved_line(fitted, self._frequencies)
+            require_resolved_line(fitted, sweep["frequencies"])
         except (FitError, RoutineError) as unresolved:
             # The prior stands. Nothing here can invent an f12, but the last one measured
             # is still the best available, and every ef node reads `clock_freqs.f12` — so
@@ -1633,10 +1637,10 @@ class FluxSpectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._flux_offsets = setpoints_of(
+        sweep["flux_offsets"] = setpoints_of(
             config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11)
         )
-        self._frequencies = _frequency_sweep(
+        sweep["frequencies"] = _frequency_sweep(
             config, device, target, "f01", default_span=100e6, backend=backend
         )
         clock = f"{target}.01"
@@ -1646,8 +1650,8 @@ class FluxSpectroscopy(CalibrationRoutine):
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for offset in self._flux_offsets:
-            for frequency in self._frequencies:
+        for offset in sweep["flux_offsets"]:
+            for frequency in sweep["frequencies"]:
                 schedule.add(backend.Reset(target))
                 schedule.add(
                     backend.SquarePulse(
@@ -1675,22 +1679,22 @@ class FluxSpectroscopy(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        columns = len(self._frequencies)
+        columns = len(sweep["frequencies"])
         arc = []
-        for row in range(len(self._flux_offsets)):
+        for row in range(len(sweep["flux_offsets"])):
             chunk = signal[row * columns : (row + 1) * columns]
             if chunk.size < columns:
                 break
             arc.append(
-                fit_qubit_spectroscopy(self._frequencies, chunk)["clock_freq_01"]
+                fit_qubit_spectroscopy(sweep["frequencies"], chunk)["clock_freq_01"]
             )
         if not arc:
             raise RoutineError("flux spectroscopy produced no usable frequency arc")
 
         sweet_spot = max(range(len(arc)), key=lambda i: arc[i])
         return {
-            "flux_offsets": list(self._flux_offsets[: len(arc)]),
+            "flux_offsets": list(sweep["flux_offsets"][: len(arc)]),
             "frequencies": arc,
-            "sweet_spot_offset": float(self._flux_offsets[sweet_spot]),
+            "sweet_spot_offset": float(sweep["flux_offsets"][sweet_spot]),
             "sweet_spot_frequency": float(arc[sweet_spot]),
         }

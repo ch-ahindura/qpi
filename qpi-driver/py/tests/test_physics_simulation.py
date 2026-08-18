@@ -187,7 +187,7 @@ class TestSpectroscopy:
 
         spectroscopy.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.qubit_spectroscopy(
-            spectroscopy._frequencies, spectroscopy._drive_amps
+            sweep["frequencies"], sweep["drive_amps"]
         )
         fitted = spectroscopy.analyse(acquisition, "q0", device, config, sweep)
 
@@ -195,7 +195,7 @@ class TestSpectroscopy:
         # Chosen from the sweep, not from the config: the master equation broadens the
         # line at the top of the range and buries it in noise at the bottom, so a power
         # in between has to win on its own.
-        assert fitted["drive_amplitude"] in spectroscopy._drive_amps
+        assert fitted["drive_amplitude"] in sweep["drive_amps"]
 
         # Applying it moves the device onto the true frequency.
         spectroscopy.apply(device, "q0", fitted)
@@ -229,11 +229,12 @@ class TestSpectroscopy:
         chip = dataclasses.replace(simulator)
         device = device_for(chip)
         node = routine("qubit_spectroscopy")
+        sweep = Sweep("q0")
         true_f01 = chip.f01 * GHZ
         write_path(device.get_element("q0"), "clock_freqs.f01", true_f01 - 250e6)
 
         found, width = node._search(
-            "q0", device, RoutineConfig(params={}), SimulatedBackend(chip), 300.0
+            "q0", device, RoutineConfig(params={}), SimulatedBackend(chip), 300.0, sweep
         )
 
         # Within a step of the 2 MHz grid. Locating is all this pass owes; the narrow
@@ -259,6 +260,7 @@ class TestSpectroscopy:
         chip = dataclasses.replace(simulator)
         device = device_for(chip)
         node = routine("qubit_spectroscopy")
+        sweep = Sweep("q0")
         write_path(device.get_element("q0"), "clock_freqs.f01", chip.f01 * GHZ - 3e9)
 
         with pytest.raises(RoutineError, match="nothing above the noise between"):
@@ -268,6 +270,7 @@ class TestSpectroscopy:
                 RoutineConfig(params={"search_points": 101}),
                 SimulatedBackend(chip),
                 300.0,
+                sweep,
             )
 
     def test_scanning_the_wrong_window_cannot_invent_the_right_answer(self, simulator):
@@ -298,8 +301,8 @@ class TestSpectroscopy:
         )
 
         spectroscopy.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.qubit_spectroscopy(spectroscopy._frequencies)
-        scanned = spectroscopy._frequencies
+        acquisition = simulator.qubit_spectroscopy(sweep["frequencies"])
+        scanned = sweep["frequencies"]
 
         try:
             fitted = spectroscopy.analyse(acquisition, "q0", device, config, sweep)
@@ -325,7 +328,7 @@ class TestTimeDomainRoutines:
         config = RoutineConfig(params={"amplitudes": list(np.linspace(0.0, 0.5, 41))})
 
         rabi.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.rabi(rabi._amplitudes)
+        acquisition = simulator.rabi(sweep["amplitudes"])
         fitted = rabi.analyse(acquisition, "q0", device, config, sweep)
 
         # The simulator is built so a pi rotation lands at 0.2 in the sweep's units.
@@ -339,7 +342,7 @@ class TestTimeDomainRoutines:
         config = RoutineConfig(params={"delays": list(np.linspace(0.0, 80e-6, 25))})
 
         t1.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.t1(t1._delays)
+        acquisition = simulator.t1(sweep["delays"])
         fitted = t1.analyse(acquisition, "q0", device, config, sweep)
 
         # The correct model recovers T1 to 0.01%; a Gaussian decay fitted to this
@@ -355,7 +358,7 @@ class TestTimeDomainRoutines:
         config = RoutineConfig(params={"delays": list(np.linspace(0.0, 60e-6, 25))})
 
         t2.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.t2_echo(t2._delays)
+        acquisition = simulator.t2_echo(sweep["delays"])
         fitted = t2.analyse(acquisition, "q0", device, config, sweep)
 
         assert fitted["t2"] == pytest.approx(simulator.t2_ns * 1e-9, rel=0.05)
@@ -380,7 +383,7 @@ class TestTimeDomainRoutines:
         )
 
         ramsey.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.ramsey(ramsey._delays, detuning)
+        acquisition = simulator.ramsey(sweep["delays"], detuning)
         fitted = ramsey.analyse(acquisition, "q0", device, config, sweep)
 
         assert fitted["fringe_frequency"] == pytest.approx(detuning, rel=0.01)
@@ -426,7 +429,7 @@ class TestADriveOffResonance:
         config = RoutineConfig(params={"amplitudes": self.AMPLITUDES})
 
         rabi.build_schedule("q0", device, config, StubBackend(), sweep)
-        acquisition = simulator.rabi(rabi._amplitudes, self.DETUNING_HZ / GHZ)
+        acquisition = simulator.rabi(sweep["amplitudes"], self.DETUNING_HZ / GHZ)
 
         with pytest.raises(FitError):
             rabi.analyse(acquisition, "q0", device, config, sweep)

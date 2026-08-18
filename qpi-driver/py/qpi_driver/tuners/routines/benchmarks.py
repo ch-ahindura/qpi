@@ -194,8 +194,8 @@ class RandomizedBenchmarking(CalibrationRoutine):
         # Each depth's circuits from every chunk, side by side, so `analyse` reshapes it
         # exactly as it would one schedule's worth, references included.
         combined = np.hstack(rows)
-        self._depths = depths
-        self._circuits = self._circuits_per_depth = int(combined.shape[1])
+        sweep["depths"] = depths
+        sweep["circuits"] = sweep["circuits_per_depth"] = int(combined.shape[1])
         return xr.Dataset(
             {
                 "y0": (
@@ -213,13 +213,13 @@ class RandomizedBenchmarking(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._depths = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
+        sweep["depths"] = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
         # Named `_circuits_per_depth` as well, because escalation reads the setpoints a
         # routine actually used off `_<axis>` — see `_widened`.
-        self._circuits = self._circuits_per_depth = int(
+        sweep["circuits"] = sweep["circuits_per_depth"] = int(
             config.get("circuits_per_depth", DEFAULT_RB_CIRCUITS)
         )
-        if not self._depths or self._circuits < 1:
+        if not sweep["depths"] or sweep["circuits"] < 1:
             raise RoutineError("RB needs at least one depth and one circuit per depth")
 
         # How deep escalation may go — see `MAX_RB_CLIFFORDS`. Independent of the circuit
@@ -233,7 +233,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         # This one is a real ceiling and cannot become a chunk size. A single sequence of
         # depth m is m Cliffords in one program and there is nowhere to cut it: a Clifford
         # sequence is only an RB sequence closed by its own recovery gate.
-        self._depths_ceiling = 2.0 * MAX_RB_CLIFFORDS / len(self._depths) - 1.0
+        sweep["depths_ceiling"] = 2.0 * MAX_RB_CLIFFORDS / len(sweep["depths"]) - 1.0
 
         # Seeded so a rerun benchmarks the same circuits: an unseeded RB would
         # move under the drift check it exists to detect.
@@ -255,13 +255,13 @@ class RandomizedBenchmarking(CalibrationRoutine):
             )
 
         index = REFERENCE_ACQUISITIONS
-        for depth in self._depths:
-            for _ in range(self._circuits):
+        for depth in sweep["depths"]:
+            for _ in range(sweep["circuits"]):
                 sequence = sequence_with_recovery(
                     generate_clifford_sequence(depth, rng)
                 )
                 schedule.add(backend.Reset(target))
-                self._add_sequence(schedule, target, sequence, backend)
+                self._add_sequence(schedule, target, sequence, backend, sweep)
                 schedule.add(
                     backend.Measure(
                         target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
@@ -276,6 +276,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         target: str,
         sequence: list[int],
         backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> None:
         """Play *sequence* as native rotations, interleaving where asked."""
         for position, clifford in enumerate(sequence):
@@ -283,10 +284,10 @@ class RandomizedBenchmarking(CalibrationRoutine):
                 schedule.add(backend.Rxy(theta=theta, phi=phi, qubit=target))
             # The recovery Clifford closes the sequence, so nothing follows it.
             if self.interleaved and position < len(sequence) - 1:
-                self._add_interleaved(schedule, target, backend)
+                self._add_interleaved(schedule, target, backend, sweep)
 
     def _add_interleaved(
-        self, schedule: Any, target: str, backend: SchedulerBackend
+        self, schedule: Any, target: str, backend: SchedulerBackend, sweep: Sweep
     ) -> None:  # pragma: no cover - overridden where it matters
         raise NotImplementedError
 
@@ -299,7 +300,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        circuits = len(self._depths) * self._circuits
+        circuits = len(sweep["depths"]) * sweep["circuits"]
         expected = circuits + REFERENCE_ACQUISITIONS
         if signal.size < expected:
             raise RoutineError(
@@ -318,7 +319,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         # Average the circuits at each depth; the decay is over depth, and the
         # spread within a depth is what averaging is for.
         survival = signal[REFERENCE_ACQUISITIONS:expected].reshape(
-            len(self._depths), self._circuits
+            len(sweep["depths"]), sweep["circuits"]
         )
         mean = survival.mean(axis=1)
 
@@ -331,9 +332,9 @@ class RandomizedBenchmarking(CalibrationRoutine):
         # could have changed either — the endpoints were arithmetic, not measurement.
         normalised = (mean - excited) / contrast
 
-        fitted = fit_rb_decay(np.asarray(self._depths, dtype=float), normalised)
-        fitted["depths"] = list(self._depths)
-        fitted["circuits_per_depth"] = self._circuits
+        fitted = fit_rb_decay(np.asarray(sweep["depths"], dtype=float), normalised)
+        fitted["depths"] = list(sweep["depths"])
+        fitted["circuits_per_depth"] = sweep["circuits"]
         return fitted
 
 
@@ -360,13 +361,13 @@ class InterleavedRB(RandomizedBenchmarking):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._control, self._spectator = qubits_of(target)
-        return super().build_schedule(self._control, device, config, backend, sweep)
+        sweep["control"], sweep["spectator"] = qubits_of(target)
+        return super().build_schedule(sweep["control"], device, config, backend, sweep)
 
     def _add_interleaved(
-        self, schedule: Any, target: str, backend: SchedulerBackend
+        self, schedule: Any, target: str, backend: SchedulerBackend, sweep: Sweep
     ) -> None:
-        schedule.add(backend.CZ(self._control, self._spectator))
+        schedule.add(backend.CZ(sweep["control"], sweep["spectator"]))
 
     def analyse(
         self,
@@ -376,7 +377,7 @@ class InterleavedRB(RandomizedBenchmarking):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        fitted = super().analyse(dataset, self._control, device, config, sweep)
+        fitted = super().analyse(dataset, sweep["control"], device, config, sweep)
         fitted["interleaved_gate"] = "CZ"
         return fitted
 

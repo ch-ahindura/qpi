@@ -321,7 +321,7 @@ class CZSpectroscopy(CalibrationRoutine):
             centre = configured or float(config.get("prior", 4.0e9))
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
-        self._frequencies = setpoints_of(
+        sweep["frequencies"] = setpoints_of(
             config,
             "frequencies",
             linear_setpoints(centre - span / 2, centre + span / 2, points),
@@ -344,9 +344,9 @@ class CZSpectroscopy(CalibrationRoutine):
         # own, then retunes it point by point like the rest.
         clock = f"{target}.cz"
         schedule.add_resource(
-            backend.ClockResource(name=clock, freq=self._frequencies[0])
+            backend.ClockResource(name=clock, freq=sweep["frequencies"][0])
         )
-        for index, frequency in enumerate(self._frequencies):
+        for index, frequency in enumerate(sweep["frequencies"]):
             schedule.add(backend.Reset(parent))
             schedule.add(backend.Reset(child))
             schedule.add(backend.X(parent))
@@ -377,7 +377,7 @@ class CZSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
+        fitted = fit_resonator_spectroscopy(sweep["frequencies"], signal_of(dataset))
         return {"clock_freq_cz": fitted["readout_frequency"], **fitted}
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
@@ -434,10 +434,10 @@ class CZParametrization(CalibrationRoutine):
                 f"`cz_chevron`, which sweeps the amplitude its resonance lives in"
             )
         parent, child = qubits_of(target)
-        self._amplitude = float(
+        sweep["amplitude"] = float(
             config.get("amplitude", read_path(element, "cz.square_amp") or 0.5)
         )
-        self._durations = [
+        sweep["durations"] = [
             grid_duration(duration)
             for duration in setpoints_of(
                 config, "durations", linear_setpoints(20e-9, 400e-9, 39)
@@ -450,14 +450,14 @@ class CZParametrization(CalibrationRoutine):
         )
         clock = f"{target}.cz"
         schedule.add_resource(backend.ClockResource(name=clock, freq=frequency))
-        for index, duration in enumerate(self._durations):
+        for index, duration in enumerate(sweep["durations"]):
             schedule.add(backend.Reset(parent))
             schedule.add(backend.Reset(child))
             schedule.add(backend.X(parent))
             schedule.add(backend.X(child))
             schedule.add(
                 backend.SquarePulse(
-                    amp=self._amplitude,
+                    amp=sweep["amplitude"],
                     duration=duration,
                     port=f"{target}:fl",
                     clock=clock,
@@ -478,7 +478,7 @@ class CZParametrization(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        durations = np.asarray(self._durations, dtype=float)
+        durations = np.asarray(sweep["durations"], dtype=float)
         # `fit_rabi` fits a cosine and reports where the *half* period falls. Its axis
         # is normally a drive amplitude and here it is a duration, which changes
         # nothing about the arithmetic: a cosine is a cosine.
@@ -487,12 +487,12 @@ class CZParametrization(CalibrationRoutine):
         if half <= 0:
             raise RoutineError(
                 f"the parametric exchange did not oscillate over {durations[-1] * 1e9:.0f} "
-                f"ns at amplitude {self._amplitude:.4g} — the drive may be off the "
+                f"ns at amplitude {sweep['amplitude']:.4g} — the drive may be off the "
                 f"transition, which is `cz_spectroscopy`'s job to place"
             )
         round_trip = 2.0 * half
         return {
-            "cz_amplitude": self._amplitude,
+            "cz_amplitude": sweep["amplitude"],
             "cz_duration": grid_duration(round_trip),
             # Per unit amplitude, which is the parametrization. The factor is four
             # rather than two and that is a convention rather than an accident: the
@@ -502,7 +502,7 @@ class CZParametrization(CalibrationRoutine):
             # is the constant this routine exists to replace — a chip calibrated in
             # some other convention would differ by exactly this factor, which is why
             # it is written down rather than folded in.
-            "exchange_rate_hz_per_unit": 1.0 / (4.0 * half * self._amplitude),
+            "exchange_rate_hz_per_unit": 1.0 / (4.0 * half * sweep["amplitude"]),
             "half_period": half,
         }
 
@@ -546,10 +546,10 @@ class CZChevron(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         control, _child = qubits_of(target)
-        self._amplitudes = setpoints_of(
+        sweep["amplitudes"] = setpoints_of(
             config, "amplitudes", linear_setpoints(0.1, 0.6, 11)
         )
-        self._durations = setpoints_of(
+        sweep["durations"] = setpoints_of(
             config, "durations", linear_setpoints(20e-9, 200e-9, 11)
         )
         port = f"{control}:fl"
@@ -558,8 +558,8 @@ class CZChevron(CalibrationRoutine):
         )
 
         index = 0
-        for amplitude in self._amplitudes:
-            for duration in self._durations:
+        for amplitude in sweep["amplitudes"]:
+            for duration in sweep["durations"]:
                 parent, child = qubits_of(target)
                 schedule.add(backend.Reset(parent))
                 schedule.add(backend.Reset(child))
@@ -592,8 +592,8 @@ class CZChevron(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_chevron(
-            np.asarray(self._amplitudes),
-            np.asarray(self._durations),
+            np.asarray(sweep["amplitudes"]),
+            np.asarray(sweep["durations"]),
             signal_of(dataset),
         )
 
@@ -631,7 +631,9 @@ class ConditionalPhase(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         parent, child = qubits_of(target)
-        self._phases = setpoints_of(config, "phases", linear_setpoints(0.0, 360.0, 25))
+        sweep["phases"] = setpoints_of(
+            config, "phases", linear_setpoints(0.0, 360.0, 25)
+        )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 512))
         )
@@ -646,7 +648,7 @@ class ConditionalPhase(CalibrationRoutine):
         index = 0
         for measured, spectator in ((parent, child), (child, parent)):
             for spectator_excited in (False, True):
-                for phase in self._phases:
+                for phase in sweep["phases"]:
                     schedule.add(backend.Reset(measured))
                     schedule.add(backend.Reset(spectator))
                     if spectator_excited:
@@ -673,13 +675,13 @@ class ConditionalPhase(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        count = len(self._phases)
+        count = len(sweep["phases"])
         if signal.size < 4 * count:
             raise RoutineError(
                 f"conditional phase expected {4 * count} acquisitions, got {signal.size}"
             )
 
-        phases = np.asarray(self._phases)
+        phases = np.asarray(sweep["phases"])
         # Both fringes of a pair, not their difference: the measured qubit's
         # dynamical phase over the flux pulse cancels between them and does not
         # cancel within either.

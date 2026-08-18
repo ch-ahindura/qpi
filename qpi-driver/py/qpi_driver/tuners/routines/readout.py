@@ -135,11 +135,11 @@ class ReadoutOperatingPoint(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
-        self._settings = self._grid(element, config)
+        sweep["settings"] = self._grid(element, config)
         shots = int(config.get("shots", 300))
         schedule = backend.new_schedule(self.name, repetitions=shots)
         index = 0
-        for frequency, amplitude in self._settings:
+        for frequency, amplitude in sweep["settings"]:
             schedule.add(
                 backend.SetClockFrequency(
                     clock=f"{target}.ro", clock_freq_new=frequency
@@ -203,8 +203,8 @@ class ReadoutOperatingPoint(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        ground, excited = _swept_clouds(dataset, len(self._settings))
-        return fit_readout_operating_point(self._settings, ground, excited)
+        ground, excited = _swept_clouds(dataset, len(sweep["settings"]))
+        return fit_readout_operating_point(sweep["settings"], ground, excited)
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
@@ -337,7 +337,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                     f"expected |0> and |1>"
                 )
             rows.append(values[..., :2])
-        self._windows = windows
+        sweep["windows"] = windows
         # Side by side, so the acquisition axis unpacks as |0>,|1> per window — the same
         # interleaving `_swept_clouds` expects from a single-schedule sweep.
         return xr.Dataset(
@@ -354,7 +354,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
     ) -> Any:
         """``|0>`` and ``|1>`` at *one* window — see :meth:`acquire` for why only one."""
         windows = self._grid(device.get_element(target), config)
-        self._windows = windows[:1]
+        sweep["windows"] = windows[:1]
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 300))
         )
@@ -367,7 +367,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                     target,
                     acq_index=index,
                     bin_mode=backend.BinMode.APPEND,
-                    acq_duration=self._windows[0],
+                    acq_duration=sweep["windows"][0],
                 )
             )
         return schedule
@@ -453,9 +453,9 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        ground, excited = _swept_clouds(dataset, len(self._windows))
+        ground, excited = _swept_clouds(dataset, len(sweep["windows"]))
         return fit_readout_integration_time(
-            self._windows,
+            sweep["windows"],
             ground,
             excited,
             incumbent=float(

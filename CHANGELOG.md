@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: a routine's swept setpoints belong to the target rather than to the
+  routine. They were kept as `self._frequencies` and read back in `analyse`, so a routine
+  measuring several targets in one schedule fitted every one of them against whichever
+  target built last — a plausible curve against the wrong axis, not an error.
+
 - `qpi-driver/py`, `qpi-ui`: the calibration graph draws the node a walk is on. A progress
   event only ever fired after a target finished, so a single-target node went straight from
   `pending` to `done` and the `running` style was unreachable. The driver now reports the

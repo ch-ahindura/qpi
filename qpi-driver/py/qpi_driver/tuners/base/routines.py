@@ -389,8 +389,8 @@ class CalibrationRoutine(ABC):
         would one schedule's, because the rows arrive in the order it expects.
         """
         schedule = self.build_schedule(target, device, config, backend, sweep)
-        rows = list(getattr(self, f"_{rows_axis}", ()) or ())
-        columns = len(getattr(self, f"_{columns_axis}", ()) or ())
+        rows = list(sweep.get(rows_axis, ()) or ())
+        columns = len(sweep.get(columns_axis, ()) or ())
         per_schedule = max(1, MAX_SWEEP_POINTS // max(columns, 1))
         if len(rows) <= per_schedule:
             return backend.run(schedule, timeout_s=timeout_s)
@@ -425,7 +425,7 @@ class CalibrationRoutine(ABC):
 
         # The full grid restored, so `analyse` reshapes against what was actually swept
         # rather than against the last chunk.
-        setattr(self, f"_{rows_axis}", rows)
+        sweep[rows_axis] = rows
         return xr.Dataset({"y0": ("acq_index", np.concatenate(gathered))})
 
     def escalating(
@@ -465,7 +465,7 @@ class CalibrationRoutine(ABC):
                 attempted.append(f"{refusal.axis} x{refusal.factor**attempt:g}")
                 if attempt == self.MAX_ESCALATIONS or refusal.axis in operator_set:
                     raise
-                widened = _widened(self, config, refusal)
+                widened = _widened(self, config, refusal, sweep)
                 if widened is config:
                     raise
                 config = widened
@@ -684,21 +684,24 @@ def _unresolved(message: str, *, axis: str | None, direction: str) -> Exception:
 
 
 def _widened(
-    routine: CalibrationRoutine, config: RoutineConfig, refusal: OutOfRange
+    routine: CalibrationRoutine,
+    config: RoutineConfig,
+    refusal: OutOfRange,
+    sweep: Sweep,
 ) -> RoutineConfig:
     """*config* with the axis *refusal* named stretched by its factor.
 
     The setpoints come from what the routine actually built rather than from the config,
     because the default case is the one that matters: a config with no ``delays`` in it is
     exactly the config whose sweep needs widening, and reading only the config would find
-    nothing to stretch. Every routine keeps its setpoints as ``_<axis>`` for `analyse` to
-    fit against, which is what makes this readable from outside.
+    nothing to stretch. A routine records its setpoints under the axis's own name on the
+    target's `Sweep`, which is what makes them readable from here.
 
     That name is load-bearing and was not being checked. Four routines stored their
     setpoints under a name of their own — `drag` as ``_betas`` against an axis of
     ``motzois``, and three more — so this found nothing, returned *config* unchanged, and
     `escalating` re-raised. The refusal named the range it had already swept, which reads
-    exactly like a chip that has no answer in it: on the August 2026 B chip `drag` failed
+    exactly like a chip that has no answer in it: in an August 2026 bring-up `drag` failed
     with an optimum of -0.614 against a swept +/-0.2 and never widened once.
     `test_every_swept_axis_is_readable_from_outside` now holds the convention.
 
@@ -716,9 +719,7 @@ def _widened(
     instead leaves centring, resolution and the band clamp where they already live.
     """
     if refusal.axis in AVERAGING_AXES:
-        current = int(
-            config.get(refusal.axis, getattr(routine, f"_{refusal.axis}", 0)) or 0
-        )
+        current = int(config.get(refusal.axis, sweep.get(refusal.axis, 0)) or 0)
         # Two ceilings, because they bound different things and only one of them was
         # here. `MAX_CIRCUITS_PER_DEPTH` is about runtime — five times a node that
         # already takes half a minute. `_<axis>_ceiling` is about the *assembler*, and
@@ -728,7 +729,7 @@ def _widened(
         # qcodes returned the whole 2.4 MB program in the message — which then blew the
         # report past what the server would store, so the calibration was never
         # reported at all. A sweep that cannot assemble is not a bigger sweep.
-        ceiling = getattr(routine, f"_{refusal.axis}_ceiling", None)
+        ceiling = sweep.get(f"{refusal.axis}_ceiling", None)
         wanted = min(int(current * refusal.factor), MAX_CIRCUITS_PER_DEPTH)
         if ceiling is not None:
             wanted = min(wanted, int(ceiling))
@@ -747,17 +748,15 @@ def _widened(
         # catches.
         return config
 
-    scalar = _scalar_axis(routine, config, refusal)
+    scalar = _scalar_axis(routine, config, refusal, sweep)
     if scalar is not None:
         return scalar
 
-    current = list(
-        config.get(refusal.axis) or getattr(routine, f"_{refusal.axis}", ()) or ()
-    )
+    current = list(config.get(refusal.axis) or sweep.get(refusal.axis, ()) or ())
     if not current:
         return config
     low, high = min(current), max(current)
-    ceiling = getattr(routine, f"_{refusal.axis}_ceiling", None)
+    ceiling = sweep.get(f"{refusal.axis}_ceiling", None)
     if refusal.direction == "finer":
         # The same window, sampled harder. An aliased fringe needs resolution, not reach —
         # and lengthening the sweep would make the aliasing worse while costing more.
@@ -801,7 +800,10 @@ def _widened(
 
 
 def _scalar_axis(
-    routine: CalibrationRoutine, config: RoutineConfig, refusal: OutOfRange
+    routine: CalibrationRoutine,
+    config: RoutineConfig,
+    refusal: OutOfRange,
+    sweep: Sweep,
 ) -> RoutineConfig | None:
     """*config* with a scalar *refusal* axis multiplied out, or ``None`` if it is a list.
 
@@ -815,7 +817,7 @@ def _scalar_axis(
         return None
     # The same fallback the list branch uses, and for the same reason: the default case
     # is a config with no `span` in it, which is exactly the one needing widened.
-    current = config.get(refusal.axis, getattr(routine, f"_{refusal.axis}", None))
+    current = config.get(refusal.axis, sweep.get(refusal.axis, None))
     if current is None:
         return None
 

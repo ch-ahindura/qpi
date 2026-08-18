@@ -227,16 +227,18 @@ class Rabi(CalibrationRoutine):
         # a waveform past it clips.
         # Recorded for `_widened` to clamp against, under the same `_<axis>` convention it
         # already reads setpoints by. Without it escalation walks straight past full scale.
-        self._amplitudes_ceiling = full_scale(device.get_element(target), "rxy.amp180")
-        self._amplitudes = setpoints_of(
+        sweep["amplitudes_ceiling"] = full_scale(
+            device.get_element(target), "rxy.amp180"
+        )
+        sweep["amplitudes"] = setpoints_of(
             config,
             "amplitudes",
-            linear_setpoints(0.0, 0.5 * self._amplitudes_ceiling, 41),
+            linear_setpoints(0.0, 0.5 * sweep["amplitudes_ceiling"], 41),
         )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, amplitude in enumerate(self._amplitudes):
+        for index, amplitude in enumerate(sweep["amplitudes"]):
             schedule.add(backend.Reset(target))
             schedule.add(backend.Rxy(theta=180, phi=0, qubit=target, amp180=amplitude))
             schedule.add(
@@ -254,7 +256,7 @@ class Rabi(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        return fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
+        return fit_rabi(np.asarray(sweep["amplitudes"]), signal_of(dataset))
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         element = device.get_element(target)
@@ -316,7 +318,7 @@ class Rabi(CalibrationRoutine):
         schedule.add(
             backend.Measure(target, acq_index=2, bin_mode=backend.BinMode.AVERAGE)
         )
-        self._check_repetitions = repetitions
+        sweep["check_repetitions"] = repetitions
         return schedule
 
     def analyse_check(
@@ -350,7 +352,7 @@ class Rabi(CalibrationRoutine):
 
         # On the ground-to-excited axis, so a change in readout gain cancels.
         fraction = (amplified - ground) / contrast
-        repetitions = getattr(self, "_check_repetitions", self.CHECK_REPETITIONS)
+        repetitions = sweep.get("check_repetitions", self.CHECK_REPETITIONS)
         deviation = min(abs(2.0 * (fraction - 0.5)), 1.0)
         error = float(np.arcsin(deviation) / max(repetitions, 1))
 
@@ -418,12 +420,12 @@ class Ramsey(CalibrationRoutine):
         # Zero when nothing has built a schedule yet, and then there is no bias to compare
         # against and no sign to resolve — the same reading `_detuning_floor` gives an
         # unswept `_delays`.
-        artificial = float(getattr(self, "_detuning", 0.0) or 0.0)
+        artificial = float(sweep.get("detuning", 0.0) or 0.0)
         if artificial and abs(float(refined.get("detuning", 0.0))) >= artificial:
             refined = self._resolved_root(
                 target, device, config, backend, timeout_s, sweep, refined
             )
-        floor = self._detuning_floor(config)
+        floor = self._detuning_floor(config, sweep)
         for _attempt in range(self.MAX_REFINEMENTS):
             if abs(float(refined.get("detuning", 0.0))) <= floor:
                 break
@@ -483,13 +485,13 @@ class Ramsey(CalibrationRoutine):
             self.name,
             target,
             float(fitted.get("fringe_frequency", 0.0)),
-            self._detuning,
+            sweep["detuning"],
             " and ".join(f"{abs(float(m.get('detuning', 0.0))):.0f}" for m in measured),
             abs(float(best.get("detuning", 0.0))),
         )
         return best
 
-    def _detuning_floor(self, config: RoutineConfig) -> float:
+    def _detuning_floor(self, config: RoutineConfig, sweep: Sweep) -> float:
         """The smallest detuning this sweep could tell from zero, in Hz.
 
         A fringe frequency fitted over a window ``T`` is resolved to about ``1/(2*pi*T)``,
@@ -498,7 +500,7 @@ class Ramsey(CalibrationRoutine):
         which is the same reasoning `_confirm_points` uses: their sweep is their statement
         about the resolution their chip needs.
         """
-        delays = [float(d) for d in getattr(self, "_delays", ()) or ()]
+        delays = [float(d) for d in sweep.get("delays", ()) or ()]
         if not delays:
             return 0.0
         window = max(delays) - min(delays)
@@ -535,13 +537,13 @@ class Ramsey(CalibrationRoutine):
         # On the grid, as `ramsey_12` does: a delay that is not a whole number of
         # nanoseconds does not compile. Gridded here rather than on the way into the
         # schedule because `analyse` fits against these same numbers.
-        self._delays = [
+        sweep["delays"] = [
             grid_duration(delay)
             for delay in setpoints_of(
                 config, "delays", linear_setpoints(4e-9, 24e-6, 601)
             )
         ]
-        self._detuning = float(config.get("artificial_detuning", 1e6))
+        sweep["detuning"] = float(config.get("artificial_detuning", 1e6))
         # The clock this run corrects, read before the acquisition rather than after it.
         self._current_f01 = float(
             read_path(device.get_element(target), "clock_freqs.f01")
@@ -549,10 +551,10 @@ class Ramsey(CalibrationRoutine):
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(self._delays):
+        for index, delay in enumerate(sweep["delays"]):
             # The second π/2 is phase-advanced rather than the clock detuned, so
             # the fringe is deliberate and its direction known.
-            phase = 360.0 * self._detuning * delay
+            phase = 360.0 * sweep["detuning"] * delay
             schedule.add(backend.Reset(target))
             schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
             backend.idle(schedule, delay)
@@ -573,7 +575,7 @@ class Ramsey(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_ramsey(
-            np.asarray(self._delays), signal_of(dataset), self._detuning
+            np.asarray(sweep["delays"]), signal_of(dataset), sweep["detuning"]
         )
         fitted["clock_freq_01"] = self._current_f01 - fitted["detuning"]
         # A fringe frequency is a magnitude, so `-fringe - artificial` is the residual
@@ -581,7 +583,7 @@ class Ramsey(CalibrationRoutine):
         # chosen here: which root is the chip's takes another sweep to find out, and
         # `_resolved_root` is where that happens.
         fitted["clock_freq_01_alternative"] = self._current_f01 + (
-            fitted["fringe_frequency"] + self._detuning
+            fitted["fringe_frequency"] + sweep["detuning"]
         )
         return fitted
 
@@ -626,13 +628,13 @@ class T1(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._delays = setpoints_of(
+        sweep["delays"] = setpoints_of(
             config, "delays", linear_setpoints(0.0, DEFAULT_COHERENCE_WINDOW_S, 41)
         )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(self._delays):
+        for index, delay in enumerate(sweep["delays"]):
             schedule.add(backend.Reset(target))
             schedule.add(backend.X(target))
             backend.idle(schedule, delay)
@@ -651,7 +653,7 @@ class T1(CalibrationRoutine):
         config: RoutineConfig,
         sweep: Sweep,
     ) -> dict[str, Any]:
-        return fit_t1(np.asarray(self._delays), signal_of(dataset))
+        return fit_t1(np.asarray(sweep["delays"]), signal_of(dataset))
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:
         """Keep T1 where `t2_echo` can find it, when the element has somewhere for it.
@@ -707,12 +709,12 @@ class T2Echo(CalibrationRoutine):
         # Read by `_widened` under the `_<axis>_ceiling` convention, so escalation cannot
         # widen past what physics allows — see :data:`MAX_ECHO_WINDOW_IN_T1`.
         t1 = measured_t1(device.get_element(target))
-        self._delays_ceiling = (
+        sweep["delays_ceiling"] = (
             MAX_ECHO_WINDOW_IN_T1 * t1
             if t1
             else MAX_ECHO_WINDOW_IN_T1 * DEFAULT_COHERENCE_WINDOW_S / T2_WINDOW_IN_T1
         )
-        self._delays = [
+        sweep["delays"] = [
             2.0 * grid_duration(delay / 2.0)
             for delay in setpoints_of(
                 config,
@@ -723,7 +725,7 @@ class T2Echo(CalibrationRoutine):
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(self._delays):
+        for index, delay in enumerate(sweep["delays"]):
             schedule.add(backend.Reset(target))
             schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
             backend.idle(schedule, delay / 2)
@@ -746,7 +748,7 @@ class T2Echo(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_t2(
-            np.asarray(self._delays),
+            np.asarray(sweep["delays"]),
             signal_of(dataset),
             t1=measured_t1(device.get_element(target)),
         )
@@ -812,7 +814,7 @@ class Drag(CalibrationRoutine):
         # one is nine orders of magnitude wrong for the other, and being wrong in
         # the large direction does not merely mis-fit: it pushes the derivative
         # term past full scale and the schedule stops compiling.
-        self._motzois = setpoints_of(
+        sweep["motzois"] = setpoints_of(
             config,
             "motzois",
             linear_setpoints(-backend.drag_span, backend.drag_span, 31),
@@ -822,7 +824,7 @@ class Drag(CalibrationRoutine):
         )
         # X90-Y180 against Y90-X180: the two sequences are equal only at the
         # right beta, so their difference crosses zero there and is linear about it.
-        for index, beta in enumerate(self._motzois):
+        for index, beta in enumerate(sweep["motzois"]):
             schedule.add(backend.Reset(target))
             override = {backend.drag_parameter: beta}
             schedule.add(backend.Rxy(theta=90, phi=0, qubit=target, **override))
@@ -851,17 +853,17 @@ class Drag(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        if signal.size < 2 * len(self._motzois):
+        if signal.size < 2 * len(sweep["motzois"]):
             raise RoutineError(
-                f"DRAG expected {2 * len(self._motzois)} acquisitions, got {signal.size}"
+                f"DRAG expected {2 * len(sweep['motzois'])} acquisitions, got {signal.size}"
             )
-        paired = signal[: 2 * len(self._motzois)].reshape(-1, 2)
+        paired = signal[: 2 * len(sweep["motzois"])].reshape(-1, 2)
         # Named, so a refusal is escalatable rather than prose — see `measure`.
         element = device.get_element(target)
         # ``rxy.motzoi`` under quantify, ``rxy.beta`` under qblox — see `apply`.
         name = drag_parameter_name(element)
         return fit_drag(
-            np.asarray(self._motzois),
+            np.asarray(sweep["motzois"]),
             paired[:, 0] - paired[:, 1],
             axis="motzois",
             current=float(read_path(element, f"rxy.{name}")) if name else 0.0,
@@ -993,9 +995,7 @@ def amplified(
             counts = [
                 int(n)
                 for n in (
-                    config.get("repetitions")
-                    or getattr(routine, "_repetitions", ())
-                    or ()
+                    config.get("repetitions") or sweep.get("repetitions", ()) or ()
                 )
             ]
             shorter = _shortened(counts, refusal.factor, step)
@@ -1101,7 +1101,7 @@ class FineAmplitude(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._repetitions = [
+        sweep["repetitions"] = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
         ]
         # The amplitude this run refines, read before the acquisition rather than after
@@ -1113,7 +1113,7 @@ class FineAmplitude(CalibrationRoutine):
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, count in enumerate(self._repetitions):
+        for index, count in enumerate(sweep["repetitions"]):
             schedule.add(backend.Reset(target))
             schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
             for _ in range(count):
@@ -1128,7 +1128,7 @@ class FineAmplitude(CalibrationRoutine):
         # Without them only the product of contrast and rotation error is
         # recoverable, and the error comes out scaled by whatever fraction of
         # the contrast this sweep happened to cover.
-        reference = len(self._repetitions)
+        reference = len(sweep["repetitions"])
         schedule.add(backend.Reset(target))
         schedule.add(
             backend.Measure(
@@ -1153,7 +1153,7 @@ class FineAmplitude(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        count = len(self._repetitions)
+        count = len(sweep["repetitions"])
         if signal.size < count + 2:
             raise RoutineError(
                 f"fine amplitude expected {count + 2} acquisitions "
@@ -1161,7 +1161,7 @@ class FineAmplitude(CalibrationRoutine):
             )
 
         fitted = fit_fine_amplitude(
-            np.asarray(self._repetitions, dtype=float),
+            np.asarray(sweep["repetitions"], dtype=float),
             signal[:count],
             self._current_amp180,
             ground=float(signal[count]),
@@ -1276,7 +1276,7 @@ class FineAmplitude90(CalibrationRoutine):
         # `build_schedule` leaves the counts it used here.
         config = RoutineConfig(
             enabled=config.enabled,
-            params={**config.params, "repetitions": list(self._repetitions)},
+            params={**config.params, "repetitions": list(sweep["repetitions"])},
         )
         for _attempt in range(self.MAX_REFINEMENTS):
             previous = float(refined["amp90"])
@@ -1324,7 +1324,7 @@ class FineAmplitude90(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        self._repetitions = [
+        sweep["repetitions"] = [
             int(n)
             for n in setpoints_of(
                 config, "repetitions", list(DEFAULT_AMP90_REPETITIONS)
@@ -1343,7 +1343,7 @@ class FineAmplitude90(CalibrationRoutine):
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, count in enumerate(self._repetitions):
+        for index, count in enumerate(sweep["repetitions"]):
             schedule.add(backend.Reset(target))
             for _ in range(count):
                 schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
@@ -1355,7 +1355,7 @@ class FineAmplitude90(CalibrationRoutine):
 
         # |0> and |1>, so the fit knows the full contrast rather than whatever fraction
         # of it this sweep reached. See `fit_fine_amplitude`.
-        reference = len(self._repetitions)
+        reference = len(sweep["repetitions"])
         schedule.add(backend.Reset(target))
         schedule.add(
             backend.Measure(
@@ -1380,7 +1380,7 @@ class FineAmplitude90(CalibrationRoutine):
         sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
-        count = len(self._repetitions)
+        count = len(sweep["repetitions"])
         if signal.size < count + 2:
             raise RoutineError(
                 f"fine amplitude 90 expected {count + 2} acquisitions "
@@ -1388,7 +1388,7 @@ class FineAmplitude90(CalibrationRoutine):
             )
 
         fitted = fit_fine_amplitude(
-            np.asarray(self._repetitions, dtype=float),
+            np.asarray(sweep["repetitions"], dtype=float),
             signal[:count],
             self._current_amp90,
             ground=float(signal[count]),

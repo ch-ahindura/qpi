@@ -1144,13 +1144,13 @@ class TestAWindowTooShortIsWidenedRatherThanFailed:
             self.attempts: list[float] = []
 
         def build_schedule(self, target, device, config, backend, sweep):
-            self._delays = setpoints_of(
+            sweep["delays"] = setpoints_of(
                 config, "delays", linear_setpoints(0.0, 1e-5, 41)
             )
             return backend.new_schedule(self.name)
 
         def analyse(self, dataset, target, device, config, sweep):
-            extent = max(self._delays)
+            extent = max(sweep["delays"])
             self.attempts.append(extent)
             if extent < self.needs:
                 raise OutOfRange(
