@@ -1151,7 +1151,7 @@ class Ramsey12(CalibrationRoutine):
         sweep["half"] = _required_ef_amplitude(element, target) / 2.0
         sweep["duration"] = ef_duration(element, config)
         # The clock this run corrects, read before the acquisition rather than after it.
-        self._current_f12 = float(read_path(element, "clock_freqs.f12"))
+        sweep["current_f12"] = float(read_path(element, "clock_freqs.f12"))
         # On the instrument's 1 ns grid. A linear sweep between two round numbers
         # generally is not — 41 points from 4 ns to 2 us step 49.9 ns — and the
         # compiler rejects a schedule whose operations do not land on it, some way
@@ -1218,7 +1218,7 @@ class Ramsey12(CalibrationRoutine):
         fitted = fit_ramsey(
             np.asarray(sweep["delays"]), signal_of(dataset), sweep["detuning"]
         )
-        fitted["clock_freq_12"] = self._current_f12 - fitted["detuning"]
+        fitted["clock_freq_12"] = sweep["current_f12"] - fitted["detuning"]
         return fitted
 
     def apply(self, device: Any, target: str, params: dict[str, Any]) -> None:

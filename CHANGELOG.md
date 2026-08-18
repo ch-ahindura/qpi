@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- `qpi-driver/py`: five more per-target values moved off the routine and onto the target's
+  sweep — the amplitude and frequency each of `fine_amplitude`, `fine_amplitude_90`,
+  `ramsey`, `ramsey_12` and `f12_spectroscopy` refines from. They were read in `analyse`,
+  so a fused group would have fitted every target against the last one's. A test now fails
+  on any routine that keeps per-target state on itself.
 - `qpi-driver/py`: a routine's swept setpoints belong to the target rather than to the
   routine. They were kept as `self._frequencies` and read back in `analyse`, so a routine
   measuring several targets in one schedule fitted every one of them against whichever

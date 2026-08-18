@@ -482,3 +482,30 @@ class TestAGridDerivedPerTargetSplitsTheGroup:
         assert node.compatible_groups(["q0", "q1"], None, RoutineConfig()) == [
             ["q0", "q1"]
         ]
+
+
+def test_no_routine_keeps_per_target_state_on_itself():
+    """RFC 0009 §6.6 — a value derived from one target and read back in `analyse` is the
+    bug the `Sweep` exists to prevent, and a grep for it is the only thing that scales.
+
+    Found five that a narrower search missed: `_current_amp180`, `_current_amp90`,
+    `_current_f01`, `_current_f12` and `_f01` all name a digit, so a pattern of
+    `[a-z_]+` walked straight past them.
+    """
+    import pathlib
+    import re
+
+    import qpi_driver.tuners.routines as package
+
+    root = pathlib.Path(package.__file__).parent
+    assignment = re.compile(r"^\s+self\._([a-z_0-9]+)\s*=", re.M)
+    offenders = {
+        module.name: sorted(set(assignment.findall(module.read_text())))
+        for module in sorted(root.glob("*.py"))
+        if assignment.search(module.read_text())
+    }
+
+    assert not offenders, (
+        "these keep per-target state on the routine, which a fused group shares: "
+        f"{offenders}"
+    )

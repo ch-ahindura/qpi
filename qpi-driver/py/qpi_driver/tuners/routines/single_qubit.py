@@ -607,7 +607,7 @@ class Ramsey(CalibrationRoutine):
         ]
         sweep["detuning"] = float(config.get("artificial_detuning", 1e6))
         # The clock this run corrects, read before the acquisition rather than after it.
-        self._current_f01 = float(
+        sweep["current_f01"] = float(
             read_path(device.get_element(target), "clock_freqs.f01")
         )
         schedule = backend.new_schedule(
@@ -639,12 +639,12 @@ class Ramsey(CalibrationRoutine):
         fitted = fit_ramsey(
             np.asarray(sweep["delays"]), signal_of(dataset), sweep["detuning"]
         )
-        fitted["clock_freq_01"] = self._current_f01 - fitted["detuning"]
+        fitted["clock_freq_01"] = sweep["current_f01"] - fitted["detuning"]
         # A fringe frequency is a magnitude, so `-fringe - artificial` is the residual
         # just as consistently as `+fringe - artificial`. Carried alongside rather than
         # chosen here: which root is the chip's takes another sweep to find out, and
         # `_resolved_root` is where that happens.
-        fitted["clock_freq_01_alternative"] = self._current_f01 + (
+        fitted["clock_freq_01_alternative"] = sweep["current_f01"] + (
             fitted["fringe_frequency"] + sweep["detuning"]
         )
         return fitted
@@ -1321,7 +1321,7 @@ class FineAmplitude(CalibrationRoutine):
         # The amplitude this run refines, read before the acquisition rather than after
         # it — it is what every X below is played at, so reading it later described a
         # sweep that had already happened.
-        self._current_amp180 = float(
+        sweep["current_amp180"] = float(
             read_path(device.get_element(target), "rxy.amp180")
         )
         schedule = backend.new_schedule(
@@ -1377,7 +1377,7 @@ class FineAmplitude(CalibrationRoutine):
         fitted = fit_fine_amplitude(
             np.asarray(sweep["repetitions"], dtype=float),
             signal[:count],
-            self._current_amp180,
+            sweep["current_amp180"],
             ground=float(signal[count]),
             excited=float(signal[count + 1]),
         )
@@ -1548,7 +1548,7 @@ class FineAmplitude90(CalibrationRoutine):
         # has run once. Read before the acquisition rather than after it, for the reason
         # `fine_amplitude` states: it is the amplitude every pulse below is played at.
         element = device.get_element(target)
-        self._current_amp90 = amplitude_for_angle(
+        sweep["current_amp90"] = amplitude_for_angle(
             QUARTER_TURN_DEGREES,
             float(read_path(element, "rxy.amp180")),
             float(read_path(element, AMP90_PATH) or 0.0),
@@ -1604,7 +1604,7 @@ class FineAmplitude90(CalibrationRoutine):
         fitted = fit_fine_amplitude(
             np.asarray(sweep["repetitions"], dtype=float),
             signal[:count],
-            self._current_amp90,
+            sweep["current_amp90"],
             ground=float(signal[count]),
             excited=float(signal[count + 1]),
             turn=math.pi / 2,

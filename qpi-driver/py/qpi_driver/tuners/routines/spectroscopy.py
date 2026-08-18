@@ -1392,7 +1392,7 @@ class F12Spectroscopy(CalibrationRoutine):
         # Read here rather than in `analyse`, where the anharmonicity was differenced
         # against it: a prerequisite has to be readable before the acquisition to be one
         # at all, and this sweep is already centred on it.
-        self._f01 = _current_clock(device, target, "f01")
+        sweep["f01"] = _current_clock(device, target, "f01")
         centre = config.get("centre_frequency")
         if centre is None:
             offset = float(config.get("anharmonicity_prior", -300e6))
@@ -1411,7 +1411,7 @@ class F12Spectroscopy(CalibrationRoutine):
                     f"Searching around f01 plus this would look where no transition is. "
                     f"Set `anharmonicity_range` for a device built outside it"
                 )
-            centre = self._f01 + offset
+            centre = sweep["f01"] + offset
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
         sweep["frequencies"] = setpoints_of(
@@ -1553,7 +1553,7 @@ class F12Spectroscopy(CalibrationRoutine):
             )
             return {
                 "clock_freq_12": prior,
-                "anharmonicity": prior - self._f01,
+                "anharmonicity": prior - sweep["f01"],
                 "unresolved": 1.0,
                 "fit": fitted.get("fit"),
             }
@@ -1566,7 +1566,7 @@ class F12Spectroscopy(CalibrationRoutine):
             # measures it: the anharmonicity is f12 - f01, and it sets both the DRAG
             # optimum and where |02> sits for a CZ.
             "anharmonicity": self._require_transmon_anharmonicity(
-                fitted["clock_freq_01"] - self._f01, target
+                fitted["clock_freq_01"] - sweep["f01"], target
             ),
             "unresolved": 0.0,
         }
