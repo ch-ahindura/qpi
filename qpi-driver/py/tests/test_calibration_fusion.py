@@ -430,3 +430,55 @@ class TestEscalationOverAGroup:
 
         assert isinstance(results["q0"], OutOfRange)
         assert len(backend.runs) == 1, "it must not widen an axis the operator set"
+
+
+class TestAGridDerivedPerTargetSplitsTheGroup:
+    """RFC 0009 D7 — one schedule cannot hold two different sweeps of the same axis."""
+
+    def _device(self, **t1s):
+        return FakeDevice(
+            {
+                qubit: FakeElement(
+                    name=qubit,
+                    clock_freqs={"f01": 5.0e9, "f12": 4.75e9, "readout": 7.1e9},
+                    rxy={"amp180": 0.18, "motzoi": 0.0},
+                    measure={"pulse_amp": 0.25},
+                    coherence={"t1": t1},
+                )
+                for qubit, t1 in t1s.items()
+            },
+            {},
+        )
+
+    def test_targets_whose_windows_agree_stay_one_group(self):
+        node = _routine("t2_echo")
+        device = self._device(q0=40e-6, q1=40e-6)
+
+        assert node.compatible_groups(["q0", "q1"], device, RoutineConfig()) == [
+            ["q0", "q1"]
+        ]
+
+    def test_targets_whose_windows_differ_are_split(self):
+        """An idle is dead time on every port at once, so there is no per-target time
+        axis — a qubit with twice the T1 wants twice the window and cannot share one."""
+        node = _routine("t2_echo")
+        device = self._device(q0=40e-6, q1=90e-6, q2=40e-6)
+
+        groups = node.compatible_groups(["q0", "q1", "q2"], device, RoutineConfig())
+
+        assert sorted(sorted(g) for g in groups) == [["q0", "q2"], ["q1"]]
+
+    def test_a_stated_window_puts_every_target_back_together(self):
+        """An operator who names the delays has made one statement about the whole chip."""
+        node = _routine("t2_echo")
+        device = self._device(q0=40e-6, q1=90e-6)
+        config = RoutineConfig(params={"delays": [0.0, 10e-6, 20e-6]})
+
+        assert node.compatible_groups(["q0", "q1"], device, config) == [["q0", "q1"]]
+
+    def test_a_routine_whose_sweep_is_fixed_never_splits(self):
+        node = _routine("allxy")
+
+        assert node.compatible_groups(["q0", "q1"], None, RoutineConfig()) == [
+            ["q0", "q1"]
+        ]

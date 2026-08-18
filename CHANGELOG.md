@@ -22,6 +22,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `t2_echo` measures a group at once, and a routine whose sweep is derived
+  per target splits the group into the subgroups that agree on it. The echo window is
+  scaled from each qubit's measured T1 and an idle is dead time on every port at once, so
+  qubits that relax at different rates cannot share one schedule — the ones that do are
+  still measured together.
 - `qpi-driver/py`: a routine that runs its own escalation loop can run it over a group.
   One acquisition serves every target, and a fit that refuses widens the sweep for that
   target alone — widening the group would re-sweep the satisfied targets over a range

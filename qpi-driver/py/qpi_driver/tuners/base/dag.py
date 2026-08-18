@@ -409,23 +409,26 @@ class CalibrationDAG:
             ]
         else:
             adjacency = couplings_of(edge_names(device) or config.target_edges)
-            if len(targets) > 1 and not adjacency:
+            spacing = parallel.spacing_for(kind)
+            if len(targets) > 1 and spacing > 1 and not adjacency:
                 # No adjacency is not the same as nothing being adjacent. A device whose
                 # edges cannot be read, or a config that targets none, would otherwise
                 # put every qubit at infinite distance and so in one group — the most
                 # aggressive setting available, arrived at by accident.
                 log.warning(
-                    "%s: no coupling graph is readable, so %d targets cannot be grouped "
-                    "safely — running them one at a time. Configure 'target_edges', or "
-                    "name the groups under 'parallel.groups'",
+                    "%s: no coupling graph is readable, so a spacing of %d cannot be "
+                    "honoured over %d targets — running them one at a time. Configure "
+                    "'target_edges', name the groups under 'parallel.groups', or set a "
+                    "spacing of 1 to measure the whole chip at once",
                     name,
+                    spacing,
                     len(targets),
                 )
                 return [[target] for target in targets]
             groups = groups_of(
                 targets,
                 adjacency=adjacency,
-                spacing=parallel.spacing_for(kind),
+                spacing=spacing,
                 exclude=parallel.exclude,
                 max_group=parallel.max_group,
             )
@@ -696,6 +699,26 @@ class CalibrationDAG:
         `_run_one` exactly as it did before any of this existed — which is what keeps
         every unconverted routine's behaviour identical.
         """
+        # Split before running: a routine whose grid is derived per target cannot hold
+        # two of them in one schedule (RFC 0009 D7).
+        if len(targets) > 1:
+            compatible = routine.compatible_groups(targets, device, routine_config)
+            if len(compatible) > 1:
+                split: dict[str, bool] = {}
+                for subgroup in compatible:
+                    split.update(
+                        self._run_group(
+                            routine,
+                            subgroup,
+                            device,
+                            backend,
+                            routine_config,
+                            config,
+                            report,
+                            priors,
+                        )
+                    )
+                return split
         if len(targets) > 1 and routine.measures_group:
             return self._run_measured_group(
                 routine,

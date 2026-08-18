@@ -395,11 +395,11 @@ class TestTheGroupsAWalkPublishes:
 class TestAnUnreadableCouplingGraph:
     """No adjacency must not read as nothing being adjacent (RFC 0009 §5.2)."""
 
-    def _groups(self, targets, edges):
+    def _groups(self, targets, edges, spacing=DEFAULT_QUBIT_SPACING):
         config = CalibrationConfig(
             target_qubits=list(targets),
             target_edges=list(edges),
-            parallel=ParallelConfig(enabled=True),
+            parallel=ParallelConfig(enabled=True, qubit_spacing=spacing),
         )
         dag = CalibrationDAG([StubRoutine("a")], config)
         return dag.groups_for("a", config)
@@ -408,6 +408,11 @@ class TestAnUnreadableCouplingGraph:
         """Otherwise every qubit sits at infinite distance and lands in one group — the
         most aggressive setting there is, arrived at by accident."""
         assert self._groups(["q0", "q1", "q2"], []) == [["q0"], ["q1"], ["q2"]]
+
+    def test_a_spacing_of_one_needs_no_coupling_graph(self):
+        """It imposes nothing, so there is nothing for an absent graph to get wrong —
+        the operator has asked for the whole chip at once and said so."""
+        assert self._groups(["q0", "q1", "q2"], [], spacing=1) == [["q0", "q1", "q2"]]
 
     def test_one_target_needs_no_coupling_graph(self):
         assert self._groups(["q0"], []) == [["q0"]]

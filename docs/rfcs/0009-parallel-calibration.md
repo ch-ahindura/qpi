@@ -226,6 +226,16 @@ builder compares the setpoints each target resolved and splits out any target th
 disagrees, running it alone. Refusing the whole group instead would let one unusual
 element disable parallelism for a chip.
 
+**Implemented as `compatible_groups`, and it groups rather than isolates.** A routine
+whose grid is derived per target overrides the hook and returns the subgroups that agree,
+so the qubits that do share a window are still measured together — splitting one outlier
+off does not cost the rest their fusion. `t2_echo` is the case it exists for: its window
+is scaled from each qubit's measured T1 and an idle is dead time on every port at once,
+so there is no per-target time axis to give them. The default returns a single group,
+which is right for a fixed gate sequence or a grid the config states outright — and an
+operator who names the delays has made one statement about the whole chip, which puts
+every target back together.
+
 **D8 — Failure and escalation are per target, and re-fusion is of the refused subset.**
 
 A group of five with one refused fit is four results and one `RoutineError`, exactly as

@@ -736,6 +736,54 @@ class T2Echo(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same escalation over a group, widening only for the targets that refuse."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """Targets whose windows agree, since an idle is dead time on every port at once.
+
+        The window is scaled from each qubit's measured T1 (see :meth:`_window`), so a
+        chip whose qubits relax at different rates wants different sweeps — and there is
+        no per-target time axis to give them. Grouped by window, so the qubits that do
+        agree are still measured together.
+        """
+        by_window: dict[tuple[float, ...], list[str]] = {}
+        for target in targets:
+            grid = tuple(self._delays(device, target, config))
+            by_window.setdefault(grid, []).append(target)
+        return list(by_window.values())
+
+    def _delays(self, device: Any, target: str, config: RoutineConfig) -> list[float]:
+        """This target's echo delays.
+
+        Snapped so that *half* a delay lands on the grid, because that is what `idle` is
+        given. A window scaled from a measured T1 divides into steps of no particular
+        length — 73.82 us of T1 gave 5536.857838 ns — and the schedule then compiles right
+        up until qblox refuses a time value, in a routine that looks fine.
+        """
+        return [
+            2.0 * grid_duration(delay / 2.0)
+            for delay in setpoints_of(
+                config,
+                "delays",
+                linear_setpoints(0.0, self._window(device, target), 41),
+            )
+        ]
+
     def build_schedule(
         self,
         target: str,
@@ -744,40 +792,64 @@ class T2Echo(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        # Snapped so that *half* a delay lands on the grid, because that is what `idle`
-        # is given. A window scaled from a measured T1 divides into steps of no particular
-        # length — 73.82 us of T1 gave 5536.857838 ns — and the schedule then compiles
-        # right up until qblox refuses a time value, in a routine that looks fine.
-        # Read by `_widened` under the `_<axis>_ceiling` convention, so escalation cannot
-        # widen past what physics allows — see :data:`MAX_ECHO_WINDOW_IN_T1`.
-        t1 = measured_t1(device.get_element(target))
-        sweep["delays_ceiling"] = (
-            MAX_ECHO_WINDOW_IN_T1 * t1
-            if t1
-            else MAX_ECHO_WINDOW_IN_T1 * DEFAULT_COHERENCE_WINDOW_S / T2_WINDOW_IN_T1
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
         )
-        sweep["delays"] = [
-            2.0 * grid_duration(delay / 2.0)
-            for delay in setpoints_of(
-                config,
-                "delays",
-                linear_setpoints(0.0, self._window(device, target), 41),
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One echo on every target at once, over the window they agree on.
+
+        `compatible_groups` has already split the targets whose windows differ, so the
+        first target's grid is the group's.
+        """
+        delays = self._delays(device, targets[0], config)
+        for target in targets:
+            # Read by `_widened` under the `<axis>_ceiling` convention, so escalation
+            # cannot widen past what physics allows — see `MAX_ECHO_WINDOW_IN_T1`.
+            t1 = measured_t1(device.get_element(target))
+            sweeps[target]["delays_ceiling"] = (
+                MAX_ECHO_WINDOW_IN_T1 * t1
+                if t1
+                else MAX_ECHO_WINDOW_IN_T1
+                * DEFAULT_COHERENCE_WINDOW_S
+                / T2_WINDOW_IN_T1
             )
-        ]
+            sweeps[target]["delays"] = delays
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(sweep["delays"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
+        for index, delay in enumerate(delays):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            add_together(
+                schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
+            )
             backend.idle(schedule, delay / 2)
-            schedule.add(backend.Rxy(theta=180, phi=0, qubit=target))
+            add_together(
+                schedule, [backend.Rxy(theta=180, phi=0, qubit=t) for t in targets]
+            )
             backend.idle(schedule, delay / 2)
-            schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
+            anchor = add_together(
+                schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
+            )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
 

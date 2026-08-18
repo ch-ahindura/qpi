@@ -193,6 +193,22 @@ class CalibrationRoutine(ABC):
             f"{self.name} cannot measure {len(targets)} targets in one schedule"
         )
 
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """*targets* split into subgroups one schedule can hold (RFC 0009 D7).
+
+        The default is a single group, which is right for a routine whose sweep is the
+        same on every target — a fixed gate sequence, or a grid the config states outright.
+
+        A routine whose grid is derived per target overrides this. `t2_echo` is the case it
+        exists for: its delay window is scaled from each qubit's measured T1, so two
+        targets can want different windows, and an idle is dead time on every port at once
+        — there is no per-target time axis to sweep. Fusing them anyway would sweep one
+        qubit over the other's window and fit the result.
+        """
+        return [list(targets)]
+
     @property
     def fusable(self) -> bool:
         """Whether this routine overrides :meth:`build_group_schedule`."""
