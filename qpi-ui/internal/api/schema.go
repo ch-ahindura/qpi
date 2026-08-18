@@ -277,7 +277,14 @@ type CalibrationProgressPayload struct {
 	Target    string  `json:"target"`
 	Succeeded int     `json:"succeeded"`
 	Failed    int     `json:"failed"`
+	Skipped   int     `json:"skipped"`
 	ElapsedS  float64 `json:"elapsed_s"`
+
+	// Targets this routine is about to measure. Present on the event the driver
+	// sends before the work and absent on the one after it, which is what tells a
+	// start from a finish (RFC 0009 §7.1). Empty from a driver predating it, so
+	// such a driver still reduces exactly as it used to.
+	Running []string `json:"running"`
 }
 
 func (cpp *CalibrationProgressPayload) SetDefaults() {
@@ -294,7 +301,9 @@ func (cpp *CalibrationProgressPayload) ToMap() map[string]any {
 		"target":    cpp.Target,
 		"succeeded": cpp.Succeeded,
 		"failed":    cpp.Failed,
+		"skipped":   cpp.Skipped,
 		"elapsed_s": cpp.ElapsedS,
+		"running":   cpp.Running,
 	}
 }
 

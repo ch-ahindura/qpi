@@ -24,9 +24,10 @@ from qpi_driver.tuners.base.routines import (
 
 log = logging.getLogger(__name__)
 
-#: Called once per routine-and-target as the walk proceeds, with the keys the
-#: ``CalibrationProgress`` event carries — and once before any of them with a
-#: ``plan`` key instead, which is what tells the two apart (RFC 0006 §5.1).
+#: Called as the walk proceeds, with the keys the ``CalibrationProgress`` event
+#: carries. Three shapes, told apart by which key is present: ``plan`` once before
+#: anything runs (RFC 0006 §5.1), ``running`` when targets are about to be measured,
+#: and ``target`` when one has finished (RFC 0009 §7.1).
 #: Reporting is best-effort — see :meth:`CalibrationDAG.run` — so a sink may
 #: raise without ending a calibration.
 ProgressSink = Callable[[dict[str, Any]], None]
@@ -449,6 +450,7 @@ class CalibrationDAG:
                 continue
 
             log.info("%s running on %s", label, ", ".join(targets))
+            head = {"step": position, "total": len(order), "routine": routine_name}
             for target in targets:
                 blocked = ledger.blockers(routine, target)
                 if blocked:
@@ -469,8 +471,20 @@ class CalibrationDAG:
                         report.notes.append(f"{routine_name}[{target}]: {left}")
                     ledger.unsatisfied(routine, target, blame=ledger.blame(blocked))
                     skipped += 1
+                    # Without this the node reports nothing at all, and one whose every
+                    # target is blocked stays `pending` for the rest of the run.
+                    _report_progress(
+                        on_progress,
+                        {**head, **_tally(report, skipped, started), "target": target},
+                    )
                     continue
 
+                # Before the work, so the graph can colour the node it is on rather than
+                # the node it has just left. RFC 0009 §7.1.
+                _report_progress(
+                    on_progress,
+                    {**head, **_tally(report, skipped, started), "running": [target]},
+                )
                 ran_any = True
                 target_started = time.monotonic()
                 # Before the run, not after: the ledger records what this routine
@@ -502,15 +516,7 @@ class CalibrationDAG:
                 )
                 _report_progress(
                     on_progress,
-                    {
-                        "step": position,
-                        "total": len(order),
-                        "routine": routine_name,
-                        "target": target,
-                        "succeeded": len(report.routine_results),
-                        "failed": len(report.errors),
-                        "elapsed_s": round(time.monotonic() - started, 1),
-                    },
+                    {**head, **_tally(report, skipped, started), "target": target},
                 )
 
         if not ran_any:
@@ -694,6 +700,23 @@ def _over_budget(
 def utc_timestamp() -> str:
     """Now, in the millisecond-precision UTC form the report payload uses."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def _tally(
+    report: CalibrationReport, skipped: int, started: float
+) -> dict[str, Any]:
+    """The walk's running totals, which every progress event carries.
+
+    On the start event too, not only the finish: the server reads whether a target
+    failed from the difference against the last event's ``failed``, so an event that
+    reported zero would make the next one look like a failure.
+    """
+    return {
+        "succeeded": len(report.routine_results),
+        "failed": len(report.errors),
+        "skipped": skipped,
+        "elapsed_s": round(time.monotonic() - started, 1),
+    }
 
 
 def _report_progress(sink: ProgressSink | None, update: dict[str, Any]) -> None:

@@ -186,8 +186,8 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
                           : ""}
                       . A full run can take hours.
                     </div>
-                    {/* Only once a routine has finished: before that there is no
-                        position to show, and "0 of 33" would read as stuck. */}
+                    {/* From the first routine's start, not its finish — the driver
+                        reports the targets it is about to measure (RFC 0009 §7.1). */}
                     {request.progress && (
                       <div data-testid="calibration-progress">
                         <div className="flex items-center justify-between gap-4 text-xs">
@@ -197,12 +197,17 @@ export const CalibrationTab: React.FC<CalibrationTabProps> = ({
                             <span className="font-medium">
                               {request.progress.routine}
                             </span>{" "}
-                            on {request.progress.target}
+                            on{" "}
+                            {request.progress.running?.length
+                              ? request.progress.running.join(", ")
+                              : request.progress.target}
                           </span>
                           <span className="tabular-nums whitespace-nowrap">
                             {request.progress.succeeded} ok
                             {request.progress.failed > 0 &&
-                              `, ${request.progress.failed} failed`}{" "}
+                              `, ${request.progress.failed} failed`}
+                            {request.progress.skipped > 0 &&
+                              `, ${request.progress.skipped} skipped`}{" "}
                             · {formatDuration(request.progress.elapsed_s)}
                           </span>
                         </div>

@@ -90,12 +90,19 @@ describe("statusOf", () => {
       done: 3,
       total: 5,
       failed: 1,
+      skipped: 0,
     };
     expect(statusOf(node("rabi"), reported)).toBe("partial");
   });
 
   it("prefers the plan's own verdict over a stale report", () => {
-    const reported = { state: "done" as const, done: 1, total: 1, failed: 0 };
+    const reported = {
+      state: "done" as const,
+      done: 1,
+      total: 1,
+      failed: 0,
+      skipped: 0,
+    };
     expect(statusOf(node("rb", [], { planned: false }), reported)).toBe(
       "not_planned",
     );
@@ -134,12 +141,32 @@ describe("layoutGraph", () => {
   it("carries the reported tally through", () => {
     const plan = { nodes: [node("rabi", [], { targets: ["q0", "q1", "q2"] })] };
     const layout = layoutGraph(plan, {
-      rabi: { state: "running", done: 2, total: 3, failed: 0 },
+      rabi: { state: "running", done: 2, total: 3, failed: 0, skipped: 0 },
     });
     expect(layout.nodes[0]).toMatchObject({
       status: "running",
       done: 2,
       total: 3,
     });
+  });
+
+  it("carries the in-flight targets through, so the drawing can name them", () => {
+    const plan = { nodes: [node("rabi", [], { targets: ["q0", "q1", "q2"] })] };
+    const layout = layoutGraph(plan, {
+      rabi: {
+        state: "running",
+        done: 1,
+        total: 3,
+        failed: 0,
+        skipped: 0,
+        running: ["q1", "q2"],
+      },
+    });
+    expect(layout.nodes[0].running).toEqual(["q1", "q2"]);
+  });
+
+  it("leaves a node no walk has reported on with nothing in flight", () => {
+    const plan = { nodes: [node("rabi", [], { targets: ["q0"] })] };
+    expect(layoutGraph(plan).nodes[0].running).toEqual([]);
   });
 });

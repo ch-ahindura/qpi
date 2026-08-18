@@ -1143,3 +1143,134 @@ func TestToStringSlice_NarrowsWhateverTheQueueStored(t *testing.T) {
 		})
 	}
 }
+
+// TestAdvanceNodes_MarksASingleTargetNodeRunningBeforeItFinishes is the regression
+// test for RFC 0009 §7.1. A finish event alone puts a one-target node straight to
+// `done`, so before the driver reported a start there was no walk in which the
+// `running` style the graph draws could ever be reached.
+func TestAdvanceNodes_MarksASingleTargetNodeRunningBeforeItFinishes(t *testing.T) {
+	start := CalibrationProgressPayload{
+		Step: 1, Total: 2, Routine: "resonator_spectroscopy", Running: []string{"q0"},
+	}
+	nodes := advanceNodes(nil, &start, aPlan())
+
+	node := nodes["resonator_spectroscopy"]
+	if node.State != "running" || node.Done != 0 {
+		t.Fatalf("after start = %+v, want running with nothing done", node)
+	}
+	if len(node.Running) != 1 || node.Running[0] != "q0" {
+		t.Errorf("running = %v, want [q0]", node.Running)
+	}
+
+	finish := CalibrationProgressPayload{
+		Step: 1, Total: 2, Routine: "resonator_spectroscopy", Target: "q0", Succeeded: 1,
+	}
+	nodes = advanceNodes(storedAfter(t, &start, nodes), &finish, aPlan())
+
+	if node := nodes["resonator_spectroscopy"]; node.State != "done" || node.Done != 1 {
+		t.Errorf("after finish = %+v, want done 1/1", node)
+	}
+	if node := nodes["resonator_spectroscopy"]; len(node.Running) != 0 {
+		t.Errorf("running = %v, want empty once the target is done", node.Running)
+	}
+}
+
+// TestAdvanceNodes_ShrinksTheInFlightSetAsAGroupReportsBack covers a fused group,
+// whose start names every target at once and whose finishes arrive one at a time
+// (RFC 0009 §7.2).
+func TestAdvanceNodes_ShrinksTheInFlightSetAsAGroupReportsBack(t *testing.T) {
+	start := CalibrationProgressPayload{
+		Step: 2, Total: 2, Routine: "rabi", Running: []string{"q0", "q1", "q2"},
+	}
+	nodes := advanceNodes(nil, &start, aPlan())
+	if got := nodes["rabi"]; len(got.Running) != 3 || got.Total != 3 {
+		t.Fatalf("after start = %+v, want 3 in flight out of 3", got)
+	}
+
+	prior := storedAfter(t, &start, nodes)
+	finish := CalibrationProgressPayload{
+		Step: 2, Total: 2, Routine: "rabi", Target: "q1", Succeeded: 1,
+	}
+	nodes = advanceNodes(prior, &finish, aPlan())
+
+	got := nodes["rabi"]
+	if got.State != "running" || got.Done != 1 {
+		t.Fatalf("after one finish = %+v, want running 1/3", got)
+	}
+	if len(got.Running) != 2 || got.Running[0] != "q0" || got.Running[1] != "q2" {
+		t.Errorf("running = %v, want the two targets still in flight", got.Running)
+	}
+}
+
+// TestAdvanceNodes_SettlesANodeWhoseTargetsWereAllSkipped proves a node that never
+// ran stops at `blocked` rather than sitting at `pending` for the rest of the walk.
+// Skipped is neither done nor failed (RFC 0007 §11), and before RFC 0009 a blocked
+// target reported nothing at all.
+func TestAdvanceNodes_SettlesANodeWhoseTargetsWereAllSkipped(t *testing.T) {
+	nodes := map[string]CalibrationNodeState{}
+	prior := map[string]any{}
+	for i, target := range []string{"q0", "q1", "q2"} {
+		event := CalibrationProgressPayload{
+			Step: 2, Total: 2, Routine: "rabi", Target: target, Skipped: i + 1,
+		}
+		nodes = advanceNodes(prior, &event, aPlan())
+		prior = storedAfter(t, &event, nodes)
+	}
+
+	if got := nodes["rabi"]; got.State != "blocked" || got.Skipped != 3 {
+		t.Errorf("rabi = %+v, want blocked with 3 skipped", got)
+	}
+}
+
+// TestAdvanceNodes_PrefersFailureToASkip: a node with one of each has something to
+// investigate, and reporting it as merely blocked would bury that.
+func TestAdvanceNodes_PrefersFailureToASkip(t *testing.T) {
+	nodes := map[string]CalibrationNodeState{}
+	prior := map[string]any{}
+	walk := []CalibrationProgressPayload{
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q0", Skipped: 1},
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q1", Skipped: 1, Failed: 1},
+		{Step: 2, Total: 2, Routine: "rabi", Target: "q2", Skipped: 1, Failed: 1, Succeeded: 1},
+	}
+	for i := range walk {
+		nodes = advanceNodes(prior, &walk[i], aPlan())
+		prior = storedAfter(t, &walk[i], nodes)
+	}
+
+	if got := nodes["rabi"]; got.State != "partial" || got.Failed != 1 || got.Skipped != 1 {
+		t.Errorf("rabi = %+v, want partial with one failure and one skip", got)
+	}
+}
+
+// TestAdvanceNodes_IgnoresAStartFromAnOlderDriver: no `running` key means the payload
+// came from a driver predating RFC 0009, which must reduce exactly as it used to.
+func TestAdvanceNodes_IgnoresAStartFromAnOlderDriver(t *testing.T) {
+	event := CalibrationProgressPayload{
+		Step: 2, Total: 2, Routine: "rabi", Target: "q0", Succeeded: 1,
+	}
+	nodes := advanceNodes(nil, &event, aPlan())
+
+	if got := nodes["rabi"]; got.State != "running" || got.Done != 1 || got.Total != 3 {
+		t.Errorf("rabi = %+v, want running 1/3 as before", got)
+	}
+}
+
+// storedAfter is the row's `progress` field as the handler writes it, round-tripped
+// through JSON — the reducer reads its own previous output back out of a json field,
+// not out of memory.
+func storedAfter(
+	t *testing.T, event *CalibrationProgressPayload, nodes map[string]CalibrationNodeState,
+) map[string]any {
+	t.Helper()
+	stored := event.ToMap()
+	stored["nodes"] = nodes
+	encoded, err := json.Marshal(stored)
+	if err != nil {
+		t.Fatalf("marshal progress: %v", err)
+	}
+	prior := map[string]any{}
+	if err := json.Unmarshal(encoded, &prior); err != nil {
+		t.Fatalf("unmarshal progress: %v", err)
+	}
+	return prior
+}

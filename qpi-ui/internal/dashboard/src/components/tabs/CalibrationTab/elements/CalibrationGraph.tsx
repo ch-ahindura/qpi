@@ -43,6 +43,11 @@ const NODE_STYLES: Record<
     box: "fill-red-500/15 stroke-red-500",
     label: "fill-red-700 dark:fill-red-400",
   },
+  blocked: {
+    box: "fill-transparent stroke-amber-500/60",
+    label: "fill-amber-700/80 dark:fill-amber-300/80",
+    dashed: true,
+  },
   pending: {
     box: "fill-transparent stroke-gray-300 dark:stroke-zinc-700",
     label: "fill-gray-500 dark:fill-zinc-400",
@@ -64,6 +69,7 @@ const LEGEND: { status: CalibrationNodeStatus; label: string }[] = [
   { status: "running", label: "running" },
   { status: "partial", label: "some targets failed" },
   { status: "failed", label: "failed" },
+  { status: "blocked", label: "prerequisite never measured" },
   { status: "pending", label: "not yet run" },
   { status: "skipped", label: "applies to nothing here" },
   { status: "not_planned", label: "not in this run" },
@@ -144,7 +150,11 @@ export const CalibrationGraph: React.FC<CalibrationGraphProps> = ({
                 onClick={() => onSelect?.(placed.node.name)}
                 className={onSelect ? "cursor-pointer" : undefined}
               >
-                <title>{`${placed.node.name} — ${placed.status}`}</title>
+                <title>
+                  {placed.running.length
+                    ? `${placed.node.name} — ${placed.status} on ${placed.running.join(", ")}`
+                    : `${placed.node.name} — ${placed.status}`}
+                </title>
                 <rect
                   x={x}
                   y={y}
@@ -165,6 +175,16 @@ export const CalibrationGraph: React.FC<CalibrationGraphProps> = ({
                     {line}
                   </text>
                 ))}
+                {/* Which components are being measured, not merely that some are. */}
+                {placed.running.length > 0 && (
+                  <text
+                    x={x + 6}
+                    y={y + NODE_H - 6}
+                    className={`text-[9px] font-mono ${style.label}`}
+                  >
+                    {placed.running.join(" ")}
+                  </text>
+                )}
                 {/* Only when there is more than one, or `1/1` on every node is noise. */}
                 {placed.total > 1 && (
                   <text

@@ -7,6 +7,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- `qpi-driver/py`, `qpi-ui`: the calibration graph draws the node a walk is on. A progress
+  event only ever fired after a target finished, so a single-target node went straight from
+  `pending` to `done` and the `running` style was unreachable. The driver now reports the
+  targets it is about to measure, and a target skipped for a missing prerequisite reports
+  too — a node whose every target was blocked stayed `pending` for the rest of the run.
+
 ### Added
 
 - `docs`: RFC 0009 — Parallel Calibration. Designs grouping a routine's targets into sets

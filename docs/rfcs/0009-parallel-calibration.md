@@ -527,6 +527,14 @@ leave `Done` alone — and an event without it exactly as it does now.
 event so a blocked node settles instead of sitting at `pending`. A driver that predates
 this sends no `running` key and behaves as it does today.
 
+**Refined while implementing phase 1: a skipped target needs a state of its own.** The
+completion event settles the node, but counting a skip as `done` says a node measured
+something when nothing ran. So the event also carries a cumulative `skipped`, and
+`settledState` gains `blocked` — every target skipped — with `partial` for a mixture.
+Failure outranks a skip, since a node with one of each has something to investigate.
+`blocked` is a fifth walk-reported state and is distinct from the plan-derived `skipped`,
+which still means "applies to nothing here".
+
 ### 7.2 The set in flight
 
 `running: string[]` on the node state is also the answer to tracking components, and it

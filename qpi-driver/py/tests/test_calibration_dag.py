@@ -614,20 +614,53 @@ class TestTheProgressSink:
 
         # The plan is the first thing said, and the only one that is not a position.
         assert "plan" in updates.pop(0)
-        assert [(u["step"], u["routine"], u["target"]) for u in updates] == [
+        finished = [u for u in updates if "target" in u]
+        assert [(u["step"], u["routine"], u["target"]) for u in finished] == [
             (1, "a", "q0"),
             (1, "a", "q1"),
             (2, "b", "q0"),
             (2, "b", "q1"),
         ]
-        assert all(u["total"] == 2 for u in updates)
+        assert all(u["total"] == 2 for u in finished)
         # The counts are the report's own as it stands, so a watcher sees them climb.
-        assert [(u["succeeded"], u["failed"]) for u in updates] == [
+        assert [(u["succeeded"], u["failed"]) for u in finished] == [
             (1, 0),
             (2, 0),
             (2, 1),
             (2, 2),
         ]
+
+    def test_a_target_is_reported_before_it_runs_and_after(self):
+        """RFC 0009 §7.1 — a node reported only on finishing is never drawn running."""
+        updates: list[dict] = []
+        config = _config(target_qubits=["q0", "q1"])
+
+        CalibrationDAG([StubRoutine("a")], config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        assert [
+            (u.get("running"), u.get("target")) for u in updates if "plan" not in u
+        ] == [(["q0"], None), (None, "q0"), (["q1"], None), (None, "q1")]
+
+    def test_a_start_carries_the_totals_the_finish_will_be_compared_against(self):
+        """A start reporting zeroes would make the next finish look like a failure."""
+        updates: list[dict] = []
+        routines = [FailingRoutine("a")]
+        config = _config(target_qubits=["q0", "q1"])
+
+        CalibrationDAG(routines, config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        starts = [u for u in updates if "running" in u]
+        assert [u["failed"] for u in starts] == [0, 1]
 
     def test_a_sink_that_raises_does_not_end_the_walk(self):
         """A calibration outlives whoever is watching it."""
@@ -971,6 +1004,29 @@ class TestANodeWhoseInputWasNeverProducedIsSkipped:
             "reader[q0]: skipped" in note and "clock_freqs.f01" in note
             for note in report.notes
         ), report.notes
+
+    def test_a_skipped_target_still_reports_so_its_node_settles(self):
+        """RFC 0009 §7.1 — a node reporting nothing at all is drawn `pending` forever."""
+        updates: list[dict] = []
+        config = _config()
+        routines = [
+            FailingProducer("root", updates=("clock_freqs.f01",)),
+            Producer("reader", depends_on=("root",), reads=("clock_freqs.f01",)),
+        ]
+
+        CalibrationDAG(routines, config).run(
+            device=None,
+            backend=FakeBackend(),
+            config=config,
+            on_progress=updates.append,
+        )
+
+        reader = [u for u in updates if u.get("routine") == "reader"]
+        # Reported, and counted as a skip rather than as a success or a failure.
+        assert [u.get("target") for u in reader if "target" in u] == ["q0"]
+        assert [u["skipped"] for u in reader if "target" in u] == [1]
+        # And never announced as running, because it never ran.
+        assert not any("running" in u for u in reader)
 
     def test_a_failed_refiner_blocks_nothing(self):
         """Seven parameters have two writers. The second failing leaves the first's.

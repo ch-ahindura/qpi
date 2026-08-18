@@ -698,15 +698,22 @@ func handleCalibrationProgress(ctx context.Context, app core.App, qpuID string, 
 // CalibrationNodeState is one routine's state within a walk in flight, on the
 // request's `progress.nodes` map (RFC 0006 §5.3).
 //
-// Done counts the targets that have finished, Failed how many of those failed, so
-// the drawing reads `3/5` from Done and Total and colours from Failed. The states a
-// walk produces are `running`, `done`, `partial` and `failed`; `pending`, `skipped`
-// and `not_planned` are properties of the plan and are read from it directly.
+// Done counts the targets that have finished, Failed how many of those failed and
+// Skipped how many were never run for want of a prerequisite, so the drawing reads
+// `3/5` from Done and Total and colours from the other two. Running names the targets
+// being measured right now, which is what lets the drawing say *which* components are
+// in flight rather than only that the node is (RFC 0009 §7.2).
+//
+// The states a walk produces are `running`, `done`, `partial`, `failed` and `blocked`;
+// `pending`, `skipped` and `not_planned` are properties of the plan and are read from
+// it directly.
 type CalibrationNodeState struct {
-	State  string `json:"state"`
-	Done   int    `json:"done"`
-	Total  int    `json:"total"`
-	Failed int    `json:"failed"`
+	State   string   `json:"state"`
+	Done    int      `json:"done"`
+	Total   int      `json:"total"`
+	Failed  int      `json:"failed"`
+	Skipped int      `json:"skipped"`
+	Running []string `json:"running,omitempty"`
 }
 
 // advanceNodes folds one progress event into the tallies a walk has accumulated.
@@ -714,25 +721,38 @@ type CalibrationNodeState struct {
 // prior is the `progress` object already on the row — the previous event's payload,
 // node map included — and is nil before the first one.
 //
-// Two things make this less obvious than a counter. A progress event fires *after* a
-// target finishes, so the routine it names has just completed one and is still the
-// running one until an event names a different routine; and the payload carries the
-// walk's running totals rather than the outcome of the target it names, so whether
-// that target failed is the difference from the last event's total. Exactly one of
-// the two totals grows per target, which is what makes the difference readable.
+// Two shapes arrive, told apart by whether Running is set. A start event names the
+// targets about to be measured and advances no tally; a finish event names the one
+// target that is done and advances exactly one of the totals.
+//
+// Two things make this less obvious than a counter. A finish event carries the walk's
+// running totals rather than the outcome of the target it names, so whether that
+// target failed is the difference from the last event's total — which is why a start
+// event has to carry the same totals rather than zeroes. And a routine stays the
+// running one until an event names a different routine, so the walk moving on is what
+// settles whatever it was on before.
 func advanceNodes(prior map[string]any, event *CalibrationProgressPayload, plan *CalibrationPlan) map[string]CalibrationNodeState {
 	nodes := priorNodes(prior)
 
 	node := nodes[event.Routine]
 	node.Total = plan.targetCount(event.Routine, node.Total)
-	node.Done++
-	if float64(event.Failed) > numberOf(prior["failed"]) {
-		node.Failed++
-	}
-	if node.Total > 0 && node.Done >= node.Total {
-		node.State = settledState(node)
-	} else {
+	if len(event.Running) > 0 {
+		node.Running = event.Running
 		node.State = "running"
+	} else {
+		node.Done++
+		if float64(event.Failed) > numberOf(prior["failed"]) {
+			node.Failed++
+		}
+		if float64(event.Skipped) > numberOf(prior["skipped"]) {
+			node.Skipped++
+		}
+		node.Running = without(node.Running, event.Target)
+		if node.Total > 0 && node.Done >= node.Total {
+			node.State = settledState(node)
+		} else {
+			node.State = "running"
+		}
 	}
 	nodes[event.Routine] = node
 
@@ -742,6 +762,7 @@ func advanceNodes(prior map[string]any, event *CalibrationProgressPayload, plan 
 	if previous, ok := prior["routine"].(string); ok && previous != event.Routine {
 		if done, seen := nodes[previous]; seen && done.State == "running" {
 			done.State = settledState(done)
+			done.Running = nil
 			nodes[previous] = done
 		}
 	}
@@ -749,15 +770,38 @@ func advanceNodes(prior map[string]any, event *CalibrationProgressPayload, plan 
 }
 
 // settledState is what a node that has finished its targets looks like.
+//
+// Failure outranks a skip: a node with one of each has something to investigate, and
+// reporting it as merely blocked would bury that. `blocked` is every target skipped —
+// nothing ran, so neither `done` nor `failed` is true of it (RFC 0007 §11).
 func settledState(node CalibrationNodeState) string {
 	switch {
-	case node.Failed == 0:
-		return "done"
-	case node.Failed >= node.Done:
+	case node.Failed > 0 && node.Failed >= node.Done:
 		return "failed"
-	default:
+	case node.Failed > 0:
 		return "partial"
+	case node.Skipped > 0 && node.Skipped >= node.Done:
+		return "blocked"
+	case node.Skipped > 0:
+		return "partial"
+	default:
+		return "done"
 	}
+}
+
+// without is *targets* less *done*, for shrinking the in-flight set as a group's
+// targets report back one at a time.
+func without(targets []string, done string) []string {
+	kept := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if target != done {
+			kept = append(kept, target)
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
 }
 
 // priorNodes recovers the accumulated node map from the stored progress object,
@@ -775,13 +819,34 @@ func priorNodes(prior map[string]any) map[string]CalibrationNodeState {
 		}
 		state, _ := fields["state"].(string)
 		nodes[name] = CalibrationNodeState{
-			State:  state,
-			Done:   int(numberOf(fields["done"])),
-			Total:  int(numberOf(fields["total"])),
-			Failed: int(numberOf(fields["failed"])),
+			State:   state,
+			Done:    int(numberOf(fields["done"])),
+			Total:   int(numberOf(fields["total"])),
+			Failed:  int(numberOf(fields["failed"])),
+			Skipped: int(numberOf(fields["skipped"])),
+			Running: stringsOf(fields["running"]),
 		}
 	}
 	return nodes
+}
+
+// stringsOf reads a JSON string array back out of an `any`. Nil for anything that is
+// not one, absent included.
+func stringsOf(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	strings := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			strings = append(strings, text)
+		}
+	}
+	if len(strings) == 0 {
+		return nil
+	}
+	return strings
 }
 
 // numberOf reads a JSON number back out of an `any`, whatever numeric shape the

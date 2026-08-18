@@ -316,15 +316,20 @@ export interface CalibrationPlan {
 
 /** What one routine looks like right now, accumulated across progress events
  * (RFC 0006 §5.3). `done` counts the targets that have finished, `failed` how many
- * of those failed. */
+ * of those failed, and `skipped` how many never ran for want of a prerequisite. */
 export interface CalibrationNodeState {
-  state: "running" | "done" | "partial" | "failed";
+  state: "running" | "done" | "partial" | "failed" | "blocked";
   done: number;
   total: number;
   failed: number;
+  skipped: number;
+  /** The targets being measured right now, so the drawing can name the components in
+   * flight rather than only the routine (RFC 0009 §7.2). Absent on a walk whose driver
+   * predates it, and empty once the last target of a group reports back. */
+  running?: string[];
 }
 
-/** How a node is drawn. The four a walk reports, plus the three that are properties
+/** How a node is drawn. The five a walk reports, plus the three that are properties
  * of the plan rather than of anything that happened: a planned node nothing has
  * reported on, one that applies to no target here, and one this run excludes. */
 export type CalibrationNodeStatus =
@@ -373,7 +378,11 @@ export interface CalibrationProgress {
   target: string;
   succeeded: number;
   failed: number;
+  skipped: number;
   elapsed_s: number;
+  /** Targets this routine is about to measure. Present on the event sent before the
+   * work and absent on the one after it, which is what tells a start from a finish. */
+  running?: string[];
   /** Per routine, accumulated rather than replaced — this is what colours the graph.
    * Absent on a run whose driver or server predates it. */
   nodes?: Record<string, CalibrationNodeState>;

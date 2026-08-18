@@ -14,6 +14,8 @@ export interface PlacedNode {
   status: CalibrationNodeStatus;
   done: number;
   total: number;
+  /** Targets in flight, for a node the walk is on. Empty for every other node. */
+  running: string[];
 }
 
 export interface GraphLayout {
@@ -91,6 +93,7 @@ export function layoutGraph(
       status: statusOf(node, state),
       done: state?.done ?? 0,
       total: state?.total || node.targets.length,
+      running: state?.running ?? [],
     };
   });
 
