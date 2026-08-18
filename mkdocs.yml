@@ -63,6 +63,7 @@ nav:
       - 0006 The Calibration Graph in the Dashboard: rfcs/0006-calibration-graph-in-the-dashboard.md
       - 0007 Calibration Without Priors: rfcs/0007-calibration-without-priors.md
       - 0008 Parameter Provenance: rfcs/0008-parameter-provenance.md
+      - 0009 Parallel Calibration: rfcs/0009-parallel-calibration.md
   - Changelog: changelog.md
 
 markdown_extensions:

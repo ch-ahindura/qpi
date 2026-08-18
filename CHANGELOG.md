@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project follows versions of format `{year}.{month}.{patch_number}`.
 
+## [Unreleased]
+
+### Added
+
+- `docs`: RFC 0009 — Parallel Calibration. Designs grouping a routine's targets into sets
+  that can be measured in one schedule, from a colouring of the coupling graph rather than
+  a hand-written list, and records why concurrent submission to one cluster cannot work —
+  the scheduler's `start` disarms every sequencer in the cluster before arming its own.
+  Names the defect it starts by fixing: the calibration graph has a `running` style and a
+  legend entry no walk has ever reached, so a single-target node draws as `pending` and
+  then `done`, never as running.
+
 ## [0.4.2] - 2026-08-16
 
 ### Added
