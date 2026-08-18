@@ -27,6 +27,7 @@ from qpi_driver.tuners.base.device import read_path
 from tests.utils.simulation import SimulatedTuner
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.routines import RoutineError
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import FitError, fit_rb_decay
 from qpi_driver.tuners.routines import all_routines
 
@@ -179,15 +180,16 @@ class TestSpectroscopy:
         The device is handed an f01 that is 3 MHz off, so the routine has to scan
         around it and find the true one rather than being given it.
         """
+        sweep = Sweep("q0")
         device = device_for(simulator)
         spectroscopy = routine("qubit_spectroscopy")
         config = RoutineConfig(params={"span": 30e6, "points": 61})
 
-        spectroscopy.build_schedule("q0", device, config, StubBackend())
+        spectroscopy.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.qubit_spectroscopy(
             spectroscopy._frequencies, spectroscopy._drive_amps
         )
-        fitted = spectroscopy.analyse(acquisition, "q0", device, config)
+        fitted = spectroscopy.analyse(acquisition, "q0", device, config, sweep)
 
         assert fitted["clock_freq_01"] == pytest.approx(simulator.f01 * GHZ, abs=5e4)
         # Chosen from the sweep, not from the config: the master equation broadens the
@@ -283,6 +285,7 @@ class TestSpectroscopy:
           never report a frequency it did not look at, and the error is bounded by
           the operator's own sweep rather than by the optimiser's imagination.
         """
+        sweep = Sweep("q0")
         spectroscopy = routine("qubit_spectroscopy")
         device = device_for(simulator)
         offset = 500e6  # nowhere near the real line
@@ -294,12 +297,12 @@ class TestSpectroscopy:
             }
         )
 
-        spectroscopy.build_schedule("q0", device, config, StubBackend())
+        spectroscopy.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.qubit_spectroscopy(spectroscopy._frequencies)
         scanned = spectroscopy._frequencies
 
         try:
-            fitted = spectroscopy.analyse(acquisition, "q0", device, config)
+            fitted = spectroscopy.analyse(acquisition, "q0", device, config, sweep)
         except (FitError, RoutineError):
             return  # refusing outright is the other acceptable outcome
 
@@ -316,26 +319,28 @@ class TestTimeDomainRoutines:
 
     def test_rabi_finds_the_pi_pulse_from_simulated_dynamics(self, simulator):
         """The oscillation emerges from integrating the drive, not from a cosine."""
+        sweep = Sweep("q0")
         rabi = routine("rabi")
         device = device_for(simulator)
         config = RoutineConfig(params={"amplitudes": list(np.linspace(0.0, 0.5, 41))})
 
-        rabi.build_schedule("q0", device, config, StubBackend())
+        rabi.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.rabi(rabi._amplitudes)
-        fitted = rabi.analyse(acquisition, "q0", device, config)
+        fitted = rabi.analyse(acquisition, "q0", device, config, sweep)
 
         # The simulator is built so a pi rotation lands at 0.2 in the sweep's units.
         assert fitted["amp180"] == pytest.approx(0.2, rel=0.03)
 
     def test_t1_recovers_the_simulated_relaxation_time(self, simulator):
         """The decay comes from a collapse operator, not from an exponential."""
+        sweep = Sweep("q0")
         t1 = routine("t1")
         device = device_for(simulator)
         config = RoutineConfig(params={"delays": list(np.linspace(0.0, 80e-6, 25))})
 
-        t1.build_schedule("q0", device, config, StubBackend())
+        t1.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.t1(t1._delays)
-        fitted = t1.analyse(acquisition, "q0", device, config)
+        fitted = t1.analyse(acquisition, "q0", device, config, sweep)
 
         # The correct model recovers T1 to 0.01%; a Gaussian decay fitted to this
         # same data lands 7% out, so 2% is what makes this test discriminating
@@ -344,13 +349,14 @@ class TestTimeDomainRoutines:
 
     def test_t2_echo_recovers_the_simulated_dephasing_time(self, simulator):
         """A Hahn echo, evolved through both halves with the refocusing pulse between."""
+        sweep = Sweep("q0")
         t2 = routine("t2_echo")
         device = device_for(simulator)
         config = RoutineConfig(params={"delays": list(np.linspace(0.0, 60e-6, 25))})
 
-        t2.build_schedule("q0", device, config, StubBackend())
+        t2.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.t2_echo(t2._delays)
-        fitted = t2.analyse(acquisition, "q0", device, config)
+        fitted = t2.analyse(acquisition, "q0", device, config, sweep)
 
         assert fitted["t2"] == pytest.approx(simulator.t2_ns * 1e-9, rel=0.05)
 
@@ -362,6 +368,7 @@ class TestTimeDomainRoutines:
         So the *residual* detuning is the real assertion — it is the number that
         gets written to the device, and it should be near zero here.
         """
+        sweep = Sweep("q0")
         ramsey = routine("ramsey")
         device = device_for(simulator)
         detuning = 1e6
@@ -372,9 +379,9 @@ class TestTimeDomainRoutines:
             }
         )
 
-        ramsey.build_schedule("q0", device, config, StubBackend())
+        ramsey.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.ramsey(ramsey._delays, detuning)
-        fitted = ramsey.analyse(acquisition, "q0", device, config)
+        fitted = ramsey.analyse(acquisition, "q0", device, config, sweep)
 
         assert fitted["fringe_frequency"] == pytest.approx(detuning, rel=0.01)
         # The qubit is on resonance, so the residual should be kHz, not a
@@ -413,15 +420,16 @@ class TestADriveOffResonance:
     def test_a_rabi_fit_refuses_the_sweep_that_drove_nothing(self, simulator):
         """Refusing is the whole point: an `amp180` read off this would be noise,
         and every later X pulse would play it."""
+        sweep = Sweep("q0")
         rabi = routine("rabi")
         device = device_for(simulator)
         config = RoutineConfig(params={"amplitudes": self.AMPLITUDES})
 
-        rabi.build_schedule("q0", device, config, StubBackend())
+        rabi.build_schedule("q0", device, config, StubBackend(), sweep)
         acquisition = simulator.rabi(rabi._amplitudes, self.DETUNING_HZ / GHZ)
 
         with pytest.raises(FitError):
-            rabi.analyse(acquisition, "q0", device, config)
+            rabi.analyse(acquisition, "q0", device, config, sweep)
 
     def test_the_backend_drives_a_gate_at_the_frequency_the_device_configures(
         self, simulator
@@ -437,11 +445,12 @@ class TestADriveOffResonance:
         config = RoutineConfig(params={"amplitudes": self.AMPLITUDES})
 
         def run(configured_f01_hz: float):
+            sweep = Sweep("q0")
             device = device_for(simulator)
             device.get_element("q0").clock_freqs.f01 = configured_f01_hz
             backend = SimulatedBackend(simulator, device=device)
-            schedule = rabi.build_schedule("q0", device, config, backend)
-            return rabi.analyse(backend.run(schedule), "q0", device, config)
+            schedule = rabi.build_schedule("q0", device, config, backend, sweep)
+            return rabi.analyse(backend.run(schedule), "q0", device, config, sweep)
 
         assert run(simulator.f01 * GHZ)["amp180"] == pytest.approx(0.2, rel=0.03)
         with pytest.raises(FitError):
@@ -598,13 +607,16 @@ class TestTwoQubits:
         assert angle_apart(phase, 0.0) < 1.0
 
     def test_cz_chevron_finds_the_avoided_crossing(self, coupled):
+        sweep = Sweep("q0_q1")
         tuner = two_qubit_tuner(coupled)
         config = chevron_config(0.365, 0.388, 21, 45)
         routine_ = routine("cz_chevron")
 
-        schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+        schedule = routine_.build_schedule(
+            "q0_q1", tuner.device, config, tuner.backend, sweep
+        )
         fit = routine_.analyse(
-            tuner.backend.run(schedule), "q0_q1", tuner.device, config
+            tuner.backend.run(schedule), "q0_q1", tuner.device, config, sweep
         )
 
         assert fit["cz_amplitude"] == pytest.approx(
@@ -622,24 +634,32 @@ class TestTwoQubits:
         within its noise. A peak-finder would still return a confident answer from
         it, and that answer would go to the device as a CZ.
         """
+        sweep = Sweep("q0_q1")
         tuner = two_qubit_tuner(coupled)
         config = chevron_config(0.1, 0.6, 11, 11)
         routine_ = routine("cz_chevron")
 
-        schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+        schedule = routine_.build_schedule(
+            "q0_q1", tuner.device, config, tuner.backend, sweep
+        )
         with pytest.raises(FitError, match="no flux amplitude drove"):
-            routine_.analyse(tuner.backend.run(schedule), "q0_q1", tuner.device, config)
+            routine_.analyse(
+                tuner.backend.run(schedule), "q0_q1", tuner.device, config, sweep
+            )
 
     def test_conditional_phase_recovers_the_gates_real_phase(self, coupled):
+        sweep = Sweep("q0_q1")
         tuner = two_qubit_tuner(coupled)
         config = RoutineConfig(
             params={"phases": list(np.linspace(0.0, 360.0, 25)), "shots": 512}
         )
         routine_ = routine("conditional_phase")
 
-        schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+        schedule = routine_.build_schedule(
+            "q0_q1", tuner.device, config, tuner.backend, sweep
+        )
         fit = routine_.analyse(
-            tuner.backend.run(schedule), "q0_q1", tuner.device, config
+            tuner.backend.run(schedule), "q0_q1", tuner.device, config, sweep
         )
 
         assert (
@@ -658,6 +678,7 @@ class TestTwoQubits:
         recalibrates forever; this is the opposite failure, and the more dangerous
         one — a fit that reports every gate as fine leaves a broken CZ in service.
         """
+        sweep = Sweep("q0_q1")
         import dataclasses
 
         detuned = dataclasses.replace(coupled, conditional_phase_offset_deg=40.0)
@@ -667,9 +688,11 @@ class TestTwoQubits:
         )
         routine_ = routine("conditional_phase")
 
-        schedule = routine_.build_schedule("q0_q1", tuner.device, config, tuner.backend)
+        schedule = routine_.build_schedule(
+            "q0_q1", tuner.device, config, tuner.backend, sweep
+        )
         fit = routine_.analyse(
-            tuner.backend.run(schedule), "q0_q1", tuner.device, config
+            tuner.backend.run(schedule), "q0_q1", tuner.device, config, sweep
         )
 
         assert (
@@ -1000,14 +1023,19 @@ class TestTheEfLadderComesOutOfThePhysics:
         with it — which is also why `MAX_EF_LADDER_ERROR` allows a factor of two rather than
         the few percent the relation itself holds to.
         """
+        sweep = Sweep("q0")
         tuner = SimulatedTuner()
         amp180 = float(read_path(tuner.device.get_element("q0"), "rxy.amp180"))
         node = next(r for r in all_routines() if r.name == "rabi_12")
         config = RoutineConfig(params={})
 
-        schedule = node.build_schedule("q0", tuner.device, config, tuner.backend)
+        schedule = node.build_schedule("q0", tuner.device, config, tuner.backend, sweep)
         params = node.analyse(
-            tuner.backend.run(schedule, timeout_s=120), "q0", tuner.device, config
+            tuner.backend.run(schedule, timeout_s=120),
+            "q0",
+            tuner.device,
+            config,
+            sweep,
         )
 
         assert tuner.backend._maps_back(schedule), (

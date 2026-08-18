@@ -42,6 +42,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     fit_drag,
     fit_fine_amplitude,
@@ -309,7 +310,12 @@ class Rabi12(CalibrationRoutine):
         return has_ef_drive(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         # Half scale, and deliberately *not* full scale the way `rabi` now is. The bound
@@ -367,7 +373,12 @@ class Rabi12(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         # Seeded with what the ladder predicts, not checked against it afterwards. The two
         # cosines that fit a thin 1-2 sweep differ by a factor of two in period and the
@@ -489,7 +500,12 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         return has_three_state_readout(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._ef_amplitude = _required_ef_amplitude(element, target)
@@ -597,7 +613,12 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         return grid
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         shots = _prepared_clouds(dataset, 3 * len(self._settings))
         clouds = [shots[i * 3 : i * 3 + 3] for i in range(len(self._settings))]
@@ -673,7 +694,12 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         return has_ef_drive(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         amplitude = _required_ef_amplitude(element, target)
@@ -718,7 +744,12 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         require_resolved_line(fitted, self._frequencies)
@@ -792,6 +823,7 @@ class FineAmplitude12(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -804,10 +836,17 @@ class FineAmplitude12(CalibrationRoutine):
         spanned 1.707 of its contrast, asked to be shortened, and was refused outright on
         every run because this method was not here.
         """
-        return amplified(self, target, device, config, backend, timeout_s, step=1)
+        return amplified(
+            self, target, device, config, backend, timeout_s, sweep, step=1
+        )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._amplitude = _required_ef_amplitude(element, target)
@@ -868,7 +907,12 @@ class FineAmplitude12(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         expected = len(self._repetitions) + 2
@@ -890,7 +934,7 @@ class FineAmplitude12(CalibrationRoutine):
         )
         return {"ef_amp180": fitted["amplitude"], **fitted}
 
-    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+    def uncorrected(self, device: Any, target: str, sweep: Sweep) -> dict[str, Any]:
         element = device.get_element(target)
         path = ef_path(element, "ef_amp180")
         current = float(read_path(element, path)) if path else 0.0
@@ -950,7 +994,12 @@ class EfLadder(CalibrationRoutine):
         return has_ef_drive(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._duration = ef_duration(element, config)
@@ -984,7 +1033,12 @@ class EfLadder(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         if signal.size < len(self._amplitudes):
@@ -1076,7 +1130,12 @@ class Ramsey12(CalibrationRoutine):
         return has_three_state_readout(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         # Half the pi amplitude is half the rotation, at fixed duration.
@@ -1140,7 +1199,12 @@ class Ramsey12(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_ramsey(
             np.asarray(self._delays), signal_of(dataset), self._detuning
@@ -1194,6 +1258,7 @@ class Drag12(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -1204,10 +1269,15 @@ class Drag12(CalibrationRoutine):
         came out at 0.298 against a range of +/-0.2, so the node refused a fit that had
         found its answer.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         amplitude = _required_ef_amplitude(element, target)
@@ -1255,7 +1325,12 @@ class Drag12(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         if signal.size < 2 * len(self._drags):
@@ -1315,7 +1390,12 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         return has_three_state_readout(device, target)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         amplitude = _required_ef_amplitude(element, target)
@@ -1344,7 +1424,12 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_three_state_discrimination(
             _prepared_clouds(dataset, len(self.STATES))

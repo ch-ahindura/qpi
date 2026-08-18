@@ -71,10 +71,10 @@ class StubRoutine(CalibrationRoutine):
         self.benchmark = benchmark
         self.applied: list[tuple[str, dict]] = []
 
-    def build_schedule(self, target, device, config, backend):
+    def build_schedule(self, target, device, config, backend, sweep):
         return backend.new_schedule(self.name)
 
-    def analyse(self, dataset, target, device, config):
+    def analyse(self, dataset, target, device, config, sweep):
         return {"fidelity": 0.999, "value": 1.0}
 
     def apply(self, device, target, params):
@@ -82,7 +82,7 @@ class StubRoutine(CalibrationRoutine):
 
 
 class FailingRoutine(StubRoutine):
-    def analyse(self, dataset, target, device, config):
+    def analyse(self, dataset, target, device, config, sweep):
         raise RoutineError("could not fit")
 
 
@@ -95,6 +95,7 @@ class SelfMeasuringRoutine(StubRoutine):
         device,
         config,
         backend,
+        sweep,
         bias=None,
         timeout_s=DEFAULT_ROUTINE_TIMEOUT_S,
     ):
@@ -119,13 +120,13 @@ class CheckableRoutine(StubRoutine):
     def has_check(self) -> bool:
         return self.verdict is not None
 
-    def build_check_schedule(self, target, device, config, backend):
+    def build_check_schedule(self, target, device, config, backend, sweep):
         if self.verdict is None:
             return None
         self.checked.append(target)
         return backend.new_schedule(f"{self.name}_check")
 
-    def analyse_check(self, dataset, target, device, config):
+    def analyse_check(self, dataset, target, device, config, sweep):
         return CheckOutcome(
             passed=bool(self.verdict), margin=0.5 if self.verdict else 2.0
         )
@@ -137,7 +138,7 @@ class UnevaluableCheck(CheckableRoutine):
     def __init__(self, name, depends_on=()):
         super().__init__(name, depends_on=depends_on, verdict=True)
 
-    def analyse_check(self, dataset, target, device, config):
+    def analyse_check(self, dataset, target, device, config, sweep):
         raise RoutineError("the check itself could not be evaluated")
 
 
@@ -327,7 +328,7 @@ class TestDiagnose:
         """Drift on one qubit of several is drift. A mean would hide it."""
 
         class PerTarget(CheckableRoutine):
-            def analyse_check(self, dataset, target, device, config):
+            def analyse_check(self, dataset, target, device, config, sweep):
                 passed = target != "q1"
                 return CheckOutcome(passed=passed, margin=0.1 if passed else 3.0)
 
@@ -792,7 +793,7 @@ class TestTheFitOnAResult:
         """`parameters` is what gets written to a device; a sweep is not a parameter."""
 
         class Fitting(StubRoutine):
-            def analyse(self, dataset, target, device, config):
+            def analyse(self, dataset, target, device, config, sweep):
                 return {"amp180": 0.2, "fit": {"x": [1.0], "measured": [2.0]}}
 
         routine = Fitting("a")
@@ -808,8 +809,9 @@ class TestTheFitOnAResult:
         assert routine.applied == [("q0", {"amp180": 0.2})]
 
     def test_a_benchmark_does_not_carry_it_into_raw_data_as_well(self):
+
         class FittingBenchmark(StubRoutine):
-            def analyse(self, dataset, target, device, config):
+            def analyse(self, dataset, target, device, config, sweep):
                 return {"fidelity": 0.999, "depths": [1, 2], "fit": {"x": [1.0]}}
 
         config = _config()
@@ -973,7 +975,7 @@ class Producer(StubRoutine):
 
 
 class FailingProducer(Producer):
-    def analyse(self, dataset, target, device, config):
+    def analyse(self, dataset, target, device, config, sweep):
         raise RoutineError("could not fit")
 
 
@@ -1107,7 +1109,7 @@ class TestANodeWhoseInputWasNeverProducedIsSkipped:
         """The ledger is keyed on the target too — q1 is a different chip site."""
 
         class FailsOnQ0(Producer):
-            def analyse(self, dataset, target, device, config):
+            def analyse(self, dataset, target, device, config, sweep):
                 if target == "q0":
                     raise RoutineError("could not fit")
                 return {"value": 1.0}
@@ -1141,13 +1143,13 @@ class TestAWindowTooShortIsWidenedRatherThanFailed:
             self.needs = needs
             self.attempts: list[float] = []
 
-        def build_schedule(self, target, device, config, backend):
+        def build_schedule(self, target, device, config, backend, sweep):
             self._delays = setpoints_of(
                 config, "delays", linear_setpoints(0.0, 1e-5, 41)
             )
             return backend.new_schedule(self.name)
 
-        def analyse(self, dataset, target, device, config):
+        def analyse(self, dataset, target, device, config, sweep):
             extent = max(self._delays)
             self.attempts.append(extent)
             if extent < self.needs:
@@ -1156,8 +1158,10 @@ class TestAWindowTooShortIsWidenedRatherThanFailed:
                 )
             return {"t1": extent / 3.0}
 
-        def measure(self, target, device, config, backend, bias=None, timeout_s=300.0):
-            return self.escalating(target, device, config, backend, timeout_s)
+        def measure(
+            self, target, device, config, backend, sweep, bias=None, timeout_s=300.0
+        ):
+            return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def _run(self, routines, config=None):
         config = config or _config()

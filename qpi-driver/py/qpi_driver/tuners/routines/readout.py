@@ -19,7 +19,7 @@ answer.
 from typing import Any
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import xarray as xr
@@ -40,6 +40,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     fit_readout_discrimination,
     fit_readout_integration_time,
@@ -126,7 +127,12 @@ class ReadoutOperatingPoint(CalibrationRoutine):
     MAX_SINGLE_SHOT_ACQUISITIONS = 32
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._settings = self._grid(element, config)
@@ -190,7 +196,12 @@ class ReadoutOperatingPoint(CalibrationRoutine):
         return grid
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         ground, excited = _swept_clouds(dataset, len(self._settings))
         return fit_readout_operating_point(self._settings, ground, excited)
@@ -295,6 +306,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """One schedule per window, because a schedule may only have one of them.
 
@@ -314,7 +326,7 @@ class ReadoutIntegrationTime(CalibrationRoutine):
                 enabled=config.enabled,
                 params={**config.params, "windows": [window]},
             )
-            dataset = super().acquire(target, device, single, backend, timeout_s)
+            dataset = super().acquire(target, device, single, backend, timeout_s, sweep)
             # ``(shots, 2)`` — the two prepared states of this one window. Kept 2-D,
             # because the shots *are* the measurement here: their spread is the noise the
             # separation is quoted in, and flattening them reads as one shot per state.
@@ -333,7 +345,12 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """``|0>`` and ``|1>`` at *one* window — see :meth:`acquire` for why only one."""
         windows = self._grid(device.get_element(target), config)
@@ -429,7 +446,12 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         return min(instrument, driven + ringdown)
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         ground, excited = _swept_clouds(dataset, len(self._windows))
         return fit_readout_integration_time(
@@ -478,6 +500,7 @@ class ReadoutDiscrimination(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
     ) -> Any:
         """|0> and |1> on every target at once — the preparation is the same on each."""
         shots = int(config.get("shots", 2000))
@@ -523,12 +546,24 @@ class ReadoutDiscrimination(CalibrationRoutine):
         return schedule
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
-        return self.build_group_schedule([target], device, config, backend)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         ground, excited = _shot_clouds(dataset)
         return fit_readout_discrimination(ground, excited)
@@ -553,7 +588,12 @@ class ReadoutDiscrimination(CalibrationRoutine):
     CHECK_MIN_FIDELITY = 0.95
 
     def build_check_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """The same experiment with fewer shots — the one case where that is right.
 
@@ -568,10 +608,16 @@ class ReadoutDiscrimination(CalibrationRoutine):
             device,
             RoutineConfig(params={"shots": int(config.get("check_shots", 400))}),
             backend,
+            sweep,
         )
 
     def analyse_check(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> CheckOutcome:
         ground, excited = _shot_clouds(dataset)
         fitted = fit_readout_discrimination(ground, excited)
@@ -648,6 +694,7 @@ class ReadoutFidelity(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
     ) -> Any:
         """|0> and |1> on every target at once — the preparation is the same on each."""
         shots = int(config.get("shots", 2000))
@@ -692,12 +739,24 @@ class ReadoutFidelity(CalibrationRoutine):
         return schedule
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
-        return self.build_group_schedule([target], device, config, backend)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         ground, excited = _shot_clouds(dataset)
         fitted = fit_readout_discrimination(ground, excited)

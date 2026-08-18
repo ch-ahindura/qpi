@@ -24,6 +24,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     FitError,
     fit_chevron,
@@ -117,7 +118,12 @@ class CouplerAnticrossing(CalibrationRoutine):
         return bias is not None and hasattr(bias, "parking_current")
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """There is no single schedule. See :meth:`measure`.
 
@@ -131,7 +137,12 @@ class CouplerAnticrossing(CalibrationRoutine):
         )
 
     def analyse(
-        self, dataset: Any, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: Any,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         """Likewise: the fitting happens inside :meth:`measure`, per bias point."""
         raise RoutineError(
@@ -144,6 +155,7 @@ class CouplerAnticrossing(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -286,7 +298,12 @@ class CZSpectroscopy(CalibrationRoutine):
         return parametric_edge(device, target) is not None
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = parametric_edge(device, target)
         if element is None:
@@ -353,7 +370,12 @@ class CZSpectroscopy(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         return {"clock_freq_cz": fitted["readout_frequency"], **fitted}
@@ -398,7 +420,12 @@ class CZParametrization(CalibrationRoutine):
         return parametric_edge(device, target) is not None
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = parametric_edge(device, target)
         if element is None:
@@ -444,7 +471,12 @@ class CZParametrization(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         durations = np.asarray(self._durations, dtype=float)
         # `fit_rabi` fits a cosine and reports where the *half* period falls. Its axis
@@ -506,7 +538,12 @@ class CZChevron(CalibrationRoutine):
         )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         control, _child = qubits_of(target)
         self._amplitudes = setpoints_of(
@@ -547,7 +584,12 @@ class CZChevron(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_chevron(
             np.asarray(self._amplitudes),
@@ -581,7 +623,12 @@ class ConditionalPhase(CalibrationRoutine):
     reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         parent, child = qubits_of(target)
         self._phases = setpoints_of(config, "phases", linear_setpoints(0.0, 360.0, 25))
@@ -618,7 +665,12 @@ class ConditionalPhase(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         count = len(self._phases)

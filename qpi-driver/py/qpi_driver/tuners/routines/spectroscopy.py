@@ -35,6 +35,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     FitError,
     fit_punchout,
@@ -185,7 +186,12 @@ class _ReadoutTraceRoutine(CalibrationRoutine):
     SAMPLING_RATE = 1e9
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._restore = {
@@ -211,7 +217,12 @@ class _ReadoutTraceRoutine(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         try:
             trace = _trace_of(dataset)
@@ -329,6 +340,7 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -340,10 +352,15 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         reads the frequency this one writes, so a refusal here stops the chip rather than
         one routine.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # Recorded for escalation to read back, under the `_<axis>` convention `_widened`
         # already uses for setpoint lists.
@@ -368,7 +385,12 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         # The root of the graph, and the one frequency every other node reads at.
@@ -406,7 +428,12 @@ class ResonatorSpectroscopy(CalibrationRoutine):
     CHECK_MAX_OFFSET_LINEWIDTHS = 0.35
 
     def build_check_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """Three points across the line: is the configured frequency still its peak?
 
@@ -447,7 +474,12 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         return schedule
 
     def analyse_check(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> CheckOutcome:
         signal = signal_of(dataset)
         if signal.size < 3:
@@ -519,14 +551,20 @@ class ResonatorPunchout(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """A row per readout amplitude, chunked when the grid outgrows one schedule."""
         return self.acquire_in_row_chunks(
-            target, device, config, backend, timeout_s, rows_axis="amplitudes"
+            target, device, config, backend, timeout_s, sweep, rows_axis="amplitudes"
         )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # To full scale, not to half. Punch-through is by definition the *high*-power end
         # of the sweep, so a grid stopping at 0.5 finds it only on a line lossless enough
@@ -567,7 +605,12 @@ class ResonatorPunchout(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         rows = len(self._amplitudes)
@@ -601,7 +644,12 @@ class ResonatorPunchout(CalibrationRoutine):
     CHECK_MAX_WALK_LINEWIDTHS = 0.5
 
     def build_check_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """Two short resonator scans, at the configured power and at half of it.
 
@@ -658,7 +706,12 @@ class ResonatorPunchout(CalibrationRoutine):
         return measured_linewidth(device.get_element(target), self.CHECK_LINEWIDTH_HZ)
 
     def analyse_check(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> CheckOutcome:
         signal = signal_of(dataset)
         columns = len(self._check_frequencies)
@@ -713,7 +766,12 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
     )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         element = device.get_element(target)
         self._frequencies = _frequency_sweep(
@@ -746,7 +804,12 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_resonator_spectroscopy(self._frequencies, signal_of(dataset))
         require_resolved_line(fitted, self._frequencies)
@@ -915,10 +978,11 @@ class QubitSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """A row per drive amplitude, chunked when the grid outgrows one schedule."""
         return self.acquire_in_row_chunks(
-            target, device, config, backend, timeout_s, rows_axis="drive_amps"
+            target, device, config, backend, timeout_s, sweep, rows_axis="drive_amps"
         )
 
     def measure(
@@ -927,6 +991,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -951,7 +1016,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         after the narrow one has already failed.
         """
         try:
-            return self._sweep(target, device, config, backend, timeout_s)
+            return self._sweep(target, device, config, backend, timeout_s, sweep)
         except (RoutineError, FitError) as narrow:
             near = str(narrow)
             log.info(
@@ -981,7 +1046,7 @@ class QubitSpectroscopy(CalibrationRoutine):
             },
         )
         try:
-            return self._sweep(target, device, confirming, backend, timeout_s)
+            return self._sweep(target, device, confirming, backend, timeout_s, sweep)
         except (RoutineError, FitError) as exc:
             raise RoutineError(
                 f"the widened search put {target}'s strongest line at {found:.0f} Hz, "
@@ -996,6 +1061,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         """The ordinary pass: build, run, fit, and refuse anything unresolved.
 
@@ -1015,7 +1081,7 @@ class QubitSpectroscopy(CalibrationRoutine):
         An operator who sets ``drive_amps`` keeps it: `escalating` leaves an axis the
         config names alone, so this only ever moves a default.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def _search(
         self,
@@ -1165,7 +1231,12 @@ class QubitSpectroscopy(CalibrationRoutine):
         return max(self.CONFIRM_POINTS, min(wanted, affordable))
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         return self._probe_schedule(
             target,
@@ -1252,7 +1323,12 @@ class QubitSpectroscopy(CalibrationRoutine):
         ]
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         columns = len(self._frequencies)
@@ -1297,7 +1373,12 @@ class F12Spectroscopy(CalibrationRoutine):
     reads = ("clock_freqs.f01", "rxy.amp180")
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # Centred on f01 plus the anharmonicity rather than on the configured f12,
         # unless the config says otherwise: a chip whose f12 has never been measured
@@ -1424,7 +1505,12 @@ class F12Spectroscopy(CalibrationRoutine):
         ]
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         columns = len(self._frequencies)
@@ -1532,14 +1618,20 @@ class FluxSpectroscopy(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """A row per flux offset, chunked when the grid outgrows one schedule."""
         return self.acquire_in_row_chunks(
-            target, device, config, backend, timeout_s, rows_axis="flux_offsets"
+            target, device, config, backend, timeout_s, sweep, rows_axis="flux_offsets"
         )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._flux_offsets = setpoints_of(
             config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11)
@@ -1575,7 +1667,12 @@ class FluxSpectroscopy(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         columns = len(self._frequencies)

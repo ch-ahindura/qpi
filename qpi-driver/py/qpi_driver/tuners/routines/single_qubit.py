@@ -7,7 +7,7 @@ device parameter — except AllXY, which is a diagnostic and writes none.
 from typing import Any
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import math
 
 import numpy as np
@@ -39,6 +39,7 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     fit_drag,
     fit_fine_amplitude,
@@ -192,14 +193,20 @@ class Rabi(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
         """Reach further when the fit says the pi pulse was above the sweep."""
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # Half scale by default, and *escalating* to full scale rather than starting
         # there. Both bounds are real and they pull against each other.
@@ -240,7 +247,12 @@ class Rabi(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_rabi(np.asarray(self._amplitudes), signal_of(dataset))
 
@@ -264,7 +276,12 @@ class Rabi(CalibrationRoutine):
     CHECK_MAX_ROTATION_ERROR = 0.05
 
     def build_check_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """Amplify any error in the stored `amp180` over a few repetitions.
 
@@ -303,7 +320,12 @@ class Rabi(CalibrationRoutine):
         return schedule
 
     def analyse_check(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> CheckOutcome:
         """Recover the per-pulse rotation error from the amplified sequence.
 
@@ -366,6 +388,7 @@ class Ramsey(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -391,14 +414,14 @@ class Ramsey(CalibrationRoutine):
         full `escalating` call, so a window too short for this chip is still widened by the
         guard that already knows how.
         """
-        refined = self.escalating(target, device, config, backend, timeout_s)
+        refined = self.escalating(target, device, config, backend, timeout_s, sweep)
         # Zero when nothing has built a schedule yet, and then there is no bias to compare
         # against and no sign to resolve — the same reading `_detuning_floor` gives an
         # unswept `_delays`.
         artificial = float(getattr(self, "_detuning", 0.0) or 0.0)
         if artificial and abs(float(refined.get("detuning", 0.0))) >= artificial:
             refined = self._resolved_root(
-                target, device, config, backend, timeout_s, refined
+                target, device, config, backend, timeout_s, sweep, refined
             )
         floor = self._detuning_floor(config)
         for _attempt in range(self.MAX_REFINEMENTS):
@@ -407,7 +430,7 @@ class Ramsey(CalibrationRoutine):
             # Applied here so the next pass drives at the corrected frequency, which is the
             # whole mechanism. The DAG applies again afterwards, and a write is idempotent.
             self.apply(device, target, refined)
-            again = self.escalating(target, device, config, backend, timeout_s)
+            again = self.escalating(target, device, config, backend, timeout_s, sweep)
             if abs(float(again.get("detuning", 0.0))) >= abs(
                 float(refined.get("detuning", 0.0))
             ):
@@ -430,6 +453,7 @@ class Ramsey(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
         fitted: dict[str, Any],
     ) -> dict[str, Any]:
         """Which of the fringe's two roots is this chip's, measured rather than assumed.
@@ -449,7 +473,9 @@ class Ramsey(CalibrationRoutine):
         measured = []
         for candidate in (fitted, others):
             self.apply(device, target, candidate)
-            measured.append(self.escalating(target, device, config, backend, timeout_s))
+            measured.append(
+                self.escalating(target, device, config, backend, timeout_s, sweep)
+            )
         best = min(measured, key=lambda pass_: abs(float(pass_.get("detuning", 0.0))))
         log.info(
             "%s on %s: fringe %.0f Hz against a %.0f Hz artificial detuning leaves the "
@@ -479,7 +505,12 @@ class Ramsey(CalibrationRoutine):
         return 1.0 / (2.0 * math.pi * window) if window > 0 else 0.0
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # 601 points from 4 ns to 24 us, and both ends are load-bearing — this sweep has
         # to satisfy two constraints at once, which is why it cannot be small.
@@ -534,7 +565,12 @@ class Ramsey(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         fitted = fit_ramsey(
             np.asarray(self._delays), signal_of(dataset), self._detuning
@@ -571,6 +607,7 @@ class T1(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -579,10 +616,15 @@ class T1(CalibrationRoutine):
         A window too short for this chip is the commonest way this node fails, and the
         guard already knows it — see `CalibrationRoutine.escalating`.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._delays = setpoints_of(
             config, "delays", linear_setpoints(0.0, DEFAULT_COHERENCE_WINDOW_S, 41)
@@ -602,7 +644,12 @@ class T1(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_t1(np.asarray(self._delays), signal_of(dataset))
 
@@ -634,6 +681,7 @@ class T2Echo(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -642,10 +690,15 @@ class T2Echo(CalibrationRoutine):
         A window too short for this chip is the commonest way this node fails, and the
         guard already knows it — see `CalibrationRoutine.escalating`.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # Snapped so that *half* a delay lands on the grid, because that is what `idle`
         # is given. A window scaled from a measured T1 divides into steps of no particular
@@ -685,7 +738,12 @@ class T2Echo(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         return fit_t2(
             np.asarray(self._delays),
@@ -725,6 +783,7 @@ class Drag(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -736,10 +795,15 @@ class Drag(CalibrationRoutine):
         -0.4803 against a range of +/-0.2, so the node refused a fit that had found its
         answer — and everything downstream of `drag` then ran on an uncorrected pulse.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         # The DRAG parameter's *units differ between the two schedulers*, so the
         # default sweep cannot be a constant here — see `SchedulerBackend.drag_span`.
@@ -779,7 +843,12 @@ class Drag(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         if signal.size < 2 * len(self._motzois):
@@ -822,6 +891,7 @@ class AllXY(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
     ) -> Any:
         """The 21 pairs on every target at once — the sequence is the same on each."""
         schedule = backend.new_schedule(
@@ -852,12 +922,24 @@ class AllXY(CalibrationRoutine):
         return schedule
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
-        return self.build_group_schedule([target], device, config, backend)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         if signal.size < len(ALLXY_PAIRS):
@@ -890,6 +972,7 @@ def amplified(
     config: RoutineConfig,
     backend: SchedulerBackend,
     timeout_s: float,
+    sweep: Sweep,
     step: int,
 ) -> dict[str, Any]:
     """Run *routine*, shortening its repetitions if the rotation outran its own model.
@@ -905,7 +988,7 @@ def amplified(
     """
     for attempt in range(MAX_SHORTENINGS + 1):
         try:
-            return routine.escalating(target, device, config, backend, timeout_s)
+            return routine.escalating(target, device, config, backend, timeout_s, sweep)
         except OutOfRange as refusal:
             counts = [
                 int(n)
@@ -940,7 +1023,7 @@ def amplified(
                     target,
                     refusal,
                 )
-                return routine.uncorrected(device, target)
+                return routine.uncorrected(device, target, sweep)
             log.info(
                 "%s on %s: %s — repeating %d times instead of %d (%d of %d)",
                 routine.name,
@@ -997,6 +1080,7 @@ class FineAmplitude(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -1005,10 +1089,17 @@ class FineAmplitude(CalibrationRoutine):
         On the August 2026 B chip they turned 2.3 radians — a full swing of the sine,
         fitted as a straight line, and written to the amplitude every X pulse plays at.
         """
-        return amplified(self, target, device, config, backend, timeout_s, step=1)
+        return amplified(
+            self, target, device, config, backend, timeout_s, sweep, step=1
+        )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._repetitions = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
@@ -1054,7 +1145,12 @@ class FineAmplitude(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         count = len(self._repetitions)
@@ -1073,7 +1169,7 @@ class FineAmplitude(CalibrationRoutine):
         )
         return {"amp180": fitted["amplitude"], **fitted}
 
-    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+    def uncorrected(self, device: Any, target: str, sweep: Sweep) -> dict[str, Any]:
         current = float(read_path(device.get_element(target), "rxy.amp180"))
         return {
             "amp180": current,
@@ -1158,6 +1254,7 @@ class FineAmplitude90(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -1173,7 +1270,7 @@ class FineAmplitude90(CalibrationRoutine):
         Bounded the same three ways as `ramsey`: by convergence, by the correction
         becoming smaller than the noise, and by `MAX_REFINEMENTS`.
         """
-        refined = self._pass(target, device, config, backend, timeout_s)
+        refined = self._pass(target, device, config, backend, timeout_s, sweep)
         # Carry forward whatever the first pass settled on, so a sweep that had to be
         # shortened is not rediscovered — and paid for — on every pass after it.
         # `build_schedule` leaves the counts it used here.
@@ -1186,7 +1283,7 @@ class FineAmplitude90(CalibrationRoutine):
             # Applied here so the next pass plays the corrected pi/2, which is the whole
             # mechanism. The DAG applies again afterwards, and a write is idempotent.
             self.apply(device, target, refined)
-            again = self._pass(target, device, config, backend, timeout_s)
+            again = self._pass(target, device, config, backend, timeout_s, sweep)
             moved = abs(float(again["amp90"]) - previous) / max(previous, 1e-12)
             refined = again
             if moved <= self.CONVERGED_FRACTION:
@@ -1199,7 +1296,9 @@ class FineAmplitude90(CalibrationRoutine):
             )
         return refined
 
-    def _pass(self, target, device, config, backend, timeout_s) -> dict[str, Any]:
+    def _pass(
+        self, target, device, config, backend, timeout_s, sweep
+    ) -> dict[str, Any]:
         """One refinement pass, shortened if the rotation outran the linearisation.
 
         Every fourth count, because only after ``4k+1`` quarter turns does the accumulated
@@ -1213,10 +1312,17 @@ class FineAmplitude90(CalibrationRoutine):
         # overran could only be cut to something `align` refuses. On 2 the same four points
         # become [1, 3, 5, 7] — 0.81 rad where 13 pulses gave 1.51, which is the difference
         # between refining this pulse and refusing it.
-        return amplified(self, target, device, config, backend, timeout_s, step=2)
+        return amplified(
+            self, target, device, config, backend, timeout_s, sweep, step=2
+        )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._repetitions = [
             int(n)
@@ -1266,7 +1372,12 @@ class FineAmplitude90(CalibrationRoutine):
         return schedule
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         count = len(self._repetitions)
@@ -1287,7 +1398,7 @@ class FineAmplitude90(CalibrationRoutine):
         )
         return {"amp90": fitted["amplitude"], **fitted}
 
-    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+    def uncorrected(self, device: Any, target: str, sweep: Sweep) -> dict[str, Any]:
         current = float(read_path(device.get_element(target), AMP90_PATH))
         return {
             "amp90": current,

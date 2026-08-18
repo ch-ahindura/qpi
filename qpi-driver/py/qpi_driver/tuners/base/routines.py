@@ -12,7 +12,7 @@ the same routine runs under quantify-scheduler and qblox-scheduler alike.
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -21,6 +21,7 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting.core import (
     MIN_LINE_REACH,
     CarriesFit,
@@ -152,7 +153,12 @@ class CalibrationRoutine(ABC):
 
     @abstractmethod
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """Compose the schedule for this experiment over *target*."""
 
@@ -162,6 +168,7 @@ class CalibrationRoutine(ABC):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
     ) -> Any:
         """This experiment over every target in *targets*, in one schedule (RFC 0009 §6.1).
 
@@ -178,7 +185,9 @@ class CalibrationRoutine(ABC):
         slices the result back apart by position.
         """
         if len(targets) == 1:
-            return self.build_schedule(targets[0], device, config, backend)
+            return self.build_schedule(
+                targets[0], device, config, backend, sweeps[targets[0]]
+            )
         raise RoutineError(
             f"{self.name} cannot measure {len(targets)} targets in one schedule"
         )
@@ -193,7 +202,12 @@ class CalibrationRoutine(ABC):
 
     @abstractmethod
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         """Fit *dataset* and return the extracted parameters.
 
@@ -202,7 +216,7 @@ class CalibrationRoutine(ABC):
                 the range that produced it.
         """
 
-    def uncorrected(self, device: Any, target: str) -> dict[str, Any]:
+    def uncorrected(self, device: Any, target: str, sweep: Sweep) -> dict[str, Any]:
         """This node's parameters with no correction applied — the prior, reported as such.
 
         For a refining node whose sweep could not be described by its own model. The value
@@ -224,7 +238,12 @@ class CalibrationRoutine(ABC):
         """
 
     def build_check_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         """A short schedule testing whether this routine's parameters still hold.
 
@@ -244,7 +263,12 @@ class CalibrationRoutine(ABC):
         return None
 
     def analyse_check(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> CheckOutcome:
         """Whether the parameters still hold, from the check schedule's data.
 
@@ -263,6 +287,7 @@ class CalibrationRoutine(ABC):
         device: Any,
         config: Any,
         backend: Any,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -313,6 +338,7 @@ class CalibrationRoutine(ABC):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """Build this routine's schedule, run it, and return the dataset.
 
@@ -325,7 +351,7 @@ class CalibrationRoutine(ABC):
         The default is exactly what both call sites did before this existed, so a routine
         that does not override it behaves identically.
         """
-        schedule = self.build_schedule(target, device, config, backend)
+        schedule = self.build_schedule(target, device, config, backend, sweep)
         return backend.run(schedule, timeout_s=timeout_s)
 
     def acquire_in_row_chunks(
@@ -335,6 +361,7 @@ class CalibrationRoutine(ABC):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
         *,
         rows_axis: str,
         columns_axis: str = "frequencies",
@@ -361,7 +388,7 @@ class CalibrationRoutine(ABC):
         there is nothing at its edges to lose. `analyse` reshapes the result exactly as it
         would one schedule's, because the rows arrive in the order it expects.
         """
-        schedule = self.build_schedule(target, device, config, backend)
+        schedule = self.build_schedule(target, device, config, backend, sweep)
         rows = list(getattr(self, f"_{rows_axis}", ()) or ())
         columns = len(getattr(self, f"_{columns_axis}", ()) or ())
         per_schedule = max(1, MAX_SWEEP_POINTS // max(columns, 1))
@@ -392,7 +419,7 @@ class CalibrationRoutine(ABC):
             chunk = RoutineConfig(
                 enabled=config.enabled, params={**config.params, rows_axis: list(group)}
             )
-            piece = self.build_schedule(target, device, chunk, backend)
+            piece = self.build_schedule(target, device, chunk, backend, sweep)
             dataset = backend.run(piece, timeout_s=timeout_s)
             gathered.append(np.asarray(signal_of(dataset), dtype=float))
 
@@ -408,6 +435,7 @@ class CalibrationRoutine(ABC):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         """Build, run and analyse, widening the sweep if the fit says the window was wrong.
 
@@ -429,8 +457,10 @@ class CalibrationRoutine(ABC):
         attempted: list[str] = []
         for attempt in range(self.MAX_ESCALATIONS + 1):
             try:
-                dataset = self.acquire(target, device, config, backend, timeout_s)
-                return self.analyse(dataset, target, device, config)
+                dataset = self.acquire(
+                    target, device, config, backend, timeout_s, sweep
+                )
+                return self.analyse(dataset, target, device, config, sweep)
             except OutOfRange as refusal:
                 attempted.append(f"{refusal.axis} x{refusal.factor**attempt:g}")
                 if attempt == self.MAX_ESCALATIONS or refusal.axis in operator_set:

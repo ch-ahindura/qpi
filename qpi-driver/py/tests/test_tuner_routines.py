@@ -28,6 +28,7 @@ from tests.utils.simulation import StubBackend
 from qpi_driver.tuners.base.config import CalibrationConfig, RoutineConfig
 from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS, RoutineError
 from qpi_driver.tuners.routines import ROUTINE_CLASSES, all_routines
+from qpi_driver.tuners.base.sweep import Sweep
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -141,8 +142,9 @@ def _build(routine, tuner):
     """Build *routine*'s schedule for the right kind of target."""
     target = _target_for(routine, tuner.device)
     assert target is not None, f"{routine.name} applies to no edge on the fixture"
+    sweep = Sweep(target)
     config = RoutineConfig(params=SMALL_SWEEPS.get(routine.name, {}))
-    return routine.build_schedule(target, tuner.device, config, tuner.backend)
+    return routine.build_schedule(target, tuner.device, config, tuner.backend, sweep)
 
 
 @pytest.mark.parametrize("routine_name", ROUTINE_NAMES)
@@ -205,7 +207,7 @@ def test_every_check_schedule_compiles_under_both_schedulers(
         target = _target_for(routine, tuner.device)
         assert target is not None
         schedule = routine.build_check_schedule(
-            target, tuner.device, config, tuner.backend
+            target, tuner.device, config, tuner.backend, Sweep(target)
         )
         assert schedule is not None, (
             f"{routine_name} reports has_check but built no check schedule"
@@ -632,6 +634,7 @@ class TestExcitingTheQubitHasToMoveItsResonator:
 
     @pytest.mark.parametrize("fraction,accepted", MEASURED)
     def test_only_a_shift_readout_could_resolve_is_reported(self, fraction, accepted):
+        sweep = Sweep("q0")
         import numpy as np
 
         node = routine("resonator_spectroscopy_excited")
@@ -646,11 +649,11 @@ class TestExcitingTheQubitHasToMoveItsResonator:
         signal += np.random.default_rng(0).normal(0.0, 2e-5, signal.size)
 
         if accepted:
-            found = node.analyse(signal, "q0", None, RoutineConfig(params={}))
+            found = node.analyse(signal, "q0", None, RoutineConfig(params={}), sweep)
             assert found["dispersive_shift"] < 0
         else:
             with pytest.raises(RoutineError, match="not exciting this qubit"):
-                node.analyse(signal, "q0", None, RoutineConfig(params={}))
+                node.analyse(signal, "q0", None, RoutineConfig(params={}), sweep)
 
 
 @pytest.fixture
@@ -743,6 +746,7 @@ def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify
     waveform past that clips. The element does not bound this at all: quantify validates
     `rxy.amp180` in [-10, 10], a sanity range rather than a drive bound.
     """
+    sweep = Sweep("q0")
     from qpi_driver.tuners.base.limits import FULL_SCALE, full_scale
 
     element = own_quantify_tuner.device.get_element("q0")
@@ -754,6 +758,7 @@ def test_a_rabi_sweep_can_reach_full_scale_but_does_not_start_there(own_quantify
         own_quantify_tuner.device,
         RoutineConfig(params={}),
         own_quantify_tuner.backend,
+        sweep,
     )
     assert max(node._amplitudes) == pytest.approx(0.5 * FULL_SCALE), (
         "the default should measure where the cosine model holds"
@@ -814,7 +819,13 @@ class TestRamseyResolvesTheFringeSign:
     def test_both_roots_are_measured_and_the_better_one_kept(self):
         node, applied = self._stubbed([4.18e6, 0.06e6])
         best = node._resolved_root(
-            "q0", object(), RoutineConfig(params={}), None, 1.0, self._fitted()
+            "q0",
+            object(),
+            RoutineConfig(params={}),
+            None,
+            1.0,
+            Sweep("q0"),
+            self._fitted(),
         )
 
         assert applied == pytest.approx(
@@ -839,9 +850,10 @@ class TestRamseyResolvesTheFringeSign:
 
     def test_a_residual_under_the_artificial_detuning_never_tries_the_other_root(self):
         """The sign is unambiguous there, so the extra sweep would be waste."""
+        sweep = Sweep("q0")
         node, applied = self._stubbed([0.2e6, 0.01e6, 1e3])
         node._delays = [0.0, 24e-6]
-        node.measure("q0", object(), RoutineConfig(params={}), None)
+        node.measure("q0", object(), RoutineConfig(params={}), None, sweep)
 
         alternative = self._fitted()["clock_freq_01_alternative"]
         assert alternative not in applied
@@ -933,6 +945,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
     def test_the_operating_point_span_tracks_the_linewidth(
         self, own_quantify_tuner, linewidth
     ):
+        sweep = Sweep("q0")
         from qpi_driver.tuners.routines.readout import SPAN_IN_LINEWIDTHS
 
         self._with_linewidth(own_quantify_tuner, linewidth)
@@ -942,6 +955,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.device,
             RoutineConfig(params={}),
             own_quantify_tuner.backend,
+            sweep,
         )
         assert self._span_of(node) == pytest.approx(
             SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
@@ -951,6 +965,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
     def test_the_excited_sweep_span_tracks_the_linewidth(
         self, own_quantify_tuner, linewidth
     ):
+        sweep = Sweep("q0")
         from qpi_driver.tuners.routines.spectroscopy import EXCITED_SPAN_IN_LINEWIDTHS
 
         self._with_linewidth(own_quantify_tuner, linewidth)
@@ -960,6 +975,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.device,
             RoutineConfig(params={}),
             own_quantify_tuner.backend,
+            sweep,
         )
         assert self._span_of(node) == pytest.approx(
             EXCITED_SPAN_IN_LINEWIDTHS * linewidth, rel=1e-6
@@ -969,6 +985,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
         self, own_quantify_tuner
     ):
         """Zero means "not measured", and a zero-wide span would sweep one point."""
+        sweep = Sweep("q0")
         self._with_linewidth(own_quantify_tuner, 0.0)
         node = routine("readout_operating_point")
         node.build_schedule(
@@ -976,6 +993,7 @@ class TestSweepsSizedFromTheMeasuredLinewidth:
             own_quantify_tuner.device,
             RoutineConfig(params={}),
             own_quantify_tuner.backend,
+            sweep,
         )
         assert self._span_of(node) > 0.0
 
@@ -989,6 +1007,7 @@ class TestAnAnharmonicityHasToBeATransmons:
     """
 
     def test_a_positive_prior_is_refused(self):
+        sweep = Sweep("q0")
         node = routine("f12_spectroscopy")
 
         class _Device:
@@ -1008,6 +1027,7 @@ class TestAnAnharmonicityHasToBeATransmons:
                 _Device,
                 RoutineConfig(params={"anharmonicity_prior": 100e6}),
                 None,
+                sweep,
             )
 
     @pytest.mark.parametrize("anharmonicity", (100e6, -20e6, -900e6))
@@ -1179,6 +1199,7 @@ def test_a_punchout_sweep_reaches_full_readout_scale(own_quantify_tuner):
     it. The B chip made the cost concrete — carrying `output_att: 20` on its readout, a
     grid stopping at 0.5 is around 26 dB short of what the module can emit.
     """
+    sweep = Sweep("q0")
     from qpi_driver.tuners.base.limits import FULL_SCALE, full_scale
 
     element = own_quantify_tuner.device.get_element("q0")
@@ -1190,6 +1211,7 @@ def test_a_punchout_sweep_reaches_full_readout_scale(own_quantify_tuner):
         own_quantify_tuner.device,
         RoutineConfig(params={}),
         own_quantify_tuner.backend,
+        sweep,
     )
     assert max(node._amplitudes) == pytest.approx(FULL_SCALE)
     # And still starts low enough to have a dressed regime to compare against.
@@ -1267,6 +1289,7 @@ class TestTheResonatorSweepWidensItself:
 
     def test_it_finds_a_resonator_outside_its_first_window(self):
         """The whole point, end to end through `escalating`."""
+        sweep = Sweep("q0")
         configured = 7.12899e9
         truth = configured - 12.8e6
         node = routine("resonator_spectroscopy")
@@ -1283,6 +1306,7 @@ class TestTheResonatorSweepWidensItself:
             RoutineConfig(params={"points": 501}),
             backend,
             None,
+            sweep,
             timeout_s=60,
         )
 
@@ -1296,6 +1320,7 @@ class TestTheResonatorSweepWidensItself:
 
     def test_an_operator_who_set_the_span_is_not_overruled(self):
         """RFC 0007 §7: a named axis is a statement about the chip, not a default."""
+        sweep = Sweep("q0")
         from qpi_driver.tuners.fitting.core import OutOfRange
 
         configured = 7.12899e9
@@ -1310,6 +1335,7 @@ class TestTheResonatorSweepWidensItself:
                 RoutineConfig(params={"span": 20e6, "points": 501}),
                 backend,
                 None,
+                sweep,
                 timeout_s=60,
             )
         assert len(backend.spans) == 1, "it should not have widened a stated sweep"
@@ -1969,6 +1995,7 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
 
     def test_it_refines_until_the_detuning_is_under_the_floor(self):
         """Each pass returns a smaller residual, and the loop stops when one is small."""
+        sweep = Sweep("q5")
         node = self._ramsey_with([4e-9, 24e-6])
         residuals = iter([1.032e6, 4.1e4, 1.2e3])
         applied: list[float] = []
@@ -1981,7 +2008,7 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
             params["detuning"]
         )
 
-        result = node.measure("q5", None, RoutineConfig(params={}), None)
+        result = node.measure("q5", None, RoutineConfig(params={}), None, sweep)
 
         assert result["detuning"] == pytest.approx(1.2e3), (
             "it should keep the last, best pass"
@@ -1991,6 +2018,7 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
 
     def test_it_stops_when_the_residual_stops_falling(self):
         """Another pass would be measuring noise, so keep the better of the two."""
+        sweep = Sweep("q5")
         node = self._ramsey_with([4e-9, 24e-6])
         residuals = iter([5.0e4, 6.0e4, 7.0e4])
         node.escalating = lambda *a, **k: {  # type: ignore[method-assign]
@@ -1999,11 +2027,12 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
         }
         node.apply = lambda *a, **k: None  # type: ignore[method-assign]
 
-        result = node.measure("q5", None, RoutineConfig(params={}), None)
+        result = node.measure("q5", None, RoutineConfig(params={}), None, sweep)
 
         assert result["detuning"] == pytest.approx(5.0e4), "the first was the best"
 
     def test_a_first_pass_already_on_resonance_costs_nothing(self):
+        sweep = Sweep("q5")
         node = self._ramsey_with([4e-9, 24e-6])
         passes = []
 
@@ -2013,7 +2042,7 @@ class TestRamseyRefinesUntilTheResidualIsUnresolvable:
 
         node.escalating = once  # type: ignore[method-assign]
 
-        result = node.measure("q5", None, RoutineConfig(params={}), None)
+        result = node.measure("q5", None, RoutineConfig(params={}), None, sweep)
 
         assert len(passes) == 1, "500 Hz is under the 6.6 kHz this window resolves"
         assert result["detuning"] == 500.0
@@ -2453,13 +2482,14 @@ class TestASweepTooLargeForOneScheduleIsSplit:
 
     def _acquire(self, circuits, depths, monkeypatch):
         """Run `acquire`, recording the circuit count and seed of each schedule built."""
+        sweep = Sweep("q0")
         from qpi_driver.tuners.routines import benchmarks
 
         node = routine("rb")
         seen: list[tuple[int, int]] = []
         original = benchmarks.RandomizedBenchmarking.build_schedule
 
-        def recording(self, target, device, config, backend):
+        def recording(self, target, device, config, backend, sweep):
             seen.append(
                 (
                     int(
@@ -2468,7 +2498,7 @@ class TestASweepTooLargeForOneScheduleIsSplit:
                     int(config.get("seed", benchmarks.DEFAULT_RB_SEED)),
                 )
             )
-            return original(self, target, device, config, backend)
+            return original(self, target, device, config, backend, sweep)
 
         monkeypatch.setattr(
             benchmarks.RandomizedBenchmarking, "build_schedule", recording
@@ -2477,7 +2507,7 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         config = RoutineConfig(
             params={"depths": list(depths), "circuits_per_depth": circuits, "shots": 1}
         )
-        dataset = node.acquire("q0", device, config, _CountingBackend(), 60.0)
+        dataset = node.acquire("q0", device, config, _CountingBackend(), 60.0, sweep)
         return node, seen, dataset
 
     def test_survival_is_scored_against_the_references_not_the_sweep(self):
@@ -2490,6 +2520,7 @@ class TestASweepTooLargeForOneScheduleIsSplit:
         ``|0>`` and ``X|0>`` the numbers keep their meaning and `fit_rb_decay` sees what
         the sequences actually did.
         """
+        sweep = Sweep("q0")
         from qpi_driver.tuners.fitting.core import FitError
         from qpi_driver.tuners.routines.benchmarks import REFERENCE_ACQUISITIONS
 
@@ -2506,6 +2537,7 @@ class TestASweepTooLargeForOneScheduleIsSplit:
                 "q0",
                 SimpleNamespace(get_element=lambda _n: SimpleNamespace(name="q0")),
                 RoutineConfig(params={}),
+                sweep,
             )
 
     def test_a_sweep_inside_the_budget_runs_as_one_schedule(self, monkeypatch):
@@ -2560,12 +2592,13 @@ class TestATwoDimensionalGridIsSplitByRows:
     POINTS = 101
 
     def _acquire(self, name, rows_axis, rows):
+        sweep = Sweep("q0")
         from qpi_driver.tuners.base.routines import MAX_SWEEP_POINTS
 
         node = routine(name)
         backend = _CountingGrid()
         config = RoutineConfig(params={rows_axis: rows, "points": self.POINTS})
-        dataset = node.acquire("q0", _grid_device(), config, backend, 60.0)
+        dataset = node.acquire("q0", _grid_device(), config, backend, 60.0, sweep)
         return node, backend.sizes, signal_of(dataset), MAX_SWEEP_POINTS
 
     @pytest.mark.parametrize(

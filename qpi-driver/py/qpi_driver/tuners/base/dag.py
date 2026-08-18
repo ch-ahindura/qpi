@@ -30,6 +30,7 @@ from qpi_driver.tuners.base.grouping import (
 )
 from qpi_driver.tuners.base.provenance import ProvenanceStore
 from qpi_driver.tuners.base.report import CalibrationReport, RoutineResult
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     CheckOutcome,
@@ -175,13 +176,16 @@ class CalibrationDAG:
         worst: CheckOutcome | None = None
         for target in targets:
             try:
+                check = Sweep(target)
                 schedule = routine.build_check_schedule(
-                    target, device, routine_config, backend
+                    target, device, routine_config, backend, check
                 )
                 if schedule is None:
                     continue
                 dataset = backend.run(schedule, timeout_s=config.timeout_for(name))
-                outcome = routine.analyse_check(dataset, target, device, routine_config)
+                outcome = routine.analyse_check(
+                    dataset, target, device, routine_config, check
+                )
             except Exception:  # noqa: BLE001 - an unevaluable check is not drift
                 log.warning(
                     "check for %s on %s could not be evaluated; treating as unknown",
@@ -717,9 +721,13 @@ class CalibrationDAG:
         started = time.monotonic()
         backend.start_accounting()
         allowance = config.timeout_for(routine.name)
+        # One per target, and the same object the fit reads back: a sweep centred on a
+        # per-qubit value has a different grid per target, and a routine keeping them on
+        # itself would leave every fit in the group reading whichever built last.
+        sweeps = {target: Sweep(target) for target in targets}
         try:
             schedule = routine.build_group_schedule(
-                targets, device, routine_config, backend
+                targets, device, routine_config, backend, sweeps
             )
             dataset = backend.run(schedule, timeout_s=allowance)
             elapsed = time.monotonic() - started
@@ -756,6 +764,7 @@ class CalibrationDAG:
                 routine_config,
                 report,
                 started,
+                sweeps[target],
                 priors.get(target, ()),
             )
         return outcomes
@@ -769,6 +778,7 @@ class CalibrationDAG:
         routine_config: Any,
         report: CalibrationReport,
         started: float,
+        sweep: Sweep,
         priors: tuple[str, ...] = (),
     ) -> bool:
         """Analyse one target's acquisition and record what it produced.
@@ -777,7 +787,7 @@ class CalibrationDAG:
         recorded exactly as a sequential one is.
         """
         try:
-            params = routine.analyse(dataset, target, device, routine_config)
+            params = routine.analyse(dataset, target, device, routine_config, sweep)
             fit = params.pop("fit", None)
             routine.apply(device, target, params)
             if routine.is_benchmark:
@@ -815,6 +825,7 @@ class CalibrationDAG:
         started = time.monotonic()
         backend.start_accounting()
         allowance = config.timeout_for(routine.name)
+        sweep = Sweep(target)
         try:
             if routine.measures_itself:
                 # A routine whose acquisitions cannot be one schedule — DC state set
@@ -826,6 +837,7 @@ class CalibrationDAG:
                     device,
                     routine_config,
                     backend,
+                    sweep,
                     self.bias,
                     timeout_s=allowance,
                 )
@@ -863,7 +875,7 @@ class CalibrationDAG:
             # Through `acquire`, so a routine whose sweep needs more than one schedule
             # chunks it there rather than here — see `CalibrationRoutine.acquire`.
             dataset = routine.acquire(
-                target, device, routine_config, backend, allowance
+                target, device, routine_config, backend, allowance, sweep
             )
             elapsed = time.monotonic() - started
             # Against what the backend was prepared to wait for, not against the
@@ -876,7 +888,7 @@ class CalibrationDAG:
             if elapsed > allowed:
                 raise _over_budget(elapsed, allowed, allowance, routine.name)
 
-            params = routine.analyse(dataset, target, device, routine_config)
+            params = routine.analyse(dataset, target, device, routine_config, sweep)
             # Lifted out before `apply` and before the benchmark's `raw_data` is
             # built from what is left: the sweep behind the fit is a field of its
             # own on the result, not a parameter and not something to write to a

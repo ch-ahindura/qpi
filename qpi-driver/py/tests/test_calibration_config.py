@@ -7,6 +7,7 @@ from qpi_driver.tuners.base.config import (
     ConfigError,
     RoutineConfig,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 
 
 def test_a_routine_the_file_does_not_mention_is_enabled():
@@ -173,15 +174,16 @@ class TestCouplerBiasOnHardwareThatMayNotHaveOne:
         a crossing with complete confidence. That number then goes to the device. A routine
         that measures the chip has to refuse a source that cannot touch it.
         """
+        sweep = Sweep("q0_q1")
         from qpi_driver.executors.utils.coupler_bias import RecordingBias
         from qpi_driver.tuners.base.routines import RoutineError
         from qpi_driver.tuners.routines import all_routines
 
         routine = next(r for r in all_routines() if r.name == "coupler_anticrossing")
         with pytest.raises(RoutineError, match="hold a parking current"):
-            routine.measure("q0_q1", None, None, None, RecordingBias())
+            routine.measure("q0_q1", None, None, None, RecordingBias(), sweep)
         with pytest.raises(RoutineError, match="hold a parking current"):
-            routine.measure("q0_q1", None, None, None, None)
+            routine.measure("q0_q1", None, None, None, None, sweep)
 
     def test_the_sources_that_do_hold_a_current_say_so(self):
         """The flag is what separates a rack from a notebook, and both are BiasSource."""

@@ -7,7 +7,7 @@ it has no fidelity for the drift check to read. What a benchmark returns is a
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import random
 from typing import Any
 
@@ -22,6 +22,7 @@ from qpi_driver.tuners.base.routines import (
     CalibrationRoutine,
     RoutineError,
 )
+from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import fit_rb_decay, signal_of
 from qpi_driver.tuners.routines.single_qubit import (
     ALLXY_IDEAL,
@@ -100,6 +101,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweep: Sweep,
         bias: Any = None,
         timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
     ) -> dict[str, Any]:
@@ -112,7 +114,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         untouched — which matters here, because RB's depths are a statement about what the
         operator wants benchmarked.
         """
-        return self.escalating(target, device, config, backend, timeout_s)
+        return self.escalating(target, device, config, backend, timeout_s, sweep)
 
     def acquire(
         self,
@@ -121,6 +123,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         config: RoutineConfig,
         backend: SchedulerBackend,
         timeout_s: float,
+        sweep: Sweep,
     ) -> Any:
         """Run this sweep as however many schedules it takes, and combine them.
 
@@ -140,7 +143,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
         wanted = int(config.get("circuits_per_depth", DEFAULT_RB_CIRCUITS))
         per_schedule = max(1, MAX_RB_CLIFFORDS // max(sum(depths), 1))
         if wanted <= per_schedule or not depths:
-            return super().acquire(target, device, config, backend, timeout_s)
+            return super().acquire(target, device, config, backend, timeout_s, sweep)
 
         seed = int(config.get("seed", DEFAULT_RB_SEED))
         sizes = [per_schedule] * (wanted // per_schedule)
@@ -172,7 +175,7 @@ class RandomizedBenchmarking(CalibrationRoutine):
                     "seed": seed + index,
                 },
             )
-            dataset = super().acquire(target, device, chunk, backend, timeout_s)
+            dataset = super().acquire(target, device, chunk, backend, timeout_s, sweep)
             signal = np.asarray(signal_of(dataset), dtype=float)
             taken = len(depths) * size
             expected = taken + REFERENCE_ACQUISITIONS
@@ -203,7 +206,12 @@ class RandomizedBenchmarking(CalibrationRoutine):
         )
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._depths = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
         # Named `_circuits_per_depth` as well, because escalation reads the setpoints a
@@ -283,7 +291,12 @@ class RandomizedBenchmarking(CalibrationRoutine):
         raise NotImplementedError
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         circuits = len(self._depths) * self._circuits
@@ -340,10 +353,15 @@ class InterleavedRB(RandomizedBenchmarking):
     interleaved = "CZ"
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
         self._control, self._spectator = qubits_of(target)
-        return super().build_schedule(self._control, device, config, backend)
+        return super().build_schedule(self._control, device, config, backend, sweep)
 
     def _add_interleaved(
         self, schedule: Any, target: str, backend: SchedulerBackend
@@ -351,9 +369,14 @@ class InterleavedRB(RandomizedBenchmarking):
         schedule.add(backend.CZ(self._control, self._spectator))
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
-        fitted = super().analyse(dataset, self._control, device, config)
+        fitted = super().analyse(dataset, self._control, device, config, sweep)
         fitted["interleaved_gate"] = "CZ"
         return fitted
 
@@ -378,6 +401,7 @@ class AllXYCheck(CalibrationRoutine):
         device: Any,
         config: RoutineConfig,
         backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
     ) -> Any:
         """The 21 pairs on every target at once — the sequence is the same on each."""
         schedule = backend.new_schedule(
@@ -408,12 +432,24 @@ class AllXYCheck(CalibrationRoutine):
         return schedule
 
     def build_schedule(
-        self, target: str, device: Any, config: RoutineConfig, backend: SchedulerBackend
+        self,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweep: Sweep,
     ) -> Any:
-        return self.build_group_schedule([target], device, config, backend)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
     def analyse(
-        self, dataset: xr.Dataset, target: str, device: Any, config: RoutineConfig
+        self,
+        dataset: xr.Dataset,
+        target: str,
+        device: Any,
+        config: RoutineConfig,
+        sweep: Sweep,
     ) -> dict[str, Any]:
         signal = signal_of(dataset)
         if signal.size < len(ALLXY_PAIRS):

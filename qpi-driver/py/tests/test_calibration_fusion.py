@@ -20,6 +20,12 @@ from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
 from qpi_driver.tuners.fitting.core import signal_of
 from qpi_driver.tuners.routines import ROUTINE_CLASSES
 from tests.utils.simulation import FakeDevice, FakeElement, StubBackend
+from qpi_driver.tuners.base.sweep import Sweep
+
+
+def _sweeps(targets):
+    """One `Sweep` per target, as the walk hands them over."""
+    return {target: Sweep(target) for target in targets}
 
 
 def _routine(name):
@@ -152,7 +158,11 @@ class TestTheHook:
 
         with pytest.raises(RoutineError, match="cannot measure 3 targets"):
             routine.build_group_schedule(
-                ["q0", "q1", "q2"], None, RoutineConfig(), StubBackend()
+                ["q0", "q1", "q2"],
+                None,
+                RoutineConfig(),
+                StubBackend(),
+                _sweeps(["q0", "q1", "q2"]),
             )
 
     def test_an_unconverted_routine_still_builds_for_one_target(self):
@@ -161,7 +171,7 @@ class TestTheHook:
         device, backend = _grouped("q0")
 
         schedule = routine.build_group_schedule(
-            ["q0"], device, RoutineConfig(), backend
+            ["q0"], device, RoutineConfig(), backend, _sweeps(["q0"])
         )
 
         assert schedule is not None
@@ -171,7 +181,7 @@ class TestTheHook:
         device, backend = _grouped("q0", "q1", "q2")
 
         schedule = routine.build_group_schedule(
-            ["q0", "q2"], device, RoutineConfig(), backend
+            ["q0", "q2"], device, RoutineConfig(), backend, _sweeps(["q0", "q2"])
         )
 
         channels = [
@@ -187,7 +197,7 @@ class TestTheHook:
         device, backend = _grouped("q0", "q1")
 
         schedule = routine.build_group_schedule(
-            ["q0", "q1"], device, RoutineConfig(), backend
+            ["q0", "q1"], device, RoutineConfig(), backend, _sweeps(["q0", "q1"])
         )
 
         resets = schedule.starts_of("Reset")
@@ -206,7 +216,7 @@ class FusableProbe(CalibrationRoutine):
     name = "probe"
     targets = "qubits"
 
-    def build_group_schedule(self, targets, device, config, backend):
+    def build_group_schedule(self, targets, device, config, backend, sweeps):
         schedule = backend.new_schedule(self.name)
         add_together(
             schedule,
@@ -217,10 +227,12 @@ class FusableProbe(CalibrationRoutine):
         )
         return schedule
 
-    def build_schedule(self, target, device, config, backend):
-        return self.build_group_schedule([target], device, config, backend)
+    def build_schedule(self, target, device, config, backend, sweep):
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
-    def analyse(self, dataset, target, device, config):
+    def analyse(self, dataset, target, device, config, sweep):
         return {"value": float(signal_of(dataset)[0])}
 
 
