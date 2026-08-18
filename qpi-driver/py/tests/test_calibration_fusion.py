@@ -19,11 +19,36 @@ from qpi_driver.tuners.base.fusion import (
 from qpi_driver.tuners.base.routines import CalibrationRoutine, RoutineError
 from qpi_driver.tuners.fitting.core import signal_of
 from qpi_driver.tuners.routines import ROUTINE_CLASSES
-from tests.utils.simulation import SimulatedTuner, StubBackend
+from tests.utils.simulation import FakeDevice, FakeElement, StubBackend
 
 
 def _routine(name):
     return next(cls() for cls in ROUTINE_CLASSES if cls().name == name)
+
+
+def _grouped(*qubits):
+    """A device and backend a group schedule can be built against, without the simulator.
+
+    `SimulatedTuner` would do it and needs `scqubits`, which lives in the ``sim`` extra —
+    and `test-py-driver` installs one executor extra and never ``sim``, so these tests
+    failed on the import under every leg of that matrix. Nothing here runs physics: they
+    check which acquisition channel each target lands on and that the resets coincide.
+    """
+    return (
+        FakeDevice(
+            {
+                qubit: FakeElement(
+                    name=qubit,
+                    clock_freqs={"f01": 5.0e9, "f12": 4.75e9, "readout": 7.1e9},
+                    rxy={"amp180": 0.18, "motzoi": 0.0},
+                    measure={"pulse_amp": 0.25},
+                )
+                for qubit in qubits
+            },
+            {},
+        ),
+        StubBackend(),
+    )
 
 
 def _dataset(channels):
@@ -133,20 +158,20 @@ class TestTheHook:
     def test_an_unconverted_routine_still_builds_for_one_target(self):
         """The default has to reproduce today's behaviour exactly."""
         routine = _routine("allxy")
-        tuner = SimulatedTuner()
+        device, backend = _grouped("q0")
 
         schedule = routine.build_group_schedule(
-            ["q0"], tuner.device, RoutineConfig(), tuner.backend
+            ["q0"], device, RoutineConfig(), backend
         )
 
         assert schedule is not None
 
     def test_a_converted_routine_measures_every_target_on_its_own_channel(self):
         routine = _routine("allxy")
-        tuner = SimulatedTuner(qubits=("q0", "q1", "q2"))
+        device, backend = _grouped("q0", "q1", "q2")
 
         schedule = routine.build_group_schedule(
-            ["q0", "q2"], tuner.device, RoutineConfig(), tuner.backend
+            ["q0", "q2"], device, RoutineConfig(), backend
         )
 
         channels = [
@@ -159,10 +184,10 @@ class TestTheHook:
 
     def test_a_converted_routines_pulses_coincide(self):
         routine = _routine("allxy")
-        tuner = SimulatedTuner(qubits=("q0", "q1"))
+        device, backend = _grouped("q0", "q1")
 
         schedule = routine.build_group_schedule(
-            ["q0", "q1"], tuner.device, RoutineConfig(), tuner.backend
+            ["q0", "q1"], device, RoutineConfig(), backend
         )
 
         resets = schedule.starts_of("Reset")
