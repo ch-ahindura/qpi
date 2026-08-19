@@ -1,12 +1,12 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Partially implemented. Phases 1–4's mechanisms are all built, with 12 of the
-  33 routines grouping; phases 5–6 open. §9 records what each phase covers and the
-  status line under it says where each stands.
+- **Status:** Phases 1, 2, 3, 5 and 6 implemented; phase 4's mechanism implemented with
+  17 of the 36 routines grouping and a documented tail. §9 records what each phase covers
+  and where each stands.
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-18
 - **Depends on:** RFC 0004 (the walk, the progress event, the report), RFC 0005 (the
-  thirty-three-node graph), RFC 0006 (the plan on the wire and the drawing),
+  thirty-three-node graph as it then stood), RFC 0006 (the plan on the wire and the drawing),
   RFC 0007 (escalation), RFC 0008 (provenance)
 - **Touches:** `qpi-driver` (the DAG, the routine base, two new modules), `qpi-ui` (the
   progress accumulator, the graph drawing), `calibration.yml`. No new event type, no new
@@ -199,7 +199,7 @@ One fused acquisition returns a Dataset with one data variable per channel. The 
 slices it — `dataset[[channel]]` — and hands each routine a single-variable Dataset,
 exactly the shape `signal_of` already reads. Thirty-three `analyse` implementations,
 every fit in `tuners/fitting/`, and every existing test stay untouched. The alternative,
-teaching each fit which channel is its own, is thirty-three chances to read another
+teaching each fit which channel is its own, is one chance per routine to read another
 qubit's data and fit a plausible curve to it.
 
 **D5 — The acquisition channel is the target's position in its group, passed explicitly.**
@@ -389,7 +389,9 @@ cannot act on "group too wide".
 
 A sequential walk over `Rq` qubit routines and `Re` edge routines on `N` qubits and `E`
 edges costs `Rq·N + Re·E` acquisitions. Grouped it costs `Rq·Gq + Re·Ge`, where `Gq` and
-`Ge` are the colour-class counts. RFC 0005's graph gives `Rq = 27` and `Re = 6`.
+`Ge` are the colour-class counts. The graph currently gives `Rq = 30` and `Re = 6`;
+RFC 0005 shipped 27 and 6, and the figures move as nodes are added, which is why the
+argument below is about `N/Gq` rather than about a total.
 
 `Gq` and `Ge` depend on the connectivity graph and not on its size:
 
@@ -648,21 +650,22 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** Phases 1 and 2 are done, and every mechanism phases 3 and 4 call
-for is built and tested: the group loop, per-target acquisition channels, the demultiplex,
-the per-target `Sweep`, group-aware `escalating` and `amplified`, the `measure_group` hook,
-and the `compatible_groups` split.
+**Where this stands.** Phases 1, 2, 3, 5 and 6 are implemented. Phase 4's mechanism is
+implemented and every piece the later phases needed is built on it: the group loop,
+per-target acquisition channels, the demultiplex, the per-target `Sweep`, group-aware
+`escalating` and `amplified`, the `measure_group` hook, and `compatible_groups` in both
+its strict and its by-size form.
 
-Twelve of the thirty-three routines group: `allxy`, `allxy_check`,
-`readout_discrimination`, `readout_fidelity`, `t1`, `t2_echo`, `rabi`, `drag`,
-`fine_amplitude`, `fine_amplitude_90`, `rb` and `interleaved_rb`. That is the whole
-time-domain single-qubit chain from `rabi` onwards, plus both benchmarks.
+Seventeen of the thirty-six routines group, including the whole time-domain single-qubit
+chain from `rabi` onwards, both benchmarks, and every edge routine except
+`coupler_anticrossing` — which should stay sequential, since its loop sets a DC bias
+between acquisitions.
 
-What is left is application rather than design. Of the fourteen that measure themselves,
-`ramsey` has its schedule converted but not its loop (§6.5), and `resonator_spectroscopy`,
-`qubit_spectroscopy`, `drag_12`, `fine_amplitude_12` and `coupler_anticrossing` are
-untouched — two of those §6.5 argues should stay sequential. Phase 5 (the remaining edge
-routines) and phase 6 (the acceptance measurement) are open.
+The tail is phase 4's, and it is application rather than design. Nineteen routines do not
+group: `qubit_spectroscopy` and `coupler_anticrossing` by intent (§6.5), `ramsey` because
+its schedule is converted but its multi-pass loop is not (§6.5), and sixteen readout,
+spectroscopy and EF nodes that simply have not been converted — most of them plain
+`build_schedule`/`analyse` pairs needing nothing new.
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.
