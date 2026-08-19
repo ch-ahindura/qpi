@@ -32,6 +32,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `rabi_12` and `ef_ladder` sweep a group at once. A fused group's raw EF
+  pulses now start together and the readout follows the longest of them; they were appended,
+  so they queued and the readout could precede some targets' pulses entirely. Nothing
+  raised — each target's own sequence was in order — so only the timings showed it.
 - `qpi-driver/py`: both readout operating points and `three_state_discrimination` measure a
   group at once. These are single-shot, so each target's own spread is the noise its
   separation is quoted in, and each sweeps its own frequency and drive amplitude.

@@ -647,3 +647,65 @@ class TestTheAcceptanceMeasurement:
         )
 
         assert len(backend.runs) == 1
+
+
+class TestNothingIsReadBeforeItIsDriven:
+    """A fused schedule's readout must follow every pulse it is meant to measure.
+
+    The bug this exists for: a raw pulse — an EF drive, say — is added by a helper that
+    *appends*, so a group's pulses played one after another instead of together, and the
+    readout stayed anchored to whatever came before them. It then preceded some targets'
+    pulses entirely. Nothing raised: each target's own sequence was in order, so only the
+    timings show it.
+    """
+
+    def _timings(self, name, *targets):
+        node = _routine(name)
+        device, _stub = _grouped(*targets)
+        backend = StubBackend()
+        schedule = node.build_group_schedule(
+            list(targets),
+            device,
+            RoutineConfig(params={"shots": 8}),
+            backend,
+            _sweeps(targets),
+        )
+        return schedule
+
+    @pytest.mark.parametrize("name", ["rabi_12", "ef_ladder"])
+    def test_every_readout_follows_every_drive_pulse(self, name):
+        schedule = self._timings(name, "q0", "q1")
+
+        pulses = [
+            p
+            for p in schedule.placed
+            if getattr(p.operation, "kind", "") in ("SquarePulse", "DRAGPulse")
+        ]
+        readouts_placed = [
+            p for p in schedule.placed if getattr(p.operation, "kind", "") == "Measure"
+        ]
+        assert pulses and readouts_placed
+
+        # Every pulse ends before the readout that comes after it starts. Compared
+        # against the *earliest* readout following each pulse, since the sweep repeats.
+        for pulse in pulses:
+            after = [r.start for r in readouts_placed if r.start >= pulse.start]
+            assert after, f"a {name} pulse at {pulse.start} has no readout after it"
+            assert min(after) >= pulse.end - 1e-15, (
+                f"{name} reads at {min(after)} a pulse that ends at {pulse.end}"
+            )
+
+    @pytest.mark.parametrize("name", ["rabi_12", "ef_ladder"])
+    def test_the_drive_pulses_of_a_group_coincide(self, name):
+        schedule = self._timings(name, "q0", "q1")
+
+        starts = [
+            p.start
+            for p in schedule.placed
+            if getattr(p.operation, "kind", "") in ("SquarePulse", "DRAGPulse")
+        ]
+        # Two targets per setpoint, so the starts come in equal pairs.
+        assert len(starts) % 2 == 0
+        assert all(
+            starts[i] == pytest.approx(starts[i + 1]) for i in range(0, len(starts), 2)
+        ), "a group's pulses should start together, not queue"
