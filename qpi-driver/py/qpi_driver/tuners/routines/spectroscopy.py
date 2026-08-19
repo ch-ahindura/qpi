@@ -7,6 +7,7 @@ the response.
 
 import logging
 import math
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -34,6 +35,12 @@ from qpi_driver.tuners.base.routines import (
     require_resolved_line,
     linear_setpoints,
     setpoints_of,
+)
+from qpi_driver.tuners.base.fusion import (
+    add_after,
+    add_together,
+    grouped_by_size,
+    readouts,
 )
 from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
@@ -96,6 +103,42 @@ _PORT_CLOCKS = {
     "f01": "{target}:mw-{target}.01",
     "f12": "{target}:mw-{target}.12",
 }
+
+
+def sweep_readout_frequency(
+    schedule: Any,
+    backend: SchedulerBackend,
+    targets: Sequence[str],
+    bands: Mapping[str, Sequence[float]],
+    prepare: Callable[[Any, Sequence[str], Any], Any] | None = None,
+) -> None:
+    """A readout-frequency sweep over a group, each target on its own clock and band.
+
+    Shared by the three resonator spectroscopies and the two operating points, which differ
+    only in how they prepare the qubit before reading it: not at all, an X, or an X and an
+    EF pulse. *prepare* is handed the schedule, the targets and the reset's anchor, and
+    returns the anchor the readout should follow.
+
+    Every target keeps its own band, since a readout clock is per-target hardware and each
+    sweep is centred on that target's own resonance — see `grouped_by_size`. What has to
+    agree is only the number of setpoints.
+    """
+    for index in range(len(bands[targets[0]])):
+        anchor = add_together(schedule, [backend.Reset(target) for target in targets])
+        if prepare is not None:
+            anchor = prepare(schedule, targets, anchor)
+        # Zero duration, so it does not move the anchor: it retunes the clock the readout
+        # that follows will play on.
+        add_together(
+            schedule,
+            [
+                backend.SetClockFrequency(
+                    clock=f"{target}.ro", clock_freq_new=bands[target][index]
+                )
+                for target in targets
+            ],
+        )
+        add_after(schedule, readouts(backend, targets, index), anchor)
 
 
 def _frequency_sweep(
@@ -354,6 +397,21 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same widening, for the resonators whose line fell outside their window."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -362,26 +420,44 @@ class ResonatorSpectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        # Recorded for escalation to read back, under the `_<axis>` convention `_widened`
-        # already uses for setpoint lists.
-        sweep["span"] = float(config.get("span", self.SPAN))
-        sweep["frequencies"] = _frequency_sweep(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By point count, not by value: each band is centred on its own resonance."""
+        return grouped_by_size(targets, lambda t: self._band(device, t, config, None))
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig, backend: Any
+    ) -> list[float]:
+        """This target's readout-frequency sweep."""
+        return _frequency_sweep(
             config, device, target, "readout", default_span=self.SPAN, backend=backend
         )
-        clock = f"{target}.ro"
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Every resonator swept at once, each over its own band on its own clock."""
+        bands = {}
+        for target in targets:
+            bands[target] = self._band(device, target, config, backend)
+            # Recorded for escalation to read back, under the same axis names `_widened`
+            # reads setpoint lists by.
+            sweeps[target]["span"] = float(config.get("span", self.SPAN))
+            sweeps[target]["frequencies"] = bands[target]
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(sweep["frequencies"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(
-                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
-            )
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
-            )
+        sweep_readout_frequency(schedule, backend, targets, bands)
         return schedule
 
     def analyse(
@@ -773,8 +849,22 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By point count: the span is sized from each resonator's own linewidth."""
+        return grouped_by_size(targets, lambda t: self._band(device, t, config, None))
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig, backend: Any
+    ) -> list[float]:
+        """This target's sweep, spanning several of its own measured linewidths."""
         element = device.get_element(target)
-        sweep["frequencies"] = _frequency_sweep(
+        return _frequency_sweep(
             config,
             device,
             target,
@@ -783,24 +873,35 @@ class ResonatorSpectroscopyExcited(CalibrationRoutine):
             * measured_linewidth(element, 2.5e6),
             backend=backend,
         )
-        # The reference `analyse` differences against, read here rather than there: a
-        # prerequisite has to be readable before the acquisition to be one at all.
-        sweep["ground"] = _current_clock(device, target, "readout")
-        clock = f"{target}.ro"
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The same sweep with every qubit excited first, so the dispersive shift shows."""
+        bands = {}
+        for target in targets:
+            bands[target] = self._band(device, target, config, backend)
+            sweeps[target]["frequencies"] = bands[target]
+            # The reference `analyse` differences against, read here rather than there: a
+            # prerequisite has to be readable before the acquisition to be one at all.
+            sweeps[target]["ground"] = _current_clock(device, target, "readout")
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(sweep["frequencies"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
-            schedule.add(
-                backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
-            )
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
-            )
+        sweep_readout_frequency(
+            schedule,
+            backend,
+            targets,
+            bands,
+            prepare=lambda sched, group, _anchor: add_together(
+                sched, [backend.X(t) for t in group]
+            ),
+        )
         return schedule
 
     def analyse(

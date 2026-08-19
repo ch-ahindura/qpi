@@ -16,6 +16,7 @@ therefore assembled here, and its parameters live in `EFDrive` on a
 same opt-in every other addition in this RFC makes.
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import logging
@@ -42,6 +43,10 @@ from qpi_driver.tuners.base.routines import (
     linear_setpoints,
     setpoints_of,
 )
+from qpi_driver.tuners.base.fusion import (
+    add_together,
+    grouped_by_size,
+)
 from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
     fit_drag,
@@ -59,6 +64,7 @@ from qpi_driver.tuners.fitting import (
 from qpi_driver.tuners.routines.single_qubit import amplified  # noqa: E402
 from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
     EXCITED_SPAN_IN_LINEWIDTHS,
+    sweep_readout_frequency,
 )
 
 log = logging.getLogger(__name__)
@@ -705,13 +711,22 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By point count: the span is sized from each resonator's own linewidth."""
+        return grouped_by_size(targets, lambda t: self._band(device, t, config)[0])
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig
+    ) -> tuple[list[float], float]:
+        """This target's sweep and the ground-state centre it is measured against."""
         element = device.get_element(target)
-        amplitude = _required_ef_amplitude(element, target)
-        duration = ef_duration(element, config)
-        # The reference `analyse` differences against, read here rather than there: a
-        # prerequisite has to be readable before the acquisition to be one at all, and
-        # this sweep is already centred on the same value.
-        sweep["ground"] = centre = float(read_path(element, "clock_freqs.readout"))
+        centre = float(read_path(element, "clock_freqs.readout"))
         # From the measured linewidth, as `resonator_spectroscopy_excited` does and for the
         # same reason: this has to find a resonance the ladder has moved, so it wants
         # several linewidths rather than a refinement's fraction of one.
@@ -722,29 +737,51 @@ class ResonatorSpectroscopySecondExcited(CalibrationRoutine):
             )
         )
         points = int(config.get("points", 51))
-        sweep["frequencies"] = setpoints_of(
-            config,
-            "frequencies",
-            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        return (
+            setpoints_of(
+                config,
+                "frequencies",
+                linear_setpoints(centre - span / 2, centre + span / 2, points),
+            ),
+            centre,
         )
 
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The same sweep with every qubit taken up the ladder to ``|2>`` first."""
+        bands = {}
+        ef = {}
+        for target in targets:
+            element = device.get_element(target)
+            bands[target], centre = self._band(device, target, config)
+            sweeps[target]["frequencies"] = bands[target]
+            # The reference `analyse` differences against, read here rather than there: a
+            # prerequisite has to be readable before the acquisition to be one at all, and
+            # this sweep is already centred on the same value.
+            sweeps[target]["ground"] = centre
+            ef[target] = (
+                _required_ef_amplitude(element, target),
+                ef_duration(element, config),
+            )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, frequency in enumerate(sweep["frequencies"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
-            add_ef_pulse(schedule, backend, target, amplitude, duration)
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=frequency
-                )
-            )
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
-            )
+
+        def prepare(sched: Any, group: Sequence[str], _anchor: Any) -> Any:
+            anchor = add_together(sched, [backend.X(t) for t in group])
+            # A raw pulse per target on its own ``.12`` clock, so they cannot be one
+            # operation the way a gate can.
+            for target in group:
+                add_ef_pulse(sched, backend, target, *ef[target])
+            return anchor
+
+        sweep_readout_frequency(schedule, backend, targets, bands, prepare=prepare)
         return schedule
 
     def analyse(

@@ -32,6 +32,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: the three resonator spectroscopies sweep a group at once, each resonator
+  over its own band on its own readout clock.
 - `qpi-driver/py`: every edge routine but `coupler_anticrossing` now calibrates a group at
   once — `cz_spectroscopy` and `cz_parametrization` alongside `cz_chevron` and
   `conditional_phase`. A sweep of a per-target axis (a frequency, amplitude or phase) only

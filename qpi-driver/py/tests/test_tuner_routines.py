@@ -1395,7 +1395,9 @@ class _DipBackend(SchedulerBackend):
         self.spans: list[float] = []
 
     def new_schedule(self, name: str, repetitions: int = 1) -> Any:
-        return SimpleNamespace(ops=[], add=lambda op: None)
+        # `add` takes the reference keywords too, since the fused path places
+        # operations against an anchor rather than appending them.
+        return SimpleNamespace(ops=[], add=lambda op, **_refs: op)
 
     def run(self, schedule: Any, timeout_s: float = 0.0) -> xr.Dataset:
         frequencies = np.asarray(self.sweep["frequencies"], dtype=float)
