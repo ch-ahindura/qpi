@@ -1,8 +1,9 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Phases 1, 2, 3, 5 and 6 implemented; phase 4's mechanism implemented with
-  17 of the 36 routines grouping and a documented tail. §9 records what each phase covers
-  and where each stands.
+- **Status:** Implemented. All six phases, with 33 of the 36 routines grouping; the three
+  that do not are the ones §6.5 argues should not, plus `ramsey`'s loop. §9 records where
+  each phase stands. Not yet run on hardware — §5.6's acceptance measurement is what
+  would close that, and D10 says why simulation cannot.
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-18
 - **Depends on:** RFC 0004 (the walk, the progress event, the report), RFC 0005 (the
@@ -650,22 +651,15 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** Phases 1, 2, 3, 5 and 6 are implemented. Phase 4's mechanism is
-implemented and every piece the later phases needed is built on it: the group loop,
-per-target acquisition channels, the demultiplex, the per-target `Sweep`, group-aware
-`escalating` and `amplified`, the `measure_group` hook, and `compatible_groups` in both
-its strict and its by-size form.
+**Where this stands.** All six phases are implemented, and thirty-three of the
+thirty-six routines group.
 
-Seventeen of the thirty-six routines group, including the whole time-domain single-qubit
-chain from `rabi` onwards, both benchmarks, and every edge routine except
-`coupler_anticrossing` — which should stay sequential, since its loop sets a DC bias
-between acquisitions.
-
-The tail is phase 4's, and it is application rather than design. Nineteen routines do not
-group: `qubit_spectroscopy` and `coupler_anticrossing` by intent (§6.5), `ramsey` because
-its schedule is converted but its multi-pass loop is not (§6.5), and sixteen readout,
-spectroscopy and EF nodes that simply have not been converted — most of them plain
-`build_schedule`/`analyse` pairs needing nothing new.
+Three do not, and each for a reason rather than for want of work. `coupler_anticrossing`
+sets a DC bias between acquisitions and `qubit_spectroscopy`'s next window depends on what
+the last one found — §6.5 gives both as the cases that stay sequential. `ramsey`'s schedule
+is converted but its loop is not: it refines `f01` over several passes, applying to the
+device between them, and the guard in §6.5 is what keeps that a safe state rather than a
+silent regression.
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.

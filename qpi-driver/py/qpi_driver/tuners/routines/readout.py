@@ -29,6 +29,8 @@ from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.tuners.base.fusion import (
     add_after,
     add_together,
+    channels_of,
+    grouped_by_grid,
     grouped_by_size,
 )
 from qpi_driver.tuners.base.device import (
@@ -401,24 +403,113 @@ class ReadoutIntegrationTime(CalibrationRoutine):
         sweep: Sweep,
     ) -> Any:
         """``|0>`` and ``|1>`` at *one* window — see :meth:`acquire` for why only one."""
-        windows = self._grid(device.get_element(target), config)
-        sweep["windows"] = windows[:1]
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """Exactly, because an integration length is shared hardware.
+
+        Every square acquisition compiled into one Qblox program shares it — see
+        :meth:`acquire` — so the group cannot hold two targets wanting different windows any
+        more than one schedule can hold two windows. `grouped_by_grid`, not
+        `grouped_by_size`.
+        """
+        return grouped_by_grid(
+            targets, lambda t: self._grid(device.get_element(t), config)
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """``|0>`` and ``|1>`` at one window, on every target at once."""
+        windows = self._grid(device.get_element(targets[0]), config)
+        for target in targets:
+            sweeps[target]["windows"] = windows[:1]
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 300))
         )
         for index, prepare in enumerate((0, 1)):
-            schedule.add(backend.Reset(target))
+            anchor = add_together(
+                schedule, [backend.Reset(target) for target in targets]
+            )
             if prepare:
-                schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.APPEND,
-                    acq_duration=sweep["windows"][0],
+                anchor = add_together(
+                    schedule, [backend.X(target) for target in targets]
                 )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.APPEND,
+                        acq_duration=windows[0],
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
+
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One schedule per window for the whole group — see :meth:`acquire`.
+
+        The windows are the group's, not each target's: `compatible_groups` has already
+        split any target wanting a different grid, because the integration length is one
+        property of the program rather than one per target.
+        """
+        windows = self._grid(device.get_element(targets[0]), config)
+        rows: dict[str, list[Any]] = {target: [] for target in targets}
+        for window in windows:
+            single = RoutineConfig(
+                enabled=config.enabled,
+                params={**config.params, "windows": [window]},
+            )
+            dataset = super().acquire_group(
+                targets, device, single, backend, timeout_s, sweeps
+            )
+            sliced = channels_of(dataset, targets)
+            for target in targets:
+                piece = sliced.get(target)
+                if piece is None:
+                    raise RoutineError(
+                        f"the fused acquisition carried no channel for {target}"
+                    )
+                values = np.atleast_2d(_acquisition_values(piece))
+                if values.shape[-1] < 2:
+                    raise RoutineError(
+                        f"window {window:.4g} s returned {values.shape[-1]} acquisitions "
+                        f"for {target}, expected |0> and |1>"
+                    )
+                rows[target].append(values[..., :2])
+        for target in targets:
+            sweeps[target]["windows"] = windows
+        return xr.Dataset(
+            {
+                channel: (
+                    ("shot", "acq_index"),
+                    np.concatenate(rows[target], axis=-1),
+                )
+                for channel, target in enumerate(targets)
+            }
+        )
 
     def _grid(self, element: Any, config: RoutineConfig) -> list[float]:
         ceiling = float(

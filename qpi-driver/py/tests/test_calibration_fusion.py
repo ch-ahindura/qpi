@@ -153,7 +153,19 @@ class TestSlicingTheAcquisitionApart:
 
 class TestTheHook:
     def test_an_unconverted_routine_declines_a_group(self):
-        routine = _routine("readout_integration_time")
+        """A local class rather than a named routine: this used to point at whichever
+        routine happened to be unconverted, and broke each time one was converted."""
+
+        class Unconverted(CalibrationRoutine):
+            name = "unconverted"
+
+            def build_schedule(self, target, device, config, backend, sweep):
+                return backend.new_schedule(self.name)
+
+            def analyse(self, dataset, target, device, config, sweep):
+                return {}
+
+        routine = Unconverted()
         assert not routine.fusable
 
         with pytest.raises(RoutineError, match="cannot measure 3 targets"):

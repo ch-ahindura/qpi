@@ -32,6 +32,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `readout_integration_time` measures a group at once, at one window for
+  the whole group — an integration length is a property of the program, not of a target, so
+  targets wanting different windows are split apart. 33 of 36 routines now group; the three
+  that do not are the two whose loops must stay sequential and `ramsey`'s refinement.
 - `qpi-driver/py`: a routine that splits its sweep across schedules keeps doing so in a
   group. The fused path built the schedule and ran it directly, so it went past `acquire`,
   where the split lives — and `rb` chunks on the shipped defaults, so every grouped RB would
