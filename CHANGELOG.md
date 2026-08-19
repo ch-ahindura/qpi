@@ -32,6 +32,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `coupler_anticrossing` sweeps a group of couplers at once, so every one of
+  the graph's 36 routines now groups. A rack is shared but its channels are not — each edge
+  already names its own S4g or baseband output — so a group's currents are one write per edge
+  and then a single acquisition rather than one acquisition per coupler.
 - `qpi-driver/py`: `ramsey` refines a group at once, which was the last routine that could.
   Only `coupler_anticrossing` now runs one target at a time, and it must: its loop sets a DC
   bias out of band. 35 of 36 routines group.

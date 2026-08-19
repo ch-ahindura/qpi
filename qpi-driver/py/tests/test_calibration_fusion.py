@@ -829,3 +829,84 @@ def test_a_group_loop_cannot_smuggle_past_the_chunking_guard():
 
     assert report.status == "success"
     assert len(report.routine_results) == 2
+
+
+class TestABiasSweepGroupsToo:
+    """A rack is shared; its channels are not (RFC 0009 §6.5, corrected twice over).
+
+    `coupler_anticrossing` was the last routine said to be unable to group, on the grounds
+    that "a chip has one bias source". It has one *rack* — and an S4g has four current
+    outputs, a cluster has many baseband outputs, and each edge already names its own
+    (`bias.spi_output`, `bias.qcm_output`). So setting a group's currents is one write per
+    edge over the same port, then a single acquisition.
+    """
+
+    class _Rack:
+        """A bias source that holds a current, recording the order it was asked in."""
+
+        holds_current = True
+
+        def __init__(self):
+            self.calls: list[tuple[str, float]] = []
+
+        def apply(self, edge, current_a, settings):
+            self.calls.append((edge, float(current_a)))
+
+        def close(self):
+            pass
+
+    def _device(self, *edges):
+        qubits = sorted({q for edge in edges for q in edge.split("_")})
+        return FakeDevice(
+            {
+                qubit: FakeElement(
+                    name=qubit,
+                    clock_freqs={"f01": 5.0e9, "f12": 4.75e9, "readout": 7.1e9},
+                    rxy={"amp180": 0.18, "motzoi": 0.0},
+                    measure={"pulse_amp": 0.25},
+                )
+                for qubit in qubits
+            },
+            {
+                edge: FakeElement(name=edge, bias={"parking_current": 0.0})
+                for edge in edges
+            },
+        )
+
+    def test_every_coupler_is_biased_before_each_single_acquisition(self):
+        node = _routine("coupler_anticrossing")
+        edges = ["q0_q1", "q2_q3"]
+        device = self._device(*edges)
+        rack = self._Rack()
+        backend = ChannelBackend([1.0, 1.0])
+        config = RoutineConfig(
+            params={"shots": 8, "points": 3, "currents": [0.0, 1e-3]}
+        )
+
+        node.measure_group(
+            edges, device, config, backend, _sweeps(edges), rack, timeout_s=60.0
+        )
+
+        # Two current setpoints, so two acquisitions for the pair — not four.
+        assert len(backend.runs) == 2
+        # Both couplers set at each setpoint, and both restored at the end.
+        swept = [c for c in rack.calls if c[1] in (0.0, 1e-3)]
+        assert ("q0_q1", 1e-3) in swept and ("q2_q3", 1e-3) in swept
+        assert rack.calls[-2:] == [("q0_q1", 0.0), ("q2_q3", 0.0)]
+
+    def test_it_declines_the_whole_group_without_a_real_source(self):
+        """A recorder makes the sweep flat and the fit confident — worse than declining."""
+        node = _routine("coupler_anticrossing")
+        edges = ["q0_q1", "q2_q3"]
+
+        outcomes = node.measure_group(
+            edges,
+            self._device(*edges),
+            RoutineConfig(),
+            StubBackend(),
+            _sweeps(edges),
+            None,
+        )
+
+        assert set(outcomes) == set(edges)
+        assert all(isinstance(v, RoutineError) for v in outcomes.values())

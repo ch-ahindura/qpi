@@ -1,7 +1,7 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Implemented. All six phases, with 35 of the 36 routines grouping. The one
-  that does not is `coupler_anticrossing`, which §6.5 argues should not. §9 records where
+- **Status:** Implemented. All six phases, and all 36 routines group — nothing in the graph
+  is excluded on principle. §9 records where
   each phase stands. Not yet run on hardware — §5.6's acceptance measurement is what
   would close that, and D10 says why simulation cannot.
 - **Author:** Martin Ahindura
@@ -562,10 +562,21 @@ stage 1 for the group, stage 2 per lost qubit, stage 3 fused again with each qub
 confirm window riding on its own `Sweep`, since a config is one object for the group and a
 shared `centre_frequency` could only describe one of them.
 
-`coupler_anticrossing` is the one that genuinely stays sequential: its loop sets a DC bias
-out of band, between acquisitions, and a chip has one bias source. Even there the limit is
-the source rather than the schedule — a rack with a channel per coupler could set several
-and run one schedule — so this is a statement about the instrument, not about the graph.
+**Corrected again, and it was the same mistake a third time.** `coupler_anticrossing` was
+then the last routine said to stay sequential, on the grounds that "a chip has one bias
+source". It has one *rack*. An S4g has four current outputs, a cluster has many baseband
+outputs, and each edge already names its own — `bias.spi_module`/`bias.spi_output`, or the
+`qcm` pair. So setting a group's currents is one quick write per edge over the same serial
+port and then a *single* acquisition; what is sequential is one coupler across its own
+current setpoints, which is where every other routine's dependency also lives.
+
+Both delivery mechanisms were already built and tested before this RFC — `SpiRackBias`
+driving an S4g and `QcmBias` holding the same offset on a baseband output, selected by
+`bias.source` — so nothing had to be implemented to group it. The claim was never about a
+missing capability; it was the third instance of reading a per-target sequential dependency
+as a group-wide one.
+
+**Nothing in the graph is now excluded on principle.** All thirty-six routines group.
 
 ### 6.6 What can be converted, and what needs more than a hook
 
@@ -666,17 +677,22 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** All six phases are implemented, and thirty-five of the thirty-six
-routines group. The one that does not is `coupler_anticrossing`: its loop sets a DC bias out
-of band and a chip has one bias source (§6.5).
+**Where this stands.** All six phases are implemented and **all thirty-six routines
+group**. Nothing in the graph is excluded on principle.
 
-Two claims in earlier drafts of this section were wrong and are worth keeping visible,
-because both were the same mistake. `qubit_spectroscopy` and `ramsey` were listed as
-unable to group on the grounds that each pass depends on the last. It does — *within one
-qubit*. Neither reads another qubit at any point, so both group by running the stage for the
-group and the next stage for the subset that still needs it, which is what
-`escalating_group` was built to do. "Cannot be one schedule" is not "cannot be one group",
-and I conflated them twice.
+Three claims in earlier drafts of this section were wrong, and all three were the same
+mistake: reading a dependency between a routine's own *passes* as a dependency between
+*qubits*. `qubit_spectroscopy`'s search, `ramsey`'s refinement and
+`coupler_anticrossing`'s bias sweep each need the previous setpoint's result for the same
+target, and none of them reads another target at any point. Each groups by running the
+stage for the group and the next stage for the subset that still needs it, which is what
+`escalating_group` was built to do. "Cannot be one schedule" is not "cannot be one group";
+I conflated them three times, and the shape of the mistake is worth more here than a
+corrected list.
+
+The last of the three also came with a wrong premise about the hardware — that a shared
+bias rack forces one coupler at a time. A rack is shared; its channels are not, and both
+delivery mechanisms already addressed them per edge.
 
 **What it saves, measured.** `make bench-parallel` walks the graph twice on a chain of three
 qubits and two couplers and reports acquisitions — one arm-and-wait cycle each, which is the
@@ -684,6 +700,7 @@ quantity a fused schedule reduces, since its pulses are one target's. 52 sequent
 37 grouped, so 1.41x. That is a floor rather than the figure §5.5 derives: only 20 of the
 graph's 102 routine-targets complete against the simulator, the rest having no physics there.
 Off unless `QPI_BENCH=1`, and in CI only from a manual dispatch.
+
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.

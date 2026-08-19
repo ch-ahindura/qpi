@@ -15,6 +15,7 @@ from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConf
 from qpi_driver.tuners.base.fusion import (
     add_after,
     add_together,
+    channels_of,
     grouped_by_grid,
     grouped_by_size,
 )
@@ -247,6 +248,163 @@ class CouplerAnticrossing(CalibrationRoutine):
             bias.apply(target, original, settings)
 
         return self._locate(found, base, config)
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By probe size: each band is centred on that edge's own parent's f01."""
+        return grouped_by_size(targets, lambda t: self._probe_band(device, t, config))
+
+    def _probe_band(
+        self, device: Any, target: str, config: RoutineConfig
+    ) -> list[float]:
+        """Where to look for this edge's parent, around where it currently sits."""
+        parent, _child = qubits_of(target)
+        base = float(read_path(device.get_element(parent), "clock_freqs.f01"))
+        span = float(config.get("span", 200e6))
+        points = int(config.get("points", 11))
+        return list(linear_setpoints(base - span / 2, base + span / 2, points))
+
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """Sweep every coupler's parking current at once, one probe per setpoint.
+
+        A rack is shared; its *channels* are not. Each edge names its own S4g output or its
+        own baseband output — `bias.spi_module`/`bias.spi_output`, or the `qcm` pair — so
+        setting a group's currents is one quick write per edge over the same serial port and
+        then a *single* acquisition, not one per edge. What is sequential here is within one
+        coupler, across its own current setpoints, exactly as everywhere else in this graph.
+
+        The parents are distinct within a group because `edge_spacing` will not put two
+        edges sharing a qubit in one, and that is what lets a single probe read all of them.
+        """
+        if bias is None or not getattr(bias, "holds_current", False):
+            return {target: self._no_bias_source(target) for target in targets}
+        from qpi_driver.executors.utils.coupler_bias import bias_settings
+
+        settings = {t: bias_settings(device.get_edge(t)) for t in targets}
+        originals = {
+            t: float(read_path(device.get_edge(t), "bias.parking_current"))
+            for t in targets
+        }
+        bands = {t: self._probe_band(device, t, config) for t in targets}
+        parents = {t: qubits_of(t)[0] for t in targets}
+        bases = {
+            t: float(read_path(device.get_element(parents[t]), "clock_freqs.f01"))
+            for t in targets
+        }
+        currents = setpoints_of(config, "currents", linear_setpoints(0.0, 3.0e-3, 13))
+        for target in targets:
+            sweeps[target]["currents"] = currents
+
+        found: dict[str, list[tuple[float, float]]] = {t: [] for t in targets}
+        try:
+            for current in currents:
+                for target in targets:
+                    bias.apply(target, float(current), settings[target])
+                schedule = self._probe_group(targets, parents, bands, config, backend)
+                sliced = channels_of(
+                    backend.run(schedule, timeout_s=timeout_s), list(targets)
+                )
+                for target in targets:
+                    acquisition = sliced.get(target)
+                    if acquisition is None:
+                        continue
+                    try:
+                        fitted = fit_resonator_spectroscopy(
+                            bands[target], signal_of(acquisition)
+                        )
+                    except FitError:
+                        continue
+                    found[target].append(
+                        (float(current), float(fitted["readout_frequency"]))
+                    )
+        finally:
+            # Every coupler back where it was, whatever happened — an abandoned sweep
+            # must not leave the chip parked at the last current it happened to try.
+            for target in targets:
+                bias.apply(target, originals[target], settings[target])
+
+        results: dict[str, dict[str, Any] | Exception] = {}
+        for target in targets:
+            try:
+                results[target] = self._locate(found[target], bases[target], config)
+            except RoutineError as exc:
+                results[target] = exc
+        return results
+
+    def _probe_group(
+        self,
+        targets: Sequence[str],
+        parents: Mapping[str, str],
+        bands: Mapping[str, list[float]],
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+    ) -> Any:
+        """One short spectroscopy per edge, on its parent and its own channel."""
+        amplitude = float(config.get("drive_amp", 0.10))
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 512))
+        )
+        for index in range(len(bands[targets[0]])):
+            anchor = add_together(
+                schedule, [backend.Reset(parents[t]) for t in targets]
+            )
+            add_together(
+                schedule,
+                [
+                    backend.SetClockFrequency(
+                        clock=f"{parents[t]}.01", clock_freq_new=bands[t][index]
+                    )
+                    for t in targets
+                ],
+            )
+            anchor = add_after(
+                schedule,
+                [
+                    backend.Rxy(theta=180, phi=0, qubit=parents[t], amp180=amplitude)
+                    for t in targets
+                ],
+                anchor,
+            )
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        parents[target],
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
+            )
+        return schedule
+
+    def _no_bias_source(self, target: str) -> RoutineError:
+        """The refusal both paths give, worded once.
+
+        A recorder counts as nothing here, and that distinction is the point. Against one,
+        every bias point returns the same qubit frequency, the sweep is flat, and the fit
+        reports a crossing with total confidence — a number written to the device that no
+        instrument ever produced. It is the exact failure this node exists to prevent.
+        """
+        return RoutineError(
+            f"{target} has no source that can actually hold a parking current, so "
+            f"its coupler's crossing cannot be swept — the bias is delivered out "
+            f"of band, and a recorder would make this measure nothing at all. On "
+            f"hardware: check `bias.source` on the edge, and pass "
+            f"-o spi_rack_address=<port> if it says `spi`"
+        )
 
     def _probe(
         self,
