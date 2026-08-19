@@ -183,39 +183,57 @@ def test_every_routine_builds_a_schedule_under_qblox(routine_name, qblox_tuner):
 CHECKABLE = [r.name for r in all_routines() if r.has_check]
 
 
-@pytest.mark.parametrize("routine_name", CHECKABLE)
-def test_every_check_schedule_compiles_under_both_schedulers(
-    routine_name, quantify_tuner, qblox_tuner
-):
-    """A check that cannot be built is silent, not failing — so it needs a test here.
-
-    `diagnose` deliberately treats an unevaluable check as *unknown* rather than as
-    drift, because a broken check must not trigger a recalibration. The cost of that
-    choice is that a check which raises every time reports nothing, forever, and no
-    test fails. One did: the first version of `resonator_spectroscopy`'s read its
-    tolerance from ``measure.readout_linewidth``, a path no transmon element has, so
-    `read_path` raised `ParameterError` on every call and the check was dead on
-    arrival.
-
-    Building the check schedule against a real device is what catches that, because
-    that is where a check reads the parameters it is judging.
-    """
+def _check_schedule_of(routine_name, tuner):
+    """The check schedule *routine_name* builds against *tuner*'s real device."""
     routine = next(r for r in all_routines() if r.name == routine_name)
     config = RoutineConfig(params=SMALL_SWEEPS.get(routine.name, {}))
+    target = _target_for(routine, tuner.device)
+    assert target is not None, f"{routine_name} applies to nothing on the fixture"
+    schedule = routine.build_check_schedule(
+        target, tuner.device, config, tuner.backend, Sweep(target)
+    )
+    assert schedule is not None, (
+        f"{routine_name} reports has_check but built no check schedule"
+    )
+    return schedule
 
-    for tuner, compile_with in (
-        (quantify_tuner, lambda s: quantify_tuner._compiler.compile(s)),
-        (qblox_tuner, lambda s: qblox_tuner._agent.compile(s)),
-    ):
-        target = _target_for(routine, tuner.device)
-        assert target is not None
-        schedule = routine.build_check_schedule(
-            target, tuner.device, config, tuner.backend, Sweep(target)
-        )
-        assert schedule is not None, (
-            f"{routine_name} reports has_check but built no check schedule"
-        )
-        assert compile_with(schedule) is not None
+
+# Split per scheduler rather than asserting both in one test, and the reason is the test
+# harness rather than the product. Both tuner fixtures are module-scoped and both call
+# `Instrument.close_all()`, so whichever is built second closes the first's instruments and
+# leaves it holding a dead `QuantumDevice` — which fails as
+# `'QuantumDevice' object ... has no attribute 'elements'`, a message that reads like an
+# upstream API change and is not one.
+#
+# It also closed a real coverage hole. A test needing *both* schedulers skips unless both
+# are installed, and CI installs one extra per leg — so the only check-schedule compile in
+# the suite ran nowhere CI runs. The two main-schedule tests above are already split this
+# way; these now match them.
+@pytest.mark.parametrize("routine_name", CHECKABLE)
+def test_every_check_schedule_compiles_under_quantify(routine_name, quantify_tuner):
+    """A check that cannot be built is silent, not failing — so it needs a test here.
+
+    `diagnose` deliberately treats an unevaluable check as *unknown* rather than as drift,
+    because a broken check must not trigger a recalibration. The cost of that choice is
+    that a check which raises every time reports nothing, forever, and no test fails. One
+    did: the first version of `resonator_spectroscopy`'s read its tolerance from
+    ``measure.readout_linewidth``, a path no transmon element has, so `read_path` raised
+    `ParameterError` on every call and the check was dead on arrival.
+
+    Building the check schedule against a real device is what catches that, because that is
+    where a check reads the parameters it is judging.
+    """
+    schedule = _check_schedule_of(routine_name, quantify_tuner)
+
+    assert quantify_tuner._compiler.compile(schedule) is not None
+
+
+@pytest.mark.parametrize("routine_name", CHECKABLE)
+def test_every_check_schedule_compiles_under_qblox(routine_name, qblox_tuner):
+    """The same standard under the other scheduler — see the quantify twin above."""
+    schedule = _check_schedule_of(routine_name, qblox_tuner)
+
+    assert qblox_tuner._agent.compile(schedule) is not None
 
 
 def test_a_dummy_acquisition_fails_the_routine_rather_than_fitting_zeros(

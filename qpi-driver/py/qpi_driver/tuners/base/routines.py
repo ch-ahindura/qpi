@@ -467,13 +467,22 @@ class CalibrationRoutine(ABC):
         Each chunk is demultiplexed and each target's rows concatenated, so `analyse`
         reshapes against the whole grid exactly as it would one schedule's.
         """
+
+        # Built and run here rather than through `self.acquire_group`, which is the method
+        # that called this one: re-dispatching would come straight back and recurse until
+        # the stack gave out. `acquire_in_row_chunks` has always run the unchunked case
+        # directly for the same reason.
+        def one_pass(single: RoutineConfig) -> Any:
+            schedule = self.build_group_schedule(
+                targets, device, single, backend, sweeps
+            )
+            return backend.run(schedule, timeout_s=timeout_s)
+
         rows = list(sweeps[targets[0]].get(rows_axis, ()) or ())
         columns = len(sweeps[targets[0]].get(columns_axis, ()) or ())
         per_schedule = max(1, MAX_SWEEP_POINTS // max(columns, 1))
         if not rows or len(rows) <= per_schedule:
-            return self.acquire_group(
-                targets, device, config, backend, timeout_s, sweeps
-            )
+            return one_pass(config)
 
         groups = [
             rows[start : start + per_schedule]
@@ -499,9 +508,7 @@ class CalibrationRoutine(ABC):
             chunk = RoutineConfig(
                 enabled=config.enabled, params={**config.params, rows_axis: list(band)}
             )
-            dataset = self.acquire_group(
-                targets, device, chunk, backend, timeout_s, sweeps
-            )
+            dataset = one_pass(chunk)
             sliced = channels_of(dataset, targets)
             for target in targets:
                 piece = sliced.get(target)

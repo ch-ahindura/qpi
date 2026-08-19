@@ -46,6 +46,7 @@ from qpi_driver.tuners.base.routines import (
 )
 from qpi_driver.tuners.base.sweep import Sweep
 from qpi_driver.tuners.fitting import (
+    FitError,
     fit_drag,
     fit_fine_amplitude,
     fit_rabi,
@@ -510,6 +511,100 @@ class Ramsey(CalibrationRoutine):
                 break
             refined = again
         return refined
+
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The refinement loop over a group. The passes are per qubit; the qubits are not.
+
+        Every branch of :meth:`measure` reads one qubit: its own residual, its own floor
+        derived from its own window, its own fringe sign, and its own write-back. What
+        differs between qubits is only *how many passes* each needs, which is the shape
+        `escalating_group` already handles — run the pass for the group, then the next pass
+        for the subset still above its floor.
+
+        Two things stay per target. The sign resolution applies to the device between its
+        own two sweeps, so those cannot be shared; and it only runs for a qubit whose
+        residual leaves the sign in doubt, which is the uncommon case.
+        """
+        results: dict[str, dict[str, Any] | Exception] = {}
+        refined: dict[str, dict[str, Any]] = {}
+        first = self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+        for target, outcome in first.items():
+            if isinstance(outcome, Exception):
+                results[target] = outcome
+            else:
+                refined[target] = outcome
+
+        for target in list(refined):
+            artificial = float(sweeps[target].get("detuning", 0.0) or 0.0)
+            if artificial and abs(float(refined[target].get("detuning", 0.0))) >= (
+                artificial
+            ):
+                try:
+                    refined[target] = self._resolved_root(
+                        target,
+                        device,
+                        config,
+                        backend,
+                        timeout_s,
+                        sweeps[target],
+                        refined[target],
+                    )
+                except (RoutineError, FitError) as exc:
+                    results[target] = exc
+                    del refined[target]
+
+        # A qubit leaves the loop when its residual is under its own floor, when another
+        # pass stopped improving it, or when a pass refused. Tracked rather than recomputed
+        # so a qubit that stopped falling is not measured again on the next attempt — which
+        # is what `break` does in the single-target loop.
+        settled: set[str] = set()
+        for _attempt in range(self.MAX_REFINEMENTS):
+            again = [
+                target
+                for target in refined
+                if target not in settled
+                and abs(float(refined[target].get("detuning", 0.0)))
+                > self._detuning_floor(config, sweeps[target])
+            ]
+            if not again:
+                break
+            for target in again:
+                self.apply(device, target, refined[target])
+            passes = self.escalating_group(
+                again, device, config, backend, timeout_s, sweeps
+            )
+            for target, outcome in passes.items():
+                if isinstance(outcome, Exception):
+                    # The previous pass's value stands: it is still the best available, and
+                    # refusing here would discard a measurement over a failed refinement.
+                    settled.add(target)
+                    continue
+                before = abs(float(refined[target].get("detuning", 0.0)))
+                after = abs(float(outcome.get("detuning", 0.0)))
+                if after >= before:
+                    log.info(
+                        "%s on %s: detuning stopped falling at %.0f Hz, keeping it",
+                        self.name,
+                        target,
+                        before,
+                    )
+                    settled.add(target)
+                    continue
+                refined[target] = outcome
+
+        results.update(refined)
+        return results
 
     def _resolved_root(
         self,

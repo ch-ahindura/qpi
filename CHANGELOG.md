@@ -32,6 +32,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `ramsey` refines a group at once, which was the last routine that could.
+  Only `coupler_anticrossing` now runs one target at a time, and it must: its loop sets a DC
+  bias out of band. 35 of 36 routines group.
+- `qpi-driver/py`: a grouped 2-D sweep no longer recurses until the stack gives out. The
+  group row-chunker re-dispatched through `acquire_group`, which is the override that called
+  it, so `resonator_punchout`, `flux_spectroscopy`, `f12_spectroscopy` and
+  `qubit_spectroscopy` failed with a `RecursionError` the moment a group reached them.
+- `qpi-driver/py`: check schedules are compiled once per scheduler rather than once against
+  both. A test needing both installed skipped under the per-extra CI matrix, so the only
+  check-schedule compile in the suite ran nowhere CI runs.
 - `qpi-driver/py`: `qubit_spectroscopy` searches a group at once. Its two-pass search
   depends on the previous pass *for the same qubit* and not on other qubits, so the stages
   fuse and only the membership changes: the configured window for the group, a wide search

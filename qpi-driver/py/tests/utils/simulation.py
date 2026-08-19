@@ -313,6 +313,57 @@ class StubBackend(RecordingBackend):
         )
 
 
+def _channels_of(schedule: _Schedule) -> dict[int, str]:
+    """Which target each acquisition channel of *schedule* belongs to.
+
+    Read off the `Measure` operations, which is where a fused routine states it: the channel
+    is the target's position in its group (RFC 0009 D5).
+    """
+    channels: dict[int, str] = {}
+    for op in schedule.operations:
+        if op.kind != "Measure":
+            continue
+        channel = op.kwargs.get("acq_channel")
+        target = op.args[0] if op.args else op.kwargs.get("qubit")
+        if channel is not None and target is not None:
+            channels[int(channel)] = str(target)
+    return channels
+
+
+def _mentions(op: _Operation, target: str) -> bool:
+    """Whether *op* acts on *target* — by name, or through its port or clock."""
+    if target in op.args:
+        return True
+    for key in ("qubit", "target"):
+        if op.kwargs.get(key) == target:
+            return True
+    for key in ("port", "clock"):
+        value = op.kwargs.get(key)
+        if isinstance(value, str) and value.split(":")[0].split(".")[0] == target:
+            return True
+    return False
+
+
+def _only(schedule: _Schedule, target: str) -> _Schedule:
+    """*schedule* with only the operations acting on *target*.
+
+    An operation naming no target at all — an `IdlePulse`, which is dead time on every port
+    — is kept, because it is part of every target's sequence.
+    """
+    narrowed = _Schedule(schedule.name, repetitions=schedule.repetitions)
+    for op in schedule.operations:
+        if _mentions(op, target) or not _names_a_target(op):
+            narrowed.operations.append(op)
+    return narrowed
+
+
+def _names_a_target(op: _Operation) -> bool:
+    """Whether *op* is addressed to some particular qubit."""
+    if op.args:
+        return True
+    return any(key in op.kwargs for key in ("qubit", "target", "port", "clock"))
+
+
 class SimulatedBackend(RecordingBackend):
     """A backend that answers ``run`` from the simulator.
 
@@ -365,8 +416,29 @@ class SimulatedBackend(RecordingBackend):
                 f"data that means nothing. Simulated: "
                 f"{', '.join(sorted(self._ACQUISITIONS))}"
             )
-        values = np.asarray(acquire(self, schedule), dtype=float)
-        return xr.Dataset({"y0": ("acq_index", values)})
+        channels = _channels_of(schedule)
+        if len(channels) <= 1:
+            values = np.asarray(acquire(self, schedule), dtype=float)
+            return xr.Dataset({"y0": ("acq_index", values)})
+
+        # A fused schedule carries several targets, each measured on its own channel. The
+        # physics here is written for one qubit at a time, so rather than teach every
+        # acquisition about groups, the schedule is split back into one per target and each
+        # is answered as it was before. That keeps every existing acquisition unchanged and
+        # is what lets a grouped routine be checked against real dynamics at all — without
+        # it a fused walk silently loses every target but the first.
+        #
+        # Crosstalk is not modelled either way (RFC 0009 D10), so splitting loses nothing
+        # a joined evaluation would have had.
+        return xr.Dataset(
+            {
+                channel: (
+                    "acq_index",
+                    np.asarray(acquire(self, _only(schedule, target)), dtype=float),
+                )
+                for channel, target in sorted(channels.items())
+            }
+        )
 
     @staticmethod
     def _of_kind(schedule: _Schedule, kind: str) -> list[_Operation]:

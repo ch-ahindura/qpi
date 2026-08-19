@@ -73,7 +73,7 @@ serve-docs:
 # ---------------------------------------------------------------------------
 # Test targets
 # ---------------------------------------------------------------------------
-.PHONY: test test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site \
+.PHONY: test bench-parallel test-docs test-docs-static test-docs-snippets test-docs-example test-docs-site \
         test-go test-py test-py-driver \
         test-py-cli test-py-sim test-py-loop \
         test-dashboard test-js-client test-go-client test-py-client \
@@ -188,6 +188,17 @@ test-py-sim:
 	$(UV) run --no-sync --project qpi-driver/py pytest -v \
 		qpi-driver/py/tests/test_physics_simulation.py \
 		qpi-driver/py/tests/test_calibration_e2e.py
+
+# Not part of `test-py`: it walks the whole graph twice and takes minutes, so it is a
+# manual trigger rather than a pre-commit check. The number it reports is *acquisitions* —
+# one arm-and-wait cycle each — since a fused schedule's pulses are one target's and the
+# sequencers play concurrently. See tests/test_parallel_savings.py.
+bench-parallel:
+	@echo "Measuring what grouping saves on a 3-qubit, 2-coupler chain..."
+	$(UV) sync --project qpi-driver/py --extra sim --dev
+	$(RESIGN_Q1ASM)
+	QPI_BENCH=1 $(UV) run --no-sync --project qpi-driver/py pytest -s -v \
+		qpi-driver/py/tests/test_parallel_savings.py
 
 test-py-loop:
 	@echo "Running the calibrate/process loop against the $(EXECUTOR) simulated chip..."
