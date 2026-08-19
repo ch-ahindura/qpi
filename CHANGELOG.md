@@ -7,131 +7,47 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
-### Fixed
-
-- `qpi-driver/py`: five more per-target values moved off the routine and onto the target's
-  sweep — the amplitude and frequency each of `fine_amplitude`, `fine_amplitude_90`,
-  `ramsey`, `ramsey_12` and `f12_spectroscopy` refines from. They were read in `analyse`,
-  so a fused group would have fitted every target against the last one's. A test now fails
-  on any routine that keeps per-target state on itself.
-- `qpi-driver/py`: a routine's swept setpoints belong to the target rather than to the
-  routine. They were kept as `self._frequencies` and read back in `analyse`, so a routine
-  measuring several targets in one schedule fitted every one of them against whichever
-  target built last — a plausible curve against the wrong axis, not an error.
-
-- `qpi-driver/py`, `qpi-ui`: the calibration graph draws the node a walk is on. A progress
-  event only ever fired after a target finished, so a single-target node went straight from
-  `pending` to `done` and the `running` style was unreachable. The driver now reports the
-  targets it is about to measure, and a target skipped for a missing prerequisite reports
-  too — a node whose every target was blocked stayed `pending` for the rest of the run.
-
 ### Added
 
+- `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets that
+  can be measured at once, coloured from the coupling graph — `qubit_spacing`,
+  `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says so,
+  and a walk with no readable coupling graph runs one target at a time rather than guessing.
+- `qpi-driver/py`: every routine in the graph can measure a group in one schedule, so a
+  group costs one arm-and-wait cycle instead of one per target. Each target reads its own
+  acquisition channel, and a group whose instruments cannot play it at once — readout clocks
+  outside one LO band, amplitudes that would clip, more clocks than sequencers — is split,
+  with the measured figure and the ceiling in the message.
 - `qpi-driver/py`: `parallel.measure_penalty` benchmarks each target alone as well as in
-  company and reports `parallel_penalty` — how much fidelity the group cost it. This is the
-  measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
-  benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
-  coupling so the detector itself can be tested.
-- `qpi-driver/py`: `coupler_anticrossing` sweeps a group of couplers at once, so every one of
-  the graph's 36 routines now groups. A rack is shared but its channels are not — each edge
-  already names its own S4g or baseband output — so a group's currents are one write per edge
-  and then a single acquisition rather than one acquisition per coupler.
-- `qpi-driver/py`: `ramsey` refines a group at once, which was the last routine that could.
-  Only `coupler_anticrossing` now runs one target at a time, and it must: its loop sets a DC
-  bias out of band. 35 of 36 routines group.
-- `qpi-driver/py`: a grouped 2-D sweep no longer recurses until the stack gives out. The
-  group row-chunker re-dispatched through `acquire_group`, which is the override that called
-  it, so `resonator_punchout`, `flux_spectroscopy`, `f12_spectroscopy` and
-  `qubit_spectroscopy` failed with a `RecursionError` the moment a group reached them.
+  company and reports `parallel_penalty` per target — the fidelity the group cost it, which
+  is what a tighter `qubit_spacing` has to be earned with. Off by default: it doubles what
+  the benchmarks cost.
+- `qpi-driver/py`: `make bench-parallel` reports what grouping saves on a 3-qubit,
+  2-coupler chain — 52 acquisitions sequentially against 37 grouped. Skipped unless
+  `QPI_BENCH=1`, so a normal run does not pay for it.
+- `docs`: RFC 0009 — Parallel Calibration. Why a group is a colouring of the coupling graph
+  rather than a hand-written list, why concurrent submission to one cluster cannot work, and
+  what licenses a tighter spacing.
+
+### Changed
+
+- `qpi-driver/py`: a two-qubit routine resets and excites both of an edge's qubits at the
+  same time rather than one after the other, which halves the reset every CZ sweep waits
+  through. This applies to a single edge too, not only to a group.
+
+### Fixed
+
+- `qpi-driver/py`, `qpi-ui`: the calibration graph draws the node a walk is on. A progress
+  event only fired after a target finished, so a single-target node went straight from
+  `pending` to `done` and the `running` style was unreachable; a node whose every target was
+  blocked stayed `pending` for the whole run.
+- `qpi-driver/py`: a routine's swept setpoints belong to the target rather than to the
+  routine. They were kept on the routine and read back in `analyse`, so a routine measuring
+  several targets in one schedule would have fitted every one against whichever target built
+  last — a plausible curve against the wrong axis, not an error.
 - `qpi-driver/py`: check schedules are compiled once per scheduler rather than once against
-  both. A test needing both installed skipped under the per-extra CI matrix, so the only
-  check-schedule compile in the suite ran nowhere CI runs.
-- `qpi-driver/py`: `qubit_spectroscopy` searches a group at once. Its two-pass search
-  depends on the previous pass *for the same qubit* and not on other qubits, so the stages
-  fuse and only the membership changes: the configured window for the group, a wide search
-  for the qubits whose line was not there, then a confirming sweep for those, each around
-  its own found line. 34 of 36 routines now group.
-- `qpi-driver/py`: `readout_integration_time` measures a group at once, at one window for
-  the whole group — an integration length is a property of the program, not of a target, so
-  targets wanting different windows are split apart. 33 of 36 routines now group; the three
-  that do not are the two whose loops must stay sequential and `ramsey`'s refinement.
-- `qpi-driver/py`: a routine that splits its sweep across schedules keeps doing so in a
-  group. The fused path built the schedule and ran it directly, so it went past `acquire`,
-  where the split lives — and `rb` chunks on the shipped defaults, so every grouped RB would
-  have built a program too long to assemble. A routine without a group-aware `acquire` is no
-  longer fused at all.
-- `qpi-driver/py`: the readout traces, both 2-D spectroscopies, `f12_spectroscopy` and
-  `resonator_punchout` sweep a group at once. 32 of 36 routines now group.
-- `qpi-driver/py`: `ramsey_12`, `drag_12` and `fine_amplitude_12` measure a group at once,
-  completing the EF chain.
-- `qpi-driver/py`: a two-qubit routine now resets and excites both of an edge's qubits at
-  the same time rather than one after the other, which halves the reset a CZ sweep waits
-  through. This applies to a single edge too, so it is a change to the sequential walk and
-  not only to a grouped one.
-- `qpi-driver/py`: `rabi_12` and `ef_ladder` sweep a group at once. A fused group's raw EF
-  pulses now start together and the readout follows the longest of them; they were appended,
-  so they queued and the readout could precede some targets' pulses entirely. Nothing
-  raised — each target's own sequence was in order — so only the timings showed it.
-- `qpi-driver/py`: both readout operating points and `three_state_discrimination` measure a
-  group at once. These are single-shot, so each target's own spread is the noise its
-  separation is quoted in, and each sweeps its own frequency and drive amplitude.
-- `qpi-driver/py`: the three resonator spectroscopies sweep a group at once, each resonator
-  over its own band on its own readout clock.
-- `qpi-driver/py`: every edge routine but `coupler_anticrossing` now calibrates a group at
-  once — `cz_spectroscopy` and `cz_parametrization` alongside `cz_chevron` and
-  `conditional_phase`. A sweep of a per-target axis (a frequency, amplitude or phase) only
-  needs the same *number* of setpoints across the group, not the same values, so each edge
-  can be swept over its own band; a time axis still has to agree exactly.
-  Each edge's flux pulse goes to its own control's port and each virtual-Z to its own qubit,
-  so the edges share a grid without interfering — which holds because `edge_spacing` will
-  not put two edges sharing a qubit in one group.
-- `qpi-driver/py`: a routine that runs its own measurement loop is no longer grouped just
-  because its schedule can be fused. `measure` is where escalation, refinement and any
-  between-pass write-back live, and the fused path runs none of them — `ramsey`, whose loop
-  refines f01 across several passes, would have had it skipped entirely.
-- `qpi-driver/py`: `rb` and `interleaved_rb` benchmark a group at once, playing the same
-  Clifford sequences on every target — which is what makes a fused run the *simultaneous*
-  RB the addressability measurement needs, rather than several independent ones. One seed,
-  so the per-target fidelities are comparable with each other and with an isolated run.
-- `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` measure a group at once, and a
-  ladder that outran the fit's linearisation is shortened for that target alone — cutting
-  the group would shorten the ladders that were fine, and a shorter ladder measures a
-  smaller error less precisely.
-- `qpi-driver/py`: `rabi` and `drag` measure a group at once. `rabi` splits the group when
-  two elements have different amplitude ceilings, since the grid is half of full scale;
-  `drag`'s span is the backend's own, so it never splits.
-- `qpi-driver/py`: `t2_echo` measures a group at once, and a routine whose sweep is derived
-  per target splits the group into the subgroups that agree on it. The echo window is
-  scaled from each qubit's measured T1 and an idle is dead time on every port at once, so
-  qubits that relax at different rates cannot share one schedule — the ones that do are
-  still measured together.
-- `qpi-driver/py`: a routine that runs its own escalation loop can run it over a group.
-  One acquisition serves every target, and a fit that refuses widens the sweep for that
-  target alone — widening the group would re-sweep the satisfied targets over a range
-  chosen for a different qubit. Targets refusing the same axis are measured together.
-  `t1` is the first converted.
-- `qpi-driver/py`: a grouped routine measures its targets in one schedule, so a group
-  costs one arm-and-wait cycle instead of one per target. Each target names its own
-  acquisition channel and is fitted from that channel alone, so no routine's `analyse`
-  changed. `allxy`, `allxy_check`, `readout_discrimination` and `readout_fidelity` have
-  opted in; the rest keep running one target at a time until they do.
-- `qpi-driver/py`: grouping refuses to guess when no coupling graph is readable. With no
-  edges to read, every qubit sat at infinite distance and the colouring returned one group
-  — the most aggressive setting there is, reached by accident. Such a walk now runs its
-  targets one at a time and logs what to configure.
-- `qpi-driver/py`: `parallel` in `calibration.yml` groups a routine's targets into sets
-  that can be measured at once, coloured from the coupling graph — `qubit_spacing`,
-  `edge_spacing`, `max_group`, `exclude`, or explicit `groups`. Off unless the file says
-  otherwise. A group is narrowed further when the instruments cannot play it at once —
-  readout clocks outside one LO band, amplitudes that would clip, more clocks than the
-  module has sequencers — with the measured figure and the ceiling in the message.
-- `docs`: RFC 0009 — Parallel Calibration. Designs grouping a routine's targets into sets
-  that can be measured in one schedule, from a colouring of the coupling graph rather than
-  a hand-written list, and records why concurrent submission to one cluster cannot work —
-  the scheduler's `start` disarms every sequencer in the cluster before arming its own.
-  Names the defect it starts by fixing: the calibration graph has a `running` style and a
-  legend entry no walk has ever reached, so a single-target node draws as `pending` and
-  then `done`, never as running.
+  both. The only such compile in the suite needed both installed, so under the per-extra CI
+  matrix it ran nowhere.
 
 ## [0.4.2] - 2026-08-16
 
