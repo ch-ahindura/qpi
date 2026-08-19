@@ -153,7 +153,7 @@ class TestSlicingTheAcquisitionApart:
 
 class TestTheHook:
     def test_an_unconverted_routine_declines_a_group(self):
-        routine = _routine("resonator_relaxation")
+        routine = _routine("readout_integration_time")
         assert not routine.fusable
 
         with pytest.raises(RoutineError, match="cannot measure 3 targets"):
@@ -709,3 +709,72 @@ class TestNothingIsReadBeforeItIsDriven:
         assert all(
             starts[i] == pytest.approx(starts[i + 1]) for i in range(0, len(starts), 2)
         ), "a group's pulses should start together, not queue"
+
+
+class TestChunkingSurvivesFusion:
+    """A routine that splits its sweep across schedules must still split it in a group.
+
+    The bug this exists for: the fused path called `build_group_schedule` and `run`
+    directly, so it went straight past `acquire` — where the split lives. `rb` chunks on
+    the shipped defaults (ten circuits over the shipped depths is 1270 Cliffords against
+    the 1000 one schedule holds), so every grouped RB would have built a program too long
+    to assemble, which is the failure the chunking exists to prevent.
+    """
+
+    def test_rb_still_chunks_when_it_is_grouped(self):
+        from qpi_driver.tuners.routines.benchmarks import (
+            DEFAULT_RB_CIRCUITS,
+            DEFAULT_RB_DEPTHS,
+            MAX_RB_CLIFFORDS,
+        )
+
+        node = _routine("rb")
+        per_schedule = max(1, MAX_RB_CLIFFORDS // sum(DEFAULT_RB_DEPTHS))
+        assert DEFAULT_RB_CIRCUITS > per_schedule, (
+            "this test is only meaningful while the defaults chunk"
+        )
+
+        device, _stub = _grouped("q0", "q1")
+        # Enough acquisitions per channel for a chunk to unpack: the references plus one
+        # per depth per circuit.
+        wide = per_schedule * len(DEFAULT_RB_DEPTHS) + 2
+        backend = _WideChannelBackend(channels=2, per_channel=wide)
+        targets = ["q0", "q1"]
+        node.acquire_group(
+            targets, device, RoutineConfig(), backend, 60.0, _sweeps(targets)
+        )
+
+        assert len(backend.runs) > 1, "a grouped RB must split its circuits too"
+
+    def test_a_chunking_routine_is_not_fused_without_a_group_acquire(self):
+        """The guard that makes an unconverted one safe rather than silently unchunked."""
+
+        class Unconverted(FusableProbe):
+            name = "unconverted"
+
+            def acquire(self, target, device, config, backend, timeout_s, sweep):
+                return super().acquire(
+                    target, device, config, backend, timeout_s, sweep
+                )
+
+        assert Unconverted().chunks_acquisition
+        assert not _routine("rb").chunks_acquisition
+
+
+class _WideChannelBackend(StubBackend):
+    """Answers every channel with *per_channel* points, and counts the acquisitions.
+
+    `ChannelBackend` returns one point per channel, which is enough for a probe whose fit
+    reads a single value and not enough for a chunked sweep to unpack.
+    """
+
+    def __init__(self, channels: int, per_channel: int):
+        self.channels = channels
+        self.per_channel = per_channel
+        self.runs: list = []
+
+    def run(self, schedule, timeout_s=None):
+        self.runs.append(schedule)
+        return _dataset(
+            {c: list(range(self.per_channel)) for c in range(self.channels)}
+        )

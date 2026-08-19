@@ -445,6 +445,83 @@ class CalibrationRoutine(ABC):
         sweep[rows_axis] = rows
         return xr.Dataset({"y0": ("acq_index", np.concatenate(gathered))})
 
+    def acquire_group_in_row_chunks(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+        *,
+        rows_axis: str,
+        columns_axis: str = "frequencies",
+    ) -> Any:
+        """A group's 2-D sweep as one schedule per band of rows, stitched back together.
+
+        The group counterpart of :meth:`acquire_in_row_chunks`, and chunked on the same
+        budget: the ceiling is a *sequencer's* instruction count, and a fused schedule gives
+        each target its own sequencer running its own copy of the sweep, so the number of
+        rows one program holds is the same whether it carries one target or five.
+
+        Each chunk is demultiplexed and each target's rows concatenated, so `analyse`
+        reshapes against the whole grid exactly as it would one schedule's.
+        """
+        rows = list(sweeps[targets[0]].get(rows_axis, ()) or ())
+        columns = len(sweeps[targets[0]].get(columns_axis, ()) or ())
+        per_schedule = max(1, MAX_SWEEP_POINTS // max(columns, 1))
+        if not rows or len(rows) <= per_schedule:
+            return self.acquire_group(
+                targets, device, config, backend, timeout_s, sweeps
+            )
+
+        groups = [
+            rows[start : start + per_schedule]
+            for start in range(0, len(rows), per_schedule)
+        ]
+        log.info(
+            "%s on %s: %d %s x %d %s is %d acquisitions, past the %d one schedule holds — "
+            "running %d schedules of at most %d rows",
+            self.name,
+            ", ".join(targets),
+            len(rows),
+            rows_axis,
+            columns,
+            columns_axis,
+            len(rows) * columns,
+            MAX_SWEEP_POINTS,
+            len(groups),
+            per_schedule,
+        )
+
+        gathered: dict[str, list[Any]] = {target: [] for target in targets}
+        for band in groups:
+            chunk = RoutineConfig(
+                enabled=config.enabled, params={**config.params, rows_axis: list(band)}
+            )
+            dataset = self.acquire_group(
+                targets, device, chunk, backend, timeout_s, sweeps
+            )
+            sliced = channels_of(dataset, targets)
+            for target in targets:
+                piece = sliced.get(target)
+                if piece is None:
+                    raise RoutineError(
+                        f"the fused acquisition carried no channel for {target}"
+                    )
+                gathered[target].append(np.asarray(signal_of(piece), dtype=float))
+
+        # The full grid restored on every target, so each `analyse` reshapes against what
+        # was actually swept rather than against the last chunk.
+        for target in targets:
+            sweeps[target][rows_axis] = rows
+        return xr.Dataset(
+            {
+                channel: ("acq_index", np.concatenate(gathered[target]))
+                for channel, target in enumerate(targets)
+            }
+        )
+
     def escalating(
         self,
         target: str,
@@ -573,6 +650,42 @@ class CalibrationRoutine(ABC):
 
         return results
 
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Build this group's schedule, run it, and return the dataset.
+
+        The group counterpart of :meth:`acquire`, and it exists for the same reason: a
+        routine whose sweep does not fit in one program chunks it across several, and the
+        fused path has to go through the same seam or the chunking is simply skipped.
+
+        That is not hypothetical. `rb` chunks by default — ten circuits over the shipped
+        depths is 1270 Cliffords against the 1000 one schedule holds — so a fused RB that
+        bypassed this would build a program too long to assemble, which is the failure the
+        chunking exists to prevent.
+        """
+        schedule = self.build_group_schedule(targets, device, config, backend, sweeps)
+        return backend.run(schedule, timeout_s=timeout_s)
+
+    @property
+    def chunks_acquisition(self) -> bool:
+        """Whether this routine overrides :meth:`acquire` but not :meth:`acquire_group`.
+
+        Such a routine must not be fused: its chunking lives in `acquire`, and the group
+        path would go straight past it. The same argument as `measures_itself` against
+        `measure_group`, one seam down.
+        """
+        return (
+            type(self).acquire is not CalibrationRoutine.acquire
+            and type(self).acquire_group is CalibrationRoutine.acquire_group
+        )
+
     def _fused_pass(
         self,
         targets: Sequence[str],
@@ -588,10 +701,9 @@ class CalibrationRoutine(ABC):
         of a fit is only that target's.
         """
         try:
-            schedule = self.build_group_schedule(
-                targets, device, config, backend, sweeps
+            dataset = self.acquire_group(
+                targets, device, config, backend, timeout_s, sweeps
             )
-            dataset = backend.run(schedule, timeout_s=timeout_s)
         except Exception as exc:  # noqa: BLE001 - recorded against every target below
             return {}, {target: exc for target in targets}
 

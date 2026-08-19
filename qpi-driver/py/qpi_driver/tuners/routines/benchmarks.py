@@ -18,6 +18,7 @@ from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.fusion import (
     add_after,
     add_together,
+    channels_of,
     readouts,
 )
 from qpi_driver.tuners.base.config import RoutineConfig
@@ -234,6 +235,100 @@ class RandomizedBenchmarking(CalibrationRoutine):
     ) -> Any:
         return self.build_group_schedule(
             [target], device, config, backend, {target: sweep}
+        )
+
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The circuit split of :meth:`acquire`, over a group.
+
+        Chunked on the same budget and for the same reason: the ceiling is a sequencer's
+        instruction count, and a fused schedule gives each target its own sequencer running
+        its own copy of the sweep, so how many circuits one program holds does not depend on
+        how many targets are in it. Without this the fused path would skip the split — and
+        it is active on the shipped defaults, so every grouped RB would have built a program
+        too long to assemble.
+
+        Each chunk is seeded apart, or they would be copies of the same circuits and average
+        to nothing.
+        """
+        depths = [int(d) for d in config.get("depths", DEFAULT_RB_DEPTHS)]
+        wanted = int(config.get("circuits_per_depth", DEFAULT_RB_CIRCUITS))
+        per_schedule = max(1, MAX_RB_CLIFFORDS // max(sum(depths), 1))
+        if wanted <= per_schedule or not depths:
+            return super().acquire_group(
+                targets, device, config, backend, timeout_s, sweeps
+            )
+
+        seed = int(config.get("seed", DEFAULT_RB_SEED))
+        sizes = [per_schedule] * (wanted // per_schedule)
+        if wanted % per_schedule:
+            sizes.append(wanted % per_schedule)
+        log.info(
+            "%s on %s: %d circuits over depths summing %d is %d Cliffords, past the %d "
+            "one schedule holds — running %d schedules of %s",
+            self.name,
+            ", ".join(targets),
+            wanted,
+            sum(depths),
+            wanted * sum(depths),
+            MAX_RB_CLIFFORDS,
+            len(sizes),
+            sizes,
+        )
+
+        gathered: dict[str, list[Any]] = {target: [] for target in targets}
+        references: dict[str, Any] = {}
+        for index, size in enumerate(sizes):
+            chunk = RoutineConfig(
+                enabled=config.enabled,
+                params={
+                    **config.params,
+                    "depths": depths,
+                    "circuits_per_depth": size,
+                    # Apart, or every chunk benchmarks the same circuits.
+                    "seed": seed + index,
+                },
+            )
+            dataset = super().acquire_group(
+                targets, device, chunk, backend, timeout_s, sweeps
+            )
+            sliced = channels_of(dataset, targets)
+            for target in targets:
+                piece = sliced.get(target)
+                if piece is None:
+                    raise RoutineError(
+                        f"the fused acquisition carried no channel for {target}"
+                    )
+                signal = np.asarray(signal_of(piece), dtype=float)
+                expected = len(depths) * size + REFERENCE_ACQUISITIONS
+                if signal.size < expected:
+                    raise RoutineError(
+                        f"{target} returned {signal.size} acquisitions, expected "
+                        f"{expected} for {size} circuits over {len(depths)} depths"
+                    )
+                # The |0> and X|0> references lead every chunk; one copy is what `analyse`
+                # reads, and the rest are the same two points measured again.
+                references.setdefault(target, signal[:REFERENCE_ACQUISITIONS])
+                gathered[target].append(signal[REFERENCE_ACQUISITIONS:expected])
+
+        # Restored so each `analyse` reshapes against the whole sweep rather than a chunk.
+        for target in targets:
+            sweeps[target]["circuits"] = sweeps[target]["circuits_per_depth"] = wanted
+        return xr.Dataset(
+            {
+                channel: (
+                    "acq_index",
+                    np.concatenate([references[target], *gathered[target]]),
+                )
+                for channel, target in enumerate(targets)
+            }
         )
 
     def build_group_schedule(

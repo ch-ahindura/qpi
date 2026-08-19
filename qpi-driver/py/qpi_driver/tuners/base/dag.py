@@ -748,12 +748,18 @@ class CalibrationDAG:
                 report,
                 priors,
             )
-        # A routine with its own measurement loop must not have it bypassed merely
-        # because its schedule can be fused: `measure` is where escalation, refinement
-        # and any between-pass write-back live, and `_run_fused` runs neither. Such a
-        # routine groups only once it has a `measure_group` (RFC 0009 §6.5).
+        # A routine with its own measurement loop, or its own chunking, must not have it
+        # bypassed merely because its schedule can be fused: `measure` is where escalation,
+        # refinement and any between-pass write-back live, and `acquire` is where a sweep
+        # too large for one program is split. The fused path runs neither, so such a routine
+        # groups only once it has the matching group seam (RFC 0009 §6.5).
         own_loop_only = routine.measures_itself and not routine.measures_group
-        if len(targets) == 1 or not routine.fusable or own_loop_only:
+        if (
+            len(targets) == 1
+            or not routine.fusable
+            or own_loop_only
+            or routine.chunks_acquisition
+        ):
             return {
                 target: self._run_one(
                     routine,

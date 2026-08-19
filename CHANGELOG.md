@@ -32,6 +32,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: a routine that splits its sweep across schedules keeps doing so in a
+  group. The fused path built the schedule and ran it directly, so it went past `acquire`,
+  where the split lives — and `rb` chunks on the shipped defaults, so every grouped RB would
+  have built a program too long to assemble. A routine without a group-aware `acquire` is no
+  longer fused at all.
+- `qpi-driver/py`: the readout traces, both 2-D spectroscopies, `f12_spectroscopy` and
+  `resonator_punchout` sweep a group at once. 32 of 36 routines now group.
 - `qpi-driver/py`: `ramsey_12`, `drag_12` and `fine_amplitude_12` measure a group at once,
   completing the EF chain.
 - `qpi-driver/py`: a two-qubit routine now resets and excites both of an edge's qubits at

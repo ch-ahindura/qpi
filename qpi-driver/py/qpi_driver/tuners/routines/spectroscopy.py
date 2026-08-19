@@ -236,26 +236,53 @@ class _ReadoutTraceRoutine(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        sweep["restore"] = {
-            "measure.acq_delay": read_path(element, "measure.acq_delay"),
-            "measure.integration_time": read_path(element, "measure.integration_time"),
-        }
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One raw trace per target, captured at the same instant.
+
+        No sweep at all — one acquisition each — so the group never splits. Each target
+        opens its own window on its own channel, and the windows coincide, which is what
+        makes the arrival times comparable across the group.
+        """
         window = float(config.get("window", 2e-6))
-        write_path(element, "measure.acq_delay", 0.0)
-        write_path(element, "measure.integration_time", window)
+        for target in targets:
+            element = device.get_element(target)
+            sweeps[target]["restore"] = {
+                "measure.acq_delay": read_path(element, "measure.acq_delay"),
+                "measure.integration_time": read_path(
+                    element, "measure.integration_time"
+                ),
+            }
+            write_path(element, "measure.acq_delay", 0.0)
+            write_path(element, "measure.integration_time", window)
 
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        schedule.add(backend.Reset(target))
-        schedule.add(
-            backend.Measure(
-                target,
-                acq_index=0,
-                acq_protocol="Trace",
-                bin_mode=backend.BinMode.AVERAGE,
-            )
+        anchor = add_together(schedule, [backend.Reset(target) for target in targets])
+        add_after(
+            schedule,
+            [
+                backend.Measure(
+                    target,
+                    acq_channel=channel,
+                    acq_index=0,
+                    acq_protocol="Trace",
+                    bin_mode=backend.BinMode.AVERAGE,
+                )
+                for channel, target in enumerate(targets)
+            ],
+            anchor,
         )
         return schedule
 
@@ -634,6 +661,26 @@ class ResonatorPunchout(CalibrationRoutine):
             target, device, config, backend, timeout_s, sweep, rows_axis="amplitudes"
         )
 
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The same chunking over a group — see `acquire_group_in_row_chunks`."""
+        return self.acquire_group_in_row_chunks(
+            targets,
+            device,
+            config,
+            backend,
+            timeout_s,
+            sweeps,
+            rows_axis="amplitudes",
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -642,40 +689,93 @@ class ResonatorPunchout(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        # To full scale, not to half. Punch-through is by definition the *high*-power end
-        # of the sweep, so a grid stopping at 0.5 finds it only on a line lossless enough
-        # to punch through at half drive — and on a chip carrying `output_att: 20` it is
-        # some 26 dB short of what the module can emit, which is to say it cannot find it
-        # at all. This is the §5 hardware bound that got the node switched off on the
-        # August 2026 chips, and that §12 recorded as fixed in phase 3 when it was not.
-        sweep["amplitudes"] = setpoints_of(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By grid size on both axes: the power ceiling and the band are each the
+        target's own, and only the counts have to agree."""
+        return grouped_by_size(
+            targets,
+            lambda t: (
+                list(self._powers(device, t, config))
+                + list(self._band(device, t, config, None))
+            ),
+        )
+
+    def _powers(self, device: Any, target: str, config: RoutineConfig) -> list[float]:
+        """The readout amplitudes swept, up to this element's own full scale."""
+        return setpoints_of(
             config,
             "amplitudes",
             linear_setpoints(
                 0.01, full_scale(device.get_element(target), "measure.pulse_amp"), 11
             ),
         )
-        sweep["frequencies"] = _frequency_sweep(
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig, backend: Any
+    ) -> list[float]:
+        """The readout frequencies swept, around this target's own resonance."""
+        return _frequency_sweep(
             config, device, target, "readout", default_span=20e6, backend=backend
         )
-        clock = f"{target}.ro"
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Every resonator's power-frequency grid at once, each on its own clock.
+
+        Both axes are per-target hardware — the readout amplitude is that port's, the
+        frequency that clock's — so each target sweeps its own grid over a shared index.
+        """
+        powers = {}
+        bands = {}
+        for target in targets:
+            powers[target] = self._powers(device, target, config)
+            bands[target] = self._band(device, target, config, backend)
+            sweeps[target]["amplitudes"] = powers[target]
+            sweeps[target]["frequencies"] = bands[target]
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for power in sweep["amplitudes"]:
-            for frequency in sweep["frequencies"]:
-                schedule.add(backend.Reset(target))
-                schedule.add(
-                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+        for row in range(len(powers[targets[0]])):
+            for column in range(len(bands[targets[0]])):
+                anchor = add_together(
+                    schedule, [backend.Reset(target) for target in targets]
                 )
-                schedule.add(
-                    backend.Measure(
-                        target,
-                        acq_index=index,
-                        bin_mode=backend.BinMode.AVERAGE,
-                        pulse_amp=power,
-                    )
+                add_together(
+                    schedule,
+                    [
+                        backend.SetClockFrequency(
+                            clock=f"{target}.ro",
+                            clock_freq_new=bands[target][column],
+                        )
+                        for target in targets
+                    ],
+                )
+                add_after(
+                    schedule,
+                    [
+                        backend.Measure(
+                            target,
+                            acq_channel=channel,
+                            acq_index=index,
+                            bin_mode=backend.BinMode.AVERAGE,
+                            pulse_amp=powers[target][row],
+                        )
+                        for channel, target in enumerate(targets)
+                    ],
+                    anchor,
                 )
                 index += 1
         return schedule
@@ -1086,6 +1186,26 @@ class QubitSpectroscopy(CalibrationRoutine):
             target, device, config, backend, timeout_s, sweep, rows_axis="drive_amps"
         )
 
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The same chunking over a group — see `acquire_group_in_row_chunks`."""
+        return self.acquire_group_in_row_chunks(
+            targets,
+            device,
+            config,
+            backend,
+            timeout_s,
+            sweeps,
+            rows_axis="drive_amps",
+        )
+
     def measure(
         self,
         target: str,
@@ -1485,15 +1605,39 @@ class F12Spectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        # Centred on f01 plus the anharmonicity rather than on the configured f12,
-        # unless the config says otherwise: a chip whose f12 has never been measured
-        # carries whatever was typed in, and scanning around that finds nothing. A
-        # transmon's anharmonicity is a few hundred MHz and negative, so f01 - 300 MHz
-        # is a far better prior than an unmeasured field.
-        # Read here rather than in `analyse`, where the anharmonicity was differenced
-        # against it: a prerequisite has to be readable before the acquisition to be one
-        # at all, and this sweep is already centred on it.
-        sweep["f01"] = _current_clock(device, target, "f01")
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By grid size on both axes. The band is centred on each target's own f01 plus
+        the anharmonicity prior, so the values differ and only the counts must agree."""
+        return grouped_by_size(
+            targets,
+            lambda t: (
+                list(self._drive_amplitudes(config, device, t))
+                + list(self._band(device, t, config)[0])
+            ),
+        )
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig
+    ) -> tuple[list[float], float]:
+        """This target's ef sweep, and the f01 it is measured against.
+
+        Centred on f01 plus the anharmonicity rather than on the configured f12, unless the
+        config says otherwise: a chip whose f12 has never been measured carries whatever was
+        typed in, and scanning around that finds nothing. A transmon's anharmonicity is a
+        few hundred MHz and negative, so f01 - 300 MHz is a far better prior than an
+        unmeasured field.
+
+        f01 is read here rather than in `analyse`, where the anharmonicity was differenced
+        against it: a prerequisite has to be readable before the acquisition to be one at
+        all, and this sweep is already centred on it.
+        """
+        f01 = _current_clock(device, target, "f01")
         centre = config.get("centre_frequency")
         if centre is None:
             offset = float(config.get("anharmonicity_prior", -300e6))
@@ -1512,60 +1656,84 @@ class F12Spectroscopy(CalibrationRoutine):
                     f"Searching around f01 plus this would look where no transition is. "
                     f"Set `anharmonicity_range` for a device built outside it"
                 )
-            centre = sweep["f01"] + offset
+            centre = f01 + offset
         span = float(config.get("span", 400e6))
         points = int(config.get("points", 81))
-        sweep["frequencies"] = setpoints_of(
-            config,
-            "frequencies",
-            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        return (
+            setpoints_of(
+                config,
+                "frequencies",
+                linear_setpoints(centre - span / 2, centre + span / 2, points),
+            ),
+            f01,
         )
 
-        clock = f"{target}.12"
-        # A tenth, not the 3% this asked for before the simulator learned where |2>
-        # lands. That default was tuned against an artefact: with |2> reported on
-        # |0>'s cloud, a 5% population transfer swung the signal across the whole
-        # readout axis and the line looked strong. Read correctly, |1> and |2> sit
-        # close together at a 0-1 readout point and the same transfer is a 5% wiggle —
-        # measured, and enough to put the fitted centre 7 MHz out.
-        #
-        # A tenth gives 26% contrast and lands within a megahertz. Not more: half a pi
-        # pulse is already the point where `_drive_ef`'s neglected off-resonant 0-1
-        # term starts to matter, and this routine only has to find the line for
-        # `rabi_12` to refine.
-        sweep["drive_amps"] = self._drive_amplitudes(config, device, target)
-        # Recorded for `_widened` to clamp against, under the `_<axis>` convention it
-        # reads setpoints by. Without it escalation walks straight past full scale and
-        # the compiler refuses the waveform — `Rabi` carries the same line for the same
-        # reason. A drive amplitude is a fraction of full scale, so that is the bound.
-        sweep["drive_amps_ceiling"] = MAX_SPECTROSCOPY_AMPLITUDE
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Every qubit's ef line searched at once, each on its own ``.12`` clock."""
+        bands = {}
+        powers = {}
+        for target in targets:
+            bands[target], f01 = self._band(device, target, config)
+            sweeps[target]["frequencies"] = bands[target]
+            sweeps[target]["f01"] = f01
+            # A tenth of full scale, not the 3% this asked for before the simulator learned
+            # where |2> lands. That default was tuned against an artefact: with |2> reported
+            # on |0>'s cloud a 5% transfer swung the signal across the whole readout axis and
+            # the line looked strong. Read correctly, |1> and |2> sit close together at a 0-1
+            # readout point and the same transfer is a 5% wiggle — enough to put the fitted
+            # centre 7 MHz out. A tenth gives 26% contrast. Not more: half a pi pulse is
+            # already where `_drive_ef`'s neglected off-resonant 0-1 term starts to matter,
+            # and this only has to find the line for `rabi_12` to refine.
+            powers[target] = self._drive_amplitudes(config, device, target)
+            sweeps[target]["drive_amps"] = powers[target]
+            # Recorded for `_widened` to clamp against. Without it escalation walks past
+            # full scale and the compiler refuses the waveform — `Rabi` carries the same
+            # line for the same reason.
+            sweeps[target]["drive_amps_ceiling"] = MAX_SPECTROSCOPY_AMPLITUDE
         duration = float(config.get("duration", 20e-9))
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
         index = 0
-        for amplitude in sweep["drive_amps"]:
-            for frequency in sweep["frequencies"]:
-                schedule.add(backend.Reset(target))
-                # Into |1> first, which is what makes this the *ef* transition rather
-                # than a second look at 0-1.
-                schedule.add(backend.X(target))
-                schedule.add(
-                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+        for row in range(len(powers[targets[0]])):
+            for column in range(len(bands[targets[0]])):
+                add_together(schedule, [backend.Reset(target) for target in targets])
+                # Into |1> first, which is what makes this the *ef* transition rather than
+                # a second look at 0-1.
+                anchor = add_together(
+                    schedule, [backend.X(target) for target in targets]
                 )
-                schedule.add(
-                    backend.SquarePulse(
-                        amp=amplitude,
-                        duration=duration,
-                        port=f"{target}:mw",
-                        clock=clock,
-                    )
+                add_together(
+                    schedule,
+                    [
+                        backend.SetClockFrequency(
+                            clock=f"{target}.12",
+                            clock_freq_new=bands[target][column],
+                        )
+                        for target in targets
+                    ],
                 )
-                schedule.add(
-                    backend.Measure(
-                        target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                    )
+                anchor = add_after(
+                    schedule,
+                    [
+                        backend.SquarePulse(
+                            amp=powers[target][row],
+                            duration=duration,
+                            port=f"{target}:mw",
+                            clock=f"{target}.12",
+                        )
+                        for target in targets
+                    ],
+                    anchor,
                 )
+                add_after(schedule, readouts(backend, targets, index), anchor)
                 index += 1
         return schedule
 
@@ -1730,6 +1898,26 @@ class FluxSpectroscopy(CalibrationRoutine):
             target, device, config, backend, timeout_s, sweep, rows_axis="flux_offsets"
         )
 
+    def acquire_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        timeout_s: float,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The same chunking over a group — see `acquire_group_in_row_chunks`."""
+        return self.acquire_group_in_row_chunks(
+            targets,
+            device,
+            config,
+            backend,
+            timeout_s,
+            sweeps,
+            rows_axis="flux_offsets",
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -1738,36 +1926,83 @@ class FluxSpectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        sweep["flux_offsets"] = setpoints_of(
-            config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
         )
-        sweep["frequencies"] = _frequency_sweep(
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """The flux axis is one grid from the config; the frequency axis is per target,
+        so only its point count has to agree."""
+        return grouped_by_size(targets, lambda t: self._band(device, t, config, None))
+
+    def _band(
+        self, device: Any, target: str, config: RoutineConfig, backend: Any
+    ) -> list[float]:
+        """The drive frequencies swept, around this target's own f01."""
+        return _frequency_sweep(
             config, device, target, "f01", default_span=100e6, backend=backend
         )
-        clock = f"{target}.01"
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Every qubit's flux-frequency grid at once, each on its own flux port.
+
+        The flux offsets are one axis for the group — the pulse length is shared time — and
+        each target's drive frequency is its own.
+        """
+        offsets = setpoints_of(config, "flux_offsets", linear_setpoints(-0.2, 0.2, 11))
+        bands = {}
+        for target in targets:
+            bands[target] = self._band(device, target, config, backend)
+            sweeps[target]["flux_offsets"] = offsets
+            sweeps[target]["frequencies"] = bands[target]
         duration = float(config.get("flux_duration", 200e-9))
-        port = f"{target}:fl"
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 512))
         )
         index = 0
-        for offset in sweep["flux_offsets"]:
-            for frequency in sweep["frequencies"]:
-                schedule.add(backend.Reset(target))
-                schedule.add(
-                    backend.SquarePulse(
-                        amp=offset, duration=duration, port=port, clock="cl0.baseband"
-                    )
+        for offset in offsets:
+            for column in range(len(bands[targets[0]])):
+                anchor = add_together(
+                    schedule, [backend.Reset(target) for target in targets]
                 )
-                schedule.add(
-                    backend.SetClockFrequency(clock=clock, clock_freq_new=frequency)
+                anchor = add_after(
+                    schedule,
+                    [
+                        backend.SquarePulse(
+                            amp=offset,
+                            duration=duration,
+                            port=f"{target}:fl",
+                            clock="cl0.baseband",
+                        )
+                        for target in targets
+                    ],
+                    anchor,
                 )
-                schedule.add(backend.Rxy(theta=180, phi=0, qubit=target))
-                schedule.add(
-                    backend.Measure(
-                        target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                    )
+                add_together(
+                    schedule,
+                    [
+                        backend.SetClockFrequency(
+                            clock=f"{target}.01",
+                            clock_freq_new=bands[target][column],
+                        )
+                        for target in targets
+                    ],
                 )
+                anchor = add_after(
+                    schedule,
+                    [backend.Rxy(theta=180, phi=0, qubit=target) for target in targets],
+                    anchor,
+                )
+                add_after(schedule, readouts(backend, targets, index), anchor)
                 index += 1
         return schedule
 
