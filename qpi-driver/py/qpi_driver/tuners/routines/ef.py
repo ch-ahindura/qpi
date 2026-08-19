@@ -46,6 +46,7 @@ from qpi_driver.tuners.base.routines import (
 from qpi_driver.tuners.base.fusion import (
     add_after,
     add_together,
+    grouped_by_grid,
     grouped_by_size,
     readouts,
 )
@@ -63,7 +64,10 @@ from qpi_driver.tuners.fitting import (
 
 #: Shared with `resonator_spectroscopy_excited`: the same experiment one rung up wants
 #: the same window, and two constants that must agree are one written twice.
-from qpi_driver.tuners.routines.single_qubit import amplified  # noqa: E402
+from qpi_driver.tuners.routines.single_qubit import (  # noqa: E402
+    amplified,
+    amplified_group,
+)
 from qpi_driver.tuners.routines.spectroscopy import (  # noqa: E402
     EXCITED_SPAN_IN_LINEWIDTHS,
     sweep_readout_frequency,
@@ -321,12 +325,17 @@ def add_ef_pulses(
     targets: Sequence[str],
     per_target: Mapping[str, tuple[float, float]],
     transition: str = "12",
+    phase_deg: float = 0.0,
+    drag: float = 0.0,
 ) -> Any:
     """One EF pulse per target, all starting together, returning the longest as the anchor.
 
     The group counterpart of :func:`add_ef_pulse`. Each target's pulse is on its own
     ``.<transition>`` clock and its own ``:mw`` port, so they can coincide; *per_target*
     gives each one's ``(amplitude, duration)``, since both are read from that element.
+
+    *phase_deg* and *drag* are shared rather than per target, because where they vary they
+    are the swept axis — the same value on every target of the group.
     """
     anchor = None
     longest = (0.0, None)
@@ -338,6 +347,8 @@ def add_ef_pulses(
             target,
             amplitude,
             duration,
+            phase_deg=phase_deg,
+            drag=drag,
             transition=transition,
             ref_op=anchor,
         )
@@ -991,6 +1002,21 @@ class FineAmplitude12(CalibrationRoutine):
             self, target, device, config, backend, timeout_s, sweep, step=1
         )
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same shortening, applied only to the ladders that outran their model."""
+        return amplified_group(
+            self, targets, device, config, backend, timeout_s, sweeps, step=1
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -999,40 +1025,50 @@ class FineAmplitude12(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        sweep["amplitude"] = _required_ef_amplitude(element, target)
-        sweep["duration"] = ef_duration(element, config)
-        sweep["repetitions"] = [
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The amplified EF ladder on every target at once. The counts are one grid."""
+        repetitions = [
             int(n) for n in setpoints_of(config, "repetitions", list(range(1, 26)))
         ]
+        pulses = {}
+        for target in targets:
+            element = device.get_element(target)
+            sweeps[target]["repetitions"] = repetitions
+            sweeps[target]["amplitude"] = _required_ef_amplitude(element, target)
+            sweeps[target]["duration"] = ef_duration(element, config)
+            pulses[target] = (
+                sweeps[target]["amplitude"],
+                sweeps[target]["duration"],
+            )
+        halves = {t: (amp / 2.0, dur) for t, (amp, dur) in pulses.items()}
 
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-
-        for index, count in enumerate(sweep["repetitions"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
-            # Half the amplitude is half the rotation: the drive is linear in it at
-            # fixed duration, which is the same assumption `rabi_12` fits under.
-            add_ef_pulse(
-                schedule, backend, target, sweep["amplitude"] / 2.0, sweep["duration"]
-            )
+        for index, count in enumerate(repetitions):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            add_together(schedule, [backend.X(t) for t in targets])
+            # Half the amplitude is half the rotation: the drive is linear in it at fixed
+            # duration, which is the same assumption `rabi_12` fits under.
+            add_ef_pulses(schedule, backend, targets, halves)
             for _ in range(count):
-                add_ef_pulse(
-                    schedule, backend, target, sweep["amplitude"], sweep["duration"]
-                )
-            # Back to |0> if the ef pulses left the qubit in |1>, and untouched in |2>.
-            # See the class docstring: this is what puts the accumulated ef error into
-            # the |0> population and lets a 0-1 readout resolve it.
-            schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.AVERAGE,
-                )
-            )
+                add_ef_pulses(schedule, backend, targets, pulses)
+            # Back to |0> if the ef pulses left the qubit in |1>, and untouched in |2>. See
+            # the class docstring: this is what puts the accumulated ef error into the |0>
+            # population and lets a 0-1 readout resolve it.
+            anchor = add_together(schedule, [backend.X(t) for t in targets])
+            add_after(schedule, readouts(backend, targets, index), anchor)
 
         # The EF subspace's two states, measured through the *same* map-back as the sweep
         # above — otherwise the contrast the fit divides by is not the contrast the sweep
@@ -1043,22 +1079,14 @@ class FineAmplitude12(CalibrationRoutine):
         # So both references end with the mapping pi: no ef pulse leaves |1>, which maps to
         # |0>, and one ef pi leaves |2>, which does not. They are the two ends of the
         # population axis this sweep actually moves along.
-        reference = len(sweep["repetitions"])
+        reference = len(repetitions)
         for offset, prepare_two in enumerate((False, True)):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            add_together(schedule, [backend.X(t) for t in targets])
             if prepare_two:
-                add_ef_pulse(
-                    schedule, backend, target, sweep["amplitude"], sweep["duration"]
-                )
-            schedule.add(backend.X(target))
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=reference + offset,
-                    bin_mode=backend.BinMode.AVERAGE,
-                )
-            )
+                add_ef_pulses(schedule, backend, targets, pulses)
+            anchor = add_together(schedule, [backend.X(t) for t in targets])
+            add_after(schedule, readouts(backend, targets, reference + offset), anchor)
         return schedule
 
     def analyse(
@@ -1316,64 +1344,107 @@ class Ramsey12(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        # Half the pi amplitude is half the rotation, at fixed duration.
-        sweep["half"] = _required_ef_amplitude(element, target) / 2.0
-        sweep["duration"] = ef_duration(element, config)
-        # The clock this run corrects, read before the acquisition rather than after it.
-        sweep["current_f12"] = float(read_path(element, "clock_freqs.f12"))
-        # On the instrument's 1 ns grid. A linear sweep between two round numbers
-        # generally is not — 41 points from 4 ns to 2 us step 49.9 ns — and the
-        # compiler rejects a schedule whose operations do not land on it, some way
-        # from the sweep that asked for them.
-        # Squeezed from both ends, like `ramsey`'s, and measured rather than guessed.
-        #
-        # Long enough to *contain* the decay. The fit refuses a T2* the window never
-        # saw, and rightly: a 2 us sweep against this coherence returned 1.4 seconds.
-        # A 12 us one then fitted 15.5 us — accepted by the fit, but extrapolated past
-        # its own window, which is a number to distrust. The 1-2 coherence here runs
-        # about 15 us, so 30 us holds two time constants of it.
-        #
-        # Fine enough for the fringe: 125 ns steps put Nyquist at 4 MHz, well clear of
-        # the 1 MHz advance below.
-        sweep["delays"] = [
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """Exactly, since the axis is delay — one timeline for the whole group."""
+        return grouped_by_grid(targets, lambda _target: self._delays(config))
+
+    def _delays(self, config: RoutineConfig) -> list[float]:
+        """The EF Ramsey delays, on the instrument's 1 ns grid.
+
+        A linear sweep between two round numbers generally is not on it — 41 points from
+        4 ns to 2 us step 49.9 ns — and the compiler rejects a schedule whose operations do
+        not land on it, some way from the sweep that asked for them.
+
+        Squeezed from both ends, and measured rather than guessed. Long enough to *contain*
+        the decay: the fit refuses a T2* the window never saw, and rightly — a 2 us sweep
+        returned 1.4 seconds, and a 12 us one fitted 15.5 us, accepted by the fit but
+        extrapolated past its own window. The 1-2 coherence runs about 15 us, so 30 us holds
+        two time constants. Fine enough for the fringe: 125 ns steps put Nyquist at 4 MHz,
+        well clear of the 1 MHz advance below.
+        """
+        return [
             grid_duration(delay)
             for delay in setpoints_of(
                 config, "delays", linear_setpoints(4e-9, 30e-6, 241)
             )
         ]
-        sweep["detuning"] = float(config.get("artificial_detuning", 1e6))
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The EF fringe on every target at once, each on its own detuned ``.12`` clock."""
+        delays = self._delays(config)
+        detuning = float(config.get("artificial_detuning", 1e6))
+        halves = {}
+        for target in targets:
+            element = device.get_element(target)
+            sweeps[target]["delays"] = delays
+            sweeps[target]["detuning"] = detuning
+            # Half the pi amplitude is half the rotation, at fixed duration.
+            sweeps[target]["half"] = _required_ef_amplitude(element, target) / 2.0
+            sweeps[target]["duration"] = ef_duration(element, config)
+            # The clock this run corrects, read before the acquisition rather than after.
+            sweeps[target]["current_f12"] = float(read_path(element, "clock_freqs.f12"))
+            halves[target] = (
+                sweeps[target]["half"],
+                sweeps[target]["duration"],
+            )
 
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        measure = open_three_state_readout(schedule, backend, target, element)
-        # The clock is detuned rather than the second pulse phase-advanced, which is
-        # the opposite of what `ramsey` does one rung down and is not a preference.
-        # A phase advance is a `ShiftClockPhase`, and on the ``.12`` clock it produced
-        # no fringe at all: the fitted detuning came back at minus the artificial one
-        # whatever the device's f12 was set to, so the sweep was measuring nothing.
-        # Detuning the clock does work — the fringe tracks the offset — and it is what
-        # the routine's own frame offset is built from.
-        current = float(read_path(element, "clock_freqs.f12"))
-        schedule.add(
-            backend.SetClockFrequency(
-                clock=f"{target}.12", clock_freq_new=current + sweep["detuning"]
+        measure = {
+            target: open_three_state_readout(
+                schedule, backend, target, device.get_element(target)
             )
-        )
-        for index, delay in enumerate(sweep["delays"]):
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.X(target))
-            add_ef_pulse(schedule, backend, target, sweep["half"], sweep["duration"])
-            backend.idle(schedule, delay)
-            add_ef_pulse(schedule, backend, target, sweep["half"], sweep["duration"])
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.AVERAGE,
-                    **measure,
+            for target in targets
+        }
+        # The clock is detuned rather than the second pulse phase-advanced, which is the
+        # opposite of what `ramsey` does one rung down and is not a preference. A phase
+        # advance is a `ShiftClockPhase`, and on the ``.12`` clock it produced no fringe at
+        # all: the fitted detuning came back at minus the artificial one whatever the
+        # device's f12 was set to, so the sweep was measuring nothing. Detuning the clock
+        # does work, and it is what the routine's own frame offset is built from.
+        add_together(
+            schedule,
+            [
+                backend.SetClockFrequency(
+                    clock=f"{target}.12",
+                    clock_freq_new=sweeps[target]["current_f12"] + detuning,
                 )
+                for target in targets
+            ],
+        )
+        for index, delay in enumerate(delays):
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            add_together(schedule, [backend.X(t) for t in targets])
+            add_ef_pulses(schedule, backend, targets, halves)
+            backend.idle(schedule, delay)
+            anchor = add_ef_pulses(schedule, backend, targets, halves)
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.AVERAGE,
+                        **measure[target],
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
 
@@ -1450,6 +1521,21 @@ class Drag12(CalibrationRoutine):
         """
         return self.escalating(target, device, config, backend, timeout_s, sweep)
 
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The same widening, for the targets whose optimum fell outside the sweep."""
+        return self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+
     def build_schedule(
         self,
         target: str,
@@ -1458,48 +1544,69 @@ class Drag12(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        amplitude = _required_ef_amplitude(element, target)
-        duration = ef_duration(element, config)
-        # In the backend's own units, for the reason `drag` gives: a span sized for
-        # quantify's ratio is nine orders out for qblox's seconds.
-        sweep["drags"] = setpoints_of(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Both sequences on every target at once, two acquisitions per setpoint.
+
+        The DRAG span is the backend's own, so it is one grid for the group and it never
+        splits. The pulse amplitude and duration are per target; the phase and the DRAG
+        coefficient are the swept axis, so they are shared.
+        """
+        drags = setpoints_of(
             config, "drags", linear_setpoints(-backend.drag_span, backend.drag_span, 31)
         )
+        pulses = {}
+        for target in targets:
+            element = device.get_element(target)
+            sweeps[target]["drags"] = drags
+            pulses[target] = (
+                _required_ef_amplitude(element, target),
+                ef_duration(element, config),
+            )
 
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        measure = open_three_state_readout(schedule, backend, target, element)
-        for index, drag in enumerate(sweep["drags"]):
+        measure = {
+            target: open_three_state_readout(
+                schedule, backend, target, device.get_element(target)
+            )
+            for target in targets
+        }
+        halves = {t: (amp / 2.0, dur) for t, (amp, dur) in pulses.items()}
+        for index, drag in enumerate(drags):
             for offset, (first, second) in enumerate(((0.0, 90.0), (90.0, 0.0))):
-                schedule.add(backend.Reset(target))
-                schedule.add(backend.X(target))
-                add_ef_pulse(
-                    schedule,
-                    backend,
-                    target,
-                    amplitude / 2.0,
-                    duration,
-                    phase_deg=first,
-                    drag=drag,
+                add_together(schedule, [backend.Reset(t) for t in targets])
+                add_together(schedule, [backend.X(t) for t in targets])
+                add_ef_pulses(
+                    schedule, backend, targets, halves, phase_deg=first, drag=drag
                 )
-                add_ef_pulse(
-                    schedule,
-                    backend,
-                    target,
-                    amplitude,
-                    duration,
-                    phase_deg=second,
-                    drag=drag,
+                anchor = add_ef_pulses(
+                    schedule, backend, targets, pulses, phase_deg=second, drag=drag
                 )
-                schedule.add(
-                    backend.Measure(
-                        target,
-                        acq_index=2 * index + offset,
-                        bin_mode=backend.BinMode.AVERAGE,
-                        **measure,
-                    )
+                add_after(
+                    schedule,
+                    [
+                        backend.Measure(
+                            target,
+                            acq_channel=channel,
+                            acq_index=2 * index + offset,
+                            bin_mode=backend.BinMode.AVERAGE,
+                            **measure[target],
+                        )
+                        for channel, target in enumerate(targets)
+                    ],
+                    anchor,
                 )
         return schedule
 

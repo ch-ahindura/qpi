@@ -32,6 +32,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `ramsey_12`, `drag_12` and `fine_amplitude_12` measure a group at once,
+  completing the EF chain.
+- `qpi-driver/py`: a two-qubit routine now resets and excites both of an edge's qubits at
+  the same time rather than one after the other, which halves the reset a CZ sweep waits
+  through. This applies to a single edge too, so it is a change to the sequential walk and
+  not only to a grouped one.
 - `qpi-driver/py`: `rabi_12` and `ef_ladder` sweep a group at once. A fused group's raw EF
   pulses now start together and the readout follows the longest of them; they were appended,
   so they queued and the readout could precede some targets' pulses entirely. Nothing
