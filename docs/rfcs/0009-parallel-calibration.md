@@ -512,7 +512,7 @@ play concurrently — so `backend.allow` returns what it does today and the over
 refusal is unchanged. `start_accounting` moves from per-target to per-group, which is the
 honest scope: the ceiling bounds one arm-and-wait cycle, and a group is one.
 
-### 6.5 The eleven that measure themselves
+### 6.5 The fourteen that measure themselves
 
 `escalating` widens a `RoutineConfig` and retries, and it is where most of a walk's hours
 go. Over a group it becomes: acquire once, analyse each target, keep the fits that
@@ -632,15 +632,24 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** Phases 1 and 2 are done. Phase 3's mechanism is done and four
-routines are converted (`allxy`, `allxy_check`, `readout_discrimination`,
-`readout_fidelity`). Phase 4's mechanism is done — the per-target `Sweep`, group-aware
-`escalating`, the `measure_group` hook and the `compatible_groups` split — with `t1`,
-`t2_echo`, `rabi`, `drag`, `fine_amplitude`, `fine_amplitude_90` and `rb` converted of
-the eleven that measure themselves (and `interleaved_rb` with it); the remaining four are
-mechanical applications of it and each wants its own group schedule and test. Phases 5 and 6 are open. Grouping is off unless
-`calibration.yml` says otherwise, so none of this changes an existing chip's walk until
-an operator turns it on.
+**Where this stands.** Phases 1 and 2 are done, and every mechanism phases 3 and 4 call
+for is built and tested: the group loop, per-target acquisition channels, the demultiplex,
+the per-target `Sweep`, group-aware `escalating` and `amplified`, the `measure_group` hook,
+and the `compatible_groups` split.
+
+Twelve of the thirty-three routines group: `allxy`, `allxy_check`,
+`readout_discrimination`, `readout_fidelity`, `t1`, `t2_echo`, `rabi`, `drag`,
+`fine_amplitude`, `fine_amplitude_90`, `rb` and `interleaved_rb`. That is the whole
+time-domain single-qubit chain from `rabi` onwards, plus both benchmarks.
+
+What is left is application rather than design. Of the fourteen that measure themselves,
+`ramsey` has its schedule converted but not its loop (§6.5), and `resonator_spectroscopy`,
+`qubit_spectroscopy`, `drag_12`, `fine_amplitude_12` and `coupler_anticrossing` are
+untouched — two of those §6.5 argues should stay sequential. Phase 5 (the remaining edge
+routines) and phase 6 (the acceptance measurement) are open.
+
+Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
+existing chip's walk until an operator turns it on.
 
 **Phase 1 — the node in flight.** §7.1. A pre-work progress event in `dag.py`, a
 completion event for a skipped target, the `running` branch in `advanceNodes`, the field
