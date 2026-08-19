@@ -226,6 +226,15 @@ builder compares the setpoints each target resolved and splits out any target th
 disagrees, running it alone. Refusing the whole group instead would let one unusual
 element disable parallelism for a chip.
 
+**Two kinds of axis, and only one has to agree exactly.** A *time* axis is the schedule's
+own timeline: an idle of 5 us is 5 us for every target, so two targets wanting different
+delays cannot be fused at all. A frequency, amplitude or phase axis is per-target
+hardware — its own NCO, port and clock — so at setpoint *i* each target may sit at its own
+value, and all that has to agree is how many setpoints there are, since the acquisition
+index is shared. `grouped_by_grid` is the first, `grouped_by_size` the second. The
+distinction is what lets a spectroscopy sweep fuse at all: every one of them is centred on
+its own target's line, so the strict rule would split every group of them.
+
 **Implemented as `compatible_groups`, and it groups rather than isolates.** A routine
 whose grid is derived per target overrides the hook and returns the subgroups that agree,
 so the qubits that do share a window are still measured together — splitting one outlier

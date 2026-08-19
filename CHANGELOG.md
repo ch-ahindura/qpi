@@ -32,7 +32,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
-- `qpi-driver/py`: `cz_chevron` and `conditional_phase` calibrate a group of edges at once.
+- `qpi-driver/py`: every edge routine but `coupler_anticrossing` now calibrates a group at
+  once — `cz_spectroscopy` and `cz_parametrization` alongside `cz_chevron` and
+  `conditional_phase`. A sweep of a per-target axis (a frequency, amplitude or phase) only
+  needs the same *number* of setpoints across the group, not the same values, so each edge
+  can be swept over its own band; a time axis still has to agree exactly.
   Each edge's flux pulse goes to its own control's port and each virtual-Z to its own qubit,
   so the edges share a grid without interfering — which holds because `edge_spacing` will
   not put two edges sharing a qubit in one group.

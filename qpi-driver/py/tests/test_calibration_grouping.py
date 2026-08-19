@@ -26,6 +26,10 @@ from qpi_driver.tuners.base.grouping import (
 )
 from tests.test_calibration_dag import StubRoutine
 from tests.utils.chips import chain, heavy_hex, lattice, qubits_of
+from qpi_driver.tuners.base.fusion import (
+    grouped_by_grid,
+    grouped_by_size,
+)
 
 #: Wide enough not to be the thing under test where the topology is.
 UNBOUNDED = 999
@@ -419,5 +423,43 @@ class TestAnUnreadableCouplingGraph:
 
     def test_a_configured_edge_is_enough_to_group_from(self):
         groups = self._groups(["q0", "q1", "q2"], ["q0_q1", "q1_q2"])
+
+        assert sorted(sorted(g) for g in groups) == [["q0", "q2"], ["q1"]]
+
+
+class TestWhichAxesMustAgree:
+    """RFC 0009 D7 — shared hardware must agree exactly; per-target hardware need not.
+
+    A time axis is the schedule's own timeline: an idle of 5 us is 5 us for everyone, so
+    two targets wanting different delays cannot be fused. A frequency, amplitude or phase
+    is per-target hardware — its own NCO, port and clock — so at setpoint *i* each target
+    may sit at its own value and only the point count has to match. Getting this wrong in
+    the strict direction costs fusion on every spectroscopy sweep, since each is centred on
+    its own target's line.
+    """
+
+    def test_a_shared_axis_splits_on_differing_values(self):
+        grids = {"q0": [0.0, 1e-6], "q1": [0.0, 2e-6], "q2": [0.0, 1e-6]}
+
+        groups = grouped_by_grid(["q0", "q1", "q2"], lambda t: grids[t])
+
+        assert sorted(sorted(g) for g in groups) == [["q0", "q2"], ["q1"]]
+
+    def test_a_per_target_axis_keeps_differing_values_together(self):
+        """Every edge centred on its own CZ clock still fuses, which is the point."""
+        bands = {
+            "q0_q1": [3.9e9, 4.0e9, 4.1e9],
+            "q1_q2": [5.1e9, 5.2e9, 5.3e9],
+        }
+
+        groups = grouped_by_size(["q0_q1", "q1_q2"], lambda t: bands[t])
+
+        assert groups == [["q0_q1", "q1_q2"]]
+
+    def test_a_per_target_axis_still_splits_on_differing_lengths(self):
+        """The acquisition index is shared, so the point counts have to agree."""
+        bands = {"q0": [1.0, 2.0, 3.0], "q1": [1.0, 2.0], "q2": [4.0, 5.0, 6.0]}
+
+        groups = grouped_by_size(["q0", "q1", "q2"], lambda t: bands[t])
 
         assert sorted(sorted(g) for g in groups) == [["q0", "q2"], ["q1"]]

@@ -121,6 +121,30 @@ def grouped_by_grid(
     return list(by_grid.values())
 
 
+def grouped_by_size(
+    targets: Iterable[str], grid_of: Callable[[str], Iterable[float]]
+) -> list[list[str]]:
+    """*targets* partitioned by how many setpoints each resolves, not by which.
+
+    The looser counterpart of :func:`grouped_by_grid`, and which of the two applies depends
+    on whether the axis is shared hardware or per-target hardware.
+
+    A *time* axis is shared: there is one timeline in a schedule, so an idle of 5 us is 5 us
+    for every target and two targets wanting different delays cannot be fused at all. That
+    is `grouped_by_grid`.
+
+    A frequency, amplitude or phase axis is not: each target has its own NCO, its own port
+    and its own clock, so at setpoint *i* every target can be at a different value of its
+    own. All that has to agree is how many setpoints there are, since the acquisition index
+    is shared. That is this — and it is what lets a spectroscopy sweep centred on each
+    target's own line still fuse, which is most of the value of fusing one at all.
+    """
+    by_size: dict[int, list[str]] = {}
+    for target in targets:
+        by_size.setdefault(len(list(grid_of(target))), []).append(target)
+    return list(by_size.values())
+
+
 def channels_of(dataset: Any, targets: Sequence[str]) -> dict[str, Any]:
     """Each target's own slice of a fused acquisition, by position in the group.
 
