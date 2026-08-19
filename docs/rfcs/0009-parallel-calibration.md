@@ -1,7 +1,7 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Implemented. All six phases, with 33 of the 36 routines grouping; the three
-  that do not are the ones §6.5 argues should not, plus `ramsey`'s loop. §9 records where
+- **Status:** Implemented. All six phases, with 34 of the 36 routines grouping; the two
+  that do not are `coupler_anticrossing`, which §6.5 argues should not, and `ramsey`'s loop. §9 records where
   each phase stands. Not yet run on hardware — §5.6's acceptance measurement is what
   would close that, and D10 says why simulation cannot.
 - **Author:** Martin Ahindura
@@ -557,7 +557,10 @@ That is the shape `escalating_group` already handles: run the stage for the grou
 run the next stage for the subset that needs it. A confirm window centred on each qubit's
 own found line is a per-target frequency axis, so those still fuse under
 `grouped_by_size`. The routine is convertible, and the reason given for it was a
-conflation of "cannot be one schedule" with "cannot be one group".
+conflation of "cannot be one schedule" with "cannot be one group". It is now converted:
+stage 1 for the group, stage 2 per lost qubit, stage 3 fused again with each qubit's own
+confirm window riding on its own `Sweep`, since a config is one object for the group and a
+shared `centre_frequency` could only describe one of them.
 
 `coupler_anticrossing` is the one that genuinely stays sequential: its loop sets a DC bias
 out of band, between acquisitions, and a chip has one bias source. Even there the limit is
@@ -663,15 +666,14 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** All six phases are implemented, and thirty-three of the
+**Where this stands.** All six phases are implemented, and thirty-four of the
 thirty-six routines group.
 
-Three do not. `coupler_anticrossing` genuinely stays sequential: its loop sets a DC bias
-out of band and a chip has one bias source (§6.5). The other two are unconverted rather
-than unconvertible — `qubit_spectroscopy`'s two-pass search and `ramsey`'s multi-pass
-refinement are both per-target adaptive loops of the shape `escalating_group` already
-handles, and the `measure_group` guard is what keeps them running one target at a time in
-the meantime rather than silently skipping their loops.
+Two do not. `coupler_anticrossing` genuinely stays sequential: its loop sets a DC bias out
+of band and a chip has one bias source (§6.5). `ramsey` is unconverted rather than
+unconvertible — its multi-pass refinement is a per-target adaptive loop of the shape
+`escalating_group` handles, and the `measure_group` guard is what keeps it running one
+target at a time in the meantime rather than silently skipping the loop.
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.

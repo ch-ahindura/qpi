@@ -719,6 +719,25 @@ class CalibrationDAG:
                         )
                     )
                 return split
+        # Before any grouped path, not only the fused one: a routine that splits its sweep
+        # in `acquire` and has no `acquire_group` must not be grouped at all, and checking
+        # this after `measures_group` would let one with a group loop slip past into
+        # `_fused_pass`, which reaches `acquire_group` and so the unchunked default.
+        if len(targets) > 1 and routine.chunks_acquisition:
+            return {
+                target: self._run_one(
+                    routine,
+                    target,
+                    device,
+                    backend,
+                    routine_config,
+                    config,
+                    report,
+                    priors.get(target, ()),
+                )
+                for target in targets
+            }
+
         # The acceptance measurement: benchmark in company, then alone, and report the
         # difference. Before the group runs, because the isolated pass is the control and
         # a group that fails should not leave a penalty computed from half a comparison.
@@ -754,12 +773,7 @@ class CalibrationDAG:
         # too large for one program is split. The fused path runs neither, so such a routine
         # groups only once it has the matching group seam (RFC 0009 §6.5).
         own_loop_only = routine.measures_itself and not routine.measures_group
-        if (
-            len(targets) == 1
-            or not routine.fusable
-            or own_loop_only
-            or routine.chunks_acquisition
-        ):
+        if len(targets) == 1 or not routine.fusable or own_loop_only:
             return {
                 target: self._run_one(
                     routine,

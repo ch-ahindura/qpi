@@ -32,6 +32,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: `qubit_spectroscopy` searches a group at once. Its two-pass search
+  depends on the previous pass *for the same qubit* and not on other qubits, so the stages
+  fuse and only the membership changes: the configured window for the group, a wide search
+  for the qubits whose line was not there, then a confirming sweep for those, each around
+  its own found line. 34 of 36 routines now group.
 - `qpi-driver/py`: `readout_integration_time` measures a group at once, at one window for
   the whole group — an integration length is a property of the program, not of a target, so
   targets wanting different windows are split apart. 33 of 36 routines now group; the three

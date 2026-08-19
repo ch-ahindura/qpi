@@ -790,3 +790,42 @@ class _WideChannelBackend(StubBackend):
         return _dataset(
             {c: list(range(self.per_channel)) for c in range(self.channels)}
         )
+
+
+def test_a_group_loop_cannot_smuggle_past_the_chunking_guard():
+    """The guard has to come before every grouped path, not only the fused one.
+
+    `measures_group` was checked first, so a routine with a group loop but no
+    `acquire_group` would have reached `_fused_pass` — and through it the unchunked
+    default — with the guard never consulted.
+    """
+
+    class LoopButNoChunking(FusableProbe):
+        name = "smuggler"
+
+        def acquire(self, target, device, config, backend, timeout_s, sweep):
+            return super().acquire(target, device, config, backend, timeout_s, sweep)
+
+        def measure_group(
+            self, targets, device, config, backend, sweeps, bias=None, timeout_s=300.0
+        ):
+            raise AssertionError("the guard should have run this one target at a time")
+
+        def measure(
+            self, target, device, config, backend, sweep, bias=None, timeout_s=300.0
+        ):
+            return {"value": 1.0}
+
+    node = LoopButNoChunking()
+    assert node.chunks_acquisition and node.measures_group
+
+    config = CalibrationConfig(
+        target_qubits=["q0", "q1"],
+        parallel=ParallelConfig(enabled=True, qubit_spacing=1),
+    )
+    report = CalibrationDAG([node], config).run(
+        device=None, backend=ChannelBackend([1.0, 1.0]), config=config
+    )
+
+    assert report.status == "success"
+    assert len(report.routine_results) == 2

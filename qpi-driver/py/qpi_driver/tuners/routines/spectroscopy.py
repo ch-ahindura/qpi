@@ -1461,21 +1461,219 @@ class QubitSpectroscopy(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        return self._probe_schedule(
-            target,
-            _frequency_sweep(
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By point count on both axes. Each band is centred on that qubit's own f01, so
+        the values differ and only the counts have to agree."""
+        return grouped_by_size(
+            targets,
+            lambda t: (
+                list(self._drive_amplitudes(config, device, t))
+                + list(self._band(device, t, config, None, Sweep(t)))
+            ),
+        )
+
+    def _band(
+        self,
+        device: Any,
+        target: str,
+        config: RoutineConfig,
+        backend: Any,
+        sweep: Sweep,
+    ) -> list[float]:
+        """This target's frequency sweep — around its own found line if one was searched.
+
+        The confirming pass is centred per target, because the wide search finds a
+        different line for each qubit. Carried on that target's `Sweep` rather than in the
+        config, which is one object for the group: a shared `centre_frequency` could only
+        describe one of them, and that is what would have forced the confirm stage to run
+        a qubit at a time.
+        """
+        confirming = sweep.get("confirm")
+        if confirming is None:
+            return _frequency_sweep(
                 config,
                 device,
                 target,
                 "f01",
                 default_span=self.NARROW_SPAN,
                 backend=backend,
-            ),
-            self._drive_amplitudes(config, device, target),
+            )
+        centre, span, points = confirming
+        return setpoints_of(
+            config,
+            "frequencies",
+            linear_setpoints(centre - span / 2, centre + span / 2, points),
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Every qubit's drive swept at once, each over its own band on its own clock."""
+        return self._probe_group_schedule(
+            targets,
+            {
+                target: self._band(device, target, config, backend, sweeps[target])
+                for target in targets
+            },
+            {
+                target: self._drive_amplitudes(config, device, target)
+                for target in targets
+            },
             backend,
             int(config.get("shots", 1024)),
-            sweep,
+            sweeps,
         )
+
+    def measure_group(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+        bias: Any = None,
+        timeout_s: float = DEFAULT_ROUTINE_TIMEOUT_S,
+    ) -> dict[str, dict[str, Any] | Exception]:
+        """The two-pass search over a group. The passes are per qubit; the qubits are not.
+
+        The dependency this routine has is *within* one qubit and across passes — a confirm
+        window is centred on the line that qubit's own wide search found. Two qubits never
+        depend on each other, so the stages fuse and only the membership changes:
+
+        1. the configured window, for the whole group;
+        2. a wide search, for the qubits whose line was not there;
+        3. a confirming sweep, for those, each around its own found line.
+
+        Stage 3 still fuses because a frequency axis is per-target hardware, and each
+        target's centre rides on its own `Sweep` (see :meth:`_band`). Stage 2 does not: it
+        is one acquisition per lost qubit and it only runs when a qubit is not where the
+        config says, so there is little to win and a per-target band to keep simple.
+        """
+        results: dict[str, dict[str, Any] | Exception] = {}
+        first = self.escalating_group(
+            targets, device, config, backend, timeout_s, sweeps
+        )
+        unresolved = []
+        for target, outcome in first.items():
+            if isinstance(outcome, Exception):
+                unresolved.append(target)
+            else:
+                results[target] = outcome
+        if not unresolved:
+            return results
+
+        for target in unresolved:
+            log.info(
+                "%s: no line within the configured window for %s — widening to %.0f MHz",
+                self.name,
+                target,
+                float(config.get("search_span", self.SEARCH_SPAN)) / 1e6,
+            )
+            try:
+                found, width = self._search(
+                    target, device, config, backend, timeout_s, sweeps[target]
+                )
+            except (RoutineError, FitError) as exc:
+                results[target] = exc
+                continue
+            sweeps[target]["confirm"] = (
+                found,
+                float(config.get("confirm_span", self._confirm_span(config, width))),
+                int(
+                    config.get(
+                        "confirm_points",
+                        self._confirm_points(config, device, target, width),
+                    )
+                ),
+            )
+
+        confirming = [t for t in unresolved if "confirm" in sweeps[t]]
+        if not confirming:
+            return results
+        # Split again, since two qubits' confirm windows need not hold the same number of
+        # points — the count comes from the width each search measured.
+        for subgroup in grouped_by_size(
+            confirming, lambda t: self._band(device, t, config, backend, sweeps[t])
+        ):
+            confirmed = self.escalating_group(
+                subgroup, device, config, backend, timeout_s, sweeps
+            )
+            for target, outcome in confirmed.items():
+                if isinstance(outcome, Exception):
+                    found = sweeps[target]["confirm"][0]
+                    results[target] = RoutineError(
+                        f"the widened search put {target}'s strongest line at "
+                        f"{found:.0f} Hz, but sweeping finely there did not confirm it: "
+                        f"{outcome}"
+                    )
+                else:
+                    results[target] = outcome
+        return results
+
+    def _probe_group_schedule(
+        self,
+        targets: Sequence[str],
+        bands: Mapping[str, list[float]],
+        powers: Mapping[str, list[float]],
+        backend: SchedulerBackend,
+        shots: int,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The group counterpart of :meth:`_probe_schedule`.
+
+        Each target drives its own ``.01`` clock at its own frequency and power, so the
+        grids may differ in value; only their sizes have to match, which is what
+        `compatible_groups` enforces.
+        """
+        for target in targets:
+            sweeps[target]["frequencies"] = bands[target]
+            sweeps[target]["drive_amps"] = powers[target]
+            sweeps[target]["drive_amps_ceiling"] = MAX_SPECTROSCOPY_AMPLITUDE
+
+        schedule = backend.new_schedule(self.name, repetitions=shots)
+        index = 0
+        for row in range(len(powers[targets[0]])):
+            for column in range(len(bands[targets[0]])):
+                anchor = add_together(
+                    schedule, [backend.Reset(target) for target in targets]
+                )
+                add_together(
+                    schedule,
+                    [
+                        backend.SetClockFrequency(
+                            clock=f"{target}.01",
+                            clock_freq_new=bands[target][column],
+                        )
+                        for target in targets
+                    ],
+                )
+                anchor = add_after(
+                    schedule,
+                    [
+                        backend.Rxy(
+                            theta=180,
+                            phi=0,
+                            qubit=target,
+                            amp180=powers[target][row],
+                        )
+                        for target in targets
+                    ],
+                    anchor,
+                )
+                add_after(schedule, readouts(backend, targets, index), anchor)
+                index += 1
+        return schedule
 
     def _probe_schedule(
         self,
