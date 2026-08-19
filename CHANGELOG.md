@@ -27,6 +27,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `cz_chevron` and `conditional_phase` calibrate a group of edges at once.
+  Each edge's flux pulse goes to its own control's port and each virtual-Z to its own qubit,
+  so the edges share a grid without interfering — which holds because `edge_spacing` will
+  not put two edges sharing a qubit in one group.
 - `qpi-driver/py`: a routine that runs its own measurement loop is no longer grouped just
   because its schedule can be fused. `measure` is where escalation, refinement and any
   between-pass write-back live, and the fused path runs none of them — `ramsey`, whose loop

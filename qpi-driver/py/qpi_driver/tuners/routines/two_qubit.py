@@ -4,6 +4,7 @@ These target edges rather than qubits. An edge is named ``<parent>_<child>``,
 which is how the two qubits it acts on are recovered.
 """
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -11,6 +12,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import DEFAULT_ROUTINE_TIMEOUT_S, RoutineConfig
+from qpi_driver.tuners.base.fusion import (
+    add_after,
+    add_together,
+    grouped_by_grid,
+)
 from qpi_driver.tuners.base.device import (
     has_flux_port,
     phase_correction_names,
@@ -33,6 +39,39 @@ from qpi_driver.tuners.fitting import (
     fit_resonator_spectroscopy,
     signal_of,
 )
+
+
+def prepare_11(schedule: Any, backend: SchedulerBackend, edges: Sequence[str]) -> Any:
+    """Reset and excite both qubits of every edge, returning the anchor.
+
+    ``|11>`` is the state that exchanges with ``|02>``, so both qubits are excited before
+    the pulse brings them into resonance. Shared because all four CZ sweeps open this way,
+    and a fused group needs two edges' four resets and four X pulses to coincide rather
+    than to queue.
+    """
+    pairs = [qubits_of(edge) for edge in edges]
+    add_together(schedule, [backend.Reset(q) for pair in pairs for q in pair])
+    return add_together(schedule, [backend.X(q) for pair in pairs for q in pair])
+
+
+def measure_parents(
+    backend: SchedulerBackend, edges: Sequence[str], index: int
+) -> list[Any]:
+    """One measurement per edge, on its parent and on the edge's own channel.
+
+    The parent is the qubit the exchange leaves population in, so it is the one every CZ
+    sweep reads. The channel is the edge's position in the group, which is what
+    `channels_of` slices the result apart by.
+    """
+    return [
+        backend.Measure(
+            qubits_of(edge)[0],
+            acq_channel=channel,
+            acq_index=index,
+            bin_mode=backend.BinMode.AVERAGE,
+        )
+        for channel, edge in enumerate(edges)
+    ]
 
 
 def qubits_of(edge: str) -> tuple[str, str]:
@@ -545,41 +584,63 @@ class CZChevron(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        control, _child = qubits_of(target)
-        sweep["amplitudes"] = setpoints_of(
-            config, "amplitudes", linear_setpoints(0.1, 0.6, 11)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
         )
-        sweep["durations"] = setpoints_of(
-            config, "durations", linear_setpoints(20e-9, 200e-9, 11)
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """Both axes come from the config, so every edge's grid is the same one."""
+        return grouped_by_grid(targets, lambda _target: self._grid(config)[0])
+
+    def _grid(self, config: RoutineConfig) -> tuple[list[float], list[float]]:
+        """The chevron's amplitude and duration axes."""
+        return (
+            setpoints_of(config, "amplitudes", linear_setpoints(0.1, 0.6, 11)),
+            setpoints_of(config, "durations", linear_setpoints(20e-9, 200e-9, 11)),
         )
-        port = f"{control}:fl"
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One chevron per edge, each pulse on its own control's flux port.
+
+        The amplitude axis is per-edge hardware — a baseband pulse on ``q<n>:fl`` — so the
+        edges can share a grid without their pulses interfering. That holds only because
+        `edge_spacing` will not put two edges sharing a qubit in one group.
+        """
+        amplitudes, durations = self._grid(config)
+        for target in targets:
+            sweeps[target]["amplitudes"] = amplitudes
+            sweeps[target]["durations"] = durations
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 512))
         )
 
         index = 0
-        for amplitude in sweep["amplitudes"]:
-            for duration in sweep["durations"]:
-                parent, child = qubits_of(target)
-                schedule.add(backend.Reset(parent))
-                schedule.add(backend.Reset(child))
-                # |11> is the state that exchanges with |02>, so both qubits are
-                # excited before the flux pulse brings them into resonance.
-                schedule.add(backend.X(parent))
-                schedule.add(backend.X(child))
-                schedule.add(
-                    backend.SquarePulse(
-                        amp=amplitude,
-                        duration=duration,
-                        port=port,
-                        clock="cl0.baseband",
-                    )
+        for amplitude in amplitudes:
+            for duration in durations:
+                anchor = prepare_11(schedule, backend, targets)
+                anchor = add_after(
+                    schedule,
+                    [
+                        backend.SquarePulse(
+                            amp=amplitude,
+                            duration=duration,
+                            port=f"{qubits_of(edge)[0]}:fl",
+                            clock="cl0.baseband",
+                        )
+                        for edge in targets
+                    ],
+                    anchor,
                 )
-                schedule.add(
-                    backend.Measure(
-                        parent, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                    )
-                )
+                add_after(schedule, measure_parents(backend, targets, index), anchor)
                 index += 1
         return schedule
 
@@ -630,38 +691,85 @@ class ConditionalPhase(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        parent, child = qubits_of(target)
-        sweep["phases"] = setpoints_of(
-            config, "phases", linear_setpoints(0.0, 360.0, 25)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
         )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The four fringes on every edge at once, each read on the edge's own channel.
+
+        The phase axis is a virtual-Z on the qubit being measured, so it is per-edge
+        hardware and the grid can be shared. The group never splits: the phases come from
+        the config or from a full turn in 25 steps.
+        """
+        phases = setpoints_of(config, "phases", linear_setpoints(0.0, 360.0, 25))
+        for target in targets:
+            sweeps[target]["phases"] = phases
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 512))
         )
 
-        # Four fringes, not two. A Ramsey on one qubit with the other down and
-        # then up gives the conditional phase from the offset between them, and
-        # the *ground* fringe's own phase gives that qubit's single-qubit phase
-        # over the CZ. Both qubits are needed because each carries its own, and
-        # the edge has a separate correction for each — measuring one and
-        # assuming the other is how a CZ ends up building the wrong Bell state
-        # while every reported number looks right.
+        # Four fringes, not two. A Ramsey on one qubit with the other down and then up
+        # gives the conditional phase from the offset between them, and the *ground*
+        # fringe's own phase gives that qubit's single-qubit phase over the CZ. Both qubits
+        # are needed because each carries its own, and the edge has a separate correction
+        # for each — measuring one and assuming the other is how a CZ ends up building the
+        # wrong Bell state while every reported number looks right.
         index = 0
-        for measured, spectator in ((parent, child), (child, parent)):
+        for role in (0, 1):
+            # Which qubit of each edge this pass reads, and which merely sits excited.
+            roles = {
+                edge: (qubits_of(edge)[role], qubits_of(edge)[1 - role])
+                for edge in targets
+            }
             for spectator_excited in (False, True):
-                for phase in sweep["phases"]:
-                    schedule.add(backend.Reset(measured))
-                    schedule.add(backend.Reset(spectator))
+                for phase in phases:
+                    add_together(
+                        schedule,
+                        [backend.Reset(q) for edge in targets for q in qubits_of(edge)],
+                    )
                     if spectator_excited:
-                        schedule.add(backend.X(spectator))
-                    schedule.add(backend.Rxy(theta=90, phi=0, qubit=measured))
-                    schedule.add(backend.CZ(parent, child))
-                    schedule.add(backend.Rxy(theta=90, phi=phase, qubit=measured))
-                    schedule.add(
-                        backend.Measure(
-                            measured,
-                            acq_index=index,
-                            bin_mode=backend.BinMode.AVERAGE,
+                        add_together(
+                            schedule,
+                            [backend.X(roles[edge][1]) for edge in targets],
                         )
+                    add_together(
+                        schedule,
+                        [
+                            backend.Rxy(theta=90, phi=0, qubit=roles[edge][0])
+                            for edge in targets
+                        ],
+                    )
+                    add_together(
+                        schedule,
+                        [backend.CZ(*qubits_of(edge)) for edge in targets],
+                    )
+                    anchor = add_together(
+                        schedule,
+                        [
+                            backend.Rxy(theta=90, phi=phase, qubit=roles[edge][0])
+                            for edge in targets
+                        ],
+                    )
+                    add_after(
+                        schedule,
+                        [
+                            backend.Measure(
+                                roles[edge][0],
+                                acq_channel=channel,
+                                acq_index=index,
+                                bin_mode=backend.BinMode.AVERAGE,
+                            )
+                            for channel, edge in enumerate(targets)
+                        ],
+                        anchor,
                     )
                     index += 1
         return schedule
