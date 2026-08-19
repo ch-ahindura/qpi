@@ -5,6 +5,14 @@ on:
     branches: [ main ]
     tags: [ 'v*' ]
   pull_request:
+  # `bench-parallel` runs only from here. It walks the whole graph twice and takes
+  # minutes, which is not something every push should pay for.
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: 'Also measure what grouping saves (make bench-parallel)'
+        type: boolean
+        default: false
 
 concurrency:
   # cancel any previous run on this branch or tag that is still in progress
@@ -150,6 +158,16 @@ jobs:
   # -------------------------------------------------------------------------
   # qpi-client / Python SDK
   # -------------------------------------------------------------------------
+  benchmark-parallel-calibration:
+    # Manual only, and only when asked for: see `workflow_dispatch.inputs.benchmark`.
+    if: github.event_name == 'workflow_dispatch' && inputs.benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Measure what grouping saves
+        run: make bench-parallel
+
   lint-and-test-py-client:
     runs-on: ubuntu-latest
     strategy:

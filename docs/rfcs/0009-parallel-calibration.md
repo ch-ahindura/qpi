@@ -1,7 +1,7 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Implemented. All six phases, with 34 of the 36 routines grouping; the two
-  that do not are `coupler_anticrossing`, which §6.5 argues should not, and `ramsey`'s loop. §9 records where
+- **Status:** Implemented. All six phases, with 35 of the 36 routines grouping. The one
+  that does not is `coupler_anticrossing`, which §6.5 argues should not. §9 records where
   each phase stands. Not yet run on hardware — §5.6's acceptance measurement is what
   would close that, and D10 says why simulation cannot.
 - **Author:** Martin Ahindura
@@ -666,14 +666,24 @@ want one, because physical distance is the wrong metric for the question groupin
 
 Six phases. Each is separately valuable and separately revertable.
 
-**Where this stands.** All six phases are implemented, and thirty-four of the
-thirty-six routines group.
+**Where this stands.** All six phases are implemented, and thirty-five of the thirty-six
+routines group. The one that does not is `coupler_anticrossing`: its loop sets a DC bias out
+of band and a chip has one bias source (§6.5).
 
-Two do not. `coupler_anticrossing` genuinely stays sequential: its loop sets a DC bias out
-of band and a chip has one bias source (§6.5). `ramsey` is unconverted rather than
-unconvertible — its multi-pass refinement is a per-target adaptive loop of the shape
-`escalating_group` handles, and the `measure_group` guard is what keeps it running one
-target at a time in the meantime rather than silently skipping the loop.
+Two claims in earlier drafts of this section were wrong and are worth keeping visible,
+because both were the same mistake. `qubit_spectroscopy` and `ramsey` were listed as
+unable to group on the grounds that each pass depends on the last. It does — *within one
+qubit*. Neither reads another qubit at any point, so both group by running the stage for the
+group and the next stage for the subset that still needs it, which is what
+`escalating_group` was built to do. "Cannot be one schedule" is not "cannot be one group",
+and I conflated them twice.
+
+**What it saves, measured.** `make bench-parallel` walks the graph twice on a chain of three
+qubits and two couplers and reports acquisitions — one arm-and-wait cycle each, which is the
+quantity a fused schedule reduces, since its pulses are one target's. 52 sequentially against
+37 grouped, so 1.41x. That is a floor rather than the figure §5.5 derives: only 20 of the
+graph's 102 routine-targets complete against the simulator, the rest having no physics there.
+Off unless `QPI_BENCH=1`, and in CI only from a manual dispatch.
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.
