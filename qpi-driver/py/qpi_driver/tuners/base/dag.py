@@ -719,6 +719,24 @@ class CalibrationDAG:
                         )
                     )
                 return split
+        # The acceptance measurement: benchmark in company, then alone, and report the
+        # difference. Before the group runs, because the isolated pass is the control and
+        # a group that fails should not leave a penalty computed from half a comparison.
+        if (
+            len(targets) > 1
+            and routine.is_benchmark
+            and config.parallel.measure_penalty
+        ):
+            return self._run_with_penalty(
+                routine,
+                targets,
+                device,
+                backend,
+                routine_config,
+                config,
+                report,
+                priors,
+            )
         if len(targets) > 1 and routine.measures_group:
             return self._run_measured_group(
                 routine,
@@ -749,6 +767,105 @@ class CalibrationDAG:
                 )
                 for target in targets
             }
+        return self._run_fused(
+            routine, targets, device, backend, routine_config, config, report, priors
+        )
+
+    def _run_with_penalty(
+        self,
+        routine: CalibrationRoutine,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        routine_config: Any,
+        config: CalibrationConfig,
+        report: CalibrationReport,
+        priors: dict[str, tuple[str, ...]],
+    ) -> dict[str, bool]:
+        """Benchmark *targets* together and then alone, recording what company cost them.
+
+        The measurement RFC 0009 §5.6 turns `qubit_spacing` from a guess into a setting,
+        and it is Gambetta et al.'s: benchmark each qubit alone, benchmark them
+        simultaneously, and the difference in average gate fidelity *is* the
+        addressability. Both halves are runs this walk can already do, so the whole of it
+        is arithmetic on two reports.
+
+        The isolated pass runs second and its results are dropped, because the fused
+        numbers are the ones that describe how the chip will actually be driven. What is
+        kept is the difference, on the benchmark the group produced.
+
+        Costs twice what benchmarking once does, which is why it is opt-in.
+        """
+        outcomes = self._run_group_without_penalty(
+            routine, targets, device, backend, routine_config, config, report, priors
+        )
+        together = {
+            benchmark.target: benchmark
+            for benchmark in report.benchmarks
+            if benchmark.protocol == routine.name
+        }
+
+        # A throwaway report, so the control pass cannot add rows of its own: the graph is
+        # the fused one and the isolated numbers are a reference, not a result.
+        control = CalibrationReport(
+            timestamp=utc_timestamp(),
+            duration_s=0.0,
+            mode=report.mode,
+            backend=backend.name,
+        )
+        for target in targets:
+            self._run_one(
+                routine,
+                target,
+                device,
+                backend,
+                routine_config,
+                config,
+                control,
+                priors.get(target, ()),
+            )
+        alone = {
+            benchmark.target: benchmark.fidelity for benchmark in control.benchmarks
+        }
+
+        for target, benchmark in together.items():
+            isolated = alone.get(target)
+            if isolated is None or benchmark.fidelity is None:
+                continue
+            benchmark.parallel_penalty = isolated - benchmark.fidelity
+            log.info(
+                "%s on %s: %.5f alone against %.5f in company — a penalty of %.5f",
+                routine.name,
+                target,
+                isolated,
+                benchmark.fidelity,
+                benchmark.parallel_penalty,
+            )
+        return outcomes
+
+    def _run_group_without_penalty(
+        self,
+        routine: CalibrationRoutine,
+        targets: list[str],
+        device: Any,
+        backend: SchedulerBackend,
+        routine_config: Any,
+        config: CalibrationConfig,
+        report: CalibrationReport,
+        priors: dict[str, tuple[str, ...]],
+    ) -> dict[str, bool]:
+        """The grouped run itself, without the control pass — see `_run_with_penalty`."""
+        if routine.measures_group:
+            return self._run_measured_group(
+                routine,
+                targets,
+                device,
+                backend,
+                routine_config,
+                config,
+                report,
+                priors,
+            )
         return self._run_fused(
             routine, targets, device, backend, routine_config, config, report, priors
         )

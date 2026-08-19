@@ -117,6 +117,11 @@ class BenchmarkResult:
     fidelity: float | None
     error_per_gate: float | None
     raw_data: dict[str, Any] = field(default_factory=dict)
+    #: How much fidelity this target loses to being measured in company rather than alone
+    #: — the addressability of Gambetta et al., in the units the drift check thresholds on
+    #: (RFC 0009 §5.6). ``None`` unless the run asked for it; positive means the group cost
+    #: this target something, and it is what licenses a tighter `qubit_spacing`.
+    parallel_penalty: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -124,6 +129,7 @@ class BenchmarkResult:
             "target": self.target,
             "fidelity": self.fidelity,
             "error_per_gate": self.error_per_gate,
+            "parallel_penalty": self.parallel_penalty,
             "raw_data": self.raw_data,
         }
 

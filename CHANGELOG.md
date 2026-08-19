@@ -27,6 +27,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `parallel.measure_penalty` benchmarks each target alone as well as in
+  company and reports `parallel_penalty` — how much fidelity the group cost it. This is the
+  measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
+  benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
+  coupling so the detector itself can be tested.
 - `qpi-driver/py`: `cz_chevron` and `conditional_phase` calibrate a group of edges at once.
   Each edge's flux pulse goes to its own control's port and each virtual-Z to its own qubit,
   so the edges share a grid without interfering — which holds because `edge_spacing` will

@@ -103,6 +103,12 @@ class ParallelConfig:
     #: Explicit classes per kind, which skip the colouring entirely. For a chip whose
     #: measured crosstalk does not follow its topology.
     groups: dict[str, list[list[str]]] = field(default_factory=dict)
+    #: Benchmark each target alone as well as in company, and report the difference
+    #: (RFC 0009 §5.6). Off by default because it doubles what the benchmarks cost: it is
+    #: the measurement that licenses a tighter `qubit_spacing`, not something every run
+    #: needs. Without it the spacing is a guess, which is why the default spacing is the
+    #: conservative one.
+    measure_penalty: bool = False
 
     def spacing_for(self, kind: str) -> int:
         """The radius that applies to *kind* — ``"qubits"`` or ``"edges"``."""
@@ -140,6 +146,7 @@ class ParallelConfig:
             max_group=_positive(data, "max_group", DEFAULT_MAX_GROUP),
             exclude=[list(pair) for pair in exclude or []],
             groups={kind: [list(g) for g in gs] for kind, gs in groups.items()},
+            measure_penalty=bool(data.get("measure_penalty", False)),
         )
 
 

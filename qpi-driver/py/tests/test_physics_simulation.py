@@ -1048,3 +1048,57 @@ class TestTheEfLadderComesOutOfThePhysics:
         assert 0.5 <= ratio <= 2.0, (
             f"the ladder guard would refuse this at {ratio:.2f}x"
         )
+
+
+class TestTheCrosstalkDetector:
+    """RFC 0009 D10 — the simulator can show that the penalty *detects*, not what is safe.
+
+    A ZZ coupling shifts each qubit's frequency in proportion to the other's excitation,
+    so a phase calibrated with the neighbour in |0> is wrong with it in |1>. That is the
+    crosstalk a fused group is exposed to and a sequential walk is not, and it is what
+    §5.6's measurement has to be able to see.
+
+    What this cannot do is license a spacing: `ZZ_MHZ` is a number this project chose, and
+    `MAX_ENTANGLED` caps a joint register at three qubits, so a chip-scale group is out of
+    reach in principle. The radius is settled on hardware.
+    """
+
+    def _phase_shift(self, zz_mhz: float) -> float:
+        """How far a spectator in |1> moves the measured qubit's accumulated phase."""
+        import dataclasses
+
+        from qpi_driver.simulation.coupled import CoupledTransmons
+
+        pair = dataclasses.replace(CoupledTransmons(), zz_mhz=zz_mhz)
+        idle = pair._hamiltonian(0.0).full()
+        # |11> against |01>: the difference is what the control's excitation adds to the
+        # target's energy, which is a phase rate in rad/ns.
+        return float(np.real(idle[4, 4] - idle[1, 1] - idle[3, 3] + idle[0, 0]))
+
+    def test_no_zz_means_a_spectator_costs_nothing(self):
+        """The default has to leave every existing simulated result untouched."""
+        assert self._phase_shift(0.0) == pytest.approx(0.0, abs=1e-12)
+
+    def test_a_zz_coupling_shifts_the_measured_qubit(self):
+        """Non-zero and proportional, so a detector comparing company against isolation
+        has something to find — and finds twice as much when the coupling doubles."""
+        one = self._phase_shift(1.0)
+        two = self._phase_shift(2.0)
+
+        assert abs(one) > 1e-6
+        assert two == pytest.approx(2.0 * one, rel=1e-9)
+
+    def test_it_stays_diagonal_so_it_moves_no_population(self):
+        """A frequency shift, not an exchange: it costs phase and not population, which is
+        why it is invisible to a routine that measures one qubit at a time."""
+        import dataclasses
+
+        from qpi_driver.simulation.coupled import CoupledTransmons
+
+        quiet = CoupledTransmons()._hamiltonian(0.0).full()
+        noisy = (
+            dataclasses.replace(CoupledTransmons(), zz_mhz=3.0)._hamiltonian(0.0).full()
+        )
+        difference = noisy - quiet
+
+        assert np.allclose(difference, np.diag(np.diag(difference)))

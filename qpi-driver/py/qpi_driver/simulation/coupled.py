@@ -54,6 +54,22 @@ from qpi_driver.simulation.transmon import NS, TransmonSimulator
 #: to a few tens; this is at the low end of normal.
 G_MHZ = 3.2
 
+#: Always-on ``ZZ`` coupling between the pair, in MHz. Zero, so nothing changes unless a
+#: test asks for it.
+#:
+#: What it is for, and what it is not. A driven qubit shifts its neighbour's frequency by
+#: this much, so a pulse calibrated in isolation is slightly wrong when the neighbour is
+#: driven too — which is the crosstalk a fused group is exposed to and a sequential walk is
+#: not. Switching it on is how `parallel_penalty` can be shown to *detect* something
+#: (RFC 0009 D10).
+#:
+#: It cannot license a grouping. The number would be one this project chose, so a test
+#: asserting that some `qubit_spacing` is safe would be asserting the constant rather than
+#: the chip — and `MAX_ENTANGLED` caps a joint register at three qubits, so a chip-scale
+#: group is out of reach in principle. The detector is testable here; the radius is settled
+#: on hardware, by §5.6's measurement.
+ZZ_MHZ = 0.0
+
 #: Flux-pulse amplitude to control-qubit detuning, in GHz per squared unit of
 #: amplitude. Also chosen. Quadratic because a transmon sits at a flux sweet spot
 #: where the first derivative of frequency with flux vanishes, so the leading
@@ -190,6 +206,8 @@ class CoupledTransmons:
         control: the flux-tunable qubit — the one a CZ's flux pulse detunes.
         target: the fixed-frequency qubit it is tuned towards.
         g_mhz: exchange coupling. See :data:`G_MHZ`.
+        zz_mhz: always-on ZZ coupling, which shifts each qubit's frequency by this much
+            per excitation in the other. See :data:`ZZ_MHZ`.
         flux_curvature_ghz: flux amplitude to detuning. See
             :data:`FLUX_CURVATURE_GHZ`.
         conditional_phase_offset_deg: a static phase error added to the CZ's
@@ -200,6 +218,7 @@ class CoupledTransmons:
     control: TransmonSimulator = field(default_factory=TransmonSimulator)
     target: TransmonSimulator = field(default_factory=TransmonSimulator)
     g_mhz: float = G_MHZ
+    zz_mhz: float = ZZ_MHZ
     flux_curvature_ghz: float = FLUX_CURVATURE_GHZ
     sideband_gap_ghz: float = SIDEBAND_GAP_GHZ
     conditional_phase_offset_deg: float = 0.0
@@ -287,6 +306,11 @@ class CoupledTransmons:
         target_alpha = 2 * np.pi * self.target.anharmonicity
         coupling = 2 * np.pi * self.g_mhz * 1e-3
 
+        # Diagonal, so it is a frequency shift on each qubit proportional to the other's
+        # excitation rather than an exchange: it costs no population and shows up as phase.
+        # That is what makes a pulse calibrated alone slightly wrong in company.
+        zz = 2 * np.pi * self.zz_mhz * 1e-3
+
         return (
             detuning * control_number
             + (control_alpha / 2) * control_number * (control_number - 1)
@@ -296,6 +320,7 @@ class CoupledTransmons:
                 control_ladder.dag() * target_ladder
                 + control_ladder * target_ladder.dag()
             )
+            + zz * control_number * target_number
         )
 
     def parametric_rate(self, amplitude: float) -> float:

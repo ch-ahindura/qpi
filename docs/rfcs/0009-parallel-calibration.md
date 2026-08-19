@@ -423,6 +423,13 @@ fidelity it is derived from. An operator tightens `qubit_spacing` when that numb
 small on their chip and loosens it when it is not. Nothing here decides for them, and
 D10 says which half of this is testable without a fridge.
 
+**Implemented as `parallel.measure_penalty`, off by default.** A benchmark's group runs
+first and the same targets are then benchmarked one at a time into a throwaway report; the
+difference lands on the grouped benchmark. The isolated pass is a *control* — its rows are
+discarded, because the fused numbers are the ones that describe how the chip will actually
+be driven. It doubles what benchmarking costs, which is why an operator opts in rather than
+paying for it on every run. No new node and no change to the graph's shape (§11).
+
 ## 6. Fusion
 
 ### 6.1 The hook
@@ -739,6 +746,13 @@ pair or a triple, since `MAX_ENTANGLED = 3`. It cannot show that a *group* is
 crosstalk-free: a chip-scale joint register is beyond the ceiling, and the coefficient
 would be one this project chose. §5.6 is the hardware counterpart, and this RFC does not
 move to Implemented until it has been run.
+
+**Implemented as `CoupledTransmons.zz_mhz`, zero by default.** A diagonal term shifting
+each qubit's frequency in proportion to the other's excitation, so a phase calibrated with
+the neighbour in ``|0>`` is wrong with it in ``|1>`` — crosstalk that costs phase rather
+than population, which is exactly why a routine measuring one qubit at a time cannot see
+it. The tests assert it is zero by default, non-zero and proportional when set, and
+diagonal; nothing asserts a safe spacing, which is the line D10 draws.
 
 ## 11. What this deliberately does not do
 

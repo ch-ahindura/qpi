@@ -565,3 +565,85 @@ def test_an_operation_carrying_its_duration_directly_anchors_the_group():
     )
     # Neither, which is every gate whose length the device config decides.
     assert _duration_of(SimpleNamespace(kwargs={})) == 0.0
+
+
+class TestTheAcceptanceMeasurement:
+    """RFC 0009 §5.6 — what turns `qubit_spacing` from a guess into a setting.
+
+    Gambetta et al.'s measurement: benchmark each qubit alone, benchmark them together,
+    and the difference in average gate fidelity is the addressability.
+    """
+
+    class _Benchmark(FusableProbe):
+        """A benchmark whose fidelity is lower when it is measured in company."""
+
+        name = "penalised"
+        benchmark = True
+        alone = 0.999
+        together = 0.990
+
+        def analyse(self, dataset, target, device, config, sweep):
+            fused = len(sweep.get("group", ())) > 1
+            return {"fidelity": self.together if fused else self.alone}
+
+        def build_group_schedule(self, targets, device, config, backend, sweeps):
+            for target in targets:
+                sweeps[target]["group"] = list(targets)
+            return super().build_group_schedule(
+                targets, device, config, backend, sweeps
+            )
+
+    def _walk(self, **parallel):
+        config = CalibrationConfig(
+            target_qubits=["q0", "q1", "q2"],
+            parallel=ParallelConfig(enabled=True, qubit_spacing=1, **parallel),
+        )
+        backend = ChannelBackend([1.0, 1.0, 1.0])
+        report = CalibrationDAG([self._Benchmark()], config).run(
+            device=None, backend=backend, config=config
+        )
+        return report, backend
+
+    def test_it_is_absent_unless_the_run_asks_for_it(self):
+        """It doubles what benchmarking costs, so it cannot be the default."""
+        report, backend = self._walk()
+
+        assert [b.parallel_penalty for b in report.benchmarks] == [None] * 3
+        assert len(backend.runs) == 1, "one grouped acquisition and no control pass"
+
+    def test_it_reports_what_company_cost_each_target(self):
+        report, backend = self._walk(measure_penalty=True)
+
+        penalty = self._Benchmark.alone - self._Benchmark.together
+        assert [b.parallel_penalty for b in report.benchmarks] == [
+            pytest.approx(penalty)
+        ] * 3
+        # The grouped pass, then one isolated acquisition per target.
+        assert len(backend.runs) == 4
+
+    def test_the_reported_fidelity_stays_the_grouped_one(self):
+        """The fused numbers describe how the chip will actually be driven; the isolated
+        pass is a control, and its results are dropped."""
+        report, _backend = self._walk(measure_penalty=True)
+
+        assert [b.fidelity for b in report.benchmarks] == [
+            pytest.approx(self._Benchmark.together)
+        ] * 3
+        # Three benchmarks, not six: the control pass added no rows of its own.
+        assert len(report.benchmarks) == 3
+        assert len(report.routine_results) == 3
+
+    def test_a_routine_that_is_not_a_benchmark_is_left_alone(self):
+        """There is no fidelity to difference, so there is nothing to measure."""
+        config = CalibrationConfig(
+            target_qubits=["q0", "q1"],
+            parallel=ParallelConfig(
+                enabled=True, qubit_spacing=1, measure_penalty=True
+            ),
+        )
+        backend = ChannelBackend([1.0, 2.0])
+        CalibrationDAG([FusableProbe()], config).run(
+            device=None, backend=backend, config=config
+        )
+
+        assert len(backend.runs) == 1
