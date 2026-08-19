@@ -521,6 +521,13 @@ Bounded as it is now, by `MAX_ESCALATIONS` per subset — so the worst case is t
 worst case, and the common case where nothing escalates is one acquisition for the whole
 group.
 
+**A fusable schedule is not enough.** `measure` is where escalation, refinement and any
+between-pass write-back live, and the fused path runs none of them — so a routine with its
+own loop is grouped only once it has a `measure_group` too, however group-capable its
+schedule is. `ramsey` is the case: its loop refines `f01` over several passes, applying to
+the device between them, and fusing on the schedule alone would have skipped all of it.
+Its schedule is converted; its loop is not, so it still walks one target at a time.
+
 Two routines stay sequential and should: `coupler_bias`, whose loop sets DC state between
 acquisitions, and `qubit_spectroscopy`, whose next window depends on what the last one
 found. Neither is a limitation to design around — a chip has one bias source, and a

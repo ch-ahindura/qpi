@@ -600,33 +600,57 @@ class Ramsey(CalibrationRoutine):
         # On the grid, as `ramsey_12` does: a delay that is not a whole number of
         # nanoseconds does not compile. Gridded here rather than on the way into the
         # schedule because `analyse` fits against these same numbers.
-        sweep["delays"] = [
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """One fringe on every target at once, each read out on its own channel.
+
+        The delays are one grid for the group — an idle is dead time on every port — and so
+        is the artificial detuning, which is a choice rather than a property of a qubit. So
+        the phase advance is the same on each and the group never splits. What differs per
+        target is only the ``f01`` the fringe is measured against, which `analyse` reads
+        from that target's own sweep.
+        """
+        delays = [
             grid_duration(delay)
             for delay in setpoints_of(
                 config, "delays", linear_setpoints(4e-9, 24e-6, 601)
             )
         ]
-        sweep["detuning"] = float(config.get("artificial_detuning", 1e6))
-        # The clock this run corrects, read before the acquisition rather than after it.
-        sweep["current_f01"] = float(
-            read_path(device.get_element(target), "clock_freqs.f01")
-        )
+        detuning = float(config.get("artificial_detuning", 1e6))
+        for target in targets:
+            sweeps[target]["delays"] = delays
+            sweeps[target]["detuning"] = detuning
+            # The clock this run corrects, read before the acquisition rather than after.
+            sweeps[target]["current_f01"] = float(
+                read_path(device.get_element(target), "clock_freqs.f01")
+            )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 1024))
         )
-        for index, delay in enumerate(sweep["delays"]):
-            # The second π/2 is phase-advanced rather than the clock detuned, so
-            # the fringe is deliberate and its direction known.
-            phase = 360.0 * sweep["detuning"] * delay
-            schedule.add(backend.Reset(target))
-            schedule.add(backend.Rxy(theta=90, phi=0, qubit=target))
-            backend.idle(schedule, delay)
-            schedule.add(backend.Rxy(theta=90, phi=phase % 360.0, qubit=target))
-            schedule.add(
-                backend.Measure(
-                    target, acq_index=index, bin_mode=backend.BinMode.AVERAGE
-                )
+        for index, delay in enumerate(delays):
+            # The second pi/2 is phase-advanced rather than the clock detuned, so the
+            # fringe is deliberate and its direction known.
+            phase = (360.0 * detuning * delay) % 360.0
+            add_together(schedule, [backend.Reset(t) for t in targets])
+            add_together(
+                schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
             )
+            backend.idle(schedule, delay)
+            anchor = add_together(
+                schedule,
+                [backend.Rxy(theta=90, phi=phase, qubit=t) for t in targets],
+            )
+            add_after(schedule, readouts(backend, targets, index), anchor)
         return schedule
 
     def analyse(

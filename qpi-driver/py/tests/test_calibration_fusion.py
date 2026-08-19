@@ -509,3 +509,44 @@ def test_no_routine_keeps_per_target_state_on_itself():
         "these keep per-target state on the routine, which a fused group shares: "
         f"{offenders}"
     )
+
+
+class TestARoutineWithItsOwnLoopIsNotBypassed:
+    """A fusable schedule must not cost a routine its `measure` (RFC 0009 §6.5).
+
+    `ramsey` is the case: its loop refines f01 across several passes, applying to the
+    device between them. Giving it a group schedule made it `fusable`, and the walk would
+    then have taken the fused path — one acquisition, one fit, no refinement at all.
+    """
+
+    class _OwnLoop(FusableProbe):
+        name = "own_loop"
+
+        def measure(
+            self, target, device, config, backend, sweep, bias=None, timeout_s=300.0
+        ):
+            sweep["looped"] = True
+            return {"value": 1.0}
+
+    def test_the_walk_runs_it_one_target_at_a_time(self):
+        node = self._OwnLoop()
+        assert node.fusable and node.measures_itself and not node.measures_group
+
+        config = CalibrationConfig(
+            target_qubits=["q0", "q1", "q2"],
+            parallel=ParallelConfig(enabled=True, qubit_spacing=1),
+        )
+        backend = ChannelBackend([1.0, 2.0, 3.0])
+        report = CalibrationDAG([node], config).run(
+            device=None, backend=backend, config=config
+        )
+
+        assert report.status == "success"
+        # Its own loop ran for each target, and no fused acquisition was taken.
+        assert len(report.routine_results) == 3
+        assert backend.runs == []
+
+    def test_it_groups_once_it_has_a_group_loop(self):
+        """The guard is about the loop being absent, not about the routine measuring itself."""
+        node = _routine("t1")
+        assert node.measures_itself and node.measures_group

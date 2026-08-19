@@ -27,6 +27,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: a routine that runs its own measurement loop is no longer grouped just
+  because its schedule can be fused. `measure` is where escalation, refinement and any
+  between-pass write-back live, and the fused path runs none of them — `ramsey`, whose loop
+  refines f01 across several passes, would have had it skipped entirely.
 - `qpi-driver/py`: `rb` and `interleaved_rb` benchmark a group at once, playing the same
   Clifford sequences on every target — which is what makes a fused run the *simultaneous*
   RB the addressability measurement needs, rather than several independent ones. One seed,
