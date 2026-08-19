@@ -27,6 +27,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- `qpi-driver/py`: `rb` and `interleaved_rb` benchmark a group at once, playing the same
+  Clifford sequences on every target — which is what makes a fused run the *simultaneous*
+  RB the addressability measurement needs, rather than several independent ones. One seed,
+  so the per-target fidelities are comparable with each other and with an isolated run.
 - `qpi-driver/py`: `fine_amplitude` and `fine_amplitude_90` measure a group at once, and a
   ladder that outran the fit's linearisation is shortened for that target alone — cutting
   the group would shorten the ladders that were fine, and a shorter ladder measures a

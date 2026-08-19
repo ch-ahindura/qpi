@@ -86,6 +86,23 @@ def channel_of(dataset: Any, channel: int) -> Any:
     )
 
 
+def readouts(backend: Any, targets: Iterable[str], index: int) -> list[Any]:
+    """One averaged measurement per target at acquisition *index*, each on its own channel.
+
+    The channel is the target's position in the group (RFC 0009 D5), which is what
+    :func:`channels_of` slices the result back apart by.
+    """
+    return [
+        backend.Measure(
+            target,
+            acq_channel=channel,
+            acq_index=index,
+            bin_mode=backend.BinMode.AVERAGE,
+        )
+        for channel, target in enumerate(targets)
+    ]
+
+
 def grouped_by_grid(
     targets: Iterable[str], grid_of: Callable[[str], Iterable[float]]
 ) -> list[list[str]]:

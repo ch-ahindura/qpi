@@ -18,6 +18,7 @@ from qpi_driver.tuners.base.fusion import (
     add_after,
     add_together,
     grouped_by_grid,
+    readouts,
 )
 from qpi_driver.tuners.base.config import RoutineConfig
 from qpi_driver.executors.base.rotations import (
@@ -1257,21 +1258,6 @@ def amplified(
     )
 
 
-def _readout(
-    backend: SchedulerBackend, targets: Sequence[str], index: int
-) -> list[Any]:
-    """One averaged measurement per target at acquisition *index*, each on its own channel."""
-    return [
-        backend.Measure(
-            target,
-            acq_channel=channel,
-            acq_index=index,
-            bin_mode=backend.BinMode.AVERAGE,
-        )
-        for channel, target in enumerate(targets)
-    ]
-
-
 def _add_references(
     schedule: Any, backend: SchedulerBackend, targets: Sequence[str], at: int
 ) -> None:
@@ -1280,7 +1266,7 @@ def _add_references(
         anchor = add_together(schedule, [backend.Reset(t) for t in targets])
         if excite:
             anchor = add_together(schedule, [backend.X(t) for t in targets])
-        add_after(schedule, _readout(backend, targets, at + offset), anchor)
+        add_after(schedule, readouts(backend, targets, at + offset), anchor)
 
 
 def amplified_group(
@@ -1473,7 +1459,7 @@ class FineAmplitude(CalibrationRoutine):
             )
             for _ in range(count):
                 anchor = add_together(schedule, [backend.X(t) for t in targets])
-            add_after(schedule, _readout(backend, targets, index), anchor)
+            add_after(schedule, readouts(backend, targets, index), anchor)
 
         # Two reference points, |0> and |1>, so the fit knows the full contrast. Without
         # them only the product of contrast and rotation error is recoverable, and the
@@ -1715,7 +1701,7 @@ class FineAmplitude90(CalibrationRoutine):
                 anchor = add_together(
                     schedule, [backend.Rxy(theta=90, phi=0, qubit=t) for t in targets]
                 )
-            add_after(schedule, _readout(backend, targets, index), anchor)
+            add_after(schedule, readouts(backend, targets, index), anchor)
 
         # |0> and |1>, so the fit knows the full contrast rather than whatever fraction of
         # it this sweep reached. See `fit_fine_amplitude`.
