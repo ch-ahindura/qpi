@@ -547,10 +547,22 @@ schedule is. `ramsey` is the case: its loop refines `f01` over several passes, a
 the device between them, and fusing on the schedule alone would have skipped all of it.
 Its schedule is converted; its loop is not, so it still walks one target at a time.
 
-Two routines stay sequential and should: `coupler_bias`, whose loop sets DC state between
-acquisitions, and `qubit_spectroscopy`, whose next window depends on what the last one
-found. Neither is a limitation to design around — a chip has one bias source, and a
-search that branches per qubit is a different experiment per qubit.
+**Corrected in review: `qubit_spectroscopy` was wrongly listed here.** This section said
+its "next window depends on what the last one found", and treated that as a reason it
+cannot be grouped. The dependency is real but it is *within one qubit, across passes* —
+sweep the configured window, and if no line is there, search wide and then confirm around
+the line that search found. It says nothing about other qubits, which are independent.
+
+That is the shape `escalating_group` already handles: run the stage for the group, then
+run the next stage for the subset that needs it. A confirm window centred on each qubit's
+own found line is a per-target frequency axis, so those still fuse under
+`grouped_by_size`. The routine is convertible, and the reason given for it was a
+conflation of "cannot be one schedule" with "cannot be one group".
+
+`coupler_anticrossing` is the one that genuinely stays sequential: its loop sets a DC bias
+out of band, between acquisitions, and a chip has one bias source. Even there the limit is
+the source rather than the schedule — a rack with a channel per coupler could set several
+and run one schedule — so this is a statement about the instrument, not about the graph.
 
 ### 6.6 What can be converted, and what needs more than a hook
 
@@ -654,12 +666,12 @@ Six phases. Each is separately valuable and separately revertable.
 **Where this stands.** All six phases are implemented, and thirty-three of the
 thirty-six routines group.
 
-Three do not, and each for a reason rather than for want of work. `coupler_anticrossing`
-sets a DC bias between acquisitions and `qubit_spectroscopy`'s next window depends on what
-the last one found — §6.5 gives both as the cases that stay sequential. `ramsey`'s schedule
-is converted but its loop is not: it refines `f01` over several passes, applying to the
-device between them, and the guard in §6.5 is what keeps that a safe state rather than a
-silent regression.
+Three do not. `coupler_anticrossing` genuinely stays sequential: its loop sets a DC bias
+out of band and a chip has one bias source (§6.5). The other two are unconverted rather
+than unconvertible — `qubit_spectroscopy`'s two-pass search and `ramsey`'s multi-pass
+refinement are both per-target adaptive loops of the shape `escalating_group` already
+handles, and the `measure_group` guard is what keeps them running one target at a time in
+the meantime rather than silently skipping their loops.
 
 Grouping is off unless `calibration.yml` says otherwise, so none of this changes an
 existing chip's walk until an operator turns it on.
