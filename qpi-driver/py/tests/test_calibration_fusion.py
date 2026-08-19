@@ -550,3 +550,18 @@ class TestARoutineWithItsOwnLoopIsNotBypassed:
         """The guard is about the loop being absent, not about the routine measuring itself."""
         node = _routine("t1")
         assert node.measures_itself and node.measures_group
+
+
+def test_an_operation_carrying_its_duration_directly_anchors_the_group():
+    """`add_together` returns the longest operation so the next stage cannot start early,
+    and an operation may state its duration as an attribute rather than in kwargs."""
+    from types import SimpleNamespace
+
+    from qpi_driver.tuners.base.fusion import _duration_of
+
+    assert _duration_of(SimpleNamespace(duration=4e-7)) == pytest.approx(4e-7)
+    assert _duration_of(SimpleNamespace(kwargs={"duration": 2e-7})) == pytest.approx(
+        2e-7
+    )
+    # Neither, which is every gate whose length the device config decides.
+    assert _duration_of(SimpleNamespace(kwargs={})) == 0.0

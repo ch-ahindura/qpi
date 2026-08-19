@@ -1,7 +1,7 @@
 # RFC 0009 — Parallel Calibration
 
-- **Status:** Partially implemented. Phases 1–3 done; phase 4's mechanism done with 12 of
-  33 routines converted; phases 5–6 open. §9 records what each phase covers and the
+- **Status:** Partially implemented. Phases 1–4's mechanisms are all built, with 12 of the
+  33 routines grouping; phases 5–6 open. §9 records what each phase covers and the
   status line under it says where each stands.
 - **Author:** Martin Ahindura
 - **Created:** 2026-08-18
