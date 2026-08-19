@@ -44,6 +44,7 @@ from qpi_driver.tuners.base.routines import (
     setpoints_of,
 )
 from qpi_driver.tuners.base.fusion import (
+    add_after,
     add_together,
     grouped_by_size,
 )
@@ -513,40 +514,78 @@ class ThreeStateOperatingPoint(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        sweep["ef_amplitude"] = _required_ef_amplitude(element, target)
-        sweep["duration"] = ef_duration(element, config)
-        sweep["settings"] = self._grid(element, config)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By grid size: each point is this qubit's own frequency and drive amplitude."""
+        return grouped_by_size(
+            targets, lambda t: self._grid(device.get_element(t), config)
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """All three levels at every setting, for every target at once."""
+        grids = {}
+        ef = {}
+        for target in targets:
+            element = device.get_element(target)
+            grids[target] = self._grid(element, config)
+            sweeps[target]["settings"] = grids[target]
+            sweeps[target]["ef_amplitude"] = _required_ef_amplitude(element, target)
+            sweeps[target]["duration"] = ef_duration(element, config)
+            ef[target] = (
+                sweeps[target]["ef_amplitude"],
+                sweeps[target]["duration"],
+            )
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 300))
         )
         index = 0
-        for frequency, amplitude in sweep["settings"]:
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=frequency
-                )
+        for position in range(len(grids[targets[0]])):
+            add_together(
+                schedule,
+                [
+                    backend.SetClockFrequency(
+                        clock=f"{target}.ro",
+                        clock_freq_new=grids[target][position][0],
+                    )
+                    for target in targets
+                ],
             )
             for level in (0, 1, 2):
-                schedule.add(backend.Reset(target))
+                anchor = add_together(
+                    schedule, [backend.Reset(target) for target in targets]
+                )
                 if level >= 1:
-                    schedule.add(backend.X(target))
+                    anchor = add_together(
+                        schedule, [backend.X(target) for target in targets]
+                    )
                 if level >= 2:
-                    add_ef_pulse(
-                        schedule,
-                        backend,
-                        target,
-                        sweep["ef_amplitude"],
-                        sweep["duration"],
-                    )
-                schedule.add(
-                    backend.Measure(
-                        target,
-                        acq_index=index,
-                        bin_mode=backend.BinMode.APPEND,
-                        pulse_amp=amplitude,
-                    )
+                    for target in targets:
+                        add_ef_pulse(schedule, backend, target, *ef[target])
+                add_after(
+                    schedule,
+                    [
+                        backend.Measure(
+                            target,
+                            acq_channel=channel,
+                            acq_index=index,
+                            bin_mode=backend.BinMode.APPEND,
+                            pulse_amp=grids[target][position][1],
+                        )
+                        for channel, target in enumerate(targets)
+                    ],
+                    anchor,
                 )
                 index += 1
         return schedule
@@ -1443,29 +1482,64 @@ class ThreeStateDiscrimination(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        amplitude = _required_ef_amplitude(element, target)
-        duration = ef_duration(element, config)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
 
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """The three prepared states on every target at once.
+
+        Three acquisitions per target and no sweep, so the group never splits: what is
+        being counted is how often each prepared level is misread, and the levels are the
+        same three on every chip.
+        """
+        ef = {}
         schedule = backend.new_schedule(
             self.name, repetitions=int(config.get("shots", 2000))
         )
-        # At the three-state point, not the two-state one: there |1> and |2> collapse
-        # together and there is nothing to classify.
-        measure_kwargs = open_three_state_readout(schedule, backend, target, element)
+        measure_kwargs = {}
+        for target in targets:
+            element = device.get_element(target)
+            ef[target] = (
+                _required_ef_amplitude(element, target),
+                ef_duration(element, config),
+            )
+            # At the three-state point, not the two-state one: there |1> and |2> collapse
+            # together and there is nothing to classify.
+            measure_kwargs[target] = open_three_state_readout(
+                schedule, backend, target, element
+            )
         for index, level in enumerate(self.STATES):
-            schedule.add(backend.Reset(target))
+            anchor = add_together(
+                schedule, [backend.Reset(target) for target in targets]
+            )
             if level >= 1:
-                schedule.add(backend.X(target))
-            if level >= 2:
-                add_ef_pulse(schedule, backend, target, amplitude, duration)
-            schedule.add(
-                backend.Measure(
-                    target,
-                    acq_index=index,
-                    bin_mode=backend.BinMode.APPEND,
-                    **measure_kwargs,
+                anchor = add_together(
+                    schedule, [backend.X(target) for target in targets]
                 )
+            if level >= 2:
+                for target in targets:
+                    add_ef_pulse(schedule, backend, target, *ef[target])
+            add_after(
+                schedule,
+                [
+                    backend.Measure(
+                        target,
+                        acq_channel=channel,
+                        acq_index=index,
+                        bin_mode=backend.BinMode.APPEND,
+                        **measure_kwargs[target],
+                    )
+                    for channel, target in enumerate(targets)
+                ],
+                anchor,
             )
         return schedule
 

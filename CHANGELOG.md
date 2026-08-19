@@ -32,6 +32,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   measurement that turns `qubit_spacing` from a guess into a setting; it doubles what
   benchmarking costs, so it is off unless asked for. The simulator gained an optional ZZ
   coupling so the detector itself can be tested.
+- `qpi-driver/py`: both readout operating points and `three_state_discrimination` measure a
+  group at once. These are single-shot, so each target's own spread is the noise its
+  separation is quoted in, and each sweeps its own frequency and drive amplitude.
 - `qpi-driver/py`: the three resonator spectroscopies sweep a group at once, each resonator
   over its own band on its own readout clock.
 - `qpi-driver/py`: every edge routine but `coupler_anticrossing` now calibrates a group at

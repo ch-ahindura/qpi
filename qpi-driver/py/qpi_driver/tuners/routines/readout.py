@@ -26,7 +26,11 @@ import xarray as xr
 
 from qpi_driver.tuners.base.backend import SchedulerBackend
 from qpi_driver.tuners.base.config import RoutineConfig
-from qpi_driver.tuners.base.fusion import add_after, add_together
+from qpi_driver.tuners.base.fusion import (
+    add_after,
+    add_together,
+    grouped_by_size,
+)
 from qpi_driver.tuners.base.device import (
     measured_linewidth,
     read_path,
@@ -134,28 +138,72 @@ class ReadoutOperatingPoint(CalibrationRoutine):
         backend: SchedulerBackend,
         sweep: Sweep,
     ) -> Any:
-        element = device.get_element(target)
-        sweep["settings"] = self._grid(element, config)
-        shots = int(config.get("shots", 300))
-        schedule = backend.new_schedule(self.name, repetitions=shots)
+        return self.build_group_schedule(
+            [target], device, config, backend, {target: sweep}
+        )
+
+    def compatible_groups(
+        self, targets: Sequence[str], device: Any, config: RoutineConfig
+    ) -> list[list[str]]:
+        """By grid size: each point is this qubit's own frequency and drive amplitude."""
+        return grouped_by_size(
+            targets, lambda t: self._grid(device.get_element(t), config)
+        )
+
+    def build_group_schedule(
+        self,
+        targets: Sequence[str],
+        device: Any,
+        config: RoutineConfig,
+        backend: SchedulerBackend,
+        sweeps: Mapping[str, Sweep],
+    ) -> Any:
+        """Both prepared states at every setting, for every target at once.
+
+        Single-shot, so the acquisitions are the measurement: each target's spread is the
+        noise its separation is quoted in. The frequency and the amplitude are both
+        per-target hardware, so each sweeps its own grid over a shared index.
+        """
+        grids = {}
+        for target in targets:
+            grids[target] = self._grid(device.get_element(target), config)
+            sweeps[target]["settings"] = grids[target]
+        schedule = backend.new_schedule(
+            self.name, repetitions=int(config.get("shots", 300))
+        )
         index = 0
-        for frequency, amplitude in sweep["settings"]:
-            schedule.add(
-                backend.SetClockFrequency(
-                    clock=f"{target}.ro", clock_freq_new=frequency
-                )
+        for position in range(len(grids[targets[0]])):
+            add_together(
+                schedule,
+                [
+                    backend.SetClockFrequency(
+                        clock=f"{target}.ro",
+                        clock_freq_new=grids[target][position][0],
+                    )
+                    for target in targets
+                ],
             )
             for prepare in (0, 1):
-                schedule.add(backend.Reset(target))
+                anchor = add_together(
+                    schedule, [backend.Reset(target) for target in targets]
+                )
                 if prepare:
-                    schedule.add(backend.X(target))
-                schedule.add(
-                    backend.Measure(
-                        target,
-                        acq_index=index,
-                        bin_mode=backend.BinMode.APPEND,
-                        pulse_amp=amplitude,
+                    anchor = add_together(
+                        schedule, [backend.X(target) for target in targets]
                     )
+                add_after(
+                    schedule,
+                    [
+                        backend.Measure(
+                            target,
+                            acq_channel=channel,
+                            acq_index=index,
+                            bin_mode=backend.BinMode.APPEND,
+                            pulse_amp=grids[target][position][1],
+                        )
+                        for channel, target in enumerate(targets)
+                    ],
+                    anchor,
                 )
                 index += 1
         return schedule
